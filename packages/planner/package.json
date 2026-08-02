@@ -1,0 +1,22 @@
+{
+  "name": "@handbook/planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Handbook-guided read-only planning agent that localizes code changes into a precise edit plan",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@handbook/core": "workspace:*",
+    "@handbook/llm": "workspace:*"
+  }
+}

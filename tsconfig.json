@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/analyzer" },
+    { "path": "packages/llm" },
+    { "path": "packages/pipeline" },
+    { "path": "packages/renderer" },
+    { "path": "packages/skill" },
+    { "path": "packages/planner" },
+    { "path": "packages/resync" },
+    { "path": "packages/cli" }
+  ]
+}

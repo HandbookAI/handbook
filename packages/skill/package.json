@@ -1,0 +1,21 @@
+{
+  "name": "@handbook/skill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Package a rendered handbook as an agent SKILL; validate handbook structure and compute coverage",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@handbook/core": "workspace:*"
+  }
+}

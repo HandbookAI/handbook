@@ -1,0 +1,28 @@
+{
+  "name": "handbook-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn any codebase into a navigable, always-current handbook — and use it to drive precise code-change planning.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "packageManager": "pnpm@10.18.1",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean && rm -rf packages/*/dist",
+    "test": "tsc -b && vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint packages/*/src",
+    "format": "prettier --write \"packages/*/src/**/*.ts\" \"docs/**/*.md\" \"*.md\"",
+    "format:check": "prettier --check \"packages/*/src/**/*.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.0.0"
+  }
+}
