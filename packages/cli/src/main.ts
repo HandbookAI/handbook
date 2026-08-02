@@ -1,0 +1,224 @@
+#!/usr/bin/env node
+/**
+ * The `handbook` CLI — one entry point for the whole toolchain:
+ *
+ *   analyze    static call graph only (no LLM)
+ *   generate   full handbook pipeline (phases 1/2a/2b/2c/3)
+ *   render     work dir → markdown / HTML site / agent locator index (no LLM)
+ *   skill      rendered handbook → agent SKILL package (no LLM)
+ *   validate   check a SKILL package structure + freshness (no LLM)
+ *   plan       handbook-guided change localization (read-only agent)
+ *   resync     roll a handbook forward after a code change
+ */
+import { Command } from 'commander';
+import { resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { createLogger, type LogLevel } from '@handbook/core';
+import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
+import { generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
+import { renderAgentSite, renderHtmlSite, renderMarkdownHandbook, renderSinglePageHtml } from '@handbook/renderer';
+import { buildSkill, validateSkill } from '@handbook/skill';
+import { runPlanner } from '@handbook/planner';
+import { resyncHandbook } from '@handbook/resync';
+import { WorkDir } from '@handbook/pipeline';
+
+const program = new Command();
+
+program
+  .name('handbook')
+  .description('Turn any codebase into a navigable handbook — and use it to plan precise code changes.')
+  .version('0.1.0')
+  .option('-v, --verbose', 'debug logging')
+  .option('-q, --quiet', 'errors only');
+
+function logger(): ReturnType<typeof createLogger> {
+  const opts = program.opts<{ verbose?: boolean; quiet?: boolean }>();
+  const level: LogLevel = opts.quiet ? 'error' : opts.verbose ? 'debug' : 'info';
+  return createLogger('', level);
+}
+
+function llmClient(): ChatClient {
+  return new OpenAiChatClient({ logger: logger() });
+}
+
+function printJson(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+program
+  .command('analyze')
+  .description('Phase 1 only: build the static call graph (no LLM needed)')
+  .requiredOption('--source <dir>', 'source root to analyze')
+  .requiredOption('--work <dir>', 'work directory for artifacts')
+  .option('--lang <lang>', 'language (auto|python|typescript|go|rust|shell)', 'auto')
+  .action(async (opts: { source: string; work: string; lang: string }) => {
+    const stats = await runPhase1({
+      sourceRoot: resolve(opts.source),
+      workDir: resolve(opts.work),
+      lang: opts.lang,
+      logger: logger(),
+    });
+    printJson(stats);
+  });
+
+program
+  .command('generate')
+  .description('Run the handbook generation pipeline (env: OPENAI_API_KEY/MODEL/BASE_URL)')
+  .requiredOption('--source <dir>', 'source root')
+  .requiredOption('--work <dir>', 'work directory')
+  .option('--phase <spec>', 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list', 'all')
+  .option('--strategy <s>', 'file | member', 'file')
+  .option('--skeleton <path>', 'user-authored skeleton.yaml (required for member strategy)')
+  .option('--lang <lang>', 'source language (auto detects)', 'auto')
+  .option('--narrate-lang <l>', 'prose language: en | zh', 'en')
+  .option('--detail <d>', 'card depth: brief | deep', 'brief')
+  .option('--synth-mode <m>', 'skeleton synthesis: oneshot | doctor', 'oneshot')
+  .option('--max-doctor-rounds <n>', 'doctor convergence rounds', '6')
+  .option('--read-workers <n>', 'concurrent card batches', '12')
+  .option('--resume', 'skip files that already have a completed card')
+  .option('--refresh', 'ignore phase-3 caches')
+  .action(async (opts: Record<string, string | boolean>) => {
+    const phase = String(opts.phase);
+    const needsLlm = phase !== '1';
+    const stats = await generateHandbook({
+      sourceRoot: resolve(String(opts.source)),
+      workDir: resolve(String(opts.work)),
+      client: needsLlm ? llmClient() : undefined,
+      phase,
+      strategy: opts.strategy === 'member' ? 'member' : 'file',
+      skeletonPath: opts.skeleton ? resolve(String(opts.skeleton)) : undefined,
+      lang: String(opts.lang),
+      narrateLang: opts.narrateLang === 'zh' ? 'zh' : 'en',
+      detail: opts.detail === 'deep' ? 'deep' : 'brief',
+      synthMode: opts.synthMode === 'doctor' ? 'doctor' : 'oneshot',
+      maxDoctorRounds: Number(opts.maxDoctorRounds),
+      readWorkers: Number(opts.readWorkers),
+      resume: Boolean(opts.resume),
+      refresh: Boolean(opts.refresh),
+      logger: logger(),
+    });
+    printJson(stats);
+  });
+
+program
+  .command('render')
+  .description('Render a completed work dir to markdown (+ optional HTML site / agent index); no LLM')
+  .requiredOption('--work <dir>', 'work directory with completed phase-3 artifacts')
+  .option('--out <dir>', 'output directory (default <work>/handbook)')
+  .option('--title <title>', 'handbook title', process.env.HANDBOOK_TITLE ?? 'System Handbook')
+  .option('--html', 'also render the multi-page HTML site under <out>/html')
+  .option('--html-single', 'also render a single self-contained HTML page')
+  .option('--agent-site', 'also render the agent locator index under <out>/agent')
+  .action(async (opts: Record<string, string | boolean>) => {
+    const workDir = resolve(String(opts.work));
+    const outDir = resolve(String(opts.out ?? `${workDir}/handbook`));
+    const model = loadHandbookModel(workDir, String(opts.title));
+    const md = renderMarkdownHandbook(model, outDir);
+    const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
+    if (opts.agentSite) {
+      result.agent = renderAgentSite(model, `${outDir}/agent`);
+    }
+    if (opts.html) {
+      result.html = renderHtmlSite(model, `${outDir}/html`);
+    }
+    if (opts.htmlSingle) {
+      result.htmlSingle = renderSinglePageHtml(model, `${outDir}/handbook.html`);
+    }
+    printJson(result);
+  });
+
+program
+  .command('skill')
+  .description('Package a rendered handbook as an agent SKILL; no LLM')
+  .requiredOption('--handbook <dir>', 'rendered handbook directory')
+  .requiredOption('--out <dir>', 'skill output directory')
+  .requiredOption('--name <slug>', 'skill slug (lowercase-hyphen)')
+  .option('--project <name>', 'human project name for prose')
+  .option('--work <dir>', 'work dir — adds coverage.json from its assignment')
+  .option('--source <dir>', 'source root — adds content hashes to coverage.json')
+  .action((opts: Record<string, string | undefined>) => {
+    let coverage;
+    if (opts.work) {
+      const work = new WorkDir(resolve(opts.work));
+      coverage = {
+        assignment: work.loadAssignment(),
+        sourceRoot: opts.source ? resolve(opts.source) : undefined,
+      };
+    }
+    const result = buildSkill({
+      handbookDir: resolve(String(opts.handbook)),
+      outDir: resolve(String(opts.out)),
+      name: String(opts.name),
+      project: opts.project,
+      coverage,
+    });
+    printJson(result);
+  });
+
+program
+  .command('validate')
+  .description('Validate a SKILL package (structure, index links, coverage freshness); no LLM')
+  .requiredOption('--skill <dir>', 'skill directory')
+  .option('--source <dir>', 'source root for hash freshness checks')
+  .action((opts: { skill: string; source?: string }) => {
+    const result = validateSkill({
+      skillDir: resolve(opts.skill),
+      sourceRoot: opts.source ? resolve(opts.source) : undefined,
+    });
+    for (const warning of result.warnings) process.stderr.write(`validate: warning: ${warning}\n`);
+    for (const error of result.errors) process.stderr.write(`validate: error: ${error}\n`);
+    process.stderr.write(result.ok ? 'validate: OK\n' : 'validate: FAILED\n');
+    process.exitCode = result.ok ? 0 : 2;
+  });
+
+program
+  .command('plan')
+  .description('Localize a change request with the handbook and emit a precise edit plan')
+  .requiredOption('--source <dir>', 'codebase to plan against (read-only)')
+  .requiredOption('--request <text>', 'the natural-language change request')
+  .option('--handbook <dir>', 'rendered handbook or skill references dir')
+  .option('--out <file>', 'write the plan to a file (default stdout)')
+  .option('--max-turns <n>', 'agent turn budget', '30')
+  .action(async (opts: Record<string, string | undefined>) => {
+    const result = await runPlanner({
+      client: llmClient(),
+      sourceRoot: resolve(String(opts.source)),
+      handbookDir: opts.handbook ? resolve(opts.handbook) : undefined,
+      request: String(opts.request),
+      maxTurns: Number(opts.maxTurns),
+      logger: logger(),
+    });
+    if (opts.out) {
+      writeFileSync(resolve(opts.out), `${result.plan}\n`);
+      printJson({ out: resolve(opts.out), turns: result.turns, declarations: result.declarations });
+    } else {
+      process.stdout.write(`${result.plan}\n`);
+    }
+  });
+
+program
+  .command('resync')
+  .description('Roll a handbook forward after a code change (case dir: edited/ + plan.md + change.diff)')
+  .requiredOption('--case <dir>', 'case directory')
+  .requiredOption('--work <dir>', 'work directory holding the handbook artifacts')
+  .option('--no-llm', 'structural refresh only (no LLM; prose marked stale)')
+  .option('--detail <d>', 'card depth for regenerated cards: brief | deep', 'deep')
+  .option('--narrate-lang <l>', 'prose language: en | zh')
+  .action(async (opts: Record<string, string | boolean | undefined>) => {
+    const noLlm = opts.llm === false; // commander maps --no-llm to llm:false
+    const report = await resyncHandbook({
+      caseDir: resolve(String(opts.case)),
+      workDir: resolve(String(opts.work)),
+      client: noLlm ? undefined : llmClient(),
+      noLlm,
+      detail: opts.detail === 'brief' ? 'brief' : 'deep',
+      lang: opts.narrateLang === 'zh' ? 'zh' : opts.narrateLang === 'en' ? 'en' : undefined,
+      logger: logger(),
+    });
+    printJson(report);
+  });
+
+program.parseAsync(process.argv).catch((error: unknown) => {
+  process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});
