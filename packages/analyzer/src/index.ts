@@ -3,4 +3,8 @@ export * from './graph.js';
 export * from './navpack.js';
 export * from './languages.js';
 export { PythonAdapter } from './adapters/python.js';
+export { TypeScriptAdapter } from './adapters/typescript.js';
+export { GoAdapter } from './adapters/go.js';
+export { RustAdapter } from './adapters/rust.js';
+export { ShellAdapter } from './adapters/shell.js';
 export { registerBuiltinAdapters } from './register.js';
