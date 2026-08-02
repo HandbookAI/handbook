@@ -10,6 +10,7 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
+import type { MarkdownIt as Markdown } from 'markdown-it';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { FileCard, FunctionNote, HandbookModel, NarrateLang } from '@handbook/core';
 import { callFactsLine } from './file-card.js';
@@ -146,7 +147,7 @@ try{localStorage.setItem('hb-theme',dark?'light':'dark');}catch(e){}}
 function hbAll(open){document.querySelectorAll('.main details').forEach(function(d){d.open=open;});}
 `;
 
-function makeMd(): MarkdownIt {
+function makeMd(): Markdown {
   return new MarkdownIt({ html: false, linkify: false });
 }
 
@@ -240,7 +241,7 @@ function functionDetails(fn: FunctionNote, lang: NarrateLang): string {
   return `<details class="fn"><summary><code>${esc(fn.qualname)}</code> <span class="meta">${esc(L.lines(fn.lineRange[0], fn.lineRange[1]))}</span></summary><div class="fnfields">${fields.join('')}</div></details>`;
 }
 
-function fileDetails(md: MarkdownIt, rel: string, card: FileCard, lang: NarrateLang): string {
+function fileDetails(md: Markdown, rel: string, card: FileCard, lang: NarrateLang): string {
   const L = LABELS[lang];
   const lifecycle = card.lifecycle.trim();
   const lifecycleBadge = lifecycle.length > 0 && lifecycle !== 'none' ? ` <span class="badge">${esc(lifecycle)}</span>` : '';
@@ -256,7 +257,7 @@ function fileDetails(md: MarkdownIt, rel: string, card: FileCard, lang: NarrateL
 /** The stage body shared by the multi-page stage page and the single-page section. */
 function stageBody(
   view: HandbookView,
-  md: MarkdownIt,
+  md: Markdown,
   sid: string,
   lang: NarrateLang,
   childHref: (child: string) => string,
