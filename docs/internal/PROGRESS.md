@@ -21,19 +21,32 @@
 - 测试: vitest@4；构建: tsc -b（composite project references，纯 ESM "type":"module"）
 - LLM 客户端：自研 thin fetch 客户端（重试/并发限流/JSON 模式），不依赖 openai SDK
 
-## 状态
+## 状态（随做随更）
 
-- [x] 环境与依赖可行性验证
-- [ ] 三个调研 agent 产出功能规格（scratchpad/spec-*.md）→ 完成后把要点合入 docs/internal/SOURCE-SPEC-DIGEST.md
-- [ ] 设计文档 docs/superpowers/specs/2026-08-02-codewiki-design.md
-- [ ] 骨架 → core → analyzer → llm → pipeline → renderer → helper → cli
-- [ ] 测试 + 构建验证
-- [ ] 完整文档
-- [ ] 多轮对抗评审
-- [ ] 端到端验证
+- [x] 环境与依赖可行性验证（web-tree-sitter 必须锁 ~0.25.10，0.26 与 tree-sitter-wasms ABI 不兼容）
+- [x] 三份功能规格已固化：docs/internal/research/spec-{generate-large,generate-small,helper-and-skill}.md（实现每个包前先精读对应章节）
+- [x] 设计文档：docs/internal/specs/2026-08-02-handbook-design.md（分包/依赖方向/算法提要/CLI 全在这里）
+- [x] monorepo 骨架（pnpm + tsc -b composite + vitest 根配置 + eslint/prettier；根目录 /Users/jack/Desktop/share/handbook，已 git init，main 分支）
+- [x] @handbook/core 完成（ir.ts/model.ts/errors/logger/util/*，17 测试绿）
+- [x] @handbook/llm 完成（client.ts OpenAI 兼容 + mock.ts + critic.ts actor-critic，14 测试绿）
+- [x] @handbook/analyzer 框架 + graph.ts + navpack.ts + python adapter（python.test.ts 待跑通）
+- [ ] analyzer: ts/go/rust/shell adapters（计划委派 subagent，模式照抄 adapters/python.ts）
+- [ ] @handbook/pipeline（phase1.ts 已可写：调 analyzer + writeGraphArtifacts；phase2: cards/skeleton/doctor/assign/organize；phase3: rollup/registers/narration）
+- [ ] @handbook/renderer（markdown.ts / agent-site.ts / html.ts）
+- [ ] @handbook/skill、planner、resync
+- [ ] @handbook/cli
+- [ ] 文档、多轮对抗评审、E2E
 
 ## 关键决策记录
 
-- D1: 统一大/小两条管线为一个 pipeline 包 + 两种 strategy（消除源实现的大量复制粘贴），CLI 上以 `--strategy large|small`（或 profile）暴露。
-- D2: 包命名空间 `@codewiki/*`，项目名 Codewiki（待定，实施时可再定，但不得与参考项目相关）。
-- D3: 中间产物全部 JSON + zod schema 校验，work-dir 可恢复（幂等、跳过已完成步骤）。
+- D1: 统一管线 + 两种 granularity 策略（file/member）；file 策略全量实现，member 策略实现精简版（骨架驱动分类+叙述）。
+- D2: 命名最终定为 **@handbook/*** 、CLI `handbook`、项目名 Handbook；严禁出现源参考项目的任何名称/链接/论文。
+- D3: 中间产物 JSON/YAML + zod 校验 + version 字段；work-dir 幂等可恢复。
+- D4: 纯 ESM + NodeNext；相对 import 必须带 .js 后缀；tsc -b 构建后 vitest 直跑（vitest 用 workspace 源码转译，跨包 import 走 dist，故先 build 再 test）。
+- D5: LLM 一律走 ChatClient 接口注入；测试/E2E 用 MockChatClient（rules: match→respond）。
+
+## 工作节奏约定（防 session 断裂）
+
+1. 每完成一个包：更新本文件状态 → git commit。
+2. 委派 subagent 时把«精确接口 + 参照文件 + 测试要求»写全，产物直接落 packages/。
+3. 恢复会话时：读本文件 + git log + 设计文档即可续作，无需重读源项目。
