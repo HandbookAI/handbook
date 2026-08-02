@@ -40,6 +40,9 @@ export OPENAI_BASE_URL=https://api.openai.com/v1    # 也可以是 vLLM / 代理
 无鉴权的本地端点用 `OPENAI_API_KEY=EMPTY`。阶段 1（静态分析）永远不需要 key。
 支持语言：Python、TypeScript、Go、Rust、Shell——`--lang auto` 自动探测并合并。
 
+不想每次 export？CLI 会自动加载运行目录下的 `./.env`（shell 变量优先；模板见
+[.env.example](.env.example)），也可用 `--env-file <path>` 显式指定。
+
 ## 快速上手
 
 ```bash

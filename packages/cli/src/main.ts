@@ -12,7 +12,8 @@
  */
 import { Command } from 'commander';
 import { resolve } from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
+import { applyEnvFile } from './env-file.js';
 import { createLogger, type LogLevel } from '@handbook/core';
 import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
@@ -29,7 +30,21 @@ program
   .description('Turn any codebase into a navigable handbook — and use it to plan precise code changes.')
   .version('0.1.0')
   .option('-v, --verbose', 'debug logging')
-  .option('-q, --quiet', 'errors only');
+  .option('-q, --quiet', 'errors only')
+  .option('--env-file <path>', 'load KEY=VALUE pairs from a file (default: ./.env if present; shell env wins)');
+
+// .env loading runs before every subcommand action, so OPENAI_* and
+// HANDBOOK_* can live in a project-local file instead of the shell.
+program.hook('preAction', () => {
+  const explicit = program.opts<{ envFile?: string }>().envFile;
+  if (explicit) {
+    const applied = applyEnvFile(resolve(explicit)); // missing explicit file → loud error
+    logger().debug(`[env] loaded ${applied.length} vars from ${explicit}`);
+  } else if (existsSync('.env')) {
+    const applied = applyEnvFile(resolve('.env'));
+    if (applied.length > 0) logger().debug(`[env] loaded ${applied.length} vars from ./.env`);
+  }
+});
 
 function logger(): ReturnType<typeof createLogger> {
   const opts = program.opts<{ verbose?: boolean; quiet?: boolean }>();
