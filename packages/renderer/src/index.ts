@@ -1,1 +1,10 @@
-export {};
+/**
+ * @handbook/renderer — presentation arm of the pipeline.
+ *
+ * Renders a completed HandbookModel to a markdown handbook, an agent locator
+ * site, and self-contained HTML (multi-page or single-page). No LLM involved.
+ */
+export { fileOneLiner, renderFileCardMd, callFactsLine, REL_NAMES_CAP } from './file-card.js';
+export { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
+export { renderAgentSite } from './agent-site.js';
+export { renderHtmlSite, renderSinglePageHtml } from './html.js';

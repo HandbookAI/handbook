@@ -10,7 +10,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
@@ -19,6 +21,7 @@
     "@handbook/analyzer": "workspace:*",
     "@handbook/core": "workspace:*",
     "@handbook/llm": "workspace:*",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.0.0"
   }
 }
