@@ -1,0 +1,25 @@
+{
+  "name": "@handbook/renderer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Render a handbook model to markdown pages, an agent locator index, and a self-contained HTML site",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@handbook/core": "workspace:*",
+    "markdown-it": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.0.0"
+  }
+}

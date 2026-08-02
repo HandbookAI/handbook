@@ -1,0 +1,30 @@
+{
+  "name": "@handbook/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The handbook command-line interface",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "bin": { "handbook": "./dist/main.js" },
+  "dependencies": {
+    "@handbook/analyzer": "workspace:*",
+    "@handbook/core": "workspace:*",
+    "@handbook/llm": "workspace:*",
+    "@handbook/pipeline": "workspace:*",
+    "@handbook/planner": "workspace:*",
+    "@handbook/renderer": "workspace:*",
+    "@handbook/resync": "workspace:*",
+    "@handbook/skill": "workspace:*",
+    "commander": "^15.0.0"
+  }
+}
