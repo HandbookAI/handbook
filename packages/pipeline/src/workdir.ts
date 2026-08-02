@@ -32,6 +32,7 @@ import {
   listFilesRecursive,
   narrationSchema,
   organizationSchema,
+  readJsonFile,
   readValidatedJson,
   registersSchema,
   skeletonSchema,
@@ -183,6 +184,27 @@ export class WorkDir {
       );
     }
     return parsed.data;
+  }
+
+  // ---- strategy marker ----
+
+  get strategyMarkerPath(): string {
+    return join(this.phase2Dir, 'strategy.json');
+  }
+
+  /** Which strategy generated this work dir's phase-2 artifacts (recorded at 2b). */
+  loadStrategy(): 'file' | 'member' | undefined {
+    if (!fileExists(this.strategyMarkerPath)) return undefined;
+    try {
+      const raw = readJsonFile(this.strategyMarkerPath) as { strategy?: unknown };
+      return raw.strategy === 'member' || raw.strategy === 'file' ? raw.strategy : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  saveStrategy(strategy: 'file' | 'member'): void {
+    writeJsonFile(this.strategyMarkerPath, { version: 1, strategy });
   }
 
   // ---- phase 3 ----

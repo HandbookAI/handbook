@@ -88,11 +88,21 @@ program
   .option('--refresh', 'ignore phase-3 caches')
   .action(async (opts: Record<string, string | boolean>) => {
     const phase = String(opts.phase);
-    const needsLlm = phase !== '1';
+    // Build the client opportunistically: some selections need no LLM at all
+    // (phase 1; member-strategy 2c). generateHandbook fails with a clear
+    // message if a key is genuinely required but missing.
+    let client;
+    if (phase !== '1') {
+      try {
+        client = llmClient();
+      } catch {
+        client = undefined;
+      }
+    }
     const stats = await generateHandbook({
       sourceRoot: resolve(String(opts.source)),
       workDir: resolve(String(opts.work)),
-      client: needsLlm ? llmClient() : undefined,
+      client,
       phase,
       strategy: opts.strategy === 'member' ? 'member' : opts.strategy === 'file' ? 'file' : undefined,
       skeletonPath: opts.skeleton ? resolve(String(opts.skeleton)) : undefined,

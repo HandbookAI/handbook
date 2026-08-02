@@ -26,6 +26,7 @@ import {
   type Skeleton,
 } from '@handbook/core';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { stageShortDescriptions } from './skeleton.js';
 import { fileCallAdjacency, suggestOrder } from './organize.js';
 import type { WorkDir } from './workdir.js';
@@ -260,4 +261,16 @@ export function deriveFileArtifacts(
 
 export function saveMemberAssignment(work: WorkDir, memberAssignment: MemberAssignment): void {
   writeJsonFile(join(work.phase2Dir, 'members.json'), memberAssignment);
+}
+
+/** Load `phase2/members.json`, or undefined when absent/invalid. */
+export function loadMemberAssignment(work: WorkDir): MemberAssignment | undefined {
+  try {
+    const parsed = memberAssignmentSchema.safeParse(
+      JSON.parse(readFileSync(join(work.phase2Dir, 'members.json'), 'utf8')),
+    );
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
