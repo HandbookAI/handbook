@@ -32,3 +32,14 @@ describe('extractJsonBlock', () => {
     expect(extractJsonBlock('no json here')).toBeUndefined();
   });
 });
+
+describe('extractJsonBlock — fence regressions (round-1 review)', () => {
+  it('skips non-json fences without misaligning onto the next fence', () => {
+    const text = 'Look:\n```python\nx = [1, 2]\n```\nverdict:\n```json\n{"decision": "APPROVE"}\n```';
+    expect(extractJsonBlock(text)).toEqual({ decision: 'APPROVE' });
+  });
+
+  it('still accepts untagged fences', () => {
+    expect(extractJsonBlock('```\n{"a": 1}\n```')).toEqual({ a: 1 });
+  });
+});

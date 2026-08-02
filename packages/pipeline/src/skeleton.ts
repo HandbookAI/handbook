@@ -92,6 +92,18 @@ export function buildSynthPrompt(nav: NavPack, rollups: DirRollup[], lang: Narra
   return lines.join('\n');
 }
 
+/**
+ * Stage ids become page filenames — restrict to filename-safe characters so a
+ * hostile/hallucinated id (`../x`, `a/b`) can never escape the output dir.
+ */
+function sanitizeStageId(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[._-]+/, '');
+}
+
 /** Coerce a raw LLM skeleton into the canonical, internally-consistent form. */
 export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): Skeleton {
   const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
@@ -102,7 +114,8 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
     if (typeof entry !== 'object' || entry === null) return;
     const s = entry as Record<string, unknown>;
     const crosscut = s.crosscut === true;
-    let id = typeof s.id === 'string' && s.id.trim() ? s.id.trim() : `${crosscut ? 'crosscut' : 'stage'}-${index + 1}`;
+    const fallbackId = `${crosscut ? 'crosscut' : 'stage'}-${index + 1}`;
+    let id = typeof s.id === 'string' && sanitizeStageId(s.id) ? sanitizeStageId(s.id) : fallbackId;
     while (seen.has(id)) id = `${id}-${index + 1}`;
     seen.add(id);
     const title = typeof s.title === 'string' && s.title.trim() ? s.title.trim() : id;
@@ -117,10 +130,25 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
       crosscut,
     });
   });
-  // Null dangling parents, then rebuild children lists.
+  // Null dangling parents, sanitize parent ids the same way as stage ids.
   const ids = new Set(stages.map((s) => s.id));
   for (const stage of stages) {
+    if (stage.parent !== null) stage.parent = sanitizeStageId(stage.parent) || null;
     if (stage.parent !== null && (!ids.has(stage.parent) || stage.parent === stage.id)) stage.parent = null;
+  }
+  // Break multi-node parent CYCLES (A→B→A): walking up from each stage, any
+  // repeat means a cycle — detach the current stage to the top level.
+  for (const stage of stages) {
+    const seenUp = new Set<string>([stage.id]);
+    let cursor = stage.parent;
+    while (cursor !== null) {
+      if (seenUp.has(cursor)) {
+        stage.parent = null;
+        break;
+      }
+      seenUp.add(cursor);
+      cursor = stages.find((s) => s.id === cursor)?.parent ?? null;
+    }
   }
   for (const stage of stages) {
     if (stage.parent !== null) {

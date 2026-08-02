@@ -72,7 +72,7 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     errors.push('references/stages/ is missing');
   }
 
-  // --- index ↔ stage pages ---
+  // --- index ↔ stage pages (both directions) ---
   const indexPath = join(referencesDir, 'index.md');
   if (fileExists(indexPath) && fileExists(stagesDir)) {
     const index = readFileSync(indexPath, 'utf8');
@@ -81,6 +81,15 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     for (const sid of pages) {
       const count = index.split(`${sid}.md`).length - 1;
       if (count === 0) errors.push(`index.md never links stage page ${sid}.md`);
+    }
+    // Every markdown link in the index that targets a stage page must exist —
+    // a linked-but-missing page means the skill silently lost content.
+    const pageSet = new Set(pages.map((p) => `${p}.md`));
+    const known = new Set(['overview.md', 'index.md', 'register.md', 'registers.md']);
+    for (const match of index.matchAll(/\]\(([^)#\s]+\.md)\)/g)) {
+      const target = basename(match[1] ?? '');
+      if (!target || known.has(target.toLowerCase())) continue;
+      if (!pageSet.has(target)) errors.push(`index.md links ${target} but references/stages/${target} is missing`);
     }
   }
 

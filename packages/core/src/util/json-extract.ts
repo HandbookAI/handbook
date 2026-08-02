@@ -7,11 +7,18 @@
  *    parseable `{…}` or `[…]` span.
  */
 
-const FENCE_RE = /```(?:json)?\s*\n([\s\S]*?)```/g;
+/**
+ * Fence openers are anchored to line starts and carry their language tag, so a
+ * ```python block is consumed (not misaligned into the next fence) and only
+ * `json`/untagged blocks are parse candidates.
+ */
+const FENCE_RE = /^[ \t]*```([A-Za-z0-9_-]*)[ \t]*\r?\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
 
 export function extractJsonBlock(text: string): unknown {
   for (const match of text.matchAll(FENCE_RE)) {
-    const candidate = match[1]?.trim();
+    const tag = (match[1] ?? '').toLowerCase();
+    if (tag !== '' && tag !== 'json' && tag !== 'jsonc') continue;
+    const candidate = match[2]?.trim();
     if (!candidate) continue;
     try {
       return JSON.parse(candidate);

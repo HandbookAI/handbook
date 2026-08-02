@@ -90,8 +90,12 @@ export type CardCoverage = z.infer<typeof cardCoverageSchema>;
 
 /** One stage of the handbook skeleton (the narrative spine). */
 export const stageSchema = z.object({
-  /** Stable id: `stage-N`, `stage-N.M`, or `crosscut-N`. */
-  id: z.string().min(1),
+  /**
+   * Stable id, conventionally `stage-N` / `stage-N.M` / `crosscut-N`.
+   * Restricted to filename-safe characters — stage ids become page filenames,
+   * so `/` or `..` would let bad input write outside the output directory.
+   */
+  id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   title: z.string(),
   description: z.string(),
   parent: z.string().nullable(),
@@ -257,10 +261,11 @@ export class StageTree {
     return depth;
   }
 
-  /** The stage id plus all of its descendants, in skeleton order. */
+  /** The stage id plus all of its descendants, in skeleton order. Cycle-safe. */
   subtree(id: string): string[] {
     const keep = new Set<string>();
     const walk = (sid: string): void => {
+      if (keep.has(sid)) return; // guard against parent cycles in bad input
       keep.add(sid);
       for (const child of this.children(sid)) walk(child);
     };

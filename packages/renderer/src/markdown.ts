@@ -81,12 +81,17 @@ function renderRegisterTable(
   registers: readonly RegisterEntry[],
   titleOf: (sid: string) => string,
   lang: NarrateLang,
+  hasPage: (sid: string) => boolean,
 ): string {
   const L = LABELS[lang];
   if (registers.length === 0) return `${L.registerTableHeading}\n\n${L.noRegisters}\n`;
   const rows = registers.map((reg) => {
     const semantics = reg.semantics.replace(/\|/g, '\\|');
-    const stages = reg.stages.map((sid) => `[${titleOf(sid)}](${sid}.md)`).join(', ');
+    // Only content-bearing stages get pages; anything else renders as plain
+    // text so the table never emits a dead link (register ids are LLM output).
+    const stages = reg.stages
+      .map((sid) => (hasPage(sid) ? `[${titleOf(sid)}](${sid}.md)` : `\`${sid}\``))
+      .join(', ');
     return `| \`${reg.id}\` | ${semantics} | ${stages} |`;
   });
   return `${L.registerTableHeading}\n\n${L.registerTableHeader}\n${rows.join('\n')}\n`;
@@ -178,7 +183,9 @@ export function renderMarkdownHandbook(
 
   write('overview.md', overviewMd(view, lang));
   if (model.registers.length > 0) {
-    const table = renderRegisterTable(model.registers, (sid) => view.tree.title(sid), lang);
+    const table = renderRegisterTable(model.registers, (sid) => view.tree.title(sid), lang, (sid) =>
+      view.hasContent(sid),
+    );
     const suffix = LABELS[lang].stateFlowSuffix;
     write('register.md', `# ${model.title} — ${suffix}\n\n${table}`);
   }

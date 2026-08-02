@@ -258,8 +258,10 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     for (const [file, card] of Object.entries(existing)) {
       if (isCardDone(card, detail)) cards[file] = card;
     }
-    todo = files.filter((f) => !cards[f.file]);
-    logger.info(`[cards] resume: ${files.length - todo.length}/${files.length} already done, ${todo.length} to process`);
+    // Filter the CURRENT todo (which may already be onlyFiles-restricted).
+    const before = todo.length;
+    todo = todo.filter((f) => !cards[f.file]);
+    logger.info(`[cards] resume: ${before - todo.length}/${before} already done, ${todo.length} to process`);
   }
 
   const readSource = (rel: string): string => {
@@ -379,9 +381,15 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   progress.finish('file');
 
   // Backfill: every file ends with a card; misses are recorded honestly.
+  // A card with an EMPTY purpose is a previous backfill, not real coverage —
+  // it stays in `missing` so the drift signal survives subset (resync) passes.
   const missing: string[] = [];
   for (const descriptor of files) {
-    if (cards[descriptor.file]) continue;
+    if (cards[descriptor.file]?.purpose) continue;
+    if (cards[descriptor.file]) {
+      missing.push(descriptor.file);
+      continue;
+    }
     missing.push(descriptor.file);
     const card: FileCard = {
       version: 1,

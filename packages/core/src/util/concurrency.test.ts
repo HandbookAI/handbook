@@ -45,3 +45,22 @@ describe('mapLimit', () => {
     expect(completed).toBe(2);
   });
 });
+
+describe('pLimit — slot-transfer regression (round-1 review)', () => {
+  it('never exceeds the cap when a task finishes while another arrives', async () => {
+    const limit = pLimit(1);
+    let active = 0;
+    let peak = 0;
+    const probe = async (): Promise<void> => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active -= 1;
+    };
+    const first = limit(probe);
+    const queued = limit(probe);
+    const racer = first.then(() => limit(probe));
+    await Promise.all([first, queued, racer]);
+    expect(peak).toBe(1);
+  });
+});

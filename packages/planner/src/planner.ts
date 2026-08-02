@@ -113,10 +113,13 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
       : transcript.join('\n\n---\n\n');
     const response = await options.client.complete(prompt, { temperature: 0 });
     const action = (response.json ?? undefined) as Action | undefined;
+    const looksLikePlan = response.text.includes('### EDIT');
 
-    if (!action || typeof action.tool !== 'string') {
-      // Model answered in prose. Treat a substantial final answer as the plan.
-      if (response.text.includes('### EDIT') || isLast) {
+    // A prose reply containing EDIT blocks IS the plan — even if some fenced
+    // json inside it happens to parse as a non-finish "action" (e.g. an edit
+    // about this very tool protocol). Only an explicit finish wins over that.
+    if (!action || typeof action.tool !== 'string' || (looksLikePlan && action.tool !== 'finish')) {
+      if (looksLikePlan || isLast) {
         const plan = response.text.trim();
         return { plan, declarations: parseDeclarations(plan), turns: turn, trace };
       }

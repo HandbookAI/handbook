@@ -13,20 +13,25 @@ export function pLimit(concurrency: number): LimitFn {
   let active = 0;
   const queue: Array<() => void> = [];
 
-  const next = (): void => {
-    active -= 1;
-    queue.shift()?.();
+  // A finishing task hands its slot DIRECTLY to the next waiter (active is not
+  // decremented in between) — otherwise a task arriving in the gap could slip
+  // in alongside the woken waiter and exceed the cap.
+  const release = (): void => {
+    const waiter = queue.shift();
+    if (waiter) waiter();
+    else active -= 1;
   };
 
   return async <T>(task: () => Promise<T>): Promise<T> => {
     if (active >= concurrency) {
-      await new Promise<void>((resolve) => queue.push(resolve));
+      await new Promise<void>((resolve) => queue.push(resolve)); // slot inherited
+    } else {
+      active += 1;
     }
-    active += 1;
     try {
       return await task();
     } finally {
-      next();
+      release();
     }
   };
 }

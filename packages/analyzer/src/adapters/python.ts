@@ -455,6 +455,11 @@ function resolveCall(
         const bare = imported.split('.').pop() ?? imported;
         const typeModule = indexes.classToModule.get(bare);
         if (typeModule) return { calleeId: `${typeModule}.${bare}.${attr}`, callType: 'internal_func' };
+        // `alias.attr()` where the alias is one of OUR modules (e.g.
+        // `from pkg import helpers; helpers.do()`) is an internal call.
+        if (indexes.moduleIds.has(imported) && indexes.moduleFunctions.get(imported)?.has(attr)) {
+          return { calleeId: `${imported}.${attr}`, callType: 'internal_func' };
+        }
         return { calleeId: `boundary:${imported}.${attr}`, callType: 'boundary' };
       }
       return unresolved(`${base}.${attr}`);

@@ -23,7 +23,11 @@ export interface BuildGraphOptions {
   scannedFiles: readonly string[];
   /** Language label for metadata (`multi` for merged graphs). */
   language: string;
-  /** Extension used to synthesize file names of implicit nodes. Default `.py`. */
+  /**
+   * Extension used to synthesize file names of implicit nodes (e.g. an implied
+   * constructor). Pass the analyzed language's extension; empty (default)
+   * leaves the fabricated path extension-less.
+   */
   defaultExt?: string;
   now?: Date;
 }
@@ -51,7 +55,7 @@ export function buildGraph(analysis: ModuleAnalysis, options: BuildGraphOptions)
     (edge.callType === 'unresolved' ? droppedEdges : kept).push(edge);
   }
 
-  const nodes = buildNodeTable(analysis.functions, kept, options.defaultExt ?? '.py');
+  const nodes = buildNodeTable(analysis.functions, kept, options.defaultExt ?? '');
   const selfAttrs = buildSelfAttrsIndex(analysis.functions);
   const generatedAt = (options.now ?? new Date()).toISOString();
 
@@ -154,7 +158,7 @@ function synthesizeConstructor(id: string, defaultExt: string): FunctionNode {
     file: `${moduleId.split(sep).join('/')}${defaultExt}`,
     lineStart: 0,
     lineEnd: 0,
-    signature: `${name}(...)  # synthesized (no explicit definition in source)`,
+    signature: `${name}(...)  (synthesized — no explicit definition in source)`,
     isAsync: false,
     isMethod: className !== null,
     className,

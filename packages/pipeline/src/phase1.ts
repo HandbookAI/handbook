@@ -71,10 +71,12 @@ export async function runPhase1(options: Phase1Options): Promise<Phase1Stats> {
     functions: analyses.flatMap((a) => a.functions),
     edges: analyses.flatMap((a) => a.edges),
   };
+  const defaultExt = language === 'multi' ? '' : (getAdapter(language).extensions[0] ?? '');
   const result = buildGraph(merged, {
     sourceRoot: options.sourceRoot,
     scannedFiles,
     language,
+    defaultExt,
   });
   ensureDir(work.phase1Dir);
   writeGraphArtifacts(result, work.phase1Dir);

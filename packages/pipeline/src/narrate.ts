@@ -73,7 +73,7 @@ interface NarrateInputs {
   cards: Record<string, FileCard>;
 }
 
-function cachedCall(
+async function cachedCall(
   cacheDir: string | undefined,
   key: string,
   refresh: boolean,
@@ -83,21 +83,24 @@ function cachedCall(
 ): Promise<string> {
   const path = cacheDir ? join(cacheDir, `${key}.md`) : undefined;
   if (path && !refresh && fileExists(path)) {
-    return Promise.resolve(readFileSync(path, 'utf8'));
+    return readFileSync(path, 'utf8');
   }
-  return produce()
-    .then((text) => text.trim() || fallback())
-    .catch((error) => {
-      logger.warn(`[narrate] LLM failed for ${key}: ${String(error)}`);
-      return fallback();
-    })
-    .then((text) => {
-      if (path) {
-        ensureDir(cacheDir as string);
-        writeFileAtomic(path, text);
-      }
-      return text;
-    });
+  let text = '';
+  let succeeded = false;
+  try {
+    text = (await produce()).trim();
+    succeeded = text.length > 0;
+  } catch (error) {
+    logger.warn(`[narrate] LLM failed for ${key}: ${String(error)}`);
+  }
+  if (!succeeded) text = fallback();
+  // Only SUCCESSFUL prose is cached — caching the fallback would pin degraded
+  // text under the same key forever (one transient outage → permanent damage).
+  if (path && succeeded) {
+    ensureDir(cacheDir as string);
+    writeFileAtomic(path, text);
+  }
+  return text;
 }
 
 export async function narrate(

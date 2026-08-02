@@ -46,3 +46,17 @@ describe('coerceRole', () => {
     expect(coerceRole(undefined)).toBe('other');
   });
 });
+
+describe('StageTree — cycle safety (round-1 review)', () => {
+  it('subtree terminates on a two-node parent cycle', () => {
+    const cyclic: Skeleton = {
+      metadata: { version: 1 },
+      stages: [
+        { id: 'a', title: 'A', description: '', parent: 'b', children: [], crosscut: false },
+        { id: 'b', title: 'B', description: '', parent: 'a', children: [], crosscut: false },
+      ],
+    };
+    const tree = new StageTree(cyclic);
+    expect(tree.subtree('a').sort()).toEqual(['a', 'b']);
+  });
+});

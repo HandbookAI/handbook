@@ -42,7 +42,16 @@ export interface BuildSkillResult {
   references: string[];
 }
 
-const STAGE_PAGE_RE = /^(stage|crosscut|side)-[a-z0-9.-]+\.md$/i;
+/** Root-level pages that are NOT stage pages in a flat rendered handbook. */
+const NON_STAGE_PAGES = new Set([
+  'overview.md',
+  'index.md',
+  'register.md',
+  'registers.md',
+  'how_to_use.md',
+  'disambiguation.md',
+  'readme.md',
+]);
 
 function skillMd(name: string, project: string): string {
   return `---
@@ -93,6 +102,15 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
       references.push(dest);
     }
   }
+  // A handbook with zero registers renders no register page; the skill still
+  // ships one so the reference layout (and the validator contract) is stable.
+  if (!references.includes('registers.md')) {
+    writeFileAtomic(
+      join(referencesDir, 'registers.md'),
+      '# State registers\n\n_No cross-stage state registers were identified for this codebase._\n',
+    );
+    references.push('registers.md');
+  }
 
   // Stage pages: nested stages/ dir wins, else flat `<sid>.md` at the root.
   let stagePages: string[];
@@ -102,10 +120,12 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
       copyFileSync(join(handbookDir, 'stages', page), join(stagesDir, basename(page)));
     }
   } else {
-    // Flat layout: stage pages live at the handbook root. Do NOT recurse —
-    // sub-sites (agent/, html/) carry their own copies of the stage pages.
+    // Flat layout: stage pages are every root-level .md that isn't a known
+    // top-level page — stage ids are arbitrary (LLM- or user-authored), so a
+    // name-shape filter would silently drop pages. Do NOT recurse: sub-sites
+    // (agent/, html/) carry their own copies of the stage pages.
     stagePages = listFilesRecursive(handbookDir, { extensions: ['.md'] }).filter(
-      (f) => !f.includes('/') && STAGE_PAGE_RE.test(basename(f)),
+      (f) => !f.includes('/') && !NON_STAGE_PAGES.has(basename(f).toLowerCase()),
     );
     for (const page of stagePages) {
       copyFileSync(join(handbookDir, page), join(stagesDir, basename(page)));
