@@ -263,3 +263,19 @@ describe('normalizeSkeleton — reserved ids and cycles (round-2 review)', () =>
     expect(cycleParents).toContain(null);
   });
 });
+
+describe('normalizeSkeleton — rename remap (round-3 review)', () => {
+  it('re-points children at the renamed id instead of orphaning them', async () => {
+    const { normalizeSkeleton } = await import('./skeleton.js');
+    const skeleton = normalizeSkeleton({
+      stages: [
+        { id: 'overview', title: 'O', description: 'x' },
+        { id: 'child', title: 'C', description: 'x', parent: 'overview' },
+      ],
+    });
+    const byId = new Map(skeleton.stages.map((s) => [s.id, s]));
+    const renamed = skeleton.stages.find((s) => s.title === 'O');
+    expect(renamed?.id).not.toBe('overview');
+    expect(byId.get('child')?.parent).toBe(renamed?.id);
+  });
+});

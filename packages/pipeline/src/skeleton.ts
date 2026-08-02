@@ -126,14 +126,20 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
   const rawStages = Array.isArray(rawObj.stages) ? rawObj.stages : [];
   const seen = new Set<string>(RESERVED_STAGE_IDS);
   const stages: Stage[] = [];
+  // Original id → final id for ids that got renamed (sanitized, reserved, or
+  // duplicated). Children referencing the ORIGINAL id follow the first rename
+  // instead of being orphaned to the top level.
+  const renames = new Map<string, string>();
   rawStages.forEach((entry, index) => {
     if (typeof entry !== 'object' || entry === null) return;
     const s = entry as Record<string, unknown>;
     const crosscut = s.crosscut === true;
     const fallbackId = `${crosscut ? 'crosscut' : 'stage'}-${index + 1}`;
-    let id = typeof s.id === 'string' && sanitizeStageId(s.id) ? sanitizeStageId(s.id) : fallbackId;
+    const originalId = typeof s.id === 'string' ? s.id.trim() : '';
+    let id = originalId && sanitizeStageId(originalId) ? sanitizeStageId(originalId) : fallbackId;
     while (seen.has(id.toLowerCase())) id = `${id}-${index + 1}`;
     seen.add(id.toLowerCase());
+    if (originalId && originalId !== id && !renames.has(originalId)) renames.set(originalId, id);
     const title = typeof s.title === 'string' && s.title.trim() ? s.title.trim() : id;
     stages.push({
       id,
@@ -146,10 +152,13 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
       crosscut,
     });
   });
-  // Null dangling parents, sanitize parent ids the same way as stage ids.
+  // Follow renames, then null dangling parents (sanitizing like stage ids).
   const ids = new Set(stages.map((s) => s.id));
   for (const stage of stages) {
-    if (stage.parent !== null) stage.parent = sanitizeStageId(stage.parent) || null;
+    if (stage.parent !== null) {
+      const renamed = renames.get(stage.parent);
+      stage.parent = renamed ?? (sanitizeStageId(stage.parent) || null);
+    }
     if (stage.parent !== null && (!ids.has(stage.parent) || stage.parent === stage.id)) stage.parent = null;
   }
   // Break multi-node parent CYCLES (A→B→A): walking up from each stage, a

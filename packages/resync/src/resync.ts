@@ -34,19 +34,25 @@ import {
   type CodeGraph,
   type Logger,
   type NarrateLang,
+  type Organization,
 } from '@handbook/core';
 import {
   WorkDir,
   buildInventory,
+  classifyMembers,
+  deriveFileArtifacts,
   extractRegisters,
   fileCallAdjacency,
   generateCards,
+  loadMemberAssignment,
   mergeFunctionNotes,
   narrate,
   rebuildAssignment,
   reassignSubset,
   runPhase1,
+  saveMemberAssignment,
   suggestOrder,
+  type MemberAssignment,
 } from '@handbook/pipeline';
 
 /** Appended once to a card's purpose when noLlm resync refreshes its facts. */
@@ -263,25 +269,65 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
 
   // 4. Assignment: drop deleted files, re-assign added ones, reconcile buckets.
   const skeleton = work.loadSkeleton();
+  const strategy = work.loadStrategy() ?? 'file';
   let assignment = work.loadAssignment();
   // Deleted files' FORMER stages are affected too — capture before deletion.
   const deletedStages = delta.deleted
     .map((file) => assignment.fileStage[file]?.stage)
     .filter((stage): stage is string => Boolean(stage) && stage !== 'unassigned');
-  const fileStage = { ...assignment.fileStage };
   for (const file of delta.deleted) {
-    delete fileStage[file];
-    // Remove the dead card too — a ghost card would keep feeding narration and
+    // Remove the dead card — a ghost card would keep feeding narration and
     // register extraction with code that no longer exists.
     rmSync(work.cardPath(file), { force: true });
   }
-  for (const file of delta.added) fileStage[file] ??= { stage: 'unassigned', also: [] };
-  assignment = rebuildAssignment(fileStage, skeleton);
-  if (delta.added.length > 0 && !noLlm) {
-    assignment = await reassignSubset(options.client as ChatClient, after, skeleton, delta.added, assignment, {
-      cards: work.loadCards(),
-      logger,
-    });
+
+  let memberOrganization: Organization | undefined;
+  if (strategy === 'member') {
+    // Member work dirs roll forward at MEMBER granularity: re-classify against
+    // the fresh graph (member repos are small), or prune structurally in noLlm
+    // mode, then re-derive the file-level artifacts the same way 2b did.
+    const cardsNow = work.loadCards();
+    let members: MemberAssignment;
+    if (noLlm) {
+      const previous = loadMemberAssignment(work);
+      const liveIds = new Set(
+        Object.values(after.nodes)
+          .filter((n) => n.kind === 'internal' && !n.synthetic && n.lineStart > 0)
+          .map((n) => n.id),
+      );
+      const memberStage: Record<string, string> = {};
+      for (const id of liveIds) memberStage[id] = previous?.memberStage[id] ?? 'unassigned';
+      const buckets: Record<string, string[]> = {};
+      const unassigned: string[] = [];
+      for (const [id, stage] of Object.entries(memberStage)) {
+        if (stage === 'unassigned') unassigned.push(id);
+        else (buckets[stage] ??= []).push(id);
+      }
+      for (const bucket of Object.values(buckets)) bucket.sort();
+      members = {
+        version: 1,
+        memberStage,
+        buckets,
+        coverage: { nMembers: liveIds.size, nAssigned: liveIds.size - unassigned.length, unassigned: unassigned.sort() },
+      };
+    } else {
+      members = await classifyMembers(options.client as ChatClient, after, skeleton, { cards: cardsNow, logger });
+    }
+    saveMemberAssignment(work, members);
+    const derived = deriveFileArtifacts(after, skeleton, members, cardsNow);
+    assignment = derived.assignment;
+    memberOrganization = derived.organization;
+  } else {
+    const fileStage = { ...assignment.fileStage };
+    for (const file of delta.deleted) delete fileStage[file];
+    for (const file of delta.added) fileStage[file] ??= { stage: 'unassigned', also: [] };
+    assignment = rebuildAssignment(fileStage, skeleton);
+    if (delta.added.length > 0 && !noLlm) {
+      assignment = await reassignSubset(options.client as ChatClient, after, skeleton, delta.added, assignment, {
+        cards: work.loadCards(),
+        logger,
+      });
+    }
   }
   work.saveAssignment(assignment);
 
@@ -293,10 +339,14 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
   }
   report.affectedStages = [...affectedStages].sort();
 
-  // 5. Organization: rebuild affected stages deterministically (call order).
-  const organization = work.loadOrganization();
+  // 5. Organization: member strategy already re-derived it; file strategy
+  // rebuilds affected stages deterministically (call order).
+  const organization = memberOrganization ?? work.loadOrganization();
   const adjacency = fileCallAdjacency(after);
   const cards = work.loadCards();
+  if (memberOrganization) {
+    work.saveOrganization(memberOrganization);
+  } else {
   for (const sid of Object.keys(organization.stages)) {
     const bucket = assignment.buckets[sid] ?? [];
     const entry = organization.stages[sid];
@@ -351,6 +401,7 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
     nOrganized: Object.values(organization.stages).reduce((sum, s) => sum + s.orderedFiles.length, 0),
   };
   work.saveOrganization(organization);
+  }
 
   // 6. Narration + registers (content-hash cache keeps unchanged stages free).
   if (!noLlm) {

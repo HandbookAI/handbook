@@ -13,7 +13,6 @@ import {
   type Skeleton,
 } from '@handbook/core';
 import { readFileSync } from 'node:fs';
-import { readJsonFile, writeJsonFile } from '@handbook/core';
 import { runPhase1, type Phase1Stats } from './phase1.js';
 import { generateCards, type CardDetail } from './cards.js';
 import { normalizeSkeleton, synthesizeSkeleton } from './skeleton.js';
@@ -90,7 +89,7 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
   // (`--phase 2c`, `--phase 3`) cannot accidentally cross strategies — e.g.
   // the file-strategy default silently overwriting a member-derived
   // organization with LLM grouping.
-  const stored = loadStrategyMarker(work);
+  const stored = work.loadStrategy();
   const strategy: Strategy = options.strategy ?? stored ?? 'file';
   if (options.strategy && stored && options.strategy !== stored && !phases.has('2b')) {
     throw new Error(
@@ -195,7 +194,7 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
       stats.nStages = skeleton.stages.length;
       stats.nUnassignedFiles = assignment.coverage.unassigned.length;
     }
-    saveStrategyMarker(work, strategy);
+    work.saveStrategy(strategy);
     logger.info(`[2b] ${stats.nStages} stages; ${stats.nUnassignedFiles} files unassigned`);
   }
 
@@ -242,23 +241,6 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
   }
 
   return stats;
-}
-
-function strategyMarkerPath(work: WorkDir): string {
-  return `${work.phase2Dir}/strategy.json`;
-}
-
-function loadStrategyMarker(work: WorkDir): Strategy | undefined {
-  try {
-    const raw = readJsonFile(strategyMarkerPath(work)) as { strategy?: unknown };
-    return raw.strategy === 'member' || raw.strategy === 'file' ? raw.strategy : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function saveStrategyMarker(work: WorkDir, strategy: Strategy): void {
-  writeJsonFile(strategyMarkerPath(work), { version: 1, strategy });
 }
 
 function loadUserSkeleton(work: WorkDir, skeletonPath: string): Skeleton {

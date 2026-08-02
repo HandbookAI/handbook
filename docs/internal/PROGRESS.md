@@ -42,9 +42,9 @@
 - [x] 文档：根 README en/zh、LICENSE(MIT)、docs/architecture|formats|prompts、examples/README
 - [x] 9 包 README 完成
 - [x] 对抗评审 round1 完成：21 项发现（5 高/11 中/5 低），全部修复并加回归测试（156 测试绿），E2E 重跑通过，commit 63d1511。发现清单在 docs/internal/review/round1-*.md
-- [ ] 对抗评审 round2 进行中（agent：round1 修复复核 + doctor/member/cli/mock/文档一致性新扫描 → docs/internal/review/round2.md）
-- [ ] round3 复核至干涸
-- [ ] 最终验收：全量 build+test+demo 重跑
+- [x] round2 完成：21/21 round1 修复确认 OK 无回归；新发现 9 项（2 中/6 低/1 信息）+ 3 处文档漂移，全部修复（含 strategy 持久化、保留 id 防覆盖、resync 卡片清理、FENCE_RE info-string），160 测试绿，commit 9325007
+- [ ] round3 终审进行中（agent：round2 修复复核 + 干涸扫描 + 全量 gauntlet：build/test/lint/demo → docs/internal/review/round3.md）
+- [ ] 最终验收：PROGRESS 收尾 + 交付总结
 
 ## 关键决策记录
 
