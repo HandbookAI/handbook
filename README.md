@@ -45,6 +45,10 @@ Use `OPENAI_API_KEY=EMPTY` for keyless local endpoints. Phase 1 (static analysis
 needs a key. Supported languages: Python, TypeScript, Go, Rust, Shell — detected and
 merged automatically with `--lang auto`.
 
+Prefer a file over shell exports? The CLI auto-loads `./.env` from the directory you run
+it in (shell variables win; see [.env.example](.env.example)), or pass an explicit
+`--env-file <path>`.
+
 ## Quick start
 
 ```bash
