@@ -1,14 +1,29 @@
 # Examples
 
-## Offline end-to-end demo
+Two offline scripts, both powered by the bundled mock LLM server — **no API key needed**.
+The mock is repo-agnostic: stages are derived from the analyzed repo's directories and
+every file is assigned by directory match, so the handbook STRUCTURE always mirrors the
+real codebase. The PROSE, however, is canned placeholder text — the mock is a contract
+stub, not a language model. For real narration, point `OPENAI_*` at a real endpoint.
+
+## 1. Fixture demo — `run-demo.sh`
 
 ```bash
 bash examples/run-demo.sh
 ```
 
-Runs the complete toolchain against `demo-project/` (a tiny Python + TypeScript + Shell
-repo) with **no API key**: a bundled OpenAI-compatible mock server
-(`mock-llm-server.mjs`) answers every pipeline prompt deterministically.
+Runs the complete toolchain against `demo-project/` (a tiny bundled Python + TypeScript +
+Shell repo — NOT this monorepo; that's why its handbook mentions `app/main.py` etc.).
+
+## 2. Self handbook — `run-self.sh`
+
+```bash
+bash examples/run-self.sh
+```
+
+Generates this monorepo's own handbook from `packages/` — open
+`examples/work/self/handbook/html/overview.html` to browse the real package/file/function
+structure (with mock prose).
 
 Steps performed: `analyze` → `generate --phase 2,3 --detail deep` → `render --html
 --html-single --agent-site` → `skill` → `validate`. Outputs land in `examples/work/demo/`:

@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 /**
  * A tiny OpenAI-compatible mock endpoint so the full CLI pipeline can run
- * offline. It answers every pipeline prompt with deterministic, prompt-derived
- * JSON — the same contract a real model would follow.
+ * offline against ANY repository. It answers every pipeline prompt with
+ * deterministic, prompt-derived JSON — stages come from the directory rollup,
+ * assignments from directory matching, so the structure always mirrors the
+ * analyzed codebase.
+ *
+ * The PROSE it produces is canned placeholder text: this is a contract mock,
+ * not a language model. Point OPENAI_BASE_URL at a real endpoint for real
+ * narration.
  *
  * Usage:
  *   node examples/mock-llm-server.mjs [port]
@@ -12,92 +18,138 @@ import { createServer } from 'node:http';
 
 const port = Number(process.argv[2] ?? 8090);
 
+/** Group a DIRECTORY by its first two segments: `packages/core/src` → `packages/core`, `app` → `app`. */
+function groupOfDir(dir) {
+  if (!dir || dir === '.') return '.';
+  return dir.split('/').slice(0, 2).join('/');
+}
+
+/** Group a FILE path: drop the filename, then group its directory. */
+function groupOfFile(path) {
+  const i = path.lastIndexOf('/');
+  return groupOfDir(i < 0 ? '.' : path.slice(0, i));
+}
+
+function titleCase(text) {
+  return text.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function respond(prompt) {
-  // 2a — file cards
+  // 2a — file cards (brief or deep)
   if (prompt.includes('Files to describe') || prompt.includes('processing a CHUNK')) {
     const files = [...prompt.matchAll(/### FILE: (\S+)/g)].map((m) => m[1]);
     const purposes = files.map((file) => {
       const stem = file.split('/').pop();
-      const role = file.includes('main') ? 'entrypoint' : file.endsWith('.sh') ? 'util' : 'domain_logic';
+      const role = /main|index|cli/.test(file) ? 'entrypoint' : /test/.test(file) ? 'test' : 'domain_logic';
       return {
         file,
-        purpose: `Implements the ${stem} part of the demo pipeline.`,
-        description: `This file (${file}) is one moving part of the demo system. It plays the role of a ${role} and cooperates with its neighbors through direct function calls, keeping its own state small and predictable.`,
+        purpose: `Implements the ${stem} unit of this codebase.`,
+        description:
+          `This file (${file}) is one moving part of the system. ` +
+          `It cooperates with its neighbors through direct calls and keeps its own state small. ` +
+          `(Placeholder prose from the offline mock — use a real LLM endpoint for real narration.)`,
         functions: [...prompt.matchAll(/^ {2}- (\S+) {2}\(lines \d+-\d+\)/gm)].map((f) => ({
           qualname: f[1],
-          purpose: `Does the ${f[1]} step.`,
+          purpose: `Performs the ${f[1]} step.`,
           data_flow: 'Takes its inputs, transforms them, returns the result.',
-          relations: 'Called by its stage neighbors as part of the demo flow.',
+          relations: 'Called by its neighbors as recorded in the call graph.',
         })),
         role,
-        lifecycle: file.includes('main') ? 'startup' : 'main loop',
+        lifecycle: /main|index|cli/.test(file) ? 'startup' : 'main loop',
       };
     });
     return { purposes };
   }
-  // 2b — skeleton synthesis
+
+  // 2b — skeleton synthesis: one stage per directory group from the rollup.
   if (prompt.includes('dividing a large codebase into the STAGES')) {
-    return {
-      metadata: { archetype: 'demo task runner' },
-      stages: [
-        { id: 'stage-1', title: 'Startup', description: 'Entry point: builds the queue and worker, then starts the run.', parent: null, crosscut: false },
-        { id: 'stage-2', title: 'Task execution', description: 'The queue and the worker that drains it.', parent: null, crosscut: false },
-        { id: 'stage-3', title: 'Status reporting', description: 'Dashboard status rendering.', parent: null, crosscut: false },
-        { id: 'crosscut-1', title: 'Operations scripts', description: 'Deploy and maintenance shell scripts.', parent: null, crosscut: true },
-      ],
-    };
+    const dirs = [...prompt.matchAll(/^- (\S+) {2}\(\d+f\)/gm)].map((m) => m[1]);
+    const groups = [...new Set(dirs.map(groupOfDir))].slice(0, 20);
+    const stages = groups.map((dir, i) => ({
+      id: `stage-${i + 1}`,
+      // First segment is the meaningful name ('core/src' → 'Core', 'app' → 'App').
+      title: dir === '.' ? 'Top-level files' : titleCase(dir.split('/')[0] ?? dir),
+      description: `Everything under ${dir === '.' ? 'the repository root' : `${dir}/`}.`,
+      parent: null,
+      crosscut: false,
+    }));
+    if (stages.length === 0) {
+      stages.push({ id: 'stage-1', title: 'Codebase', description: 'All files.', parent: null, crosscut: false });
+    }
+    return { metadata: { archetype: 'software codebase' }, stages };
   }
-  // 2b — file assignment
+
+  // 2b — file assignment: match a file's directory group against the stage menu.
   if (prompt.includes('assigning whole SOURCE FILES')) {
+    const menu = [...prompt.matchAll(/^- (stage-\d+|crosscut-\d+|\S+) — .*?Everything under (\S+?)\.?$/gm)].map(
+      (m) => ({ id: m[1], dir: m[2].replace(/\/$/, '') }),
+    );
     const files = [...prompt.matchAll(/^- (\S+) {2}\(/gm)].map((m) => m[1]);
+    const fallback = [...prompt.matchAll(/^- (stage-\d+)/gm)][0]?.[1] ?? 'unassigned';
     return {
-      assignments: files.map((file) => ({
-        file,
-        stage: file.includes('main')
-          ? 'stage-1'
-          : file.endsWith('.ts')
-            ? 'stage-3'
-            : file.endsWith('.sh')
-              ? 'crosscut-1'
-              : 'stage-2',
-        also: [],
-      })),
+      assignments: files.map((file) => {
+        const group = groupOfFile(file);
+        const hit =
+          menu.find((s) => s.dir === group) ??
+          menu.find((s) => s.dir === 'the repository root' && group === '.');
+        return { file, stage: hit?.id ?? fallback, also: [] };
+      }),
     };
   }
-  // 2b — member classification (member strategy)
+
+  // 2b — member classification (member strategy): round-robin over the menu.
   if (prompt.includes('assigning individual FUNCTIONS')) {
+    const menuIds = [...prompt.matchAll(/^- (\S+) — /gm)].map((m) => m[1]);
     const members = [...prompt.matchAll(/^- (\S+)$/gm)].map((m) => m[1]);
-    return { assignments: members.map((member) => ({ member, stage: member.includes('main') ? 'stage-1' : 'stage-2' })) };
+    return {
+      assignments: members.map((member, i) => ({ member, stage: menuIds[i % Math.max(1, menuIds.length)] ?? 'unassigned' })),
+    };
   }
+
   // doctor / critics
   if (prompt.includes('SKELETON DOCTOR')) return { changes: [], rationale: 'Healthy and fully covered.' };
   if (prompt.includes('Proposal under review')) {
     return { decision: 'APPROVE', concerns: [], suggested_revision: null, rationale: 'Sound.' };
   }
-  // 2c — organization
+
+  // 2c — organization: one group, given order.
   if (prompt.includes('organizing the files of ONE stage')) {
     const files = [...prompt.matchAll(/^- (\S+?)(?: {2}\[|\n)/gm)].map((m) => m[1]);
     return { groups: [{ title: 'Core flow', summary: 'Everything this stage owns, in execution order.', files }] };
   }
-  // 3 — registers
+
+  // 3 — registers: one generic shared-state register over the first two stages.
   if (prompt.includes('STATE REGISTERS')) {
+    const stageIds = [...prompt.matchAll(/^- (\S+) · /gm)].map((m) => m[1]).slice(0, 2);
     return {
-      registers: [
-        { id: 'reg-task-queue', semantics: 'The FIFO list of pending tasks, pushed at startup and drained by the worker.', stages: ['stage-1', 'stage-2'] },
-        { id: 'reg-status-history', semantics: 'Recorded status lines shown on the dashboard.', stages: ['stage-3'] },
-      ],
+      registers:
+        stageIds.length > 0
+          ? [{ id: 'reg-shared-config', semantics: 'Configuration shared across the main stages (placeholder from the offline mock).', stages: stageIds }]
+          : [],
     };
   }
   if (prompt.includes('COMPLETING a list of state registers')) return { registers: [] };
+
   // 3 — narration (prose, not JSON)
   if (prompt.includes('writing the OVERVIEW for one stage')) {
     const title = prompt.match(/## Stage title: (.+)/)?.[1] ?? 'this stage';
-    return `The ${title} stage is one link in the demo's chain. Think of it as a station on a small assembly line: work arrives from the previous station, this stage does its one job well, and the result moves on. Its files cooperate through plain function calls, and the state they share is deliberately small so a newcomer can trace any task from entry to completion without surprises.`;
+    return (
+      `The ${title} stage is one station on this system's assembly line: work arrives from the previous ` +
+      `station, this stage does its one job, and the result moves on. Its files cooperate through the call ` +
+      `relations recorded in the graph. (Placeholder prose from the offline mock — point the pipeline at a ` +
+      `real LLM endpoint for real narration.)`
+    );
   }
   if (prompt.includes('top-level overview of a system handbook')) {
-    return `This demo system is a miniature task runner. At startup the entry point builds a queue, seeds it with work, and hands it to a worker. The worker drains the queue one task at a time, executing each and counting what it finished. A small dashboard module renders one-line status reports, and a deploy script handles operations chores. Everything communicates through direct calls and two small pieces of shared state — the task queue itself and the status history — which makes the whole lifecycle easy to follow from push to report.`;
+    return (
+      `This handbook was generated offline against a deterministic mock endpoint, so this overview is ` +
+      `placeholder prose: the STRUCTURE around it — stages, file assignment, per-function call facts, ` +
+      `registers — is real and derived from the analyzed codebase. Re-run generation against a real ` +
+      `OpenAI-compatible endpoint to replace the prose with genuine narration.`
+    );
   }
-  // planner (agent loop) — not used by run-demo, but answer sanely.
+
+  // planner (agent loop) — not used by the demo scripts, but answer sanely.
   return { tool: 'finish', plan: 'No plan: mock server fallback.' };
 }
 
