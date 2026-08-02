@@ -37,10 +37,12 @@
 - [x] @handbook/resync（case 合同 / graph diff / 卡片子集再生 / assignment·organization·narration 滚动 / noLlm 降级）
 - [x] @handbook/cli（analyze/generate/render/skill/validate/plan/resync 七命令，--help 已验证）
 - [x] 全仓 149 测试绿（18 文件）；全部已 commit
-- [ ] examples/（demo 项目 + mock LLM server + run-demo.sh 端到端脚本）← 当前
-- [ ] 文档（根 README en/zh、docs/architecture|formats|prompts、9 包 README）
-- [ ] 多轮对抗评审（≥3 轮）
-- [ ] E2E（真实仓库 analyze + CLI 全链路 via mock server）
+- [x] examples/ 完成且 E2E 跑通（analyze→generate(mock)→render(md+html×2+agent)→skill→validate OK）
+- [x] 真实仓库验证：`handbook analyze --source packages` → 76 文件/316 函数/903 边
+- [x] 文档：根 README en/zh、LICENSE(MIT)、docs/architecture|formats|prompts、examples/README
+- [ ] 9 包 README（agent 进行中）
+- [ ] 对抗评审：round1 两个评审 agent 进行中（pipeline 侧 / analyzer 侧），产出到 docs/internal/review/round1-*.md → 修复 → round2（renderer/skill/cli+文档一致性）→ round3 复核
+- [ ] 最终验收：全量 build+test+demo 重跑
 
 ## 关键决策记录
 
