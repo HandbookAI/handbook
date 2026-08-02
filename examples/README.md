@@ -46,3 +46,14 @@ The mock recognizes each pipeline prompt by its instruction header and answers w
 schema-correct, prompt-derived JSON — useful for CI and for developing new pipeline
 passes without spending tokens. It is intentionally *not* a language model: prose
 quality in its output is canned.
+
+## Running the examples against YOUR endpoint (`--real`)
+
+Both scripts accept `--real`: the mock is skipped and the CLI uses the repo root's
+`./.env` (auto-passed via `--env-file`; shell `OPENAI_*` variables win over the file):
+
+```bash
+bash examples/run-demo.sh --real          # tiny fixture repo — cheap first real run
+bash examples/run-self.sh --real          # this monorepo, real narration
+NARRATE_LANG=zh bash examples/run-self.sh --real   # 中文叙述
+```
