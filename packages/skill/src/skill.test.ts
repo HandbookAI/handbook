@@ -43,6 +43,15 @@ describe('buildSkill + validateSkill', () => {
     writeFileSync(join(sourceRoot, 'src', 'b.py'), 'def b():\n    pass\n');
   });
 
+  it('ignores stage pages inside sub-sites (agent/, html/)', () => {
+    const withSub = mkdtempSync(join(tmpdir(), 'hb-rendered-sub-'));
+    writeRenderedHandbook(withSub);
+    mkdirSync(join(withSub, 'agent'));
+    writeFileSync(join(withSub, 'agent', 'stage-1.md'), 'agent copy\n');
+    const result = buildSkill({ handbookDir: withSub, outDir: join(withSub, 'out'), name: 'x' });
+    expect(result.nStagePages).toBe(2);
+  });
+
   it('produces the canonical skill layout', () => {
     const result = buildSkill({
       handbookDir,

@@ -102,8 +102,10 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
       copyFileSync(join(handbookDir, 'stages', page), join(stagesDir, basename(page)));
     }
   } else {
-    stagePages = listFilesRecursive(handbookDir, { extensions: ['.md'] }).filter((f) =>
-      STAGE_PAGE_RE.test(basename(f)),
+    // Flat layout: stage pages live at the handbook root. Do NOT recurse —
+    // sub-sites (agent/, html/) carry their own copies of the stage pages.
+    stagePages = listFilesRecursive(handbookDir, { extensions: ['.md'] }).filter(
+      (f) => !f.includes('/') && STAGE_PAGE_RE.test(basename(f)),
     );
     for (const page of stagePages) {
       copyFileSync(join(handbookDir, page), join(stagesDir, basename(page)));

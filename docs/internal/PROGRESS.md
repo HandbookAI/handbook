@@ -29,13 +29,18 @@
 - [x] monorepo 骨架（pnpm + tsc -b composite + vitest 根配置 + eslint/prettier；根目录 /Users/jack/Desktop/share/handbook，已 git init，main 分支）
 - [x] @handbook/core 完成（ir.ts/model.ts/errors/logger/util/*，17 测试绿）
 - [x] @handbook/llm 完成（client.ts OpenAI 兼容 + mock.ts + critic.ts actor-critic，14 测试绿）
-- [x] @handbook/analyzer 框架 + graph.ts + navpack.ts + python adapter（python.test.ts 待跑通）
-- [ ] analyzer: ts/go/rust/shell adapters（计划委派 subagent，模式照抄 adapters/python.ts）
-- [ ] @handbook/pipeline（phase1.ts 已可写：调 analyzer + writeGraphArtifacts；phase2: cards/skeleton/doctor/assign/organize；phase3: rollup/registers/narration）
-- [ ] @handbook/renderer（markdown.ts / agent-site.ts / html.ts）
-- [ ] @handbook/skill、planner、resync
-- [ ] @handbook/cli
-- [ ] 文档、多轮对抗评审、E2E
+- [x] @handbook/analyzer 完成：5 语言 adapter（python/typescript/go/rust/shell）+ graph + navpack，47 测试绿
+- [x] @handbook/pipeline 完成：phase1/2a(cards 三级降级)/2b(oneshot+doctor+user-skeleton)/2c/3(rollup缓存+registers loop-until-dry) + member 策略 + mock 全流程测试
+- [x] @handbook/renderer 完成：markdown + agent locator site + HTML 多页/单页，47 测试绿
+- [x] @handbook/skill（build + validate 含 coverage 哈希漂移检测）
+- [x] @handbook/planner（只读工具环 ReAct agent + 规划提示词 + declarations 解析）
+- [x] @handbook/resync（case 合同 / graph diff / 卡片子集再生 / assignment·organization·narration 滚动 / noLlm 降级）
+- [x] @handbook/cli（analyze/generate/render/skill/validate/plan/resync 七命令，--help 已验证）
+- [x] 全仓 149 测试绿（18 文件）；全部已 commit
+- [ ] examples/（demo 项目 + mock LLM server + run-demo.sh 端到端脚本）← 当前
+- [ ] 文档（根 README en/zh、docs/architecture|formats|prompts、9 包 README）
+- [ ] 多轮对抗评审（≥3 轮）
+- [ ] E2E（真实仓库 analyze + CLI 全链路 via mock server）
 
 ## 关键决策记录
 
