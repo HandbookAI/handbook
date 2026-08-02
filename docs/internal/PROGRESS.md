@@ -43,8 +43,13 @@
 - [x] 9 包 README 完成
 - [x] 对抗评审 round1 完成：21 项发现（5 高/11 中/5 低），全部修复并加回归测试（156 测试绿），E2E 重跑通过，commit 63d1511。发现清单在 docs/internal/review/round1-*.md
 - [x] round2 完成：21/21 round1 修复确认 OK 无回归；新发现 9 项（2 中/6 低/1 信息）+ 3 处文档漂移，全部修复（含 strategy 持久化、保留 id 防覆盖、resync 卡片清理、FENCE_RE info-string），160 测试绿，commit 9325007
-- [ ] round3 终审进行中（agent：round2 修复复核 + 干涸扫描 + 全量 gauntlet：build/test/lint/demo → docs/internal/review/round3.md）
-- [ ] 最终验收：PROGRESS 收尾 + 交付总结
+- [x] round3 完成：12/12 round2 修复确认 OK；新发现仅 3 项低危（CLI 惰性 client、重命名孤儿、member resync），全部修复，commit df1331d
+- [x] 最终验收通过：干净全量构建 0 错误、161/161 测试、eslint 0 告警、E2E demo validate OK、自分析 76 文件/322 函数
+
+## ✅ 项目完成（2026-08-02）
+
+三轮对抗评审共 33 项发现（5 高/11 中/16 低+信息+文档），全部修复并有回归测试兜底。
+恢复本项目上下文只需：本文件 + git log + docs/internal/specs/2026-08-02-handbook-design.md。
 
 ## 关键决策记录
 
