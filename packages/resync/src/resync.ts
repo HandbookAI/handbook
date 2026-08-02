@@ -269,7 +269,12 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
     .map((file) => assignment.fileStage[file]?.stage)
     .filter((stage): stage is string => Boolean(stage) && stage !== 'unassigned');
   const fileStage = { ...assignment.fileStage };
-  for (const file of delta.deleted) delete fileStage[file];
+  for (const file of delta.deleted) {
+    delete fileStage[file];
+    // Remove the dead card too — a ghost card would keep feeding narration and
+    // register extraction with code that no longer exists.
+    rmSync(work.cardPath(file), { force: true });
+  }
   for (const file of delta.added) fileStage[file] ??= { stage: 'unassigned', also: [] };
   assignment = rebuildAssignment(fileStage, skeleton);
   if (delta.added.length > 0 && !noLlm) {

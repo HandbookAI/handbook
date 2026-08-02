@@ -13,6 +13,7 @@ import {
   type Skeleton,
 } from '@handbook/core';
 import { readFileSync } from 'node:fs';
+import { readJsonFile, writeJsonFile } from '@handbook/core';
 import { runPhase1, type Phase1Stats } from './phase1.js';
 import { generateCards, type CardDetail } from './cards.js';
 import { normalizeSkeleton, synthesizeSkeleton } from './skeleton.js';
@@ -83,12 +84,26 @@ export interface GenerateStats {
 export async function generateHandbook(options: GenerateOptions): Promise<GenerateStats> {
   const logger = options.logger ?? silentLogger;
   const phases = expandPhases(options.phase ?? 'all');
-  const strategy: Strategy = options.strategy ?? 'file';
-  const narrateLang = options.narrateLang ?? 'en';
   const work = new WorkDir(options.workDir);
+
+  // The strategy chosen at 2b is recorded in the work dir, so partial re-runs
+  // (`--phase 2c`, `--phase 3`) cannot accidentally cross strategies — e.g.
+  // the file-strategy default silently overwriting a member-derived
+  // organization with LLM grouping.
+  const stored = loadStrategyMarker(work);
+  const strategy: Strategy = options.strategy ?? stored ?? 'file';
+  if (options.strategy && stored && options.strategy !== stored && !phases.has('2b')) {
+    throw new Error(
+      `work dir was generated with strategy "${stored}" but --strategy ${options.strategy} was given; ` +
+        're-run phase 2b to switch strategies',
+    );
+  }
+  const narrateLang = options.narrateLang ?? 'en';
   const stats: GenerateStats = { phasesRun: [...phases].sort() as Phase[] };
 
-  const needsLlm = [...phases].some((p) => p !== '1');
+  // Member strategy derives its organization deterministically at 2b — a bare
+  // 2c run then needs no LLM at all.
+  const needsLlm = [...phases].some((p) => p !== '1' && !(p === '2c' && strategy === 'member'));
   if (needsLlm && !options.client) {
     throw new Error('phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)');
   }
@@ -105,7 +120,7 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
     });
   }
 
-  if (!needsLlm) return stats;
+  if ([...phases].every((p) => p === '1')) return stats;
   const client = options.client as ChatClient;
   const graph = work.loadGraph();
 
@@ -180,9 +195,13 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
       stats.nStages = skeleton.stages.length;
       stats.nUnassignedFiles = assignment.coverage.unassigned.length;
     }
+    saveStrategyMarker(work, strategy);
     logger.info(`[2b] ${stats.nStages} stages; ${stats.nUnassignedFiles} files unassigned`);
   }
 
+  if (phases.has('2c') && strategy === 'member') {
+    logger.info('[2c] member strategy: organization was derived deterministically in 2b — nothing to do');
+  }
   if (phases.has('2c') && strategy === 'file') {
     const skeleton = work.loadSkeleton();
     const assignment = work.loadAssignment();
@@ -223,6 +242,23 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
   }
 
   return stats;
+}
+
+function strategyMarkerPath(work: WorkDir): string {
+  return `${work.phase2Dir}/strategy.json`;
+}
+
+function loadStrategyMarker(work: WorkDir): Strategy | undefined {
+  try {
+    const raw = readJsonFile(strategyMarkerPath(work)) as { strategy?: unknown };
+    return raw.strategy === 'member' || raw.strategy === 'file' ? raw.strategy : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveStrategyMarker(work: WorkDir, strategy: Strategy): void {
+  writeJsonFile(strategyMarkerPath(work), { version: 1, strategy });
 }
 
 function loadUserSkeleton(work: WorkDir, skeletonPath: string): Skeleton {

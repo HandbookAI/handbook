@@ -45,6 +45,15 @@ function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** Parse a numeric CLI flag; garbage values fail loudly instead of NaN-ing a loop away. */
+function toInt(value: unknown, flag: string, min: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new Error(`${flag} must be a number >= ${min}, got "${String(value)}"`);
+  }
+  return Math.trunc(parsed);
+}
+
 program
   .command('analyze')
   .description('Phase 1 only: build the static call graph (no LLM needed)')
@@ -67,7 +76,7 @@ program
   .requiredOption('--source <dir>', 'source root')
   .requiredOption('--work <dir>', 'work directory')
   .option('--phase <spec>', 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list', 'all')
-  .option('--strategy <s>', 'file | member', 'file')
+  .option('--strategy <s>', 'file | member (default: file, or the work dir\'s recorded strategy)')
   .option('--skeleton <path>', 'user-authored skeleton.yaml (required for member strategy)')
   .option('--lang <lang>', 'source language (auto detects)', 'auto')
   .option('--narrate-lang <l>', 'prose language: en | zh', 'en')
@@ -85,14 +94,14 @@ program
       workDir: resolve(String(opts.work)),
       client: needsLlm ? llmClient() : undefined,
       phase,
-      strategy: opts.strategy === 'member' ? 'member' : 'file',
+      strategy: opts.strategy === 'member' ? 'member' : opts.strategy === 'file' ? 'file' : undefined,
       skeletonPath: opts.skeleton ? resolve(String(opts.skeleton)) : undefined,
       lang: String(opts.lang),
       narrateLang: opts.narrateLang === 'zh' ? 'zh' : 'en',
       detail: opts.detail === 'deep' ? 'deep' : 'brief',
       synthMode: opts.synthMode === 'doctor' ? 'doctor' : 'oneshot',
-      maxDoctorRounds: Number(opts.maxDoctorRounds),
-      readWorkers: Number(opts.readWorkers),
+      maxDoctorRounds: toInt(opts.maxDoctorRounds, '--max-doctor-rounds', 1),
+      readWorkers: toInt(opts.readWorkers, '--read-workers', 1),
       resume: Boolean(opts.resume),
       refresh: Boolean(opts.refresh),
       logger: logger(),
@@ -185,7 +194,7 @@ program
       sourceRoot: resolve(String(opts.source)),
       handbookDir: opts.handbook ? resolve(opts.handbook) : undefined,
       request: String(opts.request),
-      maxTurns: Number(opts.maxTurns),
+      maxTurns: toInt(opts.maxTurns, '--max-turns', 1),
       logger: logger(),
     });
     if (opts.out) {

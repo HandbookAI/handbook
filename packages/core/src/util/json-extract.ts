@@ -8,17 +8,20 @@
  */
 
 /**
- * Fence openers are anchored to line starts and carry their language tag, so a
- * ```python block is consumed (not misaligned into the next fence) and only
- * `json`/untagged blocks are parse candidates.
+ * Fence openers are anchored to line starts and carry their FULL info string
+ * (so ```python and ```python title=x blocks are consumed, not misaligned into
+ * the next fence). The opening backtick run is captured and the closing run
+ * must be at least as long, so a ````-fenced block keeps its inner ```json
+ * examples as literal content (CommonMark semantics). Only fences whose info
+ * string starts with `json`/`jsonc` (or is empty) are parse candidates.
  */
-const FENCE_RE = /^[ \t]*```([A-Za-z0-9_-]*)[ \t]*\r?\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
+const FENCE_RE = /^[ \t]*(`{3,})([^\n`]*)\r?\n([\s\S]*?)^[ \t]*\1`*[ \t]*$/gm;
 
 export function extractJsonBlock(text: string): unknown {
   for (const match of text.matchAll(FENCE_RE)) {
-    const tag = (match[1] ?? '').toLowerCase();
+    const tag = (match[2] ?? '').trim().split(/\s+/, 1)[0]?.toLowerCase() ?? '';
     if (tag !== '' && tag !== 'json' && tag !== 'jsonc') continue;
-    const candidate = match[2]?.trim();
+    const candidate = match[3]?.trim();
     if (!candidate) continue;
     try {
       return JSON.parse(candidate);

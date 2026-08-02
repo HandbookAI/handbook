@@ -43,3 +43,15 @@ describe('extractJsonBlock — fence regressions (round-1 review)', () => {
     expect(extractJsonBlock('```\n{"a": 1}\n```')).toEqual({ a: 1 });
   });
 });
+
+describe('extractJsonBlock — info strings and meta-fences (round-2 review)', () => {
+  it('consumes fences with info strings without misaligning', () => {
+    const text = '```python title=x\n[9, 9]\n```\nthen\n```json\n{"want": true}\n```';
+    expect(extractJsonBlock(text)).toEqual({ want: true });
+  });
+
+  it('keeps inner example fences of a four-backtick block literal', () => {
+    const text = '````md\nexample:\n```json\n{"inner": true}\n```\n````\nreal:\n```json\n{"outer": true}\n```';
+    expect(extractJsonBlock(text)).toEqual({ outer: true });
+  });
+});
