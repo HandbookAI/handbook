@@ -220,6 +220,17 @@ const REGISTER_GAP_RULES_ZH = `你在补全状态寄存器清单。给定已识�
 关注易被忽略的状态：后台任务/队列、缓存、连接池、限流、token 预算、记忆/目标状态、遥测缓冲、更新检查。
 没有缺失就返回空数组。只输出新增项，schema 同前。`;
 
+const REGISTER_FILL_RULES_EN = `For each state register below, list WHICH of the given stages read or write it.
+"stages" MUST contain only IDs from the stage menu — never invent one; pick 1-5 per register.
+Output ONLY one JSON block:
+\`\`\`json
+{"assignments": [{"id": "reg-xxx", "stages": ["<stage-id>"]}]}
+\`\`\``;
+
+const REGISTER_FILL_RULES_ZH = `为下面每个状态寄存器标注：给定阶段中哪些会读/写它。
+"stages" 只能使用阶段菜单里的 ID（不得编造），每个寄存器选 1-5 个。
+只输出一个 JSON 块（schema 同英文版）。`;
+
 export interface RegistersOptions {
   maxRounds?: number;
   dryStreak?: number;
@@ -288,16 +299,39 @@ export async function extractRegisters(
     let added = 0;
     try {
       const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, { temperature: 0 });
-      const raw = (response.json as { registers?: unknown } | undefined)?.registers;
+      // Tolerate the shape drift real endpoints produce: a top-level array
+      // instead of {registers: […]}, and name/description instead of
+      // id/semantics.
+      const raw = Array.isArray(response.json)
+        ? response.json
+        : (response.json as { registers?: unknown } | undefined)?.registers;
       for (const entry of Array.isArray(raw) ? raw : []) {
         if (typeof entry !== 'object' || entry === null) continue;
         const r = entry as Record<string, unknown>;
-        const id = typeof r.id === 'string' ? r.id.trim() : '';
-        const semantics = typeof r.semantics === 'string' ? r.semantics.trim() : '';
-        if (!/^reg-[a-z0-9-]+$/.test(id) || !semantics || found.has(id)) continue;
+        // Coerce near-miss ids (`reg_task_queue`, `Task Queue`) into the
+        // canonical form instead of silently dropping the register.
+        const rawId = typeof r.id === 'string' ? r.id : typeof r.name === 'string' ? r.name : '';
+        let id = rawId.trim().toLowerCase().replace(/[_\s]+/g, '-');
+        if (id && !id.startsWith('reg-')) id = `reg-${id.replace(/^-+/, '')}`;
+        const semantics =
+          typeof r.semantics === 'string'
+            ? r.semantics.trim()
+            : typeof r.description === 'string'
+              ? r.description.trim()
+              : '';
+        if (!/^reg-[a-z0-9-]+$/.test(id) || !semantics) continue;
         const stages = Array.isArray(r.stages)
           ? r.stages.filter((s): s is string => typeof s === 'string' && validIds.has(s))
           : [];
+        const existing = found.get(id);
+        if (existing) {
+          // Same register seen again: upgrade an empty stage list (some
+          // response shapes omit stages entirely) but never count it as new.
+          if (existing.stages.length === 0 && stages.length > 0) {
+            found.set(id, { ...existing, stages });
+          }
+          continue;
+        }
         found.set(id, { id, semantics, stages });
         added += 1;
       }
@@ -305,6 +339,37 @@ export async function extractRegisters(
       logger.warn(`[registers] round ${round} failed: ${String(error)}`);
     }
     dry = added === 0 ? dry + 1 : 0;
+  }
+
+  // Stage-fill pass: some response shapes omit `stages` entirely. For those
+  // registers, one menu-constrained mapping call fills them in — validated
+  // against real stage ids like every other closed-menu prompt.
+  const needy = [...found.values()].filter((r) => r.stages.length === 0);
+  if (needy.length > 0) {
+    const menu = skeleton.stages.map((s) => `- ${s.id} — ${s.title}`).join('\n');
+    const list = needy.map((r) => `- ${r.id}: ${r.semantics}`).join('\n');
+    const fillPrompt = `${
+      lang === 'zh' ? REGISTER_FILL_RULES_ZH : REGISTER_FILL_RULES_EN
+    }\n\n## Stage menu (valid IDs)\n${menu}\n\n## Registers to map\n${list}`;
+    try {
+      const response = await client.complete(fillPrompt, { temperature: 0 });
+      const raw = Array.isArray(response.json)
+        ? response.json
+        : (response.json as { assignments?: unknown } | undefined)?.assignments;
+      for (const entry of Array.isArray(raw) ? raw : []) {
+        if (typeof entry !== 'object' || entry === null) continue;
+        const a = entry as Record<string, unknown>;
+        const id = typeof a.id === 'string' ? a.id.trim() : '';
+        const target = found.get(id);
+        if (!target || target.stages.length > 0) continue;
+        const stages = Array.isArray(a.stages)
+          ? a.stages.filter((s): s is string => typeof s === 'string' && validIds.has(s))
+          : [];
+        if (stages.length > 0) found.set(id, { ...target, stages });
+      }
+    } catch (error) {
+      logger.warn(`[registers] stage-fill pass failed: ${String(error)}`);
+    }
   }
 
   const registers = [...found.values()];
