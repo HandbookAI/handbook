@@ -121,3 +121,20 @@ describe('GoAdapter', () => {
     expect(missing?.callType).toBe('unresolved');
   });
 });
+
+describe('GoAdapter — sibling-file package calls (round-1 review)', () => {
+  it('resolves a bare call to a free function defined in another file of the same package', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'hb-go-sibling-'));
+    mkdirSync(join(root, 'app'), { recursive: true });
+    writeFileSync(join(root, 'app', 'a.go'), 'package app\n\nfunc Caller() {\n\tHelper()\n}\n');
+    writeFileSync(join(root, 'app', 'b.go'), 'package app\n\nfunc Helper() {}\n');
+    const adapter = new GoAdapter();
+    const result = await adapter.analyze(['app/a.go', 'app/b.go'], root);
+    const edge = result.edges.find((e) => e.callerId === 'app.a.Caller');
+    expect(edge?.calleeId).toBe('app.b.Helper');
+    expect(edge?.callType).toBe('internal_func');
+  });
+});

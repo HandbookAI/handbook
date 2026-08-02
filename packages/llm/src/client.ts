@@ -58,13 +58,19 @@ export interface LlmEnvConfig {
  */
 export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfig {
   const pick = (a: string, b: string, fallback: string): string => env[a] || env[b] || fallback;
+  // Garbage numeric env values fall back to defaults instead of poisoning
+  // requests (NaN max_tokens) or the retry loop (0/NaN attempts → throw undefined).
+  const num = (raw: string, fallback: number, min: number): number => {
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= min ? value : fallback;
+  };
   return {
     apiKey: pick('OPENAI_API_KEY', 'HANDBOOK_LLM_API_KEY', ''),
     model: pick('OPENAI_MODEL', 'HANDBOOK_LLM_MODEL', 'gpt-4o-mini'),
     baseUrl: pick('OPENAI_BASE_URL', 'HANDBOOK_LLM_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''),
-    maxTokens: Number(pick('OPENAI_MAX_TOKENS', 'HANDBOOK_LLM_MAX_TOKENS', '16000')),
-    maxRetries: Number(env.HANDBOOK_LLM_MAX_RETRIES || '6'),
-    retryBackoffMs: Math.round(Number(env.HANDBOOK_LLM_RETRY_BACKOFF || '3') * 1000),
+    maxTokens: num(pick('OPENAI_MAX_TOKENS', 'HANDBOOK_LLM_MAX_TOKENS', '16000'), 16_000, 1),
+    maxRetries: num(env.HANDBOOK_LLM_MAX_RETRIES || '6', 6, 1),
+    retryBackoffMs: Math.round(num(env.HANDBOOK_LLM_RETRY_BACKOFF || '3', 3, 0) * 1000),
   };
 }
 

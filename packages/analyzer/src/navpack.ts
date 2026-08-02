@@ -78,14 +78,15 @@ export function buildNavPack(graph: CodeGraph, options: NavPackOptions = {}): Na
     }));
 
   // Entry points: roots (no internal callers) ∪ name-heuristic hits.
+  // Keyed by node id — distinct `main`s in different files must all survive.
   const entries = new Map<string, NavPack['entryPoints'][number]>();
   for (const node of internal) {
     if (node.lineStart <= 0) continue;
     const isRoot = node.nCallers === 0;
     const isHint = ENTRY_HINTS.some((h) => node.name === h || node.name.startsWith(`${h}_`));
     if (!isRoot && !isHint) continue;
-    if (!entries.has(node.qualname)) {
-      entries.set(node.qualname, {
+    if (!entries.has(node.id)) {
+      entries.set(node.id, {
         qualname: node.qualname,
         file: node.file,
         lineStart: node.lineStart,

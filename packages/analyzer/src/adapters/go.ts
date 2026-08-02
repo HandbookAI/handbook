@@ -70,6 +70,10 @@ export class GoAdapter implements LanguageAdapter {
     // Cross-module indexes (first definition wins on collisions).
     const typeToModule = new Map<string, string>();
     const typeMethods = new Map<string, Set<string>>();
+    // Go visibility is PACKAGE-scoped (one directory = one package): a bare
+    // call can target a free function defined in any sibling file, so index
+    // free functions per directory too.
+    const packageFunctions = new Map<string, Map<string, string>>();
     for (const scan of scans) {
       for (const type of scan.types) {
         if (!typeToModule.has(type)) typeToModule.set(type, scan.moduleId);
@@ -77,8 +81,14 @@ export class GoAdapter implements LanguageAdapter {
       for (const [type, methods] of scan.methods) {
         typeMethods.set(`${scan.moduleId}.${type}`, methods);
       }
+      const dir = scan.file.includes('/') ? scan.file.slice(0, scan.file.lastIndexOf('/')) : '.';
+      const pkg = packageFunctions.get(dir) ?? new Map<string, string>();
+      for (const name of scan.topLevelFunctions) {
+        if (!pkg.has(name)) pkg.set(name, scan.moduleId);
+      }
+      packageFunctions.set(dir, pkg);
     }
-    const indexes: CrossModuleIndexes = { typeToModule, typeMethods };
+    const indexes: CrossModuleIndexes = { typeToModule, typeMethods, packageFunctions };
 
     const functions = scans.flatMap((s) => s.functions);
     const edges = scans.flatMap((s) => extractCalls(s, indexes));
@@ -90,6 +100,8 @@ interface CrossModuleIndexes {
   typeToModule: Map<string, string>;
   /** `<moduleId>.<Type>` → method names. */
   typeMethods: Map<string, Set<string>>;
+  /** package dir → free-function name → owning moduleId (sibling-file calls). */
+  packageFunctions: Map<string, Map<string, string>>;
 }
 
 export function moduleIdForFile(file: string): string {
@@ -318,10 +330,15 @@ function resolveCall(
   context: { receiver: { varName: string; typeName: string } | null; params: Map<string, string> },
   indexes: CrossModuleIndexes,
 ): Resolved {
-  // A. bare `f(...)`
+  // A. bare `f(...)` — same file first, then any sibling file of the package.
   if (callee.type === 'identifier') {
     if (scan.topLevelFunctions.has(callee.text)) {
       return { calleeId: `${scan.moduleId}.${callee.text}`, callType: 'internal_func' };
+    }
+    const dir = scan.file.includes('/') ? scan.file.slice(0, scan.file.lastIndexOf('/')) : '.';
+    const siblingModule = indexes.packageFunctions.get(dir)?.get(callee.text);
+    if (siblingModule) {
+      return { calleeId: `${siblingModule}.${callee.text}`, callType: 'internal_func' };
     }
     return unresolved(callee.text);
   }

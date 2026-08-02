@@ -211,7 +211,11 @@ function mineParameterProperties(scan: ModuleScan, ctor: Node, className: string
   if (!params) return;
   for (const p of params.namedChildren) {
     if (!p || (p.type !== 'required_parameter' && p.type !== 'optional_parameter')) continue;
-    const hasModifier = p.children.some((c) => c?.type === 'accessibility_modifier');
+    // `readonly rear: Wheel` is a parameter property too — not only
+    // public/private/protected.
+    const hasModifier = p.children.some(
+      (c) => c?.type === 'accessibility_modifier' || c?.type === 'readonly' || c?.text === 'readonly',
+    );
     if (!hasModifier) continue;
     const pattern = p.childForFieldName('pattern');
     const type = typeFromAnnotation(p.childForFieldName('type'), scan.imports);

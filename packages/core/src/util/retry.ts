@@ -19,9 +19,12 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * the last error is rethrown.
  */
 export async function retry<T>(fn: (attempt: number) => Promise<T>, options: RetryOptions = {}): Promise<T> {
-  const attempts = options.attempts ?? 6;
-  const backoffMs = options.backoffMs ?? 3000;
-  const jitterMs = options.jitterMs ?? 500;
+  const safe = (value: number | undefined, fallback: number): number =>
+    Number.isFinite(value) ? (value as number) : fallback;
+  // Always run at least once — attempts<=0/NaN would otherwise `throw undefined`.
+  const attempts = Math.max(1, Math.trunc(safe(options.attempts, 6)));
+  const backoffMs = Math.max(0, safe(options.backoffMs, 3000));
+  const jitterMs = Math.max(0, safe(options.jitterMs, 500));
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {

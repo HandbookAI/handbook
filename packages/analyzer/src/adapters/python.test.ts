@@ -121,3 +121,18 @@ describe('PythonAdapter', () => {
     expect(fn('app.App.__init__')?.paramTypes.engine).toBe('engine.Engine');
   });
 });
+
+describe('PythonAdapter — module-alias calls (round-1 review)', () => {
+  it('resolves alias.attr() into internal_func when the alias is our module', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-python-alias-'));
+    mkdirSync(join(root, 'pkg'), { recursive: true });
+    writeFileSync(join(root, 'pkg', '__init__.py'), '');
+    writeFileSync(join(root, 'pkg', 'helpers.py'), 'def do():\n    return 1\n');
+    writeFileSync(join(root, 'use.py'), 'from pkg import helpers\n\ndef go():\n    helpers.do()\n');
+    const adapter = new PythonAdapter();
+    const result = await adapter.analyze(['pkg/__init__.py', 'pkg/helpers.py', 'use.py'], root);
+    const edge = result.edges.find((e) => e.callerId === 'use.go' && e.raw === 'helpers.do');
+    expect(edge?.callType).toBe('internal_func');
+    expect(edge?.calleeId).toBe('pkg.helpers.do');
+  });
+});

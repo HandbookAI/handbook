@@ -22,7 +22,7 @@
  * 6. re-narrate affected stages + system overview (content-hash cache does the
  *    minimal work) and refresh registers.
  */
-import { readFileSync } from 'node:fs';
+import { cpSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
 import {
@@ -41,12 +41,16 @@ import {
   extractRegisters,
   fileCallAdjacency,
   generateCards,
+  mergeFunctionNotes,
   narrate,
   rebuildAssignment,
   reassignSubset,
   runPhase1,
   suggestOrder,
 } from '@handbook/pipeline';
+
+/** Appended once to a card's purpose when noLlm resync refreshes its facts. */
+const STALE_SUFFIX = ' (stale: code changed since narration)';
 
 export interface ResyncCase {
   editedRoot: string;
@@ -186,14 +190,20 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
   }
 
   // 1-2. Fresh graph over the edited tree + delta vs the stored graph.
+  // The fresh analysis goes to a STAGING dir first: the stored graph is the
+  // delta baseline, and overwriting it before steps 3-6 complete would make a
+  // crashed resync re-run against an empty delta (permanent silent staleness).
   const before = work.loadGraph();
+  const stagingRoot = join(options.caseDir, '.resync-phase1');
+  rmSync(stagingRoot, { recursive: true, force: true });
   await runPhase1({
     sourceRoot: resyncCase.editedRoot,
-    workDir: options.workDir,
+    workDir: stagingRoot,
     lang: before.metadata.language === 'multi' ? 'auto' : before.metadata.language,
     logger,
   });
-  const after = work.loadGraph();
+  const staging = new WorkDir(stagingRoot);
+  const after = staging.loadGraph();
   const delta = diffGraphs(before, after);
 
   // Widen with diff-named files that still exist (e.g. prose-only doc edits are ignored;
@@ -222,10 +232,16 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
       const oldCards = work.loadCards();
       for (const file of refreshTargets) {
         const old = oldCards[file];
+        const stalePurpose =
+          old && old.purpose && !old.purpose.endsWith(STALE_SUFFIX) ? `${old.purpose}${STALE_SUFFIX}` : (old?.purpose ?? '');
         const card = old
-          ? { ...old, purpose: old.purpose ? `${old.purpose} (stale: code changed since narration)` : '' }
+          ? { ...old, purpose: stalePurpose }
           : { version: 1 as const, file, purpose: '', role: 'other' as const, lifecycle: 'none' };
-        if (old?.functions || !old) card.functions = inventory[file] ?? [];
+        if (old?.functions || !old) {
+          // Refresh structural facts but KEEP the old per-function prose —
+          // mergeFunctionNotes matches by qualname and reads dataFlow/relations.
+          card.functions = mergeFunctionNotes(inventory[file] ?? [], old?.functions ?? []);
+        }
         work.saveCard(card);
         report.cardsRegenerated += 1;
       }
@@ -248,6 +264,10 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
   // 4. Assignment: drop deleted files, re-assign added ones, reconcile buckets.
   const skeleton = work.loadSkeleton();
   let assignment = work.loadAssignment();
+  // Deleted files' FORMER stages are affected too — capture before deletion.
+  const deletedStages = delta.deleted
+    .map((file) => assignment.fileStage[file]?.stage)
+    .filter((stage): stage is string => Boolean(stage) && stage !== 'unassigned');
   const fileStage = { ...assignment.fileStage };
   for (const file of delta.deleted) delete fileStage[file];
   for (const file of delta.added) fileStage[file] ??= { stage: 'unassigned', also: [] };
@@ -262,7 +282,7 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
 
   // Affected stages = stages owning any touched file.
   const touched = new Set([...delta.changed, ...delta.added, ...delta.deleted]);
-  const affectedStages = new Set<string>();
+  const affectedStages = new Set<string>(deletedStages);
   for (const [file, entry] of Object.entries(assignment.fileStage)) {
     if (touched.has(file) && entry.stage !== 'unassigned') affectedStages.add(entry.stage);
   }
@@ -343,6 +363,11 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
     work.saveRegisters({ version: 1, registers });
     report.narrated = true;
   }
+
+  // 7. Promote the staged phase-1 artifacts LAST — only a fully-completed
+  // resync moves the delta baseline forward.
+  cpSync(staging.phase1Dir, work.phase1Dir, { recursive: true });
+  rmSync(stagingRoot, { recursive: true, force: true });
 
   writeJsonFile(join(options.caseDir, 'resync-report.json'), report);
   return report;

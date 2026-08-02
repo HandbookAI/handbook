@@ -291,8 +291,13 @@ function registerTableHtml(view: HandbookView, lang: NarrateLang, stageHref: (si
   const L = LABELS[lang];
   const [h1, h2, h3] = L.registerHeader;
   const rows = view.model.registers.map((reg) => {
+    // Link only stages that actually got a page; others render as plain code.
     const stages = reg.stages
-      .map((sid) => `<a href="${stageHref(sid)}">${esc(view.tree.title(sid))}</a>`)
+      .map((sid) =>
+        view.hasContent(sid)
+          ? `<a href="${stageHref(sid)}">${esc(view.tree.title(sid))}</a>`
+          : `<code>${esc(sid)}</code>`,
+      )
       .join(', ');
     return `<tr><td><code>${esc(reg.id)}</code></td><td>${esc(reg.semantics)}</td><td>${stages}</td></tr>`;
   });
