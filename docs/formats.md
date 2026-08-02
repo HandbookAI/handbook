@@ -114,7 +114,10 @@ metadata:
   archetype: demo task runner        # one-phrase system shape
   draftedBy: skeleton-synth          # skeleton-synth | skeleton-doctor | user
 stages:
-  - id: stage-1                      # stage-N / stage-N.M / crosscut-N
+  - id: stage-1                      # any filename-safe id (^[A-Za-z0-9][A-Za-z0-9._-]*$);
+                                     # conventionally stage-N / stage-N.M / crosscut-N.
+                                     # Reserved page names (overview, index, register(s), …)
+                                     # are auto-suffixed by the normalizer.
     title: Startup
     description: Entry point wiring…
     parent: null                     # substages point at their parent id
@@ -182,7 +185,7 @@ coverage: { nFiles: 5, nOrganized: 5 }
 <out>/
   overview.md          H1 title + 🗺️ system overview + see-also links
   index.md             recursive stage index (heading depth = tree depth)
-  register.md          | State register | Semantics | Stages touched |
+  register.md          | State register | Semantics | Stages touched |  (only when registers exist)
   <sid>.md             one page per content-bearing stage (summary, sub-stages,
                        organization groups, per-file cards with function details,
                        📊 state-registers section when touched)

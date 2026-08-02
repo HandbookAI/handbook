@@ -231,3 +231,35 @@ stages:
     expect(existsSync(work.organizationPath)).toBe(true);
   });
 });
+
+describe('normalizeSkeleton — reserved ids and cycles (round-2 review)', () => {
+  it('suffixes stage ids that collide with fixed page names', async () => {
+    const { normalizeSkeleton } = await import('./skeleton.js');
+    const skeleton = normalizeSkeleton({
+      stages: [
+        { id: 'overview', title: 'O', description: 'x' },
+        { id: 'Index', title: 'I', description: 'x' },
+        { id: 'stage-1', title: 'S', description: 'x' },
+      ],
+    });
+    const ids = skeleton.stages.map((s) => s.id);
+    expect(ids).toContain('stage-1');
+    expect(ids).not.toContain('overview');
+    expect(ids.map((i) => i.toLowerCase())).not.toContain('index');
+  });
+
+  it('breaks parent cycles at a cycle member, keeping innocent descendants attached', async () => {
+    const { normalizeSkeleton } = await import('./skeleton.js');
+    const skeleton = normalizeSkeleton({
+      stages: [
+        { id: 'd', title: 'D', description: 'x', parent: 'a' },
+        { id: 'a', title: 'A', description: 'x', parent: 'b' },
+        { id: 'b', title: 'B', description: 'x', parent: 'a' },
+      ],
+    });
+    const byId = new Map(skeleton.stages.map((s) => [s.id, s]));
+    expect(byId.get('d')?.parent).toBe('a');
+    const cycleParents = [byId.get('a')?.parent, byId.get('b')?.parent];
+    expect(cycleParents).toContain(null);
+  });
+});

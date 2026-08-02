@@ -40,8 +40,10 @@
 - [x] examples/ 完成且 E2E 跑通（analyze→generate(mock)→render(md+html×2+agent)→skill→validate OK）
 - [x] 真实仓库验证：`handbook analyze --source packages` → 76 文件/316 函数/903 边
 - [x] 文档：根 README en/zh、LICENSE(MIT)、docs/architecture|formats|prompts、examples/README
-- [ ] 9 包 README（agent 进行中）
-- [ ] 对抗评审：round1 两个评审 agent 进行中（pipeline 侧 / analyzer 侧），产出到 docs/internal/review/round1-*.md → 修复 → round2（renderer/skill/cli+文档一致性）→ round3 复核
+- [x] 9 包 README 完成
+- [x] 对抗评审 round1 完成：21 项发现（5 高/11 中/5 低），全部修复并加回归测试（156 测试绿），E2E 重跑通过，commit 63d1511。发现清单在 docs/internal/review/round1-*.md
+- [ ] 对抗评审 round2 进行中（agent：round1 修复复核 + doctor/member/cli/mock/文档一致性新扫描 → docs/internal/review/round2.md）
+- [ ] round3 复核至干涸
 - [ ] 最终验收：全量 build+test+demo 重跑
 
 ## 关键决策记录

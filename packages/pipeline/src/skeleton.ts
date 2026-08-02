@@ -104,11 +104,27 @@ function sanitizeStageId(raw: string): string {
     .replace(/^[._-]+/, '');
 }
 
+/**
+ * Page names owned by the renderers/skill — a stage id colliding with one of
+ * these (case-insensitively) would overwrite a fixed page, so such ids get
+ * suffixed exactly like duplicates.
+ */
+const RESERVED_STAGE_IDS = new Set([
+  'overview',
+  'index',
+  'register',
+  'registers',
+  'how_to_use',
+  'disambiguation',
+  'readme',
+  'handbook',
+]);
+
 /** Coerce a raw LLM skeleton into the canonical, internally-consistent form. */
 export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): Skeleton {
   const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const rawStages = Array.isArray(rawObj.stages) ? rawObj.stages : [];
-  const seen = new Set<string>();
+  const seen = new Set<string>(RESERVED_STAGE_IDS);
   const stages: Stage[] = [];
   rawStages.forEach((entry, index) => {
     if (typeof entry !== 'object' || entry === null) return;
@@ -116,8 +132,8 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
     const crosscut = s.crosscut === true;
     const fallbackId = `${crosscut ? 'crosscut' : 'stage'}-${index + 1}`;
     let id = typeof s.id === 'string' && sanitizeStageId(s.id) ? sanitizeStageId(s.id) : fallbackId;
-    while (seen.has(id)) id = `${id}-${index + 1}`;
-    seen.add(id);
+    while (seen.has(id.toLowerCase())) id = `${id}-${index + 1}`;
+    seen.add(id.toLowerCase());
     const title = typeof s.title === 'string' && s.title.trim() ? s.title.trim() : id;
     stages.push({
       id,
@@ -136,14 +152,17 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
     if (stage.parent !== null) stage.parent = sanitizeStageId(stage.parent) || null;
     if (stage.parent !== null && (!ids.has(stage.parent) || stage.parent === stage.id)) stage.parent = null;
   }
-  // Break multi-node parent CYCLES (A→B→A): walking up from each stage, any
-  // repeat means a cycle — detach the current stage to the top level.
+  // Break multi-node parent CYCLES (A→B→A): walking up from each stage, a
+  // repeated id marks a node INSIDE the cycle — detach that node (not the
+  // walk's starting stage, which may be an innocent descendant of the cycle).
   for (const stage of stages) {
     const seenUp = new Set<string>([stage.id]);
     let cursor = stage.parent;
     while (cursor !== null) {
       if (seenUp.has(cursor)) {
-        stage.parent = null;
+        const cycleNode = stages.find((s) => s.id === cursor);
+        if (cycleNode) cycleNode.parent = null;
+        else stage.parent = null;
         break;
       }
       seenUp.add(cursor);

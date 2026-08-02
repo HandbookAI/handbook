@@ -69,7 +69,9 @@ export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfi
     model: pick('OPENAI_MODEL', 'HANDBOOK_LLM_MODEL', 'gpt-4o-mini'),
     baseUrl: pick('OPENAI_BASE_URL', 'HANDBOOK_LLM_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''),
     maxTokens: num(pick('OPENAI_MAX_TOKENS', 'HANDBOOK_LLM_MAX_TOKENS', '16000'), 16_000, 1),
-    maxRetries: num(env.HANDBOOK_LLM_MAX_RETRIES || '6', 6, 1),
+    // 0 is a legitimate "no retries" request — clamp to 1 attempt, don't
+    // silently replace it with the default.
+    maxRetries: Math.max(1, num(env.HANDBOOK_LLM_MAX_RETRIES || '6', 6, 0)),
     retryBackoffMs: Math.round(num(env.HANDBOOK_LLM_RETRY_BACKOFF || '3', 3, 0) * 1000),
   };
 }

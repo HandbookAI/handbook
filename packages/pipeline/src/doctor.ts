@@ -338,8 +338,9 @@ export async function synthesizeWithDoctor(
   let assignment = await assignFiles(client, graph, skeleton, assignOptions);
 
   let noProgressStreak = 0;
-  let round = 0;
-  for (; round < maxRounds; round += 1) {
+  let roundsRun = 0;
+  for (let round = 0; round < maxRounds; round += 1) {
+    roundsRun = round + 1;
     const before = computeStageStats(skeleton, assignment);
     const overloadedBefore = Object.values(before.perStage).filter((s) => s.overloaded).length;
 
@@ -366,5 +367,5 @@ export async function synthesizeWithDoctor(
       break;
     }
   }
-  return { skeleton, assignment, rounds: round + 1 };
+  return { skeleton, assignment, rounds: roundsRun };
 }

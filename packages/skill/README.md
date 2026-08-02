@@ -49,7 +49,7 @@ if (!check.ok) console.error(check.errors);
 
 - Coverage hashes are drift signals, not enforcement: `coverage.json` records a SHA-256 per source file at build time, and `validateSkill` (or any consumer) can re-hash later to detect which handbook pages lag the code — the generated `SKILL.md` explicitly tells agents to treat stale hashes as freshness warnings.
 - The frontmatter contract is validated hard (exact `name`+`description` keys, "Use when"/"Do not use" phrasing) because agent runtimes route on the description; a vague description silently breaks skill selection.
-- Stage-page discovery supports two layouts — a nested `stages/` directory wins; otherwise flat root-level `<sid>.md` files are matched by pattern without recursing, so sub-sites (`agent/`, `html/`) carrying their own stage-page copies are never double-collected.
+- Stage-page discovery supports two layouts — a nested `stages/` directory wins; otherwise every root-level `.md` that is not a known top-level page (`overview.md`, `index.md`, `register(s).md`, …) is a stage page, since stage ids are arbitrary. Discovery never recurses, so sub-sites (`agent/`, `html/`) carrying their own stage-page copies are never double-collected.
 - Deliberately zero code embedding: validation requires the `SKILL.md` body to direct agents to the real source, keeping the skill honest as the codebase evolves.
 
 ## Dependencies
