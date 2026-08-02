@@ -47,6 +47,8 @@ export interface CardsOptions {
   chunkChars?: number;
   /** Skip files that already have a completed card. */
   resume?: boolean;
+  /** Restrict the pass to these files (used by resync). Coverage is still computed over all files. */
+  onlyFiles?: readonly string[];
   lang?: NarrateLang;
   logger?: Logger;
 }
@@ -243,6 +245,14 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
 
   const cards: Record<string, FileCard> = {};
   let todo = files;
+  if (options.onlyFiles) {
+    const wanted = new Set(options.onlyFiles);
+    // Keep existing cards for out-of-scope files so coverage stays honest.
+    for (const [file, card] of Object.entries(work.loadCards())) {
+      if (!wanted.has(file)) cards[file] = card;
+    }
+    todo = files.filter((f) => wanted.has(f.file));
+  }
   if (resume) {
     const existing = work.loadCards();
     for (const [file, card] of Object.entries(existing)) {

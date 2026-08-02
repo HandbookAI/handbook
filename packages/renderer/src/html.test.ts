@@ -1,0 +1,117 @@
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFixtureModel } from './fixture.test-helper.js';
+import { renderHtmlSite, renderSinglePageHtml } from './html.js';
+
+const model = makeFixtureModel();
+let dir: string;
+let site: { nPages: number };
+let single: { bytes: number };
+let singlePath: string;
+
+const read = (name: string): string => readFileSync(join(dir, name), 'utf8');
+
+beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), 'hb-renderer-html-'));
+  site = renderHtmlSite(model, dir);
+  singlePath = join(dir, 'handbook.html');
+  single = renderSinglePageHtml(model, singlePath);
+});
+
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+describe('renderHtmlSite', () => {
+  it('writes index + overview + register + one page per content stage', () => {
+    expect(site.nPages).toBe(7);
+    for (const name of ['index.html', 'overview.html', 'register.html', 'stage-1.html', 'stage-1.1.html', 'stage-2.html', 'crosscut-1.html']) {
+      expect(existsSync(join(dir, name)), name).toBe(true);
+    }
+  });
+
+  it('redirects index.html to overview.html', () => {
+    expect(read('index.html')).toContain('<meta http-equiv="refresh" content="0; url=overview.html">');
+  });
+
+  it('lists every stage in the sidebar and marks the current page', () => {
+    const overview = read('overview.html');
+    for (const sid of ['stage-1', 'stage-1.1', 'stage-2', 'crosscut-1']) {
+      expect(overview).toContain(`href="${sid}.html"`);
+    }
+    expect(read('stage-1.html')).toContain(`<a class="cur" href="stage-1.html">`);
+  });
+
+  it('renders the overview with markdown prose and stage cards', () => {
+    const overview = read('overview.html');
+    expect(overview).toContain('<p>The system ingests sources, parses them, and answers queries.</p>');
+    expect(overview).toContain('class="cards"');
+    expect(overview).toContain('Ingestion Pipeline');
+  });
+
+  it('renders stage pages with collapsed details, functions and registers', () => {
+    const page = read('stage-1.html');
+    expect(page).toContain('<details><summary><code>src/ingest/loader.ts</code>');
+    expect(page).toContain('<details class="fn"><summary><code>loader.loadAll</code>');
+    expect(page).toContain('lines 10–42');
+    expect(page).toContain('State Registers Touched');
+    expect(page).toContain('reg-parser-cache');
+    expect(page).toContain('Sub-stages');
+  });
+
+  it('builds the breadcrumb from the stage ancestry', () => {
+    const page = read('stage-1.1.html');
+    expect(page).toContain('<a href="overview.html">System</a> / <a href="stage-1.html">Ingestion Pipeline</a> / Ingestion Parser');
+  });
+
+  it('renders the register table with stage links', () => {
+    const register = read('register.html');
+    expect(register).toContain('<table>');
+    expect(register).toContain('<a href="stage-1.html">Ingestion Pipeline</a>');
+  });
+
+  it('inlines all CSS/JS with a persisted theme toggle and expand/collapse controls', () => {
+    const page = read('stage-1.html');
+    expect(page).toContain('<style>');
+    expect(page).toContain("localStorage.getItem('hb-theme')");
+    expect(page).toContain('[data-theme="dark"]');
+    expect(page).toContain('hbAll(true)');
+    expect(page).toContain('hbAll(false)');
+  });
+
+  it('never references an external http(s) URL', () => {
+    for (const name of readdirSync(dir).filter((f) => f.endsWith('.html'))) {
+      expect(read(name)).not.toMatch(/https?:\/\//);
+    }
+  });
+});
+
+describe('renderSinglePageHtml', () => {
+  it('reports the written size', () => {
+    expect(single.bytes).toBeGreaterThan(0);
+    expect(single.bytes).toBe(readFileSync(singlePath).byteLength);
+  });
+
+  it('contains every content stage as a collapsed details with its id', () => {
+    const html = read('handbook.html');
+    for (const sid of ['stage-1', 'stage-1.1', 'stage-2', 'crosscut-1']) {
+      expect(html).toContain(`<details class="stage" id="${sid}">`);
+    }
+    expect(html).not.toContain('<details class="stage" open');
+  });
+
+  it('numbers sections hierarchically and anchors the sidebar', () => {
+    const html = read('handbook.html');
+    expect(html).toContain('<a href="#stage-1">1 Ingestion Pipeline</a>');
+    expect(html).toContain('<a href="#stage-1.1">1.1 Ingestion Parser</a>');
+    expect(html).toContain('<a href="#stage-2">2 Query Pipeline</a>');
+  });
+
+  it('ends with an anchored registers table', () => {
+    const html = read('handbook.html');
+    expect(html).toContain('id="registers"');
+    expect(html).toContain('<a href="#stage-1">Ingestion Pipeline</a>');
+  });
+});
