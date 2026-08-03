@@ -199,3 +199,41 @@ describe('gateway pages vs API errors', () => {
     expect(calls).toBe(1);
   });
 });
+
+describe('truncated completions', () => {
+  const base = { apiKey: 'test', baseUrl: 'http://x/v1', maxRetries: 3, retryBackoffMs: 1, maxTokens: 500 };
+
+  it('fails and retries with more room when the answer was cut off', async () => {
+    const bodies: Array<Record<string, any>> = [];
+    let calls = 0;
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async (_u: string, init: RequestInit) => {
+        calls += 1;
+        bodies.push(JSON.parse(String(init.body)));
+        return calls < 2
+          ? new Response(
+              JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{"stages": [{"id":' } }] }),
+              { status: 200 },
+            )
+          : new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"ok":1}' } }] }), {
+              status: 200,
+            });
+      }) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
+    expect(bodies[0]?.max_tokens).toBe(500);
+    expect(bodies[1]?.max_tokens).toBe(1000); // more room on the retry
+  });
+
+  it('reports truncation rather than returning half an answer', async () => {
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: 1 },
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: 'half a sen' } }] }), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).rejects.toThrow(/truncated at the token limit/);
+  });
+});
