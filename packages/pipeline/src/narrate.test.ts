@@ -1,4 +1,8 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { extractJsonBlock } from '@handbook/core';
 import { MockChatClient } from '@handbook/llm';
 import { extractRegisters, parseRegisterLines } from './narrate.js';
 import type { Narration, Skeleton } from '@handbook/core';
@@ -101,5 +105,51 @@ describe('parseRegisterLines', () => {
     expect(parseRegisterLines('- reg-a: first one here\n- reg-a: second one here')).toEqual([
       { id: 'reg-a', semantics: 'first one here' },
     ]);
+  });
+});
+
+describe('extractRegisters caching', () => {
+  const cacheNarration = {
+    version: 1,
+    lang: 'en',
+    systemOverview: 'o',
+    stageSummaries: Object.fromEntries(skeleton.stages.map((s) => [s.id, 'summary'])),
+  } as Narration;
+
+  function client(reply: string): { client: Parameters<typeof extractRegisters>[0]; calls: () => number } {
+    let calls = 0;
+    return {
+      client: {
+        model: 'test',
+        async complete() {
+          calls += 1;
+          return { text: reply, json: extractJsonBlock(reply), elapsedSec: 0 };
+        },
+      },
+      calls: () => calls,
+    };
+  }
+
+  it('never remembers an empty result as an answer', async () => {
+    const cacheDir = mkdtempSync(join(tmpdir(), 'hb-reg-'));
+    const empty = client('nothing usable here');
+    const first = await extractRegisters(empty.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    expect(first).toEqual([]);
+
+    // A later run must ASK AGAIN rather than replay the failure.
+    const good = client('```json\n{"registers":[{"id":"reg-a","semantics":"holds the queue"}]}\n```');
+    const second = await extractRegisters(good.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    expect(second).toHaveLength(1);
+    expect(good.calls()).toBeGreaterThan(0);
+  });
+
+  it('does reuse a non-empty result', async () => {
+    const cacheDir = mkdtempSync(join(tmpdir(), 'hb-reg-'));
+    const good = client('```json\n{"registers":[{"id":"reg-a","semantics":"holds the queue"}]}\n```');
+    await extractRegisters(good.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    const before = good.calls();
+    const again = await extractRegisters(good.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    expect(again).toHaveLength(1);
+    expect(good.calls()).toBe(before); // served from cache
   });
 });
