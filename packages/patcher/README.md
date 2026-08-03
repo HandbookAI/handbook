@@ -43,7 +43,8 @@ plan may touch the same file several times as long as each anchor is unique when
 | `listBackups(backupRoot)` | backup stamps, newest first |
 
 `ApplyOptions`: `{ sourceRoot, plan, dryRun?, backupRoot?, logger? }` — backups default to
-`<sourceRoot>/../.handbook-patches/<timestamp>/`.
+`<sourceRoot>/.handbook-patches/<timestamp>/` (inside the repo, so sibling checkouts never
+share a backup root; add it to .gitignore).
 
 ## Usage
 
