@@ -9,3 +9,4 @@ export * from './util/fsx.js';
 export * from './util/text.js';
 export * from './util/json-extract.js';
 export * from './util/progress.js';
+export * from './util/env-file.js';

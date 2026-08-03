@@ -252,6 +252,19 @@ program
     printJson(report);
   });
 
+program
+  .command('studio')
+  .description('Launch the local web UI (repos · generate · browse · evolve); binds to 127.0.0.1')
+  .option('--port <n>', 'port to listen on', '4860')
+  .option('--state-dir <dir>', 'where studio.json and managed work dirs live', `${process.env.HOME ?? '.'}/.handbook-studio`)
+  .action(async (opts: { port: string; stateDir: string }) => {
+    const { startStudio } = await import('@handbook/studio');
+    const port = toInt(opts.port, '--port', 1);
+    await startStudio({ stateDir: resolve(opts.stateDir), port, logger: logger() });
+    process.stderr.write(`handbook studio → http://127.0.0.1:${port}\n`);
+    await new Promise(() => {}); // run until Ctrl-C
+  });
+
 program.parseAsync(process.argv).catch((error: unknown) => {
   process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
