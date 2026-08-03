@@ -32,14 +32,15 @@ export interface StudioOptions {
   /** Port to listen on (127.0.0.1 only). Default 4860. */
   port?: number;
   /** LLM client factory — injectable for tests; default reads OPENAI_* env. */
-  clientFactory?: () => ChatClient;
+  /** Injectable LLM client. Receives the job logger so retries reach its log. */
+  clientFactory?: (logger: Logger) => ChatClient;
   logger?: Logger;
 }
 
 interface Ctx {
   store: StateStore;
   jobs: JobRunner;
-  clientFactory: () => ChatClient;
+  clientFactory: (logger: Logger) => ChatClient;
   logger: Logger;
   /** Default parent dir for auto-created work dirs. */
   stateDirWork: string;
@@ -248,7 +249,7 @@ async function runGenerate(
   const stats = await generateHandbook({
     sourceRoot: repo.sourceRoot,
     workDir: repo.workDir,
-    client: needsLlm ? ctx.clientFactory() : undefined,
+    client: needsLlm ? ctx.clientFactory(logger) : undefined,
     phase,
     detail: body.detail === 'deep' ? 'deep' : 'brief',
     narrateLang: body.narrateLang === 'zh' ? 'zh' : 'en',
@@ -282,7 +283,7 @@ async function runPlan(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>,
   if (!request) throw new Error('missing "request"');
   const handbookDir = join(repo.workDir, 'handbook');
   const result = await runPlanner({
-    client: ctx.clientFactory(),
+    client: ctx.clientFactory(logger),
     sourceRoot: repo.sourceRoot,
     handbookDir: fileExists(join(handbookDir, 'index.md')) ? handbookDir : undefined,
     request,
@@ -348,7 +349,7 @@ async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown
     editedRoot: repo.sourceRoot,
     planText,
     workDir: repo.workDir,
-    client: noLlm ? undefined : ctx.clientFactory(),
+    client: noLlm ? undefined : ctx.clientFactory(logger),
     noLlm,
     lang: body.narrateLang === 'zh' ? 'zh' : body.narrateLang === 'en' ? 'en' : undefined,
     logger,
@@ -588,7 +589,9 @@ export function createStudioServer(options: StudioOptions): Server {
   const ctx: Ctx = {
     store: new StateStore(options.stateDir),
     jobs: new JobRunner(),
-    clientFactory: options.clientFactory ?? (() => new OpenAiChatClient()),
+    // Pass the job logger: a silent client hides retries, timeouts and
+    // gateway blocks, which is how a failing run looks like a quiet one.
+    clientFactory: options.clientFactory ?? ((logger: Logger) => new OpenAiChatClient({ logger })),
     logger: options.logger ?? silentLogger,
     stateDirWork: join(options.stateDir, 'work'),
   };

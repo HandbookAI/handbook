@@ -89,6 +89,7 @@ async function waitJob(id: string): Promise<any> {
 describe('studio server (integration, mock LLM)', () => {
   let server: Server;
   let sourceRoot: string;
+  const factoryLoggers: unknown[] = [];
 
   beforeAll(async () => {
     const stateDir = mkdtempSync(join(tmpdir(), 'hb-studio-'));
@@ -97,7 +98,13 @@ describe('studio server (integration, mock LLM)', () => {
     server = await startStudio({
       stateDir,
       port: PORT,
-      clientFactory: () => new MockChatClient(mockRules()),
+      clientFactory: (logger) => {
+        // The client MUST receive the job logger: without it, retries, timeouts
+        // and gateway blocks never reach the job log a user is watching.
+        factoryLoggers.push(logger);
+        logger.warn('[llm] client attached');
+        return new MockChatClient(mockRules());
+      },
     });
   });
 
@@ -142,6 +149,15 @@ describe('studio server (integration, mock LLM)', () => {
     const status = (await api('/api/repos')).find((r: any) => r.name === 'demo');
     expect(status.hasHandbook).toBe(true);
     expect(status.chapters).toBe(2);
+
+    // The client was built with the job's logger, and what it logs is in the
+    // job log — a silent client is how a failing run reads as a quiet one.
+    expect(factoryLoggers.length).toBeGreaterThan(0);
+    expect(done.log.join('\n')).toContain('[llm] client attached');
+
+    // Described coverage is reported alongside assignment coverage.
+    expect(overview.cardCoverage).toMatchObject({ nFiles: expect.any(Number), nDescribed: expect.any(Number) });
+    expect(overview.cardCoverage.nDescribed).toBe(overview.cardCoverage.nFiles);
   });
 
   it('blocks path traversal on the static handbook route', async () => {
