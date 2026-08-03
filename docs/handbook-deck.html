@@ -6,459 +6,588 @@
 <title>Handbook — 团队分享</title>
 <style>
   :root{
-    --paper:#F3F5F4;      /* 青瓷白纸面 */
-    --ink:#17231F;        /* 松烟墨 */
-    --ink-soft:#4A5D57;   /* 灰绿副文本 */
-    --patina:#0F6B5C;     /* 铜绿主色 */
-    --patina-soft:#DCE9E5;
-    --seal:#C2402A;       /* 朱砂印 */
-    --line:#D8E0DD;
-    --mono:"SF Mono",Menlo,Consolas,"Noto Sans Mono CJK SC",monospace;
-    --serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC","Songti TC",serif;
-    --sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",-apple-system,sans-serif;
+    --bg:#0B0E11;
+    --bg-2:#11161B;
+    --fg:#E9EDF0;
+    --fg-dim:#9AA6AE;
+    --fg-faint:#5C6870;
+    --gold:#D8B36A;
+    --gold-hi:#F0D9A8;
+    --ice:#8FB8CE;
+    --jade:#86C7A5;
+    --red:#E0705C;
+    --line:rgba(233,237,240,.10);
+    --card:rgba(233,237,240,.035);
+    --mono:"SF Mono",Menlo,Consolas,"JetBrains Mono",monospace;
+    --sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",-apple-system,"Helvetica Neue",sans-serif;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
-  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.7}
+  body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.75;
+    -webkit-font-smoothing:antialiased}
 
-  /* ---------- 左侧阶段索引（产品同款隐喻） ---------- */
-  nav#rail{position:fixed;left:0;top:0;bottom:0;width:200px;padding:28px 0 28px 24px;
-    border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px;z-index:10;
-    background:linear-gradient(90deg,rgba(243,245,244,.96),rgba(243,245,244,.88))}
-  nav#rail .brand{font-family:var(--serif);font-weight:700;font-size:17px;letter-spacing:.06em;margin-bottom:18px}
-  nav#rail .brand small{display:block;font-family:var(--mono);font-size:10px;color:var(--ink-soft);letter-spacing:.12em;margin-top:2px}
-  nav#rail a{display:flex;gap:8px;align-items:baseline;padding:5px 8px 5px 0;color:var(--ink-soft);
-    text-decoration:none;font-size:12.5px;border-left:2px solid transparent;padding-left:10px;margin-left:-12px}
-  nav#rail a code{font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.65;min-width:56px}
-  nav#rail a.cur{color:var(--ink);border-left-color:var(--seal);font-weight:600}
-  nav#rail a.cur code{color:var(--seal);opacity:1}
-  nav#rail a:hover{color:var(--ink)}
-  nav#rail .hint{margin-top:auto;font-size:11px;color:var(--ink-soft);opacity:.7}
+  /* 背景质感：细网格 + 两团极暗的光晕 */
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(900px 500px at 82% -10%, rgba(216,179,106,.07), transparent 60%),
+      radial-gradient(800px 520px at -10% 110%, rgba(143,184,206,.05), transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 47px, rgba(233,237,240,.022) 47px 48px),
+      repeating-linear-gradient(90deg, transparent 0 47px, rgba(233,237,240,.022) 47px 48px)}
 
-  /* ---------- 幻灯片 ---------- */
-  section.slide{min-height:100vh;scroll-snap-align:start;position:relative;
-    display:flex;align-items:center;justify-content:center;padding:64px 72px 64px 248px}
-  .frame{max-width:1040px;width:100%}
-  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;color:var(--patina);margin-bottom:18px}
-  h1{font-family:var(--serif);font-weight:900;font-size:clamp(40px,5.2vw,72px);line-height:1.18;letter-spacing:.01em}
-  h2{font-family:var(--serif);font-weight:800;font-size:clamp(30px,3.6vw,46px);line-height:1.25;margin-bottom:26px}
-  h2 em{font-style:normal;color:var(--patina)}
-  .lede{font-size:19px;color:var(--ink-soft);max-width:46em;margin-top:20px}
-  .mark{background:linear-gradient(transparent 62%,var(--patina-soft) 62%);padding:0 2px}
+  section.slide{min-height:100vh;scroll-snap-align:start;position:relative;z-index:1;
+    display:flex;align-items:center;justify-content:center;padding:72px 8vw}
+  .frame{max-width:1120px;width:100%}
 
-  /* 印章页码 */
-  .seal{position:absolute;right:44px;bottom:40px;width:52px;height:52px;background:var(--seal);
-    color:#F7EFEA;font-family:var(--serif);font-weight:700;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;border-radius:7px;line-height:1.05;
-    box-shadow:0 1px 0 rgba(0,0,0,.12) inset,2px 3px 10px rgba(194,64,42,.18);transform:rotate(-2deg)}
-  .seal b{font-size:19px}.seal i{font-style:normal;font-size:9px;letter-spacing:.18em;opacity:.85}
+  /* 书脊线 + 眉题：每页的固定语法 */
+  .head{border-left:2px solid var(--gold);padding-left:26px;margin-bottom:40px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.30em;color:var(--gold);margin-bottom:14px}
+  h1{font-weight:800;font-size:clamp(44px,5.6vw,84px);line-height:1.22;letter-spacing:.015em}
+  h2{font-weight:700;font-size:clamp(30px,3.4vw,48px);line-height:1.3;letter-spacing:.01em}
+  .gold{background:linear-gradient(100deg,var(--gold) 10%,var(--gold-hi) 55%,var(--gold) 90%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:19px;color:var(--fg-dim);max-width:44em;margin-top:22px}
+  .lede b,.lede strong{color:var(--fg);font-weight:600}
 
-  /* 通用卡片/网格 */
-  .grid{display:grid;gap:18px}
-  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
-  .card{border:1px solid var(--line);background:#fff;border-radius:10px;padding:22px 24px}
-  .card h3{font-size:16.5px;font-weight:700;margin-bottom:8px}
-  .card p{font-size:14px;color:var(--ink-soft)}
-  .card .k{font-family:var(--mono);font-size:11px;color:var(--patina);letter-spacing:.14em;display:block;margin-bottom:10px}
-  .quote{border-left:3px solid var(--patina);padding:6px 0 6px 18px;font-size:15px;color:var(--ink-soft);font-style:italic}
+  /* 页码 */
+  .folio{position:absolute;right:8vw;bottom:44px;font-family:var(--mono);font-size:12px;
+    letter-spacing:.24em;color:var(--fg-faint)}
+  .folio b{color:var(--gold);font-weight:600}
 
-  /* 痛点页 */
-  .pain{display:flex;flex-direction:column;gap:14px;margin-top:6px}
-  .pain .row{display:grid;grid-template-columns:200px 1fr;gap:22px;align-items:baseline;
-    border-bottom:1px dashed var(--line);padding:16px 4px}
-  .pain .row:last-child{border-bottom:none}
-  .pain .who{font-family:var(--serif);font-weight:700;font-size:19px}
-  .pain .say{font-size:16.5px;color:var(--ink-soft)}
-  .pain .say b{color:var(--ink);font-weight:600}
+  /* 卡片体系 */
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 28px}
+  .card .k{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--ice);display:block;margin-bottom:12px}
+  .card h3{font-size:17px;font-weight:700;margin-bottom:8px}
+  .card p{font-size:14.5px;color:var(--fg-dim)}
+  .card p b{color:var(--fg)}
 
-  /* 闭环图 */
-  .loop{margin:8px auto 0;display:block;max-width:960px;width:100%}
-  .loop text{font-family:var(--sans);font-size:13.5px;fill:var(--ink)}
-  .loop text.mono{font-family:var(--mono);font-size:10.5px;fill:var(--patina);letter-spacing:.08em}
-  .loop text.soft{fill:var(--ink-soft);font-size:11.5px}
-  .loop .node{fill:#fff;stroke:var(--line);stroke-width:1.2;rx:9}
-  .loop .node.hot{stroke:var(--patina);stroke-width:1.6}
-  .loop path.edge{fill:none;stroke:var(--patina);stroke-width:1.6;marker-end:url(#arr)}
-  .loop path.edge.back{stroke:var(--seal);stroke-dasharray:5 5}
+  /* 痛点页：三段独白 */
+  .voices{display:grid;gap:14px;margin-top:4px}
+  .voice{display:grid;grid-template-columns:176px 1fr;gap:26px;align-items:start;
+    background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px 28px}
+  .voice .who{font-weight:700;font-size:17px;line-height:1.5;padding-top:2px}
+  .voice .who small{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--fg-faint);margin-top:6px}
+  .voice .say{font-size:16.5px;color:var(--fg-dim)}
+  .voice .say b{color:var(--gold-hi);font-weight:600}
+  .root-cause{margin-top:26px;padding:20px 28px;border:1px dashed rgba(216,179,106,.35);border-radius:14px;
+    font-size:17px;color:var(--fg-dim)}
+  .root-cause b{color:var(--fg)}
 
-  /* 事实/叙述 分层图 */
-  .split{display:grid;grid-template-columns:1fr 56px 1fr;align-items:stretch;gap:0;margin-top:8px}
-  .half{border:1px solid var(--line);background:#fff;border-radius:10px;padding:24px 26px}
-  .half h3{font-family:var(--serif);font-size:21px;margin-bottom:4px}
-  .half .sub{font-family:var(--mono);font-size:11px;letter-spacing:.16em;margin-bottom:16px;display:block}
-  .half ul{list-style:none;font-size:14px;color:var(--ink-soft)}
-  .half li{padding:7px 0;border-bottom:1px dashed var(--line)}
-  .half li:last-child{border-bottom:none}
-  .half.facts .sub{color:var(--patina)}
-  .half.prose .sub{color:var(--seal)}
-  .split .bridge{display:flex;align-items:center;justify-content:center;
-    font-family:var(--mono);font-size:11px;color:var(--ink-soft);writing-mode:vertical-rl;letter-spacing:.3em}
+  /* 对比表 */
+  table.vs{width:100%;border-collapse:separate;border-spacing:0;margin-top:4px;font-size:15px}
+  table.vs th,table.vs td{padding:15px 18px;text-align:left;border-bottom:1px solid var(--line)}
+  table.vs thead th{font-size:14px;color:var(--fg-dim);font-weight:600;border-bottom:1px solid rgba(233,237,240,.25)}
+  table.vs thead th.hb{color:var(--gold-hi)}
+  table.vs td.dim{color:var(--fg-dim)}
+  table.vs td.no{color:var(--fg-faint)}
+  table.vs td.mid{color:var(--ice)}
+  table.vs td.yes{color:var(--gold-hi);font-weight:600}
+  table.vs tbody tr:last-child td{border-bottom:none}
+  table.vs .hbcol{background:rgba(216,179,106,.05);border-left:1px solid rgba(216,179,106,.25);border-right:1px solid rgba(216,179,106,.25)}
+  table.vs thead .hbcol{border-top:1px solid rgba(216,179,106,.25);border-radius:10px 10px 0 0}
+  table.vs tbody tr:last-child .hbcol{border-bottom:1px solid rgba(216,179,106,.25);border-radius:0 0 10px 10px}
 
-  /* 数字面板 */
-  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-top:10px}
-  .stat{border-top:2px solid var(--patina);padding-top:14px}
-  .stat b{font-family:var(--serif);font-size:clamp(34px,3.4vw,52px);font-weight:900;display:block;line-height:1.1}
-  .stat b sup{font-size:.45em;color:var(--patina);font-weight:700}
-  .stat span{font-size:13px;color:var(--ink-soft)}
-  .stat.red{border-top-color:var(--seal)}
+  /* 闭环图（暗色） */
+  .loop{display:block;width:100%;max-width:1020px;margin:0 auto}
+  .loop text{font-family:var(--sans);font-size:14px;fill:var(--fg)}
+  .loop text.m{font-family:var(--mono);font-size:10.5px;fill:var(--ice);letter-spacing:.06em}
+  .loop text.soft{fill:var(--fg-dim);font-size:11.5px}
+  .loop text.r{fill:var(--red);font-family:var(--mono);font-size:11px}
+  .loop .node{fill:#12181D;stroke:rgba(233,237,240,.18);stroke-width:1.1;rx:11}
+  .loop .node.hot{stroke:rgba(216,179,106,.6);stroke-width:1.4}
+  .loop path.edge{fill:none;stroke:var(--gold);stroke-width:1.5;marker-end:url(#arrG);opacity:.9}
+  .loop path.back{fill:none;stroke:var(--red);stroke-width:1.4;stroke-dasharray:5 6;marker-end:url(#arrR)}
 
-  /* 终端样式 */
-  .term{background:var(--ink);color:#D8E4E0;border-radius:10px;padding:20px 24px;
-    font-family:var(--mono);font-size:13.5px;line-height:1.9;overflow-x:auto}
-  .term .c{color:#7E948D}.term .g{color:#7FC8B4}.term .r{color:#E58A76}
+  /* 仿真浏览器窗口（产品截图） */
+  .browser{border:1px solid rgba(233,237,240,.14);border-radius:14px;overflow:hidden;
+    background:#0E1317;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .browser .bar{display:flex;align-items:center;gap:8px;padding:11px 16px;background:#151B21;
+    border-bottom:1px solid var(--line)}
+  .browser .dot{width:10px;height:10px;border-radius:50%;background:#2A333B}
+  .browser .url{margin-left:12px;font-family:var(--mono);font-size:11px;color:var(--fg-faint);
+    background:#0E1317;border:1px solid var(--line);border-radius:6px;padding:3px 12px}
+  .browser .body{display:grid;grid-template-columns:220px 1fr;min-height:380px}
+  .hb-side{border-right:1px solid var(--line);padding:16px 0;background:#10151A;font-size:12px}
+  .hb-side .t{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--fg-faint);padding:0 18px 10px}
+  .hb-side a{display:block;padding:6px 18px;color:var(--fg-dim);text-decoration:none;border-left:2px solid transparent}
+  .hb-side a.cur{color:var(--gold-hi);border-left-color:var(--gold);background:rgba(216,179,106,.06)}
+  .hb-main{padding:22px 28px;font-size:13px;color:var(--fg-dim)}
+  .hb-main h4{font-size:17px;color:var(--fg);margin-bottom:2px}
+  .hb-main .meta{font-family:var(--mono);font-size:10px;color:var(--fg-faint);margin-bottom:12px}
+  .hb-main p.prose{margin-bottom:14px;line-height:1.85}
+  .hb-fn{border:1px solid var(--line);border-radius:9px;padding:10px 14px;margin-bottom:8px;background:rgba(233,237,240,.02)}
+  .hb-fn code{font-family:var(--mono);font-size:11.5px;color:var(--ice)}
+  .hb-fn small{display:block;color:var(--fg-dim);font-size:11.5px;margin-top:3px}
+  .hb-reg{display:inline-block;font-family:var(--mono);font-size:10.5px;color:var(--jade);
+    border:1px solid rgba(134,199,165,.3);border-radius:20px;padding:2px 10px;margin:8px 6px 0 0}
+  .callouts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+  .callout{font-size:13.5px;color:var(--fg-dim);border-top:2px solid var(--gold);padding-top:10px}
+  .callout b{color:var(--fg);display:block;margin-bottom:2px;font-size:14px}
 
-  /* doctor 轮次表 */
-  table.rounds{width:100%;border-collapse:collapse;font-size:14.5px;margin-top:6px}
-  table.rounds th{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--ink-soft);
-    text-align:left;padding:10px 14px;border-bottom:1px solid var(--ink)}
-  table.rounds td{padding:11px 14px;border-bottom:1px dashed var(--line)}
-  table.rounds td.n{font-family:var(--mono)}
-  table.rounds .zero{color:var(--patina);font-weight:700}
+  /* 终端 / 代码块 */
+  .term{background:#080B0D;border:1px solid var(--line);color:#C9D4DA;border-radius:12px;
+    padding:20px 24px;font-family:var(--mono);font-size:13px;line-height:1.95;overflow-x:auto}
+  .term .p{color:var(--fg-faint)}
+  .term .c{color:#5F6E77}
+  .term .g{color:var(--jade)}
+  .term .y{color:var(--gold-hi)}
+  .term .r{color:var(--red)}
+  .term .b{color:var(--ice)}
 
-  footer.deckend{font-size:12.5px;color:var(--ink-soft)}
+  /* 数字带 */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 22px 18px}
+  .stat b{font-size:clamp(36px,3.6vw,54px);font-weight:800;line-height:1.05;display:block;
+    font-variant-numeric:tabular-nums}
+  .stat b i{font-style:normal;font-size:.42em;color:var(--gold);vertical-align:.5em;margin-left:2px}
+  .stat span{font-size:12.5px;color:var(--fg-dim);display:block;margin-top:8px;line-height:1.6}
 
-  /* 动效（尊重 reduced-motion） */
-  .frame{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+  /* doctor 收敛条 */
+  .converge{display:flex;align-items:flex-end;gap:10px;margin-top:14px}
+  .converge .colwrap{flex:1;text-align:center}
+  .converge .bar{background:linear-gradient(180deg,rgba(224,112,92,.85),rgba(224,112,92,.35));
+    border-radius:6px 6px 2px 2px;margin:0 auto;width:70%}
+  .converge .bar.ok{background:linear-gradient(180deg,rgba(134,199,165,.9),rgba(134,199,165,.35))}
+  .converge .n{font-family:var(--mono);font-size:12px;color:var(--fg-dim);margin-top:6px}
+  .converge .lab{font-family:var(--mono);font-size:10px;color:var(--fg-faint);letter-spacing:.1em}
+
+  /* 路线图 */
+  .road{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:step}
+  .road .step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px 26px;position:relative}
+  .road .step::before{counter-increment:step;content:"0" counter(step);
+    font-family:var(--mono);font-size:12px;letter-spacing:.2em;color:var(--gold);display:block;margin-bottom:12px}
+  .road .step h3{font-size:17px;margin-bottom:8px}
+  .road .step p{font-size:13.5px;color:var(--fg-dim)}
+  .limits{margin-top:22px;border:1px dashed rgba(224,112,92,.4);border-radius:14px;padding:20px 26px}
+  .limits .k{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--red);display:block;margin-bottom:10px}
+  .limits ul{list-style:none;font-size:14px;color:var(--fg-dim)}
+  .limits li{padding:4px 0}
+  .limits li::before{content:"— ";color:var(--red)}
+
+  footer.end{font-size:13px;color:var(--fg-faint);margin-top:36px;font-family:var(--mono)}
+
+  /* 动效 */
+  .frame{opacity:0;transform:translateY(16px);transition:opacity .55s ease,transform .55s ease}
   section.on .frame{opacity:1;transform:none}
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto}
     .frame{opacity:1;transform:none;transition:none}
   }
 
-  /* 响应式 & 打印（可直接导出 PDF 当 PPT） */
+  /* 响应式 / 打印 */
   @media (max-width:960px){
-    nav#rail{display:none}
-    section.slide{padding:56px 26px}
-    .g2,.g3,.stats{grid-template-columns:1fr}
-    .split{grid-template-columns:1fr}.split .bridge{writing-mode:horizontal-tb;padding:10px}
-    .pain .row{grid-template-columns:1fr}
+    section.slide{padding:56px 22px}
+    .g2,.g3,.stats,.road,.callouts{grid-template-columns:1fr}
+    .voice{grid-template-columns:1fr}
+    .browser .body{grid-template-columns:1fr}
+    .hb-side{display:none}
+    table.vs{font-size:13px}
+    .folio{display:none}
   }
   @media print{
-    nav#rail{display:none}
-    section.slide{page-break-after:always;min-height:auto;padding:48px}
+    body{background:#0B0E11 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    section.slide{page-break-after:always;min-height:auto;padding:44px}
     .frame{opacity:1;transform:none}
   }
-  a{color:var(--patina)}
-  :focus-visible{outline:2px solid var(--seal);outline-offset:3px}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:3px}
 </style>
 </head>
 <body>
 
-<nav id="rail" aria-label="阶段索引">
-  <div class="brand">Handbook<small>STAGE INDEX · 阶段索引</small></div>
-  <a href="#s1"><code>stage-1</code>封面</a>
-  <a href="#s2"><code>stage-2</code>痛点</a>
-  <a href="#s3"><code>stage-3</code>解法：闭环</a>
-  <a href="#s4"><code>stage-4</code>事实与叙述</a>
-  <a href="#s5"><code>stage-5</code>对抗质量</a>
-  <a href="#s6"><code>stage-6</code>永不阻塞</a>
-  <a href="#s7"><code>stage-7</code>两种读者</a>
-  <a href="#s8"><code>stage-8</code>计划与重同步</a>
-  <a href="#s9"><code>stage-9</code>工程可信度</a>
-  <a href="#s10"><code>stage-10</code>真实案例</a>
-  <a href="#s11"><code>stage-11</code>上手</a>
-  <a href="#s12"><code>stage-12</code>结语</a>
-  <div class="hint">↑↓ 方向键翻页<br>⌘P 导出 PDF</div>
-</nav>
-
-<!-- ═══════════ 1 封面 ═══════════ -->
+<!-- ════════ 01 封面 ════════ -->
 <section class="slide" id="s1">
   <div class="frame">
-    <div class="eyebrow">HANDBOOK · 代码库手册工具链</div>
-    <h1>让文档，<br>跟上代码的速度。</h1>
-    <p class="lede">Handbook 把任意代码库变成一本<span class="mark">可导航、可增量更新</span>的系统手册——
-    给人一本讲得清楚的书，给 AI agent 一张改代码用的地图。</p>
-    <p class="lede" style="font-size:15px;margin-top:28px">
-      <b style="color:var(--ink)">5 种语言</b> 静态分析 ·
-      <b style="color:var(--ink)">任意 OpenAI 兼容端点</b> ·
-      <b style="color:var(--ink)">全链路离线可测</b></p>
+    <div class="head" style="margin-bottom:56px">
+      <div class="eyebrow">HANDBOOK · 内部分享</div>
+      <h1>每个仓库，<br>自带一本<span class="gold">活的手册</span>。</h1>
+    </div>
+    <p class="lede" style="font-size:21px">代码在变，文档在追。Handbook 从源码出发，生成<b>人能读懂的系统手册</b>和
+    <b>AI agent 能用的改码地图</b>——代码变更后，一条 resync 命令增量更新，挂进 CI 即随合并自动跟进。</p>
+    <p class="lede" style="font-size:14px;margin-top:34px;font-family:var(--mono);letter-spacing:.06em;color:var(--fg-faint)">
+      Python · TypeScript · Go · Rust · Shell　|　任意 OpenAI 兼容端点</p>
+    <p class="lede" style="font-size:12.5px;margin-top:10px;font-family:var(--mono);letter-spacing:.06em;color:var(--fg-faint)">
+      ↑↓ 翻页 · ⌘P 导出 PDF</p>
   </div>
-  <div class="seal" aria-hidden="true"><b>壹</b><i>卷首</i></div>
+  <div class="folio"><b>01</b> / 11</div>
 </section>
 
-<!-- ═══════════ 2 痛点 ═══════════ -->
+<!-- ════════ 02 痛点 ════════ -->
 <section class="slide" id="s2">
   <div class="frame">
-    <div class="eyebrow">STAGE-2 · 我们都遇到过</div>
-    <h2>文档的三种死法</h2>
-    <div class="pain">
-      <div class="row">
-        <div class="who">新人第一周</div>
-        <div class="say">「架构图是<b>两年前</b>画的，wiki 最后编辑于上个季度——最后还是靠拉着老同事读了三天代码。」</div>
+    <div class="head">
+      <div class="eyebrow">02 · 问题</div>
+      <h2>我们每天都在为<span class="gold">过期的文档</span>买单</h2>
+    </div>
+    <div class="voices">
+      <div class="voice">
+        <div class="who">入职第一周的新人<small>ONBOARDING</small></div>
+        <div class="say">「架构图是两年前的，wiki 停更半年。最后还是<b>占用两位老同事三天</b>，陪读代码。」</div>
       </div>
-      <div class="row">
-        <div class="who">写文档的人</div>
-        <div class="say">「写完那天就开始过期。<b>没有任何机制</b>把代码变更同步回文档，于是大家默契地不再看它。」</div>
+      <div class="voice">
+        <div class="who">负责写文档的人<small>MAINTENANCE</small></div>
+        <div class="say">「写完那天就开始过期。没有任何机制把代码变更同步回来，于是<b>大家默契地不再看它</b>。」</div>
       </div>
-      <div class="row">
-        <div class="who">用 AI 改代码的人</div>
-        <div class="say">「Agent 改了 JSON 解析器，<b>漏了镜像的 XML 解析器</b>和两处提示词模板——文本搜索找不全散落的关联点。」</div>
+      <div class="voice">
+        <div class="who">用 AI 改代码的人<small>AI CODING</small></div>
+        <div class="say">「agent 改了 JSON 解析器，<b>漏了镜像的 XML 解析器</b>和两处提示词模板——靠文本搜索根本找不全。」</div>
       </div>
     </div>
-    <p class="lede" style="margin-top:26px">共同根因：文档是<span class="mark">一次性的手工快照</span>，而代码是持续变化的活物。</p>
+    <div class="root-cause">三件事同一个根因：<b>文档是手工快照，代码是活物</b>。差距每天都在扩大，直到没人再信文档。</div>
   </div>
-  <div class="seal" aria-hidden="true"><b>贰</b><i>痛点</i></div>
+  <div class="folio"><b>02</b> / 11</div>
 </section>
 
-<!-- ═══════════ 3 解法：闭环 ═══════════ -->
+<!-- ════════ 03 为什么现有方案不够 ════════ -->
 <section class="slide" id="s3">
   <div class="frame">
-    <div class="eyebrow">STAGE-3 · 解法</div>
-    <h2>不是「生成文档」，是<em>闭环</em></h2>
-    <svg class="loop" viewBox="0 0 960 330" role="img" aria-label="Handbook 闭环流程图">
-      <defs>
-        <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-          <path d="M0 0 L8 4 L0 8 z" fill="#0F6B5C"/>
-        </marker>
-      </defs>
-      <!-- 节点 -->
-      <rect class="node" x="20"  y="130" width="130" height="66" rx="9"/>
-      <text x="85" y="158" text-anchor="middle">源码仓库</text>
-      <text class="soft" x="85" y="178" text-anchor="middle">持续变化</text>
-
-      <rect class="node hot" x="215" y="130" width="150" height="66" rx="9"/>
-      <text x="290" y="158" text-anchor="middle">静态调用图</text>
-      <text class="mono" x="290" y="178" text-anchor="middle">analyze · 无 LLM</text>
-
-      <rect class="node hot" x="430" y="130" width="150" height="66" rx="9"/>
-      <text x="505" y="158" text-anchor="middle">结构 + 叙述</text>
-      <text class="mono" x="505" y="178" text-anchor="middle">generate · LLM</text>
-
-      <rect class="node hot" x="645" y="40" width="150" height="66" rx="9"/>
-      <text x="720" y="68" text-anchor="middle">手册站点</text>
-      <text class="mono" x="720" y="88" text-anchor="middle">render · 给人</text>
-
-      <rect class="node hot" x="645" y="220" width="150" height="66" rx="9"/>
-      <text x="720" y="248" text-anchor="middle">SKILL 地图</text>
-      <text class="mono" x="720" y="268" text-anchor="middle">skill · 给 agent</text>
-
-      <rect class="node" x="850" y="130" width="96" height="66" rx="9"/>
-      <text x="898" y="158" text-anchor="middle">精确变更</text>
-      <text class="mono" x="898" y="178" text-anchor="middle">plan</text>
-
-      <!-- 前向边 -->
-      <path class="edge" d="M150 163 H 208"/>
-      <path class="edge" d="M365 163 H 423"/>
-      <path class="edge" d="M580 150 C 615 120 615 90 638 78"/>
-      <path class="edge" d="M580 176 C 615 206 615 236 638 248"/>
-      <path class="edge" d="M795 73 C 830 85 840 110 862 126"/>
-      <path class="edge" d="M795 253 C 830 241 840 216 862 200"/>
-      <!-- 回环 resync -->
-      <path class="edge back" d="M898 205 C 905 318 300 332 90 300 C 60 296 40 260 60 200"/>
-      <text class="mono" x="480" y="325" text-anchor="middle" style="fill:#C2402A">resync · 代码变更后，手册增量前滚——不用重新生成</text>
-    </svg>
-    <p class="lede" style="margin-top:14px">手册帮 agent 找全改动点；改完的代码又通过 <b>resync</b> 滚回手册。<span class="mark">文档第一次有了自我更新的回路。</span></p>
-  </div>
-  <div class="seal" aria-hidden="true"><b>叁</b><i>闭环</i></div>
-</section>
-
-<!-- ═══════════ 4 事实与叙述 ═══════════ -->
-<section class="slide" id="s4">
-  <div class="frame">
-    <div class="eyebrow">STAGE-4 · 核心设计 ①</div>
-    <h2>事实与叙述，<em>分层负责</em></h2>
-    <div class="split">
-      <div class="half facts">
-        <h3>事实层</h3>
-        <span class="sub">DETERMINISTIC · 静态分析产出</span>
-        <ul>
-          <li>函数、方法、行号、签名 —— tree-sitter 解析</li>
-          <li>调用边：self / 属性 / 参数 / 跨模块，逐条解析</li>
-          <li>解析不了的调用<b>隔离存档</b>，绝不混入图中</li>
-          <li>Python · TypeScript · Go · Rust · Shell</li>
-        </ul>
-      </div>
-      <div class="bridge">LLM 只在事实之上写作</div>
-      <div class="half prose">
-        <h3>叙述层</h3>
-        <span class="sub">LLM · 大白话散文</span>
-        <ul>
-          <li>每个文件一张"卡片"：用途、角色、生命周期</li>
-          <li>每个函数：干什么 / 数据怎么流 / 谁调用它</li>
-          <li>章节与系统总览：自底向上，先子后父</li>
-          <li>中文 / 英文叙述随时切换</li>
-        </ul>
-      </div>
+    <div class="head">
+      <div class="eyebrow">03 · 备选方案</div>
+      <h2>不是没有工具，是<span class="gold">没有闭环</span></h2>
     </div>
-    <p class="lede" style="margin-top:22px">所以：<span class="mark">散文可以平庸，事实不会说谎</span>。行号、调用关系这些"锚点"永远来自代码本身。</p>
-  </div>
-  <div class="seal" aria-hidden="true"><b>肆</b><i>分层</i></div>
-</section>
-
-<!-- ═══════════ 5 对抗质量 ═══════════ -->
-<section class="slide" id="s5">
-  <div class="frame">
-    <div class="eyebrow">STAGE-5 · 核心设计 ②</div>
-    <h2>章节结构不是生成的，是<em>评审出来的</em></h2>
-    <p class="lede" style="margin-bottom:18px">「骨架医生」循环：actor 提出结构修改 → <b>工程师 / 架构师 / 读者</b>三个角色化评审并行审核 → 机械校验后才落地 → 受影响文件重新归位。评审自己出故障？按 REJECT 处理——<b>坏掉的评审员永远无权放行</b>。</p>
-    <table class="rounds">
-      <thead><tr><th>DOCTOR 轮次</th><th>落地的结构变更</th><th>未归位文件</th></tr></thead>
+    <table class="vs" style="font-size:14px">
+      <thead>
+        <tr>
+          <th style="width:19%"></th>
+          <th>人肉 wiki / README</th>
+          <th>LLM 一次性生成</th>
+          <th>Agent 现场读代码</th>
+          <th class="hb hbcol">Handbook</th>
+        </tr>
+      </thead>
       <tbody>
-        <tr><td class="n">round 1</td><td>0（一名评审返回损坏，整轮否决）</td><td class="n">19</td></tr>
-        <tr><td class="n">round 2</td><td>3</td><td class="n">19 → 1</td></tr>
-        <tr><td class="n">round 3</td><td>3</td><td class="n zero">0 ✓</td></tr>
-        <tr><td class="n">round 4–5</td><td>2（继续打磨后收敛）</td><td class="n zero">0</td></tr>
+        <tr><td class="dim">事实锚定（行号 / 调用）</td><td class="no">靠自觉</td><td class="no">模型凭印象，会编</td><td class="mid">读的是真码，但每次从零探索</td><td class="yes hbcol">静态调用图，逐条可验</td></tr>
+        <tr><td class="dim">覆盖保证</td><td class="no">写到哪算哪</td><td class="mid">长尾文件常被略过</td><td class="no">上下文装不下整库</td><td class="yes hbcol">文件必有卡片，缺一个都显式标出</td></tr>
+        <tr><td class="dim">代码变更之后</td><td class="no">等人想起来改</td><td class="no">整本重生成：贵，结构每次都不同</td><td class="no">无沉淀，下次重新探索、重新烧 token</td><td class="yes hbcol">resync 增量更新，只付变化的钱</td></tr>
+        <tr><td class="dim">AI agent 能直接用</td><td class="no">不能</td><td class="mid">能读，不能定位</td><td class="mid">能用，但无跨文件联动记忆</td><td class="yes hbcol">SKILL 地图 + 逐字编辑计划</td></tr>
+        <tr><td class="dim">质量控制</td><td class="no">无</td><td class="no">生成即定稿，无人复核</td><td class="no">结论散在对话里，无法核对复用</td><td class="yes hbcol">多角色评审循环 + 机械校验</td></tr>
       </tbody>
     </table>
-    <p class="quote" style="margin-top:18px">↑ 真实运行记录：为本项目自身生成手册时，doctor 循环把 19 个无家可归的文件全部归位。</p>
   </div>
-  <div class="seal" aria-hidden="true"><b>伍</b><i>对抗</i></div>
+  <div class="folio"><b>03</b> / 13</div>
 </section>
 
-<!-- ═══════════ 6 永不阻塞 ═══════════ -->
+<!-- ════════ 03+ 关键疑问 ════════ -->
+<section class="slide" id="s3b">
+  <div class="frame">
+    <div class="head">
+      <div class="eyebrow">04 · 关键疑问</div>
+      <h2>不是替代 Claude Code，是给它装<span class="gold">外挂记忆</span></h2>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <span class="k">每次现场探索 → 一次沉淀复用</span>
+        <p style="font-size:15px">agent 每接一个任务都从零读库：重复烧 token，能读多少还受上下文窗口限制。Handbook 把整库梳理一次，<b>全队、每个任务复用</b>。</p>
+      </div>
+      <div class="card">
+        <span class="k">结论散在对话里 → 可核对的资产</span>
+        <p style="font-size:15px">现场探索的结论随对话即焚，事后无法核对。手册的每个事实<b>带行号</b>，讲错了任何人都能指出来、改回来。</p>
+      </div>
+      <div class="card">
+        <span class="k">文本搜索 → 联动记忆</span>
+        <p style="font-size:15px">「改 parser 必须跟着改镜像 parser」这种跨文件约定，grep 搜不出来。<b>Co-change 字段把部落知识写成清单</b>，agent 和新人都能查。</p>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:26px">改码前查图，改完回写——Handbook 是 coding agent 的<b>地图与记忆</b>，不是它的对手。</p>
+  </div>
+  <div class="folio"><b>04</b> / 13</div>
+</section>
+
+<!-- ════════ 04 闭环 ════════ -->
+<section class="slide" id="s4">
+  <div class="frame">
+    <div class="head">
+      <div class="eyebrow">05 · 工作方式</div>
+      <h2>生成 → 使用 → 回写，一个<span class="gold">闭环</span></h2>
+    </div>
+    <svg class="loop" viewBox="0 0 1020 362" role="img" aria-label="Handbook 闭环流程图">
+      <defs>
+        <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+          <path d="M0 0 L8 4 L0 8 z" fill="#D8B36A"/>
+        </marker>
+        <marker id="arrR" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
+          <path d="M0 0 L8 4 L0 8 z" fill="#E0705C"/>
+        </marker>
+      </defs>
+      <rect class="node" x="16"  y="132" width="140" height="70"/>
+      <text x="86" y="162" text-anchor="middle">源码仓库</text>
+      <text class="soft" x="86" y="182" text-anchor="middle">持续变化</text>
+
+      <rect class="node hot" x="222" y="132" width="164" height="70"/>
+      <text x="304" y="162" text-anchor="middle">静态调用图</text>
+      <text class="m" x="304" y="182" text-anchor="middle">analyze · 不用 LLM</text>
+
+      <rect class="node hot" x="452" y="132" width="164" height="70"/>
+      <text x="534" y="162" text-anchor="middle">章节 + 叙述</text>
+      <text class="m" x="534" y="182" text-anchor="middle">generate · LLM</text>
+
+      <rect class="node hot" x="688" y="36" width="164" height="70"/>
+      <text x="770" y="66" text-anchor="middle">手册站点</text>
+      <text class="m" x="770" y="86" text-anchor="middle">render · 给人读</text>
+
+      <rect class="node hot" x="688" y="228" width="164" height="70"/>
+      <text x="770" y="258" text-anchor="middle">SKILL 地图</text>
+      <text class="m" x="770" y="278" text-anchor="middle">skill · 给 agent 用</text>
+
+      <rect class="node" x="908" y="132" width="100" height="70"/>
+      <text x="958" y="162" text-anchor="middle">精确变更</text>
+      <text class="m" x="958" y="182" text-anchor="middle">plan</text>
+
+      <path class="edge" d="M156 167 H 214"/>
+      <path class="edge" d="M386 167 H 444"/>
+      <path class="edge" d="M616 152 C 648 120 650 92 680 78"/>
+      <path class="edge" d="M616 182 C 648 214 650 242 680 256"/>
+      <path class="edge" d="M852 66 C 890 78 902 106 928 126"/>
+      <path class="edge" d="M852 268 C 890 256 902 228 928 208"/>
+      <path class="back" d="M958 208 C 962 322 320 334 96 312 C 62 306 44 260 62 210"/>
+      <text class="r" x="510" y="354" text-anchor="middle">resync — 代码变更后，手册增量前滚，不重新生成</text>
+    </svg>
+    <p class="lede" style="margin-top:18px">左半边是「生成文档」，右半边才是价值所在：<b>手册帮 agent 找全改动点，改完的代码又把手册滚到最新</b>。它会不会也过期？会——如果 resync 没人跑。所以把它做成 CI 任务：合并即更新，<b>新鲜度从「靠自觉」变成「靠流水线」</b>。</p>
+  </div>
+  <div class="folio"><b>05</b> / 13</div>
+</section>
+
+<!-- ════════ 05 产品长什么样（人） ════════ -->
+<section class="slide" id="s5">
+  <div class="frame">
+    <div class="head">
+      <div class="eyebrow">06 · 给人的那一半</div>
+      <h2>像读书一样<span class="gold">读代码库</span></h2>
+    </div>
+    <div class="browser" role="img" aria-label="手册站点界面示意">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="url">work/self/handbook/html/overview.html — 离线单文件夹，双击即开（界面为示意重排，文本取自真实生成结果）</span></div>
+      <div class="body">
+        <div class="hb-side">
+          <div class="t">阶段索引</div>
+          <a>系统总览</a>
+          <a>CLI 入口</a>
+          <a>环境引导</a>
+          <a>源码解析</a>
+          <a class="cur">语言适配器注册</a>
+          <a>调用图组装</a>
+          <a>卡片生成</a>
+          <a>章节骨架</a>
+          <a>状态寄存器 ▸</a>
+        </div>
+        <div class="hb-main">
+          <h4>语言适配器注册</h4>
+          <div class="meta">adapter-registration · 4 files · 生成于调用图之上，每个事实可回溯行号</div>
+          <p class="prose">这个阶段处在系统启动期，专门负责给系统配备多语言翻译能力。语言适配器就像是系统里专门懂某门编程语言的翻译员……就像酒店前台排好各国语言接待员的名册，等真正拿到代码时，系统只要查一下名册，就能立刻派对应的翻译员去解析。<span style="color:var(--fg-faint)">（真实生成文本，未经人工润色）</span></p>
+          <div class="hb-fn"><code>registerBuiltinAdapters()</code>　<code style="color:var(--fg-faint)">register.ts:11</code>
+            <small>开机时把五种语言的解析器一次性注册进名册，幂等，可反复调用。</small></div>
+          <div class="hb-fn"><code>adapterForFile(relPath)</code>　<code style="color:var(--fg-faint)">adapter.ts:88</code>
+            <small>按扩展名找到负责的翻译员；最长后缀匹配获胜。</small></div>
+          <div>
+            <span class="hb-reg">reg-parser-cache</span><span class="hb-reg">reg-concurrency-semaphore</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="callouts">
+      <div class="callout"><b>叙述是大白话</b>面向新人与非专家，比喻和「为什么」优先于实现细节。</div>
+      <div class="callout"><b>事实带行号</b>函数清单、调用关系来自静态分析，模型无权改动。</div>
+      <div class="callout"><b>离线自包含</b>纯静态 HTML，可发聊天群、可内网托管、可单文件分发。</div>
+    </div>
+  </div>
+  <div class="folio"><b>06</b> / 13</div>
+</section>
+
+<!-- ════════ 07 给 agent 的那一半 ════════ -->
 <section class="slide" id="s6">
   <div class="frame">
-    <div class="eyebrow">STAGE-6 · 核心设计 ③</div>
-    <h2>面对真实世界的模型：<em>降级，而不是崩溃</em></h2>
+    <div class="head">
+      <div class="eyebrow">07 · 给 AI 的那一半</div>
+      <h2>agent 拿到的不是文档，是<span class="gold">改码地图</span></h2>
+    </div>
     <div class="grid g2">
-      <div class="card"><span class="k">三级降级</span>
-        <h3>整批 → 单文件 → 按函数分块</h3>
-        <p>读文件失败自动降一级重试；仍失败就记诚实的空卡片并计入覆盖率报告——绝不静默丢文件。</p></div>
-      <div class="card"><span class="k">确定性回退</span>
-        <h3>每个 LLM 步骤都有非 LLM 的备胎</h3>
-        <p>编组失败退回调用图拓扑序；叙述失败退回章节描述。一次模型抖动不会毁掉一次构建。</p></div>
-      <div class="card"><span class="k">内容哈希缓存</span>
-        <h3>重跑只付「变化」的钱</h3>
-        <p>章节叙述按内容哈希缓存；resync 后只有受影响的章节重新生成，其余全部命中缓存。</p></div>
-      <div class="card"><span class="k">断点续跑</span>
-        <h3>崩了就接着跑，--resume</h3>
-        <p>卡片逐批落盘、产物全部 schema 校验带版本号；任何阶段可独立重跑，损坏产物大声报错。</p></div>
+      <div class="card">
+        <span class="k">SKILL 地图 · 每章一个定位块</span>
+        <div class="term" style="font-size:12px;margin-top:4px">
+<div><span class="y"># task-execution · 任务执行</span></div>
+<div><span class="p">Duty:</span> 队列驱动的任务消费与执行</div>
+<div><span class="p">Entry concepts:</span> <span class="b">queue / worker</span></div>
+<div><span class="p">State:</span> <span class="g">reg-task-queue</span></div>
+<div><span class="p">Co-change:</span> 改 parser 必查 <span class="r">镜像 parser + 模板</span></div>
+<div><span class="p">Core files:</span> queue.py · worker.py</div>
+        </div>
+        <p style="margin-top:14px">改动前先查地图：哪些章节在影响范围内、哪些全局状态会被波及、<b>改 A 时历史上总要跟着改的 B</b>。字段为空同样是结论：这一章没有需要担心的全局状态。</p>
+      </div>
+      <div class="card">
+        <span class="k">PLAN · 逐字精确的编辑计划</span>
+        <div class="term" style="font-size:12px;margin-top:4px">
+<div><span class="y">### EDIT 1</span> — engine.py · Engine.spin</div>
+<div><span class="c">```old</span>　精确到字节的现有代码…</div>
+<div><span class="c">```new</span>　最小替换…</div>
+<div><span class="c">```json</span></div>
+<div>{"will_modify": ["Engine.spin"],</div>
+<div>&nbsp;"will_add": [], "will_remove": []}</div>
+        </div>
+        <p style="margin-top:14px">planner 是只读 agent：用手册路由 → 读真实源码确认 → 输出 old/new 文本块 + <b>机器可读的变更声明</b>。old 块逐字节匹配，对不上就拒绝执行——<b>宁可失败，不改错地方</b>；resync 再拿声明更新手册。</p>
+      </div>
     </div>
   </div>
-  <div class="seal" aria-hidden="true"><b>陆</b><i>韧性</i></div>
+  <div class="folio"><b>07</b> / 13</div>
 </section>
 
-<!-- ═══════════ 7 两种读者 ═══════════ -->
+<!-- ════════ 07 为什么可信 ════════ -->
 <section class="slide" id="s7">
   <div class="frame">
-    <div class="eyebrow">STAGE-7 · 产出</div>
-    <h2>一次生成，<em>两种读者</em></h2>
-    <div class="grid g2">
+    <div class="head">
+      <div class="eyebrow">08 · 为什么敢信</div>
+      <h2>三道防线，挡住<span class="gold">大模型的不靠谱</span></h2>
+    </div>
+    <div class="grid g3">
       <div class="card">
-        <span class="k">FOR HUMANS · 手册站点</span>
-        <h3>像读书一样读代码库</h3>
-        <p>系统总览 → 按执行顺序排列的章节 → 每个文件的走读与函数细节。自包含 HTML（多页或单文件 57KB），双击即开，离线可用，深色模式，还有跨章节的<b>状态寄存器表</b>——全局状态在哪读在哪写，一目了然。</p>
+        <span class="k">01 · 事实与叙述分层</span>
+        <h3>模型无权碰事实</h3>
+        <p>行号、函数清单、调用关系全部来自 <span style="white-space:nowrap">tree-sitter</span> 静态分析；解析不了的调用<b>隔离存档</b>而不是混进图里。LLM 只负责在事实之上写大白话。<b>散文可以平庸，锚点不会说谎。</b></p>
       </div>
       <div class="card">
-        <span class="k">FOR AGENTS · 定位索引 + SKILL 包</span>
-        <h3>给 AI 一张「改哪里」的地图</h3>
-        <p>每章一个定位块：职责 / 入口概念 / 涉及状态 / 范本文件 / 强共变提示（改 A 必改 B）/ 核心文件。打包成标准 SKILL 挂给任何 agent，内容哈希做<b>漂移检测</b>——代码变了，手册页会自己「举手」说我旧了。</p>
+        <span class="k">02 · 结构靠评审出来</span>
+        <h3>三个角色互相拆台</h3>
+        <p>章节结构由「骨架医生」循环打磨：提案 → <b>工程师 / 架构师 / 读者</b>三个评审并行审核 → 机械校验后才落地。评审输出损坏或格式非法时，一律按「不通过」处理——<b>出错的评审员，不能成为放行的理由</b>。</p>
+        <div class="converge" aria-label="doctor 收敛：未归位文件 19 → 1 → 0">
+          <div class="colwrap"><div class="bar" style="height:64px"></div><div class="n">19</div><div class="lab">R1</div></div>
+          <div class="colwrap"><div class="bar" style="height:12px"></div><div class="n">1</div><div class="lab">R2</div></div>
+          <div class="colwrap"><div class="bar ok" style="height:4px"></div><div class="n">0</div><div class="lab">R3</div></div>
+          <div class="colwrap"><div class="bar ok" style="height:4px"></div><div class="n">0</div><div class="lab">R4-5</div></div>
+        </div>
+        <p style="font-size:12px;margin-top:8px;color:var(--fg-faint)">↑ 真实记录：78 个文件中最初 19 个无家可归，三轮归零</p>
+      </div>
+      <div class="card">
+        <span class="k">03 · 降级而不是崩溃</span>
+        <h3>每一步都有备胎</h3>
+        <p>读文件失败：整批 → 单文件 → 按函数分块，三级降级；叙述失败退回确定性文本；全部产物内容哈希缓存 + 断点续跑。<b>一次模型抖动，毁不掉一次构建</b>；失败会被记录在覆盖率报告里，不会虚报。</p>
       </div>
     </div>
-    <p class="lede" style="margin-top:20px">同一份事实，两种表达。团队新人和 Claude Code <span class="mark">用的是同一本手册</span>。</p>
   </div>
-  <div class="seal" aria-hidden="true"><b>柒</b><i>产出</i></div>
+  <div class="folio"><b>08</b> / 13</div>
 </section>
 
-<!-- ═══════════ 8 plan & resync ═══════════ -->
+<!-- ════════ 08 工程质量 ════════ -->
 <section class="slide" id="s8">
   <div class="frame">
-    <div class="eyebrow">STAGE-8 · 闭环的右半边</div>
-    <h2>手册不止被读，还<em>参与改代码</em></h2>
-    <div class="grid g2">
-      <div class="card">
-        <span class="k">handbook plan</span>
-        <h3>手册驱动的变更定位</h3>
-        <p>只读 agent 先用手册路由（哪些章节、哪些状态在射程内），再读真实源码确认，最后输出<b>逐字精确的编辑计划</b>：old→new 文本块 + 机器可读的变更声明（改了哪些函数、新增哪些、删除哪些）。执行器可以闭眼替换。</p>
-      </div>
-      <div class="card">
-        <span class="k">handbook resync</span>
-        <h3>变更落地，手册前滚</h3>
-        <p>对比新旧调用图指纹 → 只为变化的文件重写卡片 → 重排受影响章节 → 叙述走缓存增量更新。删掉的文件连它的卡片一起清掉，<b>绝不留幽灵证据</b>。全程崩溃安全：没跑完，基线不动。</p>
-      </div>
+    <div class="head">
+      <div class="eyebrow">09 · 工程质量</div>
+      <h2>不是 demo，是<span class="gold">按产品标准做的</span></h2>
     </div>
-    <p class="lede" style="margin-top:20px">这就是和「一次性文档生成器」的本质区别：<span class="mark">生成 → 使用 → 回写，是一个可持续的循环</span>。</p>
+    <div class="stats">
+      <div class="stat"><b>78<i>→21</i></b><span>吃自己狗粮：78 个源文件，生成 21 章全中文手册</span></div>
+      <div class="stat"><b>9</b><span>个包硬隔离：LLM 代码碰不到确定性事实层——模型抖动伤不到锚点</span></div>
+      <div class="stat"><b>167</b><span>项离线测试兜底：工具升级不心惊，坏了也是我们先知道</span></div>
+      <div class="stat"><b>3<i>轮</i></b><span>对抗式评审，33 项问题全部修复并补回归；记录在 docs/internal/review/ 可查</span></div>
+      <div class="stat"><b>5</b><span>种语言开箱即用，安装零编译——clone 下来就能跑</span></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <span class="k">它给自己写的系统总览 · 真实生成，未润色</span>
+      <p style="font-size:15.5px;line-height:2">「这个系统是一个代码库手册自动生成器——它读入源码，输出人能读、AI 也能用的文档。……进入主循环后，调度器像车间主任依次分发任务：每个文件拿到一张『用途卡片』并归入对应阶段；骨架合成排出章节顺序，叙述生成用大白话写出概述，<b>Doctor 审查以演员-评论家循环反复打磨质量</b>。代码若有改动，增量重同步只刷新受影响部分。」</p>
+    </div>
   </div>
-  <div class="seal" aria-hidden="true"><b>捌</b><i>循环</i></div>
+  <div class="folio"><b>09</b> / 13</div>
 </section>
 
-<!-- ═══════════ 9 工程可信度 ═══════════ -->
+<!-- ════════ 09 成本与上手 ════════ -->
 <section class="slide" id="s9">
   <div class="frame">
-    <div class="eyebrow">STAGE-9 · 这不是玩具</div>
-    <h2>工程可信度</h2>
-    <div class="stats">
-      <div class="stat"><b>9</b><span>包 · 严格单向依赖的 pnpm monorepo，LLM 与确定性代码按包隔离</span></div>
-      <div class="stat"><b>167</b><span>测试全绿 · 全部离线运行，零 API key，含 mock 全管线 E2E</span></div>
-      <div class="stat red"><b>3<sup>轮</sup></b><span>对抗评审 · 独立评审 agent 找茬，33 项缺陷全部修复并有回归测试</span></div>
-      <div class="stat"><b>5</b><span>语言 · 纯 WASM tree-sitter，安装零编译</span></div>
-      <div class="stat"><b>100<sup>%</sup></b><span>可复现 · 产物 schema 校验带版本号，任意阶段独立重跑</span></div>
+    <div class="head">
+      <div class="eyebrow">10 · 成本与上手</div>
+      <h2>三条命令，出<span class="gold">第一本手册</span></h2>
     </div>
-    <div class="card" style="margin-top:26px">
-      <span class="k">对抗评审是怎么做的</span>
-      <p style="font-size:14.5px">每轮派独立的「找茬 agent」通读源码 + 对着构建产物写复现脚本验证，只报告<b>可复现的真缺陷</b>（含高危：JSON 解析错位、并发限流竞态、增量基线破坏）。修复后下一轮先复核再扫新，直到<b>扫描干涸</b>。这套机制本身，就是产品里 actor-critic 思想的自我实践。</p>
+    <div class="term">
+<div><span class="c"># .env 里放 OPENAI_API_KEY —— 官方 / vLLM / 内部网关，兼容即可</span></div>
+<div><span class="g">handbook analyze</span>  --source ~/code/myproj --work work/myproj      <span class="c"># 静态分析，免费，先看识别结果</span></div>
+<div><span class="g">handbook generate</span> --source ~/code/myproj --work work/myproj --narrate-lang zh</div>
+<div><span class="g">handbook render</span>   --work work/myproj --html --agent-site         <span class="c"># 手册站点 + agent 地图</span></div>
+<div style="margin-top:8px"><span class="c"># 代码变更之后：</span></div>
+<div><span class="r">handbook resync</span>   --case case1 --work work/myproj                <span class="c"># 只更新受影响章节，缓存命中不花钱</span></div>
+    </div>
+    <div class="grid g3" style="margin-top:18px">
+      <div class="card"><span class="k">花多少</span><h3>成本三闸门</h3><p>brief 先试水再上 deep 精读；叙述按内容哈希缓存；<b>--resume</b> 断点续跑。实测锚点：本仓 78 文件 brief 全量约<b>数十次模型调用</b>；接内网端点时费用趋近于零。</p></div>
+      <div class="card"><span class="k">代码去哪了</span><h3>数据不出你的边界</h3><p>源码只发往 .env 里配置的那<b>一个端点</b>——接内网 vLLM / 网关时代码全程不出内网，无遥测上报；CI 和演示走内置 mock，<b>零外发、零 token</b>。</p></div>
+      <div class="card"><span class="k">什么仓库</span><h3>大小通吃</h3><p>大库自动分章（file 策略）；小而关键的库可手写章节骨架、<b>逐函数</b>精修（member 策略）。混合语言自动探测。</p></div>
     </div>
   </div>
-  <div class="seal" aria-hidden="true"><b>玖</b><i>可信</i></div>
+  <div class="folio"><b>10</b> / 13</div>
 </section>
 
-<!-- ═══════════ 10 真实案例 ═══════════ -->
+
+<!-- ════════ 11 有问必答 ════════ -->
+<section class="slide" id="s9b">
+  <div class="frame">
+    <div class="head">
+      <div class="eyebrow">11 · 有问必答</div>
+      <h2>决定采用之前，<span class="gold">三个必答题</span></h2>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <span class="k">Q1 · 代码发给谁？</span>
+        <p style="font-size:15px">只发往 .env 指定的<b>唯一端点</b>。接内网 vLLM / 网关，代码全程不出内网；演示与 CI 走内置 mock，<b>零外发</b>。工具本身无遥测、无上报，代码可查。</p>
+      </div>
+      <div class="card">
+        <span class="k">Q2 · 手册自己会不会过期？</span>
+        <p style="font-size:15px">会——如果 resync 没人跑。所以把它挂成 CI 任务：<b>合并即更新</b>。手册新鲜度从「靠人品」变成「靠流水线」；万一断更，SKILL 里的内容哈希还会把过期页<b>标记出来</b>。</p>
+      </div>
+      <div class="card">
+        <span class="k">Q3 · 工具谁维护？</span>
+        <p style="font-size:15px">由 ______（分享人现场认领）负责，问题进 #handbook 群；167 项离线测试兜底。产物是纯静态文件，<b>随时可停用，不绑架任何仓库</b>。</p>
+      </div>
+    </div>
+  </div>
+  <div class="folio"><b>11</b> / 13</div>
+</section>
+\n<!-- ════════ 10 落地与边界 ════════ -->
 <section class="slide" id="s10">
   <div class="frame">
-    <div class="eyebrow">STAGE-10 · 吃自己的狗粮</div>
-    <h2>它给<em>自己</em>写了本手册</h2>
-    <p class="lede" style="margin-bottom:18px">78 个源文件 → 21 个语义化章节（<code style="font-family:var(--mono);font-size:14px">call-graph-assembly、planner-agent、llm-channel…</code>），全中文叙述，未归位文件 0。系统总览开篇是模型自己写的——</p>
-    <p class="quote" style="font-size:17px;line-height:1.9">「这是一套命令行工具，把代码库自动翻译成人类可读的手册和 AI 代理可用的技能包。……第一阶段静态扫描代码，拼出函数调用关系网；第二阶段逐文件请大模型写用途卡片……第三阶段自底向上撰写叙述，经多角色 AI 审查反复打磨。」</p>
-    <p class="lede" style="margin-top:18px">章节里甚至有恰当的比喻：语言适配器注册表被写成<span class="mark">「酒店前台各国翻译员的名册」</span>。这是给普通读者的文档该有的样子。</p>
+    <div class="head">
+      <div class="eyebrow">12 · 落地路线</div>
+      <h2>三步走，<span class="gold">下周就能开始</span></h2>
+    </div>
+    <div class="road">
+      <div class="step"><h3>试点一个仓库</h3><p>挑一个新人常问、文档最烂的核心库。生成中文手册发到群里，收集「有没有讲错」的反馈——事实层有行号，很好核对。</p></div>
+      <div class="step"><h3>接入变更流程</h3><p>PR 合并后跑 <b>resync</b>（手动或 CI 任务）——新人和 agent 读到的永远是<b>当前代码</b>的手册，不是三个月前的。</p></div>
+      <div class="step"><h3>喂给 agent</h3><p>把 SKILL 地图挂到 Claude Code / 内部 agent。改码前先过一遍 Co-change 清单——<b>「改 A 忘 B」从靠记忆，变成靠清单</b>。</p></div>
+    </div>
+    <div class="limits">
+      <span class="k">边界 · 我们不装</span>
+      <ul>
+        <li>叙述质量取决于所接的模型——弱模型出弱散文，但行号和调用关系等事实层不受影响</li>
+        <li>目前深度解析五种语言（Python / TS / Go / Rust / Shell）；Java、C++ 等需新增 adapter（一门一个文件，130～560 行，照抄现成模式）</li>
+        <li>首次全量生成是主要成本；deep 模式在大仓库上应先用 brief 试算规模</li>
+      </ul>
+    </div>
   </div>
-  <div class="seal" aria-hidden="true"><b>拾</b><i>实证</i></div>
+  <div class="folio"><b>12</b> / 13</div>
 </section>
 
-<!-- ═══════════ 11 上手 ═══════════ -->
+<!-- ════════ 11 结语 ════════ -->
 <section class="slide" id="s11">
   <div class="frame">
-    <div class="eyebrow">STAGE-11 · 五分钟上手</div>
-    <h2>三条命令，从仓库到手册</h2>
-    <div class="term" role="img" aria-label="上手命令示例">
-      <div><span class="c"># .env 里放 OPENAI_API_KEY（任意兼容端点：官方 / vLLM / 内部代理）</span></div>
-      <div><span class="g">handbook analyze</span>  --source ~/code/myproj --work work/myproj   <span class="c"># ① 静态分析，免费冒烟</span></div>
-      <div><span class="g">handbook generate</span> --source ~/code/myproj --work work/myproj --narrate-lang zh</div>
-      <div><span class="g">handbook render</span>   --work work/myproj --html --agent-site      <span class="c"># ③ 手册站点 + agent 索引</span></div>
-      <div style="margin-top:10px"><span class="c"># 代码变更后：</span></div>
-      <div><span class="r">handbook resync</span>   --case case1 --work work/myproj             <span class="c"># 增量前滚，只付变化的钱</span></div>
+    <div class="head" style="margin-bottom:48px">
+      <div class="eyebrow">13 · 结语</div>
+      <h1 style="font-size:clamp(36px,4.6vw,64px)">代码一直在说话，<br>现在有人<span class="gold">负责记录</span>了。</h1>
     </div>
-    <div class="grid g3" style="margin-top:20px">
-      <div class="card"><h3>成本可控</h3><p>brief 模式先试水，deep 模式再精读；--resume 断点续跑；叙述缓存让重跑近乎免费。</p></div>
-      <div class="card"><h3>不挑模型</h3><p>OpenAI 兼容即可。内置 mock 端点让 CI 和演示零 token 跑全流程。</p></div>
-      <div class="card"><h3>不挑仓库</h3><p>五种语言自动探测混合分析；大库自动分章，小库可手写骨架逐函数精修。</p></div>
+    <p class="lede">新人第一天就能读，agent 改码时能查，代码变了它跟着变——文档从「欠下的债」，变成<b>随代码走的基础设施</b>。</p>
+    <div class="term" style="max-width:660px;margin-top:30px">
+<div><span class="c"># 现在就能跑的演示（内置 mock，离线零 token）</span></div>
+<div><span class="g">bash examples/run-demo.sh</span>      <span class="c"># 离线跑通全流程</span></div>
+<div><span class="g">bash examples/run-self.sh --real</span>  <span class="c"># 看它给自己写的中文手册</span></div>
     </div>
+    <footer class="end">repo: ~/Desktop/share/handbook · docs/architecture.md · 本页 ⌘P 可导出 PDF 分发</footer>
   </div>
-  <div class="seal" aria-hidden="true"><b>拾壹</b><i>上手</i></div>
-</section>
-
-<!-- ═══════════ 12 结语 ═══════════ -->
-<section class="slide" id="s12">
-  <div class="frame">
-    <div class="eyebrow">STAGE-12 · 结语</div>
-    <h1 style="font-size:clamp(34px,4.4vw,58px)">代码一直在说话，<br>只是从前没人记录。</h1>
-    <p class="lede" style="margin-top:24px">Handbook 让每个仓库自带一本活的手册：新人第一天就能读，agent 改代码时能查，代码变了它跟着变。</p>
-    <div class="term" style="margin-top:30px;max-width:640px">
-      <div><span class="c"># 现在就能看的演示（离线，无需 key）</span></div>
-      <div><span class="g">bash examples/run-demo.sh</span>   <span class="c"># 演示小项目</span></div>
-      <div><span class="g">bash examples/run-self.sh</span>   <span class="c"># 它自己的手册</span></div>
-    </div>
-    <footer class="deckend" style="margin-top:34px">仓库：~/Desktop/share/handbook · 文档：docs/architecture.md · 本页：docs/handbook-deck.html（⌘P 可导出 PDF）</footer>
-  </div>
-  <div class="seal" aria-hidden="true"><b>拾贰</b><i>卷尾</i></div>
+  <div class="folio"><b>13</b> / 13</div>
 </section>
 
 <script>
-  // 键盘翻页 + 索引高亮
   const slides=[...document.querySelectorAll('section.slide')];
-  const links=[...document.querySelectorAll('nav#rail a')];
   const idx=()=>slides.findIndex(s=>Math.abs(s.getBoundingClientRect().top)<innerHeight/2);
   addEventListener('keydown',e=>{
-    if(['ArrowDown','PageDown',' '].includes(e.key)){e.preventDefault();slides[Math.min(idx()+1,slides.length-1)].scrollIntoView();}
-    if(['ArrowUp','PageUp'].includes(e.key)){e.preventDefault();slides[Math.max(idx()-1,0)].scrollIntoView();}
+    if(['ArrowDown','PageDown',' ','ArrowRight'].includes(e.key)){e.preventDefault();slides[Math.min(idx()+1,slides.length-1)].scrollIntoView();}
+    if(['ArrowUp','PageUp','ArrowLeft'].includes(e.key)){e.preventDefault();slides[Math.max(idx()-1,0)].scrollIntoView();}
     if(e.key==='Home'){slides[0].scrollIntoView()} if(e.key==='End'){slides[slides.length-1].scrollIntoView()}
   });
-  const io=new IntersectionObserver(es=>es.forEach(en=>{
-    if(en.isIntersecting){
-      en.target.classList.add('on');
-      const i=slides.indexOf(en.target);
-      links.forEach((a,j)=>a.classList.toggle('cur',i===j));
-    }
-  }),{threshold:.55});
+  const io=new IntersectionObserver(es=>es.forEach(en=>{if(en.isIntersecting)en.target.classList.add('on')}),{threshold:.5});
   slides.forEach(s=>io.observe(s));
 </script>
 </body>
