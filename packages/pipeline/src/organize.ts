@@ -18,6 +18,9 @@ import {
   type Organization,
   type OrganizedFile,
   type Skeleton,
+  describeJsonShape,
+  extractEntryList,
+  replyExcerpt,
 } from '@handbook/core';
 
 /** file → set of files it calls into (internal→internal edges, self edges dropped). */
@@ -160,15 +163,24 @@ async function organizeOneStage(
     ...rows,
   ].join('\n\n');
 
-  let rawGroups: unknown;
+  let rawGroups: Array<Record<string, unknown>> = [];
   try {
     const response = await client.complete(prompt, { temperature: 0 });
-    rawGroups = (response.json as { groups?: unknown } | undefined)?.groups;
+    rawGroups = extractEntryList(response.json, ['groups', 'sections'], {
+      single: { fields: ['title', 'files'] },
+    });
+    if (rawGroups.length === 0) {
+      logger.warn(
+        `[organize] ${stageId} returned no usable groups (${describeJsonShape(
+          response.json,
+        )}) — reply: ${replyExcerpt(response.text)}`,
+      );
+    }
   } catch (error) {
     logger.warn(`[organize] ${stageId} LLM failed: ${String(error)}`);
     return flat('(organize failed; flat call-graph order)');
   }
-  if (!Array.isArray(rawGroups) || rawGroups.length === 0) {
+  if (rawGroups.length === 0) {
     return flat('(organize returned no groups; flat call-graph order)');
   }
 
