@@ -91,7 +91,7 @@ handbook apply --source /path/to/repo --plan plan.md
 handbook resync --case cases/upload-retry --work work/myrepo
 ```
 
-Prefer clicking over typing? `handbook studio` opens a local web UI (repos, generation with live logs, handbook browser, plan + resync) at http://127.0.0.1:4860.
+Prefer clicking over typing? `handbook studio` opens a local web UI at http://127.0.0.1:4860 — repository registry, generation with live logs, the handbook browser, an impact graph, a source viewer, and the full plan → dry-run → apply → rollback → resync loop.
 
 Key `generate` flags: `--strategy file|member` (file = auto skeleton, file-as-leaf;
 member = you author `skeleton.yaml`, functions are classified individually),
