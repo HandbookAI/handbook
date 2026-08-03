@@ -65,7 +65,10 @@ handbook skill    --handbook work/myrepo/handbook --out skills/myrepo \
 handbook validate --skill skills/myrepo --source /path/to/repo       # 5. 校验结构 + 新鲜度
 handbook plan     --source /path/to/repo --handbook skills/myrepo/references \
     --request "上传失败自动重试三次" --out plan.md                    # 6. 手册驱动的变更定位
-handbook resync   --case cases/upload-retry --work work/myrepo       # 7. 变更落地后前滚手册
+handbook apply    --source /path/to/repo --plan plan.md --dry-run    # 7. 先校验计划（不写盘）
+handbook apply    --source /path/to/repo --plan plan.md              #    真正应用（自动备份）
+handbook rollback --backup <上一步打印的备份目录>                      #    需要时一键回滚
+handbook resync   --case cases/upload-retry --work work/myrepo       # 8. 变更落地后前滚手册
 ```
 
 `generate` 关键参数：`--strategy file|member`（file=自动骨架、文件为叶子；member=你手写
@@ -95,6 +98,7 @@ handbook resync   --case cases/upload-retry --work work/myrepo       # 7. 变更
 | [`@handbook/renderer`](packages/renderer/README.md) | markdown 页面、agent 定位索引、自包含 HTML 站点，无 LLM |
 | [`@handbook/skill`](packages/skill/README.md) | SKILL 打包 + 校验 + 覆盖率漂移检测，无 LLM |
 | [`@handbook/planner`](packages/planner/README.md) | 手册驱动的只读规划 agent |
+| [`@handbook/patcher`](packages/patcher/README.md) | 逐字节应用计划里的 EDIT 块——全成或全不成、自动备份、可回滚 |
 | [`@handbook/resync`](packages/resync/README.md) | 代码变更后的手册增量前滚 |
 | [`@handbook/studio`](packages/studio/README.md) | 本地 Web 界面：仓库 · 生成 · 浏览 · 演化（仅 127.0.0.1） |
 | [`@handbook/cli`](packages/cli/README.md) | `handbook` 命令行 |

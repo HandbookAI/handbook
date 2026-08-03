@@ -136,6 +136,13 @@ The pipeline has one orchestrator and two granularities:
 
 ## 7. The helper side
 
+- **patcher** turns a plan into real edits: it parses the `### EDIT n` blocks, verifies
+  every `old` anchor against current file contents (unique match required), and only then
+  writes — all-or-nothing, backing up each touched file so a rollback restores exact prior
+  bytes. A stale or ambiguous anchor is a refusal, never a guess; this strictness is what
+  makes a blind executor safe.
+- **studio** is a localhost web shell over everything above (registry, jobs with SSE logs,
+  handbook browsing, impact graph, source viewer, plan → apply → rollback → resync).
 - **skill** packages a rendered handbook into `SKILL.md + references/` and can embed
   `coverage.json` (file → stage + source content hashes). The validator re-checks
   structure, the index↔stage-page contract, and hash freshness — a stale hash is a
