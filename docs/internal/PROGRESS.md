@@ -73,3 +73,19 @@
 - **@handbook/studio**（第 10 个包）：本地 Web UI（127.0.0.1）——仓库注册/生成（SSE 日志）/内嵌手册浏览/plan/resync 演化历史；CLI `handbook studio`
 - studio 对抗评审 15 项全修：CSRF 防护、**内容哈希级变更探测**（phase1 graph.metadata.fileHashes，resync 用哈希 diff）、declarations 参与 resync 范围、UTF-8 分块解码、workDir 冲突守卫、部分阶段渲染守卫、失败清理、任务逐出等
 - 全仓 182 测试绿；studio 实例可用：`handbook studio` → http://127.0.0.1:4860
+
+## 2026-08-03 第二阶段：Studio 产品化 + 真实补丁执行器
+
+- **@handbook/patcher**（第 11 个包）：把 plan 的 EDIT 块真正落盘。全成或全不成、逐字节唯一匹配、
+  两阶段原子写（rename 中途失败自动还原）、备份 + sha256 前后哈希、可回滚且拒绝覆盖补丁后的新工作、
+  跨进程树锁（原子 wx 独占文件，key 为源码树而非备份目录）、CommonMark 双围栏解析 + 结构完整性拒绝、
+  UTF-8/CRLF/文件模式/大小上限/符号链接全覆盖。CLI: `handbook apply [--dry-run]` / `handbook rollback [--force] [--source]`
+- **四轮对抗评审共 71 项发现全部修复**（R1 28 / R2 17 / R3 14 / R4 12），其中 11 项高危。
+  最惊险：文档型计划的示例 EDIT 被当真执行（两次被捅开）、解析器拒绝本项目自己文档化的 planner 输出
+  （plan→apply 端到端断链，测试却全绿——测试助手从不生成 declarations 块）、并发 apply 静默丢边（8/8 → 0/6）。
+  评审报告：docs/internal/review/patcher-r{1,2,3,4}.md
+- **Studio UI 产品化**（单文件 1900+ 行、零外部请求）：Home 落地页（工作流步骤条）、Instructions、
+  跨仓库演化历史、影响图 SVG（自算布局、按阶段着色、点击进源码）、源码查看器（行号 + 函数索引）、
+  补丁流（dry-run/应用/逐条结果表/回滚/备份列表/跳过项显式覆盖）、中英 i18n、明暗主题
+- studio 后端 6 个新接口；全仓 **235 测试绿**，11 包
+- 端到端 HTTP 实测：apply → 手改文件 → 守卫回滚拒绝 → force 回滚字节还原，全部符合预期

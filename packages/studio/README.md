@@ -17,8 +17,9 @@ the machine only via the LLM endpoint the pipeline itself is configured to use.
   the timeline.
 - Deliberately NOT a deployment server: binds localhost only, no auth, no TLS — it is a
   desktop tool.
-- Deliberately does NOT apply edit plans to source code: `plan` produces the byte-exact
-  plan; applying it stays with you (or your coding agent).
+- Apply edit plans through `@handbook/patcher`: dry-run verification, all-or-nothing
+  writes, per-edit outcomes, and a rollback that refuses to clobber work done after the
+  patch (an explicit override is offered in the UI).
 
 ## Endpoints
 
@@ -32,8 +33,29 @@ the machine only via the LLM endpoint the pipeline itself is configured to use.
 | `POST /api/repos/:name/resync` | live-tree resync job (`{description, noLlm, narrateLang}`) + re-render |
 | `GET /api/repos/:name/overview` | stages/summaries/registers/coverage JSON |
 | `GET /api/repos/:name/history` | evolution timeline |
+| `GET /api/repos/:name/graph?stage=&limit=` | file-level impact graph (nodes with degree + stage, weighted links) |
+| `GET /api/repos/:name/source?path=` | file content + function anchors (line ranges) |
+| `POST /api/repos/:name/apply` | patch job (`{plan, dryRun}`) → per-edit outcomes, changedFiles, backupDir |
+| `POST /api/repos/:name/rollback` | rollback job (`{backup?, force?}`) → restored / removed / skipped |
+| `GET /api/repos/:name/patches` | backup stamps, newest first |
+| `GET /api/history` | evolutions across every repo, newest first |
 | `GET /api/repos/:name/handbook/*` | static serving of the rendered handbook (traversal-safe) |
 | `GET /api/jobs/:id`, `GET /api/jobs/:id/stream` | job status / SSE log stream |
+
+## Views
+
+| View | What it is for |
+|---|---|
+| Home | the product's shape: the Request → Handbook → Plan → Patch → Sync loop, plus recent repositories and evolutions |
+| Instructions | in-app guide: the five-step loop, what each button does, cost and data-boundary facts |
+| Overview | status, chapter index with summaries, coverage, state registers |
+| Browse handbook | the rendered HTML handbook, embedded |
+| Impact graph | file-level call relations as SVG — degree-sized nodes, stage colours, stage filter, click through to source |
+| Source | the real file with line numbers and a function index that jumps and highlights |
+| Evolve | plan → dry-run → apply (per-edit table) → rollback → resync, with the backup list |
+| History | evolution timeline per repo, and across all repos from the sidebar |
+
+Chinese/English and dark/light are both toggles in the top bar, persisted per browser.
 
 ## Usage
 
