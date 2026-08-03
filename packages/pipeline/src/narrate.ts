@@ -352,11 +352,18 @@ export async function extractRegisters(
         }
       }
       if (entries.length === 0) {
-        logger.warn(
-          `[registers] round returned no usable registers (${describeJsonShape(
-            response.json,
-          )}) — reply: ${replyExcerpt(response.text)}`,
-        );
+        // An empty LIST is the model saying "nothing more" — that is how these
+        // rounds are supposed to end, so it must not read as a failure. Anything
+        // else means the answer could not be read, which must.
+        if (Array.isArray(response.json) && response.json.length === 0) {
+          logger.info(`[registers] round ${round}: the model reports nothing further`);
+        } else {
+          logger.warn(
+            `[registers] round returned no usable registers (${describeJsonShape(
+              response.json,
+            )}) — reply: ${replyExcerpt(response.text)}`,
+          );
+        }
       }
       for (const r of entries) {
         // Coerce near-miss ids (`reg_task_queue`, `Task Queue`) into the
