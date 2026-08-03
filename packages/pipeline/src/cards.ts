@@ -15,6 +15,9 @@ import type { ChatClient } from '@handbook/llm';
 import {
   Progress,
   coerceRole,
+  describeJsonShape,
+  extractEntryList,
+  replyExcerpt,
   leafName,
   mapLimit,
   silentLogger,
@@ -180,35 +183,14 @@ function matchLoosely(named: string, valid: ReadonlySet<string>): string | undef
   return baseHits.length === 1 ? baseHits[0] : undefined;
 }
 
-/** A short, log-safe description of what the reply's JSON actually looked like. */
-function describeReplyKeys(json: unknown): string {
-  if (json === undefined || json === null) return 'no JSON block in the reply';
-  if (Array.isArray(json)) return `top-level array of ${json.length}`;
-  if (typeof json !== 'object') return `top-level ${typeof json}`;
-  return `keys: ${Object.keys(json as object).slice(0, 8).join(', ') || '(none)'}`;
-}
-
 export function extractCardEntries(json: unknown): RawEntry[] {
-  const asEntries = (value: unknown): RawEntry[] | undefined => {
-    if (!Array.isArray(value)) return undefined;
-    return value.filter((v): v is RawEntry => typeof v === 'object' && v !== null);
-  };
-  const direct = asEntries(json);
-  if (direct) return direct;
-  if (typeof json !== 'object' || json === null) return [];
-  const record = json as Record<string, unknown>;
-  for (const key of ['purposes', 'files', 'cards', 'results', 'entries', 'data']) {
-    const hit = asEntries(record[key]);
-    if (hit) return hit;
-  }
-  // A single un-wrapped card: {"file": "...", "purpose": "..."}.
-  if (typeof record.file === 'string') return [record as RawEntry];
-  // …or one with no `file` at all, which is the natural answer when the prompt
-  // carried a single file. The caller supplies the path in that case.
-  const cardish = ['purpose', 'description', 'role', 'lifecycle', 'functions'];
-  if (cardish.some((key) => key in record)) return [record as RawEntry];
-  // Keyed by path: {"a/b.ts": {"purpose": "..."}, …}.
-  const keyed = Object.entries(record).filter(
+  const entries = extractEntryList(json, ['purposes', 'files', 'cards'], {
+    single: { fields: ['purpose', 'description', 'role', 'lifecycle', 'functions'] },
+  }) as RawEntry[];
+  if (entries.length > 0) return entries;
+  // Keyed by path: {"a/b.ts": {"purpose": "…"}, …}.
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return [];
+  const keyed = Object.entries(json as Record<string, unknown>).filter(
     ([, v]) => typeof v === 'object' && v !== null && !Array.isArray(v),
   );
   if (keyed.length > 0 && keyed.every(([k]) => k.includes('/') || k.includes('.'))) {
@@ -364,10 +346,10 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
         // The call SUCCEEDED but nothing usable came back — a shape mismatch or
         // a refusal. Never let that look the same as "the model said nothing":
         // report what arrived and keep the reply for inspection.
-        const excerpt = response.text.trim().slice(0, 200).replace(/\s+/g, ' ');
-        const keys = describeReplyKeys(response.json);
+        const excerpt = replyExcerpt(response.text);
+        const keys = describeJsonShape(response.json);
         logger.warn(
-          `[cards] batch of ${batch.length} returned no usable entries (${keys}) — reply: ${JSON.stringify(excerpt)}`,
+          `[cards] batch of ${batch.length} returned no usable entries (${keys}) — reply: ${excerpt}`,
         );
         work.saveRejectedReply(batch[0]?.file ?? 'batch', response.text);
       }
@@ -413,8 +395,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
       ].join('\n\n');
       try {
         const response = await client.complete(prompt, { temperature: 0 });
-        const parsed = response.json as { purposes?: RawEntry[] } | undefined;
-        const entry = parsed?.purposes?.[0];
+        const entry = extractCardEntries(response.json)[0];
         if (!entry) continue;
         if (!base) {
           base = entryToCard(entry, descriptor.file, detail, inventory[descriptor.file]);

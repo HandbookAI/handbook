@@ -24,6 +24,9 @@ import {
   type Organization,
   type OrganizedFile,
   type Skeleton,
+  describeJsonShape,
+  extractEntryList,
+  replyExcerpt,
 } from '@handbook/core';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -131,14 +134,25 @@ export async function classifyMembers(
     const prompt = [CLASSIFY_RULES, menuBlock, `## Members to assign (${batch.length})`, ...rows].join('\n\n');
     try {
       const response = await client.complete(prompt, { temperature: 0 });
-      const parsed = (response.json as { assignments?: unknown } | undefined)?.assignments;
+      const entries = extractEntryList(response.json, ['assignments', 'members'], {
+        single: { fields: ['member', 'stage'] },
+      });
       const batchIds = new Set(batch.map((m) => m.id));
-      for (const raw of Array.isArray(parsed) ? parsed : []) {
-        if (typeof raw !== 'object' || raw === null) continue;
-        const entry = raw as Record<string, unknown>;
-        if (typeof entry.member !== 'string' || !batchIds.has(entry.member)) continue;
-        memberStage[entry.member] =
+      let usable = 0;
+      for (const entry of entries) {
+        const named = typeof entry.member === 'string' ? entry.member : undefined;
+        const member = named && batchIds.has(named) ? named : entries.length === 1 ? batch[0]?.id : undefined;
+        if (!member) continue;
+        usable += 1;
+        memberStage[member] =
           typeof entry.stage === 'string' && validIds.has(entry.stage) ? entry.stage : 'unassigned';
+      }
+      if (usable === 0) {
+        logger.warn(
+          `[members] batch of ${batch.length} returned no usable assignments (${describeJsonShape(
+            response.json,
+          )}) — reply: ${replyExcerpt(response.text)}`,
+        );
       }
     } catch (error) {
       logger.warn(`[members] batch failed: ${String(error)}`);

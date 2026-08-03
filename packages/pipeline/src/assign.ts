@@ -14,6 +14,9 @@ import {
   type FileCard,
   type Logger,
   type Skeleton,
+  describeJsonShape,
+  extractEntryList,
+  replyExcerpt,
 } from '@handbook/core';
 import { stageShortDescriptions } from './skeleton.js';
 
@@ -70,18 +73,27 @@ async function assignBatch(
   const out: Record<string, { stage: string; also: string[] }> = {};
   try {
     const response = await client.complete(prompt, { temperature: 0 });
-    const parsed = response.json as { assignments?: unknown } | undefined;
-    const entries = Array.isArray(parsed?.assignments) ? parsed.assignments : [];
+    const entries = extractEntryList(response.json, ['assignments', 'files'], {
+      single: { fields: ['stage', 'file'] },
+    });
     const batchFiles = new Set(batch.map((d) => d.file));
-    for (const raw of entries) {
-      if (typeof raw !== 'object' || raw === null) continue;
-      const entry = raw as Record<string, unknown>;
-      if (typeof entry.file !== 'string' || !batchFiles.has(entry.file)) continue;
+    const soleFile = batch.length === 1 ? batch[0]?.file : undefined;
+    for (const entry of entries) {
+      const named = typeof entry.file === 'string' ? entry.file : undefined;
+      const file = named && batchFiles.has(named) ? named : entries.length === 1 ? soleFile : undefined;
+      if (!file) continue;
       const stage = typeof entry.stage === 'string' && validIds.has(entry.stage) ? entry.stage : 'unassigned';
       const also = Array.isArray(entry.also)
         ? entry.also.filter((a): a is string => typeof a === 'string' && validIds.has(a) && a !== stage).slice(0, 2)
         : [];
-      out[entry.file] = { stage, also };
+      out[file] = { stage, also };
+    }
+    if (Object.keys(out).length === 0) {
+      logger.warn(
+        `[assign] batch of ${batch.length} returned no usable assignments (${describeJsonShape(
+          response.json,
+        )}) — reply: ${replyExcerpt(response.text)}`,
+      );
     }
   } catch (error) {
     logger.warn(`[assign] batch of ${batch.length} failed: ${String(error)}`);
