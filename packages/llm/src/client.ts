@@ -198,15 +198,19 @@ export class OpenAiChatClient implements ChatClient {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      const detail = body.slice(0, 300);
-      const message = `LLM endpoint returned ${response.status}: ${detail}`;
       // An HTML body means the API never saw the request — a gateway, WAF or
-      // load balancer answered instead. Its verdict says nothing permanent
-      // about the request, so retry it even on a normally-permanent status.
-      if (PERMANENT_STATUSES.has(response.status) && !looksLikeGatewayPage(body)) {
-        throw new PermanentError(message);
+      // load balancer answered instead. Say so in one line rather than dumping
+      // 300 characters of markup into the log, and retry it: an edge verdict
+      // says nothing permanent about the request itself.
+      if (looksLikeGatewayPage(body)) {
+        throw new Error(
+          `LLM endpoint's gateway refused the request (HTTP ${response.status}, HTML error page) — ` +
+            'the payload never reached the API; a content filter is the usual cause',
+        );
       }
-      throw new Error(message); // 408/429/5xx, and any edge-served page → retryable
+      const message = `LLM endpoint returned ${response.status}: ${body.slice(0, 300)}`;
+      if (PERMANENT_STATUSES.has(response.status)) throw new PermanentError(message);
+      throw new Error(message); // 408/429/5xx → retryable
     }
 
     const payload = (await response.json()) as Record<string, unknown>;

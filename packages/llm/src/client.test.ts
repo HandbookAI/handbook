@@ -186,6 +186,17 @@ describe('gateway pages vs API errors', () => {
     expect(calls).toBe(3);
   });
 
+  it('reports a gateway block in one line instead of dumping markup', async () => {
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: 1 },
+      fetchImpl: (async () => new Response(gateway, { status: 405 })) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).rejects.toThrow(
+      /gateway refused the request \(HTTP 405, HTML error page\)/,
+    );
+    await expect(client.complete('p')).rejects.not.toThrow(/doctype/);
+  });
+
   it('still refuses to retry a genuine API rejection', async () => {
     let calls = 0;
     const client = new OpenAiChatClient({
