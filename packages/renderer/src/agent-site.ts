@@ -159,15 +159,30 @@ function stageRegisters(view: HandbookView, sid: string): StageRegisterHit[] {
   return hits;
 }
 
-/** Same-directory `<stem>_test.*` / `<stem>_tests.*` / `test_<stem>.*` twins. */
-function strongTwins(rel: string, allFiles: readonly string[]): string[] {
-  const dir = fileDir(rel);
-  const stem = fileStem(rel);
+/**
+ * Test twins of `rel` — the file whose NAME marks it as the tests for this one.
+ *
+ * Every shipped language has its own convention, and missing one makes the whole
+ * field silently render nowhere: `<stem>.test.*` / `<stem>.spec.*` is how TS/JS
+ * name tests, so a TypeScript repo used to produce zero co-change lines while
+ * sitting next to its own tests. Covered: `<stem>_test(s).*` (Go, Python, Shell),
+ * `test_<stem>.*` (Python), `<stem>.test.*` / `<stem>.tests.*` / `<stem>.spec.*`
+ * (TS/JS), `<stem>_spec.*` (spec-style suites). Looked for beside the file and in
+ * a sibling `__tests__/` directory.
+ */
+export function strongTwins(rel: string, allFiles: readonly string[]): string[] {
+  const stem = escapeRegExp(fileStem(rel));
   const patterns = [
-    new RegExp(`^${escapeRegExp(stem)}_tests?\\.[^.]+$`),
-    new RegExp(`^test_${escapeRegExp(stem)}\\.[^.]+$`),
+    new RegExp(`^${stem}_tests?\\.[^.]+$`),
+    new RegExp(`^${stem}_spec\\.[^.]+$`),
+    new RegExp(`^test_${stem}\\.[^.]+$`),
+    new RegExp(`^${stem}\\.(?:tests?|spec)\\.[^.]+$`),
   ];
-  return allFiles.filter((f) => f !== rel && fileDir(f) === dir && patterns.some((p) => p.test(f.split('/').pop() ?? f)));
+  const dir = fileDir(rel);
+  const twinDirs = new Set([dir, dir === '' ? '__tests__' : `${dir}/__tests__`]);
+  return allFiles.filter(
+    (f) => f !== rel && twinDirs.has(fileDir(f)) && patterns.some((p) => p.test(f.split('/').pop() ?? f)),
+  );
 }
 
 function escapeRegExp(text: string): string {

@@ -286,7 +286,7 @@
       </div>
       <div class="card">
         <span class="k">散落的改动点 → 一张清单</span>
-        <p style="font-size:15px">定位块把「这一章碰哪些全局状态、同子组还有哪些文件、新增同类照哪个范本写」列成固定字段，<b>字段为空同样是结论</b>。它按调用图与命名推导，所以标注「编辑前请核实」——<b>它不读 git 历史，纯口头传承的约定抓不到</b>。</p>
+        <p style="font-size:15px">定位块把「碰哪些全局状态、<b>改了源文件必须同步改哪个测试</b>、同子组还有哪些文件、新增同类照哪个范本写」列成固定字段，<b>字段为空同样是结论</b>。本仓 20 章里有 14 章列出了源文件↔测试的强共变配对。它按调用图与命名推导，所以标注「编辑前请核实」——<b>它不读 git 历史，纯口头传承的约定抓不到</b>。</p>
       </div>
     </div>
     <p class="lede" style="margin-top:26px">改码前查图，改完回写——Handbook 是 coding agent 的<b>地图与记忆</b>，不是它的对手。</p>
@@ -406,13 +406,15 @@
       <div class="card">
         <span class="k">SKILL 地图 · 每章一个定位块</span>
         <div class="term" style="font-size:12px;margin-top:4px">
-<div><span class="y"># call_graph_assembly · 代码图谱组装与落盘</span></div>
-<div><span class="p">职责：</span>把零散的函数与调用关系拼成一张图并落盘…</div>
-<div><span class="p">入口概念：</span><span class="b">graph / inventory</span></div>
-<div><span class="p">状态：</span><span class="g">reg-workdir-state</span></div>
-<div><span class="p">范本：</span>analyzer/src/graph.ts (11 个函数)</div>
-<div><span class="p">相关（同子组，编辑前请核实）：</span><span class="r">图谱组装与落盘 / 项目导航包提炼</span></div>
-<div><span class="p">核心文件：</span>analyzer/src/graph.ts · pipeline/src/inventory.ts</div>
+<div><span class="y"># llm_client_setup · 大模型客户端初始化</span></div>
+<div><span class="p">职责：</span>工具链与外部 AI 服务交互的唯一通道，内置重试、超时与并发控制…</div>
+<div><span class="p">入口概念：</span><span class="b">client / client.test</span></div>
+<div><span class="p">状态：</span><span class="g">reg-env-config</span></div>
+<div><span class="p">范本：</span>llm/src/client.ts (8 个函数)</div>
+<div><span class="r">⚠️ 强共变（改源文件 → 同步改其测试）：</span></div>
+<div>　llm/src/client.ts ↔ llm/src/client.test.ts</div>
+<div><span class="p">相关（同子组，编辑前请核实）：</span>客户端实现与验证 (2 个文件)</div>
+<div><span class="p">核心文件：</span>llm/src/client.ts · llm/src/client.test.ts</div>
         </div>
         <p style="margin-top:14px">改动前先查地图：哪些章节在影响范围内、哪些全局状态会被波及、新增同类该照哪个文件写。<b>字段为空同样是结论</b>：这一章没有需要担心的全局状态。上图是本仓真实生成的定位块，未编造。</p>
       </div>
