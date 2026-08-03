@@ -65,6 +65,9 @@ importers:
       '@handbook/skill':
         specifier: workspace:*
         version: link:../skill
+      '@handbook/studio':
+        specifier: workspace:*
+        version: link:../studio
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -141,6 +144,33 @@ importers:
       '@handbook/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/studio:
+    dependencies:
+      '@handbook/core':
+        specifier: workspace:*
+        version: link:../core
+      '@handbook/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@handbook/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
+      '@handbook/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@handbook/renderer':
+        specifier: workspace:*
+        version: link:../renderer
+      '@handbook/resync':
+        specifier: workspace:*
+        version: link:../resync
+      '@handbook/skill':
+        specifier: workspace:*
+        version: link:../skill
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
 
 packages:
 

@@ -1,8 +1,8 @@
 {
-  "name": "@handbook/cli",
+  "name": "@handbook/studio",
   "version": "0.1.0",
   "private": true,
-  "description": "The handbook command-line interface",
+  "description": "Local web UI over the handbook toolchain: browse handbooks, run generation, plan changes, and roll handbooks forward",
   "type": "module",
   "exports": {
     ".": {
@@ -11,17 +11,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "public"
   ],
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
   },
-  "bin": {
-    "handbook": "./dist/main.js"
-  },
   "dependencies": {
-    "@handbook/analyzer": "workspace:*",
     "@handbook/core": "workspace:*",
     "@handbook/llm": "workspace:*",
     "@handbook/pipeline": "workspace:*",
@@ -29,7 +26,6 @@
     "@handbook/renderer": "workspace:*",
     "@handbook/resync": "workspace:*",
     "@handbook/skill": "workspace:*",
-    "@handbook/studio": "workspace:*",
-    "commander": "^15.0.0"
+    "zod": "^4.0.0"
   }
 }

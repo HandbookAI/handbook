@@ -151,7 +151,16 @@ export function diffGraphs(before: CodeGraph, after: CodeGraph): GraphDelta {
 }
 
 export interface ResyncOptions {
+  /** Case directory (holds edited/, plan.md, diff, and receives the report). */
   caseDir: string;
+  /**
+   * Use this LIVE source tree as the edited root instead of `caseDir/edited`
+   * (Studio's in-place flow). `caseDir` is still where the report and the
+   * phase-1 staging area are written.
+   */
+  editedRoot?: string;
+  /** Change description (with optional declarations block) when no plan.md exists. */
+  planText?: string;
   /** Work dir holding the handbook artifacts to roll forward (updated in place). */
   workDir: string;
   client?: ChatClient;
@@ -178,7 +187,13 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
   const noLlm = options.noLlm ?? false;
   if (!noLlm && !options.client) throw new Error('resync needs an LLM client (or pass noLlm: true)');
 
-  const resyncCase = loadCase(options.caseDir);
+  const resyncCase: ResyncCase | undefined = options.editedRoot
+    ? {
+        editedRoot: options.editedRoot,
+        planText: options.planText,
+        declarations: options.planText ? parsePlanDeclarations(options.planText) : undefined,
+      }
+    : loadCase(options.caseDir);
   const report: ResyncReport = {
     skipped: false,
     changedFiles: [],

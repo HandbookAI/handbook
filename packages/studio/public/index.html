@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handbook Studio</title>
+<style>
+  :root{
+    --bg:#0B0E11;--panel:#10151A;--card:rgba(233,237,240,.035);--line:rgba(233,237,240,.10);
+    --fg:#E9EDF0;--dim:#9AA6AE;--faint:#5C6870;
+    --gold:#D8B36A;--gold-hi:#F0D9A8;--ice:#8FB8CE;--jade:#86C7A5;--red:#E0705C;
+    --mono:"SF Mono",Menlo,Consolas,monospace;
+    --sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",-apple-system,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--fg);font:14px/1.7 var(--sans);height:100vh;display:flex;overflow:hidden}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:6px 14px}
+  button:hover{border-color:var(--gold)}
+  button.primary{background:linear-gradient(100deg,#8a6d35,#b3903f);border-color:transparent;color:#0B0E11;font-weight:700}
+  button.primary:hover{filter:brightness(1.1)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input,textarea,select{font:inherit;background:#0E1317;border:1px solid var(--line);border-radius:8px;color:var(--fg);padding:7px 12px;width:100%}
+  input:focus,textarea:focus{outline:none;border-color:var(--gold)}
+  ::placeholder{color:var(--faint)}
+
+  /* 侧栏 */
+  aside{width:250px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+  .brand{padding:20px 20px 14px;border-bottom:1px solid var(--line)}
+  .brand h1{font-size:17px;font-weight:800;letter-spacing:.02em}
+  .brand h1 em{font-style:normal;color:var(--gold)}
+  .brand small{color:var(--faint);font-size:11px}
+  .repos{flex:1;overflow-y:auto;padding:10px}
+  .repos .t{font:11px var(--mono);letter-spacing:.2em;color:var(--faint);padding:8px 10px 6px}
+  .repo{display:block;width:100%;text-align:left;background:none;border:none;border-left:2px solid transparent;
+    border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:2px;color:var(--dim)}
+  .repo:hover{background:var(--card);border-color:transparent;color:var(--fg)}
+  .repo.cur{background:var(--card);border-left-color:var(--gold);color:var(--fg)}
+  .repo .n{font-weight:600;font-size:14px}
+  .repo .m{font:10.5px var(--mono);color:var(--faint);display:block;margin-top:1px}
+  .repo .ok{color:var(--jade)}
+  .sidefoot{padding:12px;border-top:1px solid var(--line)}
+  .sidefoot button{width:100%}
+
+  /* 主区 */
+  main{flex:1;display:flex;flex-direction:column;min-width:0}
+  header{display:flex;align-items:center;gap:14px;padding:14px 26px;border-bottom:1px solid var(--line)}
+  header h2{font-size:18px;font-weight:700;flex:none}
+  header .path{font:11px var(--mono);color:var(--faint);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tabs{display:flex;gap:4px}
+  .tabs button{border:none;background:none;color:var(--dim);padding:6px 14px;border-radius:8px}
+  .tabs button.cur{background:var(--card);color:var(--gold-hi);font-weight:600}
+  .content{flex:1;overflow:auto;padding:24px 26px;position:relative}
+
+  .empty{max-width:520px;margin:12vh auto;text-align:center;color:var(--dim)}
+  .empty h3{font-size:22px;color:var(--fg);margin-bottom:10px}
+  .empty .gold{color:var(--gold)}
+
+  .grid{display:grid;gap:14px}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .card .k{font:10.5px var(--mono);letter-spacing:.18em;color:var(--ice);display:block;margin-bottom:8px}
+  .card h3{font-size:15px;margin-bottom:6px}
+  .card p{font-size:13px;color:var(--dim)}
+  .num{font-size:30px;font-weight:800;line-height:1.1}
+  .num i{font-style:normal;font-size:.5em;color:var(--gold)}
+
+  .stagelist{margin-top:16px}
+  .stage{display:grid;grid-template-columns:170px 70px 1fr;gap:14px;padding:11px 6px;border-bottom:1px dashed var(--line);font-size:13px}
+  .stage code{font:11px var(--mono);color:var(--gold-hi)}
+  .stage .files{color:var(--faint);font-family:var(--mono);font-size:11px}
+  .stage .sum{color:var(--dim);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+  iframe{width:100%;height:100%;border:1px solid var(--line);border-radius:12px;background:#fff}
+
+  .term{background:#080B0D;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    font:12px/1.8 var(--mono);color:#C9D4DA;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+  .plan{background:#080B0D;border:1px solid var(--line);border-radius:10px;padding:18px;
+    font:12.5px/1.8 var(--mono);white-space:pre-wrap;word-break:break-word;color:#D8E4E0;max-height:52vh;overflow:auto}
+
+  .evo{border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:10px;background:var(--card)}
+  .evo .d{font-weight:600}
+  .evo .m{font:11px var(--mono);color:var(--faint)}
+  .evo .r{font-size:12.5px;color:var(--dim);margin-top:4px}
+  .pill{display:inline-block;font:10.5px var(--mono);border:1px solid var(--line);border-radius:99px;padding:1px 9px;color:var(--jade);margin-left:8px}
+
+  /* 任务抽屉 */
+  .drawer{position:fixed;right:0;bottom:0;width:min(560px,90vw);max-height:46vh;background:var(--panel);
+    border:1px solid var(--line);border-right:none;border-bottom:none;border-radius:14px 0 0 0;
+    display:none;flex-direction:column;box-shadow:0 -18px 60px rgba(0,0,0,.5);z-index:50}
+  .drawer.show{display:flex}
+  .drawer .head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .drawer .head b{font-size:13px}
+  .drawer .head .st{font:10.5px var(--mono);color:var(--gold)}
+  .drawer .head button{margin-left:auto;padding:2px 10px}
+  .drawer .term{flex:1;border:none;border-radius:0;max-height:none}
+
+  dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:14px;
+    padding:26px;width:min(520px,92vw)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog h3{margin-bottom:16px}
+  dialog label{display:block;font-size:12.5px;color:var(--dim);margin:12px 0 4px}
+  dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:4px}
+  .error{color:var(--red);font-size:12.5px;margin-top:8px;min-height:1em}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><h1>Handbook <em>Studio</em></h1><small>生成 · 浏览 · 演化，全在本机</small></div>
+  <div class="repos"><div class="t">REPOSITORIES</div><div id="repoList"></div></div>
+  <div class="sidefoot"><button class="primary" onclick="dlgAdd.showModal()">＋ 添加仓库</button></div>
+</aside>
+
+<main>
+  <header id="hdr" style="display:none">
+    <h2 id="hName"></h2><span class="path" id="hPath"></span>
+    <nav class="tabs" id="tabs">
+      <button data-tab="overview" class="cur">总览</button>
+      <button data-tab="browse">浏览手册</button>
+      <button data-tab="evolve">演化</button>
+      <button data-tab="history">历史</button>
+    </nav>
+  </header>
+  <div class="content" id="content">
+    <div class="empty">
+      <h3>把一个仓库，变成一本<span class="gold">活的手册</span></h3>
+      <p>左下角「添加仓库」→ 指向任意本地代码目录 → 生成。<br>
+      生成/浏览/演化全部在本机进行，源码只发往你在 .env 里配置的端点。</p>
+    </div>
+  </div>
+</main>
+
+<div class="drawer" id="drawer">
+  <div class="head"><b id="jobTitle">任务</b><span class="st" id="jobStatus"></span>
+    <button onclick="hideDrawer()">收起</button></div>
+  <div class="term" id="jobLog"></div>
+</div>
+
+<dialog id="dlgAdd">
+  <h3>添加仓库</h3>
+  <label>名称（唯一，URL 安全）</label><input id="fName" placeholder="myproj">
+  <label>源码目录（绝对路径）</label><input id="fSource" placeholder="/Users/you/code/myproj">
+  <label>work 目录（可留空，自动创建）</label><input id="fWork" placeholder="留空 = Studio 托管">
+  <div class="error" id="fErr"></div>
+  <div class="row"><button onclick="dlgAdd.close()">取消</button>
+    <button class="primary" onclick="addRepo()">添加</button></div>
+</dialog>
+
+<dialog id="dlgGen">
+  <h3>生成手册</h3>
+  <label>叙述语言</label>
+  <select id="gLang"><option value="zh">中文</option><option value="en">English</option></select>
+  <label>卡片深度</label>
+  <select id="gDetail"><option value="brief">brief — 便宜，先试水</option><option value="deep">deep — 逐函数精读</option></select>
+  <label>骨架模式</label>
+  <select id="gSynth"><option value="oneshot">oneshot — 快</option><option value="doctor">doctor — 评审循环修复</option></select>
+  <div class="hint">需要 .env / 环境变量里有 OPENAI_API_KEY；phase 1 静态分析免费。</div>
+  <div class="row"><button onclick="dlgGen.close()">取消</button>
+    <button class="primary" onclick="startGenerate()">开始生成</button></div>
+</dialog>
+
+<script>
+let repos = [], current = null, tab = 'overview', evtSource = null;
+
+const $ = (id) => document.getElementById(id);
+const api = async (path, opts) => {
+  const res = await fetch(path, opts ? { headers: {'content-type':'application/json'}, ...opts } : undefined);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+};
+
+async function refresh(keepTab) {
+  repos = await api('/api/repos');
+  renderRepoList();
+  if (current) {
+    current = repos.find(r => r.name === current.name) || null;
+    if (current) renderMain(keepTab); else renderEmpty();
+  }
+}
+
+function renderRepoList() {
+  $('repoList').innerHTML = repos.map(r => `
+    <button class="repo ${current && r.name===current.name ? 'cur':''}" onclick="selectRepo('${r.name}')">
+      <span class="n">${r.name}</span>
+      <span class="m">${r.hasHandbook ? '<span class="ok">● 手册就绪</span>' : r.hasGraph ? '◐ 已分析' : '○ 未生成'}
+        ${r.chapters ? ' · '+r.chapters+' 章' : ''}${r.evolutions ? ' · '+r.evolutions+' 次演化' : ''}</span>
+    </button>`).join('') || '<div style="padding:10px;color:var(--faint);font-size:12px">还没有仓库</div>';
+}
+
+function selectRepo(name) {
+  current = repos.find(r => r.name === name);
+  tab = 'overview';
+  renderMain();
+}
+
+function renderEmpty(){ $('hdr').style.display='none'; $('content').innerHTML =
+  '<div class="empty"><h3>把一个仓库，变成一本<span class="gold">活的手册</span></h3><p>左下角「添加仓库」开始。</p></div>'; }
+
+function setTab(t){ tab=t; renderMain(true); }
+document.getElementById('tabs').addEventListener('click', e => {
+  if (e.target.dataset.tab) setTab(e.target.dataset.tab);
+});
+
+async function renderMain(keepScroll) {
+  if (!current) return renderEmpty();
+  $('hdr').style.display='flex';
+  $('hName').textContent = current.name;
+  $('hPath').textContent = current.sourceRoot;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('cur', b.dataset.tab===tab));
+  renderRepoList();
+  const c = $('content');
+  if (tab === 'overview') return renderOverview(c);
+  if (tab === 'browse') return renderBrowse(c);
+  if (tab === 'evolve') return renderEvolve(c);
+  if (tab === 'history') return renderHistory(c);
+}
+
+async function renderOverview(c) {
+  let head = `
+    <div class="grid g3">
+      <div class="card"><span class="k">STATUS</span>
+        <div class="num">${current.hasHandbook ? '就绪' : current.hasGraph ? '半程' : '空'}</div>
+        <p>${current.hasHandbook ? '手册已生成，可浏览 / 演化' : current.hasGraph ? '已有调用图，还未叙述' : '还未分析'}</p></div>
+      <div class="card"><span class="k">CHAPTERS</span><div class="num">${current.chapters||0}<i> 章</i></div>
+        <p>策略：${current.strategy||'—'}</p></div>
+      <div class="card"><span class="k">ACTIONS</span>
+        <p style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button onclick="startAnalyze()">① 免费分析</button>
+          <button class="primary" onclick="dlgGen.showModal()">② 生成手册</button>
+        </p><p class="hint" style="margin-top:8px">先免费分析看规模，再生成。</p></div>
+    </div>`;
+  c.innerHTML = head + '<div id="ovStages" class="stagelist"><p style="color:var(--faint)">加载章节…</p></div>';
+  try {
+    const ov = await api(`/api/repos/${current.name}/overview`);
+    $('ovStages').innerHTML =
+      (ov.systemOverview ? `<div class="card" style="margin-bottom:14px"><span class="k">SYSTEM OVERVIEW</span><p style="font-size:13.5px">${escapeHtml(ov.systemOverview)}</p></div>` : '') +
+      ov.stages.map(s => `
+        <div class="stage"><span>${escapeHtml(s.title)}${s.crosscut?' <span class="pill">横切</span>':''}</span>
+          <span class="files"><code>${s.id}</code> · ${s.files}f</span>
+          <span class="sum">${escapeHtml(s.summary||s.description||'')}</span></div>`).join('') +
+      (ov.registers.length ? `<div class="card" style="margin-top:14px"><span class="k">STATE REGISTERS</span><p>${ov.registers.map(r=>`<code style="font-family:var(--mono);font-size:11px;color:var(--jade)">${r.id}</code>`).join(' · ')}</p></div>` : '');
+  } catch (e) {
+    $('ovStages').innerHTML = `<p style="color:var(--faint);margin-top:14px">尚无章节数据 — ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderBrowse(c) {
+  if (!current.hasHandbook) { c.innerHTML = '<div class="empty"><h3>还没有手册</h3><p>先在「总览」里生成。</p></div>'; return; }
+  c.style.padding = '14px';
+  c.innerHTML = `<iframe src="/api/repos/${current.name}/handbook/html/overview.html"></iframe>`;
+  c.querySelector('iframe').onload = () => {};
+  return;
+}
+
+function renderEvolve(c) {
+  c.style.padding='24px 26px';
+  c.innerHTML = `
+    <div class="grid" style="grid-template-columns:1fr 1fr;align-items:start">
+      <div class="card">
+        <span class="k">PLAN · 变更定位（只读，不改代码）</span>
+        <p>用自然语言描述想做的变更，planner 用手册路由 + 读真实源码，输出精确编辑计划。</p>
+        <textarea id="planReq" rows="3" style="margin-top:10px" placeholder="例：上传失败自动重试三次"></textarea>
+        <div class="row" style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button class="primary" onclick="startPlan()">生成计划</button></div>
+      </div>
+      <div class="card">
+        <span class="k">RESYNC · 代码已改，手册跟上</span>
+        <p>你（或 agent）改完代码后，让手册增量前滚：只重写受影响的章节。</p>
+        <textarea id="resyncDesc" rows="3" style="margin-top:10px" placeholder="这次改了什么？（写进演化历史）"></textarea>
+        <div class="row" style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+          <button onclick="startResync(true)">仅结构（免 LLM）</button>
+          <button class="primary" onclick="startResync(false)">增量重同步</button></div>
+      </div>
+    </div>
+    <div id="planOut" style="margin-top:18px"></div>`;
+}
+
+async function renderHistory(c) {
+  c.style.padding='24px 26px';
+  const evos = await api(`/api/repos/${current.name}/history`);
+  c.innerHTML = evos.length ? evos.map(e => `
+    <div class="evo">
+      <span class="d">${escapeHtml(e.description||'')}</span>
+      <span class="pill">${(e.report&&e.report.narrated)?'已重叙述':'结构更新'}</span>
+      <div class="m">${e.at||e.id||''}</div>
+      <div class="r">变更 ${e.report?.changedFiles?.length??0} · 新增 ${e.report?.addedFiles?.length??0} · 删除 ${e.report?.deletedFiles?.length??0} · 受影响章节 ${e.report?.affectedStages?.length??0}</div>
+    </div>`).join('') : '<div class="empty"><h3>还没有演化记录</h3><p>在「演化」页跑一次 resync 后，这里会出现时间线。</p></div>';
+}
+
+// ---- actions ----
+async function addRepo() {
+  try {
+    $('fErr').textContent='';
+    await api('/api/repos', { method:'POST', body: JSON.stringify({
+      name: $('fName').value.trim(), sourceRoot: $('fSource').value.trim(),
+      workDir: $('fWork').value.trim() || undefined }) });
+    dlgAdd.close(); await refresh();
+    selectRepo($('fName').value.trim());
+  } catch (e) { $('fErr').textContent = e.message; }
+}
+
+async function startAnalyze(){ runJob(await api(`/api/repos/${current.name}/analyze`, {method:'POST', body:'{}'}), '静态分析'); }
+async function startGenerate(){
+  dlgGen.close();
+  runJob(await api(`/api/repos/${current.name}/generate`, {method:'POST', body: JSON.stringify({
+    narrateLang: $('gLang').value, detail: $('gDetail').value, synthMode: $('gSynth').value })}), '生成手册');
+}
+async function startPlan(){
+  const request = $('planReq').value.trim(); if(!request) return;
+  runJob(await api(`/api/repos/${current.name}/plan`, {method:'POST', body: JSON.stringify({request})}), '变更定位', async (job)=>{
+    const full = await api(`/api/jobs/${job.id}`);
+    if (full.status==='succeeded' && full.result?.plan) {
+      $('planOut').innerHTML = `<div class="card"><span class="k">PLAN 输出（${full.result.turns} 轮）</span><div class="plan">${escapeHtml(full.result.plan)}</div></div>`;
+    }
+  });
+}
+async function startResync(noLlm){
+  runJob(await api(`/api/repos/${current.name}/resync`, {method:'POST', body: JSON.stringify({
+    description: $('resyncDesc').value.trim(), noLlm })}), noLlm?'结构重同步':'增量重同步');
+}
+
+// ---- job drawer + SSE ----
+function runJob(job, title, onDone) {
+  $('drawer').classList.add('show');
+  $('jobTitle').textContent = title;
+  $('jobStatus').textContent = 'running';
+  $('jobLog').textContent = '';
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(`/api/jobs/${job.id}/stream`);
+  evtSource.onmessage = (e) => {
+    $('jobLog').textContent += JSON.parse(e.data) + '\n';
+    $('jobLog').scrollTop = $('jobLog').scrollHeight;
+  };
+  evtSource.addEventListener('done', async () => {
+    evtSource.close();
+    const full = await api(`/api/jobs/${job.id}`).catch(()=>null);
+    $('jobStatus').textContent = full ? full.status : 'done';
+    await refresh(true);
+    if (onDone && full) onDone(full);
+  });
+}
+function hideDrawer(){ $('drawer').classList.remove('show'); if(evtSource) evtSource.close(); }
+
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+refresh();
+</script>
+</body>
+</html>
