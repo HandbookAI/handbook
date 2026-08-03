@@ -538,7 +538,7 @@ const DICT = {
       fns: 'FUNCTIONS', noFns: '调用图里没有这个文件的函数锚点',
       lines: '{0} 行 · {1} 个函数', pick: '选一个文件开始',
       pickHint: '从影响图点节点，或在上面输入相对路径。下面是调用度最高的文件：',
-      notFound: '打不开这个文件'
+      notFound: '打不开这个文件', back: '← 文件列表', recent: '刚看过'
     },
     ev: {
       planK: 'PLAN · 变更定位（只读，不改代码）',
@@ -683,7 +683,7 @@ const DICT = {
       fns: 'FUNCTIONS', noFns: 'The call graph has no function anchors for this file',
       lines: '{0} lines · {1} functions', pick: 'Pick a file to start',
       pickHint: 'Click a node in the impact graph, or type a relative path above. Highest-degree files:',
-      notFound: 'Could not open that file'
+      notFound: 'Could not open that file', back: '← Files', recent: 'Recently opened'
     },
     ev: {
       planK: 'PLAN · locate the change (read-only)',
@@ -747,7 +747,7 @@ const state = {
   theme: localStorage.getItem('hb.theme') === 'light' ? 'light' : 'dark',
   graph: { stage: '', limit: 60, data: null },
   stages: null,            // cached overview stages for the stage picker
-  src: { path: '', data: null, fn: null },
+  src: { path: '', data: null, fn: null, recent: [] },
   browsePath: 'html/overview.html',
   plan: '',
   patch: null,             // { dryRun, ok, outcomes, changedFiles, backupDir, fromLog }
@@ -1435,7 +1435,8 @@ function bindGraph(wrap, data) {
 
 /* --------------------------------------------------------------- source */
 function openSource(file) {
-  state.src = { path: file, data: null, fn: null };
+  const recent = [file, ...(state.src.recent || []).filter((f) => f !== file)].slice(0, 8);
+  state.src = { path: file, data: null, fn: null, recent };
   state.tab = 'source';
   state.view = 'repo';
   render();
@@ -1443,7 +1444,10 @@ function openSource(file) {
 
 async function renderSource(c, tok, repo) {
   const p = state.src.path;
-  c.innerHTML = '<div class="srcbar"><input class="pathin" id="srcPath" value="' + esc(p) + '" ' +
+  // With a file open, the picker is gone from the page — so the way back to it
+  // has to be here, or the only route is retyping a path.
+  const back = p ? '<button class="ghost sm" data-act="src-back">' + esc(t('src.back')) + '</button>' : '';
+  c.innerHTML = '<div class="srcbar">' + back + '<input class="pathin" id="srcPath" value="' + esc(p) + '" ' +
     'placeholder="' + esc(t('src.ph')) + '" spellcheck="false" aria-label="path">' +
     '<button class="primary sm" data-act="src-open">' + esc(t('src.open')) + '</button>' +
     '<span class="info" id="srcInfo"></span></div><div id="srcBody"></div>';
@@ -1451,9 +1455,14 @@ async function renderSource(c, tok, repo) {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ACT['src-open'](); });
 
   if (!p) {
+    const recent = (state.src.recent || []).length
+      ? '<div class="k" style="margin-top:16px">' + esc(t('src.recent')) + '</div><div class="files">' +
+        state.src.recent.map((f) => '<button class="filechip" data-act="open-source" data-file="' + esc(f) + '">' +
+          esc(f) + '</button>').join('') + '</div>'
+      : '';
     $('srcBody').innerHTML = '<div class="card"><span class="k">' + esc(t('src.pick')) + '</span>' +
       '<p>' + esc(t('src.pickHint')) + '</p><div class="files" id="srcHot" style="margin-top:12px">' +
-      '<span class="loading"><span class="spin"></span></span></div></div>';
+      '<span class="loading"><span class="spin"></span></span></div>' + recent + '</div>';
     try {
       const g = await api('/api/repos/' + enc(repo.name) + '/graph?limit=60');
       if (stale(tok)) return;
@@ -1788,11 +1797,18 @@ const ACT = {
   },
   'graph-reload': () => { state.graph.data = null; render(); },
   'open-source': (el) => openSource(el.dataset.file),
+  'src-back': () => {
+    state.src = { path: '', data: null, fn: null, recent: state.src.recent || [] };
+    render();
+  },
   'src-open': () => {
     const v = $('srcPath').value.trim().replace(/^\.?\//, '');
-    if (!v) return;
-    state.src = { path: v, data: null, fn: null };
-    render();
+    // An empty box means "show me the list again", not "do nothing".
+    if (!v) {
+      ACT['src-back']();
+      return;
+    }
+    openSource(v);
   },
   'jumpfn': (el) => {
     state.src.fn = Number(el.dataset.i);
