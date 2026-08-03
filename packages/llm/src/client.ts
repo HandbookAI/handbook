@@ -119,6 +119,8 @@ export class OpenAiChatClient implements ChatClient {
    * nothing — the failure mode this closes produced 90 empty cards in a row.
    */
   private sawReasoning = false;
+  /** True once a response was cut off at the token limit. */
+  private sawTruncation = false;
   private readonly config: LlmEnvConfig;
   private readonly limit: LimitFn;
   private readonly logger: Logger;
@@ -175,7 +177,7 @@ export class OpenAiChatClient implements ChatClient {
     };
     // A reasoning endpoint spends part of the budget thinking, so give a retry
     // more room rather than asking the same impossible question again.
-    const growth = this.sawReasoning ? Math.min(4, attempt) : 1;
+    const growth = this.sawReasoning || this.sawTruncation ? Math.min(4, attempt) : 1;
     const maxTokens = Math.min(200_000, (options.maxTokens ?? this.config.maxTokens) * growth);
     if (REASONING_MODEL_RE.test(this.model)) {
       body.max_completion_tokens = maxTokens; // reasoning models also reject `temperature`
@@ -213,12 +215,22 @@ export class OpenAiChatClient implements ChatClient {
     if (typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0) {
       this.sawReasoning = true;
     }
+    const finishReason = typeof choice.finish_reason === 'string' ? choice.finish_reason : 'unknown';
     const text = extractAssistantText(payload);
     if (text === undefined) throw new Error('LLM response had no assistant text');
+    if (finishReason === 'length' && text.trim() !== '') {
+      // A completion cut off at the token limit is a PARTIAL answer: its JSON
+      // will not parse and its prose stops mid-sentence. Treated as success it
+      // becomes silently missing output, so fail and retry with more room.
+      this.sawTruncation = true;
+      throw new Error(
+        `LLM response was truncated at the token limit (max_tokens=${maxTokens}, ${text.length} chars) — ` +
+          'raise OPENAI_MAX_TOKENS if this persists',
+      );
+    }
     if (text.trim() === '') {
       // Empty content is a FAILURE, not an empty answer: accepting it silently
       // is how a whole run ends up with blank cards.
-      const finish = typeof choice.finish_reason === 'string' ? choice.finish_reason : 'unknown';
       const usage = (payload.usage ?? {}) as Record<string, any>;
       const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
       const hint = this.sawReasoning
@@ -226,7 +238,7 @@ export class OpenAiChatClient implements ChatClient {
             reasoningTokens ? ` (${String(reasoningTokens)} reasoning tokens)` : ''
           }; raise OPENAI_MAX_TOKENS or pick a non-reasoning model`
         : '';
-      throw new Error(`LLM returned empty content (finish_reason=${finish}, max_tokens=${maxTokens})${hint}`);
+      throw new Error(`LLM returned empty content (finish_reason=${finishReason}, max_tokens=${maxTokens})${hint}`);
     }
     return text;
   }
