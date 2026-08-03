@@ -96,6 +96,7 @@ handbook resync   --case cases/upload-retry --work work/myrepo       # 7. 变更
 | [`@handbook/skill`](packages/skill/README.md) | SKILL 打包 + 校验 + 覆盖率漂移检测，无 LLM |
 | [`@handbook/planner`](packages/planner/README.md) | 手册驱动的只读规划 agent |
 | [`@handbook/resync`](packages/resync/README.md) | 代码变更后的手册增量前滚 |
+| [`@handbook/studio`](packages/studio/README.md) | 本地 Web 界面：仓库 · 生成 · 浏览 · 演化（仅 127.0.0.1） |
 | [`@handbook/cli`](packages/cli/README.md) | `handbook` 命令行 |
 
 依赖方向严格单向（`cli → pipeline/renderer/skill/planner/resync → analyzer/llm → core`）；

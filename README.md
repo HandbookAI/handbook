@@ -86,6 +86,8 @@ handbook plan --source /path/to/repo --handbook skills/myrepo/references \
 handbook resync --case cases/upload-retry --work work/myrepo
 ```
 
+Prefer clicking over typing? `handbook studio` opens a local web UI (repos, generation with live logs, handbook browser, plan + resync) at http://127.0.0.1:4860.
+
 Key `generate` flags: `--strategy file|member` (file = auto skeleton, file-as-leaf;
 member = you author `skeleton.yaml`, functions are classified individually),
 `--detail brief|deep`, `--synth-mode oneshot|doctor` (doctor = actor–critic repair loop),
@@ -116,6 +118,7 @@ independently and a crashed run resumes where it stopped.
 | [`@handbook/skill`](packages/skill/README.md) | SKILL packaging + validation + coverage drift detection — no LLM |
 | [`@handbook/planner`](packages/planner/README.md) | Handbook-guided read-only planning agent |
 | [`@handbook/resync`](packages/resync/README.md) | Incremental handbook roll-forward after code changes |
+| [`@handbook/studio`](packages/studio/README.md) | Local web UI: repos · generate · browse · evolve (127.0.0.1) |
 | [`@handbook/cli`](packages/cli/README.md) | The `handbook` command |
 
 Dependency direction is strictly one-way (`cli → pipeline/renderer/skill/planner/resync →
