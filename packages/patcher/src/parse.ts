@@ -49,7 +49,7 @@ export interface ParsedPlan {
 
 const HEAD_RE = /^ {0,3}###\s+EDIT\s+(\d+)\s*$/;
 /** A near-miss heading: caught so a typo reports a problem instead of vanishing. */
-const HEAD_LOOSE_RE = /^\s*#{1,6}\s*EDIT\b/i;
+const HEAD_LOOSE_RE = /^\s*#{1,6}\s*EDIT\s+\d/i;
 /** Fence line: optional indent, a run of ≥3 backticks or tildes, then an info string. */
 const FENCE_RE = /^([ \t]*)(`{3,}|~{3,})(.*)$/;
 const FILE_RE = /^ {0,3}-\s*file:\s*(.+?)\s*$/;
@@ -77,7 +77,10 @@ function fenceOf(line: string): FenceInfo | undefined {
 /** Does `line` close a block opened by `open`? (CommonMark: same marker, ≥ run, no info.) */
 function closes(line: string, open: FenceInfo): boolean {
   const fence = fenceOf(line);
-  return fence !== undefined && fence.marker === open.marker && fence.run >= open.run && fence.info === '';
+  if (!fence || fence.marker !== open.marker || fence.run < open.run || fence.info !== '') return false;
+  // CommonMark: a closer may be indented at most 3 spaces beyond the opener, so
+  // an ordinary indented fence inside the payload does not close the block.
+  return fence.indent.length <= Math.max(3, open.indent.length);
 }
 
 interface RawSection {
@@ -132,11 +135,17 @@ interface Captured {
 function captureFences(lines: readonly string[]): {
   blocks: Captured[];
   headerLines: string[];
-  strayAfterFirstFence: string[];
+  /** Non-blank content between the first fence and the last `old`/`new` block. */
+  strayInside: string[];
+  /** Content after the last `old`/`new` block — prose and the declarations block. */
+  epilogue: string[];
+  unclosed: boolean;
 } {
   const blocks: Captured[] = [];
   const headerLines: string[] = [];
-  const strayAfterFirstFence: string[] = [];
+  /** Stray lines with the block index they followed, so we can split later. */
+  const stray: Array<{ afterBlock: number; line: string }> = [];
+  let unclosed = false;
   let seenFence = false;
   let i = 0;
 
@@ -145,7 +154,7 @@ function captureFences(lines: readonly string[]): {
     const open = fenceOf(line);
     if (!open) {
       if (seenFence) {
-        if (line.trim() !== '') strayAfterFirstFence.push(line);
+        if (line.trim() !== '') stray.push({ afterBlock: blocks.length, line });
       } else {
         headerLines.push(line);
       }
@@ -166,7 +175,7 @@ function captureFences(lines: readonly string[]): {
       body.push(inner);
       i += 1;
     }
-    if (!closed) strayAfterFirstFence.push('(unclosed fenced block)');
+    if (!closed) unclosed = true;
     // Strip up to the opener's indentation from each content line.
     const content = body
       .map((l) => {
@@ -177,7 +186,15 @@ function captureFences(lines: readonly string[]): {
       .join('\n');
     blocks.push({ kind: open.info.toLowerCase(), content });
   }
-  return { blocks, headerLines, strayAfterFirstFence };
+  // Everything after the LAST old/new block is an epilogue: the planner is told
+  // to finish with prose plus a declarations JSON block, and that must apply.
+  let lastEditBlock = 0;
+  blocks.forEach((block, at) => {
+    if (block.kind === 'old' || block.kind === 'new') lastEditBlock = at + 1;
+  });
+  const strayInside = stray.filter((entry) => entry.afterBlock < lastEditBlock).map((entry) => entry.line);
+  const epilogue = stray.filter((entry) => entry.afterBlock >= lastEditBlock).map((entry) => entry.line);
+  return { blocks, headerLines, strayInside, epilogue, unclosed };
 }
 
 /** Reject paths that are not plain repo-relative POSIX paths. */
@@ -210,15 +227,21 @@ export function parsePlan(plan: string): ParsedPlan {
     if (index <= previousIndex) problems.push(`${label}: edit numbers must ascend (top-to-bottom order)`);
     previousIndex = index;
 
-    const { blocks, headerLines, strayAfterFirstFence } = captureFences(lines);
+    const { blocks, headerLines, strayInside, epilogue, unclosed } = captureFences(lines);
+    void epilogue; // trailing prose and the declarations block are expected output
 
-    // Structural integrity beats every other check: if text spilled outside the
-    // fenced blocks, the block boundaries are not what the author meant.
-    if (strayAfterFirstFence.length > 0) {
+    if (unclosed) {
+      problems.push(`${label}: a fenced block is never closed — check the fence markers`);
+      continue;
+    }
+    // Structural integrity, scoped to where it means something: content between
+    // the edit's own blocks is the signature of an inner fence having closed one
+    // early. (Content AFTER them is the planner's prose + declarations block.)
+    if (strayInside.length > 0) {
       problems.push(
-        `${label}: content outside the fenced blocks (${JSON.stringify(
-          strayAfterFirstFence[0]?.trim().slice(0, 40) ?? '',
-        )}…) — an inner fence probably closed a block early; open \`old\`/\`new\` with a LONGER fence (\`\`\`\`) than any fence inside them`,
+        `${label}: content between the fenced blocks (${JSON.stringify(
+          strayInside[0]?.trim().slice(0, 40) ?? '',
+        )}…) — an inner fence probably closed \`old\` or \`new\` early; open them with a LONGER fence (\`\`\`\`) than any fence inside them`,
       );
       continue;
     }
@@ -243,7 +266,15 @@ export function parsePlan(plan: string): ParsedPlan {
 
     const oldBlocks = blocks.filter((b) => b.kind === 'old');
     const newBlocks = blocks.filter((b) => b.kind === 'new');
-    const unexpected = blocks.filter((b) => b.kind !== 'old' && b.kind !== 'new');
+    // Only blocks BEFORE/BETWEEN the edit's own blocks are suspicious; a tagged
+    // block after them is the plan's epilogue (e.g. the declarations JSON).
+    let lastEditBlock = 0;
+    blocks.forEach((block, at) => {
+      if (block.kind === 'old' || block.kind === 'new') lastEditBlock = at + 1;
+    });
+    const unexpected = blocks
+      .slice(0, lastEditBlock)
+      .filter((b) => b.kind !== 'old' && b.kind !== 'new');
     if (oldBlocks.length !== 1 || newBlocks.length !== 1) {
       problems.push(
         `${label} (${file}): needs exactly one \`\`\`old and one \`\`\`new block (found ${oldBlocks.length} old, ${newBlocks.length} new)`,

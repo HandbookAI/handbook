@@ -16,7 +16,9 @@
  *    directories on creation, and symlinked targets are never replaced.
  */
 import {
+  accessSync,
   chmodSync,
+  constants,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -130,33 +132,56 @@ function realpathOr(path: string): string {
  * Cross-process exclusive lock for the verify+write window: two `handbook apply`
  * runs on one tree would otherwise interleave and silently lose an edit.
  */
-function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
-  const lockDir = join(resolve(sourceRoot), '.handbook-patches', 'apply.lock');
-  mkdirSync(dirname(lockDir), { recursive: true });
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    try {
-      mkdirSync(lockDir); // atomic: EEXIST means another run holds it
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      // A lock older than 5 minutes is stale (crashed run).
-      try {
-        if (Date.now() - statSync(lockDir).mtimeMs > 300_000) {
-          rmSync(lockDir, { recursive: true, force: true });
-          continue;
-        }
-      } catch {
-        continue;
-      }
-      if (Date.now() > deadline) throw new Error('another patch run holds the lock on this tree');
-      logger.info('[patch] waiting for another patch run to finish…');
-      const until = Date.now() + 200;
-      while (Date.now() < until) {
-        /* brief spin: applyPlan is synchronous by contract */
-      }
-    }
+function withTreeLock<T>(lockRoot: string, logger: Logger, work: () => T): T {
+  const lockDir = join(lockRoot, 'apply.lock');
+  const ownerPath = join(lockDir, 'owner.json');
+  try {
+    mkdirSync(lockRoot, { recursive: true });
+  } catch (error) {
+    throw new Error(`cannot create the patch backup directory ${lockRoot}: ${(error as Error).message}`);
   }
+
+  const acquire = (): boolean => {
+    try {
+      mkdirSync(lockDir); // atomic: EEXIST means someone else holds it
+      writeFileSync(ownerPath, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`, 'utf8');
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw new Error(`cannot take the patch lock in ${lockRoot}: ${(error as Error).message}`);
+      }
+      return false;
+    }
+  };
+
+  if (!acquire()) {
+    // Never busy-wait: applyPlan is synchronous, so spinning would freeze the
+    // caller's event loop (in the studio, the whole HTTP server). Reclaim only a
+    // lock whose owning process is provably gone, otherwise fail fast.
+    let owner: { pid?: number } = {};
+    try {
+      owner = JSON.parse(readFileSync(ownerPath, 'utf8')) as { pid?: number };
+    } catch {
+      owner = {};
+    }
+    const ownerAlive =
+      typeof owner.pid === 'number' &&
+      (() => {
+        try {
+          process.kill(owner.pid as number, 0); // signal 0 = liveness probe
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+    if (ownerAlive) {
+      throw new Error(`another patch run (pid ${String(owner.pid)}) is writing to this tree — retry when it finishes`);
+    }
+    logger.warn('[patch] reclaiming a stale patch lock (its owner is gone)');
+    rmSync(lockDir, { recursive: true, force: true });
+    if (!acquire()) throw new Error('could not take the patch lock after reclaiming a stale one');
+  }
+
   try {
     return work();
   } finally {
@@ -170,8 +195,13 @@ function blockingAncestor(root: string, relPath: string): string | undefined {
   let probe = resolve(root);
   for (const part of parts.slice(0, -1)) {
     probe = join(probe, part);
-    if (!existsSync(probe)) return undefined;
-    if (!statSync(probe).isDirectory()) return toPosix(relative(resolve(root), probe));
+    let stat;
+    try {
+      stat = lstatSync(probe);
+    } catch {
+      return undefined; // does not exist yet — the write phase creates it
+    }
+    if (!stat.isDirectory()) return toPosix(relative(resolve(root), probe));
   }
   return undefined;
 }
@@ -196,8 +226,12 @@ function countOccurrences(haystack: string, needle: string): number {
   }
 }
 
+/** Files above this size are not patch targets (protects memory and sanity). */
+const MAX_PATCH_FILE_BYTES = 8 * 1024 * 1024;
+
 /** Read a text file, refusing content that is not valid UTF-8 (lossless round-trip). */
 function readTextExact(path: string): { text: string; mode: number } | undefined {
+  if (statSync(path).size > MAX_PATCH_FILE_BYTES) return undefined;
   const buf = readFileSync(path);
   const text = buf.toString('utf8');
   if (!Buffer.from(text, 'utf8').equals(buf)) return undefined;
@@ -226,8 +260,10 @@ function toEol(text: string, eol: '\n' | '\r\n'): string {
  */
 export function applyPlan(options: ApplyOptions): ApplyResult {
   const logger = options.logger ?? silentLogger;
+  // dry-run never writes, so it needs no lock.
   if (options.dryRun) return applyPlanInner(options, logger);
-  return withTreeLock(options.sourceRoot, logger, () => applyPlanInner(options, logger));
+  const lockRoot = resolve(options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches'));
+  return withTreeLock(lockRoot, logger, () => applyPlanInner(options, logger));
 }
 
 function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
@@ -267,7 +303,12 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     let current = known?.nextContent;
 
     if (current === undefined) {
-      const stat = existsSync(absolutePath) ? lstatSync(absolutePath) : undefined;
+      let stat;
+      try {
+        stat = lstatSync(absolutePath); // lstat: a DANGLING symlink is still a symlink
+      } catch {
+        stat = undefined;
+      }
       if (stat?.isSymbolicLink()) {
         fail(edit, 'unsafe-path', 'target is a symlink — refusing to replace the link');
         continue;
@@ -279,7 +320,11 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
       if (stat) {
         const read = readTextExact(absolutePath);
         if (!read) {
-          fail(edit, 'undecodable', 'file is not valid UTF-8 — refusing to rewrite it');
+          fail(
+            edit,
+            'undecodable',
+            `file is not valid UTF-8, or is larger than ${MAX_PATCH_FILE_BYTES / (1024 * 1024)} MiB — refusing to rewrite it`,
+          );
           continue;
         }
         current = read.text;
@@ -340,6 +385,14 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     }
     if (hits > 1) {
       fail(edit, 'ambiguous', `the \`old\` text appears ${hits} times — needs more context to be unique`);
+      continue;
+    }
+
+    // Permission is part of "would this apply?", so dry-run checks it too.
+    try {
+      accessSync(existsSync(absolutePath) ? absolutePath : dirname(absolutePath), constants.W_OK);
+    } catch {
+      fail(edit, 'unsafe-path', 'no write permission for this path');
       continue;
     }
 
@@ -419,6 +472,8 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     }
   } catch (error) {
     for (const { tmp } of staged) rmSync(tmp, { force: true });
+    // No patch happened — the backup would only invite a bogus "rollback".
+    rmSync(backupDir, { recursive: true, force: true });
     throw error;
   }
 
@@ -537,6 +592,15 @@ function readManifest(backupDir: string): Manifest {
 export function rollback(backupDir: string, options: RollbackOptions = {}): RollbackResult {
   const logger = options.logger ?? silentLogger;
   const manifest = readManifest(backupDir);
+  return withTreeLock(dirname(resolve(backupDir)), logger, () => rollbackInner(backupDir, manifest, options, logger));
+}
+
+function rollbackInner(
+  backupDir: string,
+  manifest: Manifest,
+  options: RollbackOptions,
+  logger: Logger,
+): RollbackResult {
   if (options.expectedSourceRoot) {
     const expected = realpathOr(resolve(options.expectedSourceRoot));
     const actual = realpathOr(manifest.sourceRoot);
