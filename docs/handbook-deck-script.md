@@ -239,3 +239,121 @@ open examples/work/demo/handbook/handbook.html
 ```
 
 一边跑一边说："大家看，不用任何 API key，本地就能把流程走一遍——结构是真的，文字是占位的；接上真模型，文字就是刚才第 6 页那个水平。"
+
+
+
+
+## 1. 静态分析是怎么"静态"分析的？能全覆盖吗？
+"静态"的意思：不运行你的代码，只"读"代码。 像一个不插电的审稿人，把源文件当文本拿来解析。
+
+具体分两遍：
+
+第一遍：登记造册。 用 tree-sitter（一个工业级语法解析器，Chrome/GitHub 都在用的那类技术）把每个文件解析成语法树，然后逐个登记：这个文件里有哪些类、哪些函数、每个函数从第几行到第几行、参数写了什么类型注解、self.xxx = yyy 给对象挂了什么属性。比如扫 worker.py 时登记：Worker 类有 run、execute 两个方法；构造函数里 self.queue = queue，而参数 queue 的注解是 TaskQueue——于是"学到"self.queue 是个 TaskQueue。
+
+第二遍：顺藤摸瓜。 拿着第一遍的名册，再看每一处函数调用长什么样，套四条规则去认（下面第 4 题详细讲）。
+
+覆盖率，分两层说，很重要：
+
+文件层面：全覆盖，且是"保证"级别的。 只要是支持的 5 种语言（Python/TS/Go/Rust/Shell）的文件，每一个都会被扫描、登记在案，后面每个文件必有一张文档卡片——就算某一步失败了，也会留一张空卡片并把这个文件记进"缺失名单"（_coverage.json），绝不静默跳过。
+调用关系层面：诚实地不追求 100%。 有些调用静态分析确实认不出来，比如 Python 里 getattr(obj, name)() 这种动态调用，或者一个局部变量的方法。认不出来的怎么办？单独隔离到 dropped-calls.json 存档、分好类（内置函数/局部变量方法/裸名字……），不混进调用图里装作知道。图里的每条边都是有把握的。
+另外两个边界：不支持的语言文件（.java、.json、.md 等）不进调用图；测试文件、vendor、node_modules 这类默认跳过。
+
+## 2. 每个文件都有文档？每个函数都有？都有行号？
+每个文件：有，保证有。 上面说了，"每文件一张卡片"是构造上保证的，缺了会显式记账。
+
+每个函数：条目一定有，散文尽力有。 这句话是理解整个系统的钥匙。每个函数的文档条目分两半：
+
+结构那一半（一定有，程序填的）：函数名、签名、起止行号、它调用谁、谁调用它、调了哪些外部库。这些从调用图里直接搬过来，不经过大模型的手。
+散文那一半（尽力有，模型写的）：干什么用（purpose）、数据怎么流（data_flow）、调用关系的人话解释（relations）。deep 模式下模型逐个函数写；如果模型那次抽风没写出来，这三个字段可以是空的，但条目本身和行号还在。
+每个函数都有行号记录：是的。 看真实例子，这是 demo 项目里 Worker.run 在调用图里的登记：
+
+
+"app.worker.Worker.run": {
+  "file": "app/worker.py",
+  "lineStart": 10, "lineEnd": 13,
+  "signature": "def run(self)",
+  "className": "Worker", ...
+}
+第 10 到 13 行，解析器量出来的，手册里显示的"（lines 10–13）"就是它。
+
+## 3. "每个事实带行号，写错了谁都能指出来"是什么意思？
+意思是：手册给了你"核对答案的页码"。
+
+传统 AI 生成的文档最大的问题是——它说错了你都不知道，因为你没法核对：它说"这个函数会重试三次"，你想验证，只能自己通读源码，成本高到没人去验，于是错误就一直留着。
+
+Handbook 的手册里，每个函数条目都挂着"第 10–13 行"这种锚点，而这个锚点不是模型写的，是解析器量的。于是核对变得很便宜：手册说"Worker.run 会循环取任务直到队列为空"，你不信？打开 worker.py 翻到第 10 行，四行代码扫一眼——对就是对，错就是错，任何人 30 秒能戳穿一个错误。
+
+所以那句话的完整含义是：散文（模型写的部分）可能讲得不好，但每句话旁边都贴着地址，验错成本从"通读全库"降到"按行号抽查"——这就使得错误留不住，因为发现太容易了。
+
+## 4. 调用关系是怎么抽成"一张调用图"的？
+拿真实例子走一遍。demo 项目里 Worker.run 的代码是：
+
+
+def run(self):                        # 第 10 行
+    while self.queue.size() > 0:      # 第 11 行
+        task = self.queue.pop()       # 第 12 行
+        self.execute(task)            # 第 13 行
+第二遍扫描到这三处调用时，套规则去认：
+
+self.execute(task) → 形状是"self.方法名()"→ 查名册：Worker 类自己有 execute 方法吗？有 → 记一条边：Worker.run → Worker.execute，类型 self_method（调自己的方法）。
+self.queue.pop() → 形状是"self.属性.方法名()"→ 查第一遍学到的：self.queue 是什么类型？TaskQueue → TaskQueue 有 pop 吗？有 → 记边：Worker.run → TaskQueue.pop，类型 self_attr_method（透过成员对象调过去）。
+类似还有两条规则：参数方法（参数注解了类型，engine.spin() 就能认出指向 Engine.spin）和 import 追踪（from pkg import helpers; helpers.do() 能认出指向我们自己的 pkg/helpers.py，而 os.getpid() 认出是外部边界调用）。
+认不出的（比如 print()）→ 丢进隔离区，不进图。
+每认出一条，就记下"谁 → 谁、第几行、是不是 await"。全库扫完，把所有函数节点 + 所有边攒起来，就是 graph.json——这就是那张图。看它记下的真实内容：
+
+
+{ "callerId": "app.worker.Worker.run", "calleeId": "app.queue.TaskQueue.pop",
+  "callType": "self_attr_method", "line": 12, "raw": "self.queue.pop" }
+所谓"一张图"，就是几百上千条这样的边 + 节点表。后面一切都吃这张图：章节按它排顺序、函数文档的"谁调用谁"从它来、agent 地图的联动提示也从它来。
+
+## 5. "给 agent 用的 SKILL 地图"生成了什么？在哪？怎么看？
+生成的是一个文件夹的 markdown 文件，两种形态：
+
+形态一：agent 定位索引（跑 handbook render --agent-site 时生成）
+位置：<work目录>/handbook/agent/，比如你仓库里现成的：
+
+
+examples/work/self/handbook/agent/
+├── how_to_use.md        ← 教 agent 怎么用这本手册的"操作规程"
+├── index.md             ← 所有章节的定位块汇总
+├── disambiguation.md    ← 重名词消歧（搜"parser"会命中哪几章）
+└── <章节id>.md          ← 每章一页
+形态二：SKILL 技能包（跑 handbook skill 时生成），就是把手册重新打包成 Claude Code 能直接挂载的标准技能格式：SKILL.md + references/ 文件夹。demo 的成品在 examples/work/demo/skill/。
+
+怎么看：全是普通 markdown，任何编辑器/IDE 直接打开。 比如 how_to_use.md 的真实开头长这样：
+
+一份定位索引：告诉你东西在哪里、下一步该读什么。每条事实都锚定到文件路径、阶段 id 或寄存器 id。……不是代码的替代品。跳转过去并 Read 真实文件——手册可能过时；代码是唯一的事实来源。
+
+所以"地图"不是什么可视化大图，就是一组结构固定、字段可靠、agent 读起来极其省 token 的 markdown 索引页。
+
+## 6. "定位块"在哪个文件里能看到？
+每个章节页的开头那一块就是定位块。具体位置：
+
+自手册：examples/work/self/handbook/agent/analyzer_parse.md（任何一个章节文件，开头即是）
+demo：examples/work/demo/handbook/agent/stage-2.md
+打开 demo 的 stage-2.md，开头就是这个格式（这是真实文件内容）：
+
+
+# stage-2 · Task execution
+**Duty**: 队列驱动的任务消费与执行……
+**Entry concepts**: `worker` / `queue`      ← 想改什么，看哪章的入口概念对得上
+**State**: `reg-task-queue`                 ← 这章会碰哪些全局状态
+**Exemplar**: `app/queue.py` (4 fns)        ← 想加新东西，照这个文件的样子抄
+**Core files**: `app/queue.py` `app/worker.py`
+幻灯片第 7 页左边那个终端样式的块，就是照这个真实格式排的示意。index.md 里把所有章节的定位块汇总在一页，agent 通常先读它。
+
+## 7. "事实和叙述分层"，大白话展开
+打个比方：这本手册是测量员和作家合写的。
+
+测量员（静态分析）负责量数字：这个函数在第 10 行、它调用了那三个函数、这个类有这几个属性。量完直接进档案。
+作家（大模型）负责在档案旁边写故事："这个函数像流水线工人，从队列取一个任务干一个"。
+关键制度是：作家没有档案的写入权限。
+
+落到代码层面是这么实现的：每个函数的文档条目，结构字段（行号/签名/调用关系）由程序从 graph.json 里直接复制进去；模型返回的 JSON 里，只有 purpose、data_flow、relations 三个散文字段会被合并进条目——它哪怕在回复里信誓旦旦说"这个函数在第 999 行"，那个数字也根本没有入口能写进手册。
+
+为什么这个分层是"防线"？因为大模型的毛病是一本正经地编造细节，而它最爱编的恰恰是行号、函数名、调用关系这类"看起来很具体"的东西。分层之后：
+
+编不了事实——事实通道物理隔离；
+散文写烂了——顶多是"讲得平庸"，而且旁边就贴着行号（第 3 题），一查便知；
+连"解析失败"都不许它补——认不出的调用进隔离区，宁可承认不知道，也不让模型猜。
+一句话总结：能验证的部分绝不交给模型，交给模型的部分永远可验证。 这就是第一道防线。

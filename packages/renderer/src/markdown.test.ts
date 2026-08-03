@@ -89,3 +89,38 @@ describe('renderMarkdownHandbook', () => {
     expect(read('stage-1.1.md')).not.toContain(stageSectionMarker('en'));
   });
 });
+
+describe('renderMarkdownHandbook — orphan-page cleanup (manifest)', () => {
+  it('removes stage pages from a previous render when ids change', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { existsSync } = await import('node:fs');
+    const outDir = mkdtempSync(join(tmpdir(), 'hb-rerender-'));
+
+    const modelA = makeFixtureModel();
+    renderMarkdownHandbook(modelA, outDir);
+    const oldStage = modelA.skeleton.stages.find((s) => s.id !== 'crosscut-1')?.id as string;
+    expect(existsSync(join(outDir, `${oldStage}.md`))).toBe(true);
+
+    // Second generation renames every stage.
+    const modelB = structuredClone(modelA);
+    modelB.skeleton.stages = modelB.skeleton.stages.map((s, i) => ({ ...s, id: `renamed-${i + 1}`, parent: null, children: [] }));
+    modelB.assignment.buckets = Object.fromEntries(
+      Object.values(modelB.assignment.buckets).map((files, i) => [`renamed-${i + 1}`, files]),
+    );
+    modelB.assignment.fileStage = Object.fromEntries(
+      Object.entries(modelB.assignment.fileStage).map(([f], i) => [f, { stage: Object.keys(modelB.assignment.buckets)[i % Object.keys(modelB.assignment.buckets).length] as string, also: [] }]),
+    );
+    modelB.organization.stages = {};
+    modelB.narration.stageSummaries = Object.fromEntries(
+      modelB.skeleton.stages.map((s) => [s.id, 'renamed summary']),
+    );
+    modelB.registers = [];
+    renderMarkdownHandbook(modelB, outDir);
+
+    expect(existsSync(join(outDir, `${oldStage}.md`)), 'stale page must be deleted').toBe(false);
+    expect(existsSync(join(outDir, 'renamed-1.md'))).toBe(true);
+    expect(existsSync(join(outDir, 'overview.md'))).toBe(true);
+  });
+});

@@ -6,8 +6,8 @@
  * Stage pages touched by a register get an appended, idempotently-markered
  * "State Registers Touched" section.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { ensureDir, writeFileAtomic } from '@handbook/core';
 import type { HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
 import { renderFileCardMd } from './file-card.js';
@@ -171,6 +171,10 @@ export function renderMarkdownHandbook(
   const view = new HandbookView(model);
   const lang = model.lang;
   ensureDir(outDir);
+  // Remove pages written by a PREVIOUS render (tracked in a manifest): stage
+  // ids change between generations, and stale pages would linger forever —
+  // polluting the handbook dir and getting scooped up by the skill packager.
+  cleanupPreviousRender(outDir);
   const written: string[] = [];
   const write = (name: string, content: string): void => {
     const path = join(outDir, name);
@@ -203,5 +207,27 @@ export function renderMarkdownHandbook(
     if (section.length > 0) writeFileAtomic(path, `${current}\n${section}`);
   }
 
+  writeRenderManifest(outDir, written);
   return { nStagePages: contentStages.length, files: written };
+}
+
+const MANIFEST_NAME = '.render-manifest.json';
+
+function cleanupPreviousRender(outDir: string): void {
+  const manifestPath = join(outDir, MANIFEST_NAME);
+  if (!existsSync(manifestPath)) return;
+  try {
+    const raw = JSON.parse(readFileSync(manifestPath, 'utf8')) as { files?: unknown };
+    for (const rel of Array.isArray(raw.files) ? raw.files : []) {
+      if (typeof rel !== 'string' || rel.includes('/') || rel.includes('..')) continue;
+      rmSync(join(outDir, rel), { force: true });
+    }
+  } catch {
+    // an unreadable manifest must never block a render
+  }
+}
+
+function writeRenderManifest(outDir: string, absoluteFiles: readonly string[]): void {
+  const files = absoluteFiles.map((p) => basename(p));
+  writeFileAtomic(join(outDir, MANIFEST_NAME), `${JSON.stringify({ version: 1, files }, null, 2)}\n`);
 }
