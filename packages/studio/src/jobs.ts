@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@handbook/core';
 
-export type JobKind = 'generate' | 'render' | 'plan' | 'resync' | 'apply';
+export type JobKind = 'generate' | 'render' | 'plan' | 'resync' | 'apply' | 'rollback';
 export type JobStatus = 'running' | 'succeeded' | 'failed';
 
 export interface Job {

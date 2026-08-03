@@ -279,9 +279,10 @@ program
   .command('rollback')
   .description('Restore a source tree from a patch backup produced by `handbook apply`')
   .requiredOption('--backup <dir>', 'backup directory (contains manifest.json)')
-  .action(async (opts: { backup: string }) => {
+  .option('--force', 'restore even files that changed after the patch')
+  .action(async (opts: { backup: string; force?: boolean }) => {
     const { rollback } = await import('@handbook/patcher');
-    printJson(rollback(resolve(opts.backup), logger()));
+    printJson(rollback(resolve(opts.backup), { force: Boolean(opts.force), logger: logger() }));
   });
 
 program

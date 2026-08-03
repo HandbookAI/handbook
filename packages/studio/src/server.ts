@@ -306,19 +306,32 @@ async function runApply(repo: RepoEntry, body: Record<string, unknown>, logger: 
     backupRoot: patchBackupRoot(repo),
     logger,
   });
+  for (const problem of result.problems) logger.warn(`plan problem: ${problem}`);
   for (const outcome of result.outcomes) {
     const mark = outcome.status === 'applied' || outcome.status === 'created' ? '✓' : '✗';
     logger.info(`${mark} EDIT ${outcome.index} ${outcome.file} — ${outcome.status}${outcome.detail ? `: ${outcome.detail}` : ''}`);
   }
-  if (!result.ok) throw new Error('plan did not verify — nothing was written (see the per-edit results)');
+  if (!result.ok) {
+    const why = result.problems.length > 0 ? `: ${result.problems.join('; ')}` : ' (see the per-edit results)';
+    throw new Error(`plan did not verify — nothing was written${why}`);
+  }
   return result;
 }
 
 async function runRollback(repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
-  const stamp = typeof body.backup === 'string' && body.backup ? body.backup : listBackups(patchBackupRoot(repo))[0];
-  if (!stamp) throw new Error('no patch backups to roll back');
-  const result = rollback(join(patchBackupRoot(repo), stamp), logger);
-  return { backup: stamp, ...result };
+  const known = listBackups(patchBackupRoot(repo));
+  const requested = typeof body.backup === 'string' && body.backup ? body.backup : known[0];
+  if (!requested) throw new Error('no patch backups to roll back');
+  // Allow-list the stamp: never join user input into a filesystem path.
+  if (!known.includes(requested)) throw new Error(`unknown backup "${requested}"`);
+  const result = rollback(join(patchBackupRoot(repo), requested), {
+    force: body.force === true,
+    logger,
+  });
+  if (result.skipped.length > 0) {
+    for (const s of result.skipped) logger.warn(`skipped ${s.file}: ${s.reason}`);
+  }
+  return { backup: requested, ...result };
 }
 
 async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
@@ -435,8 +448,7 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     ) {
       const body = await readBody(req);
       const kind = sub.slice(1) as 'generate' | 'analyze' | 'plan' | 'resync' | 'apply' | 'rollback';
-      const jobKind: JobKind =
-        kind === 'analyze' ? 'generate' : kind === 'rollback' ? 'apply' : (kind as JobKind);
+      const jobKind: JobKind = kind === 'analyze' ? 'generate' : (kind as JobKind);
       const job = ctx.jobs.start(repo.name, jobKind, (logger) => {
         switch (kind) {
           case 'analyze':

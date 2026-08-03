@@ -61,6 +61,11 @@ export class StateStore {
       if (inside(parsed.workDir, other.workDir) || inside(other.workDir, parsed.workDir)) {
         throw new Error(`workDir overlaps repo "${other.name}" (${other.workDir}) — artifacts would clobber each other`);
       }
+      // Two entries sharing a source tree would let concurrent jobs patch the
+      // same files (the job mutex is keyed on repo name).
+      if (parsed.sourceRoot === other.sourceRoot) {
+        throw new Error(`sourceRoot is already registered as repo "${other.name}"`);
+      }
     }
     const full: RepoEntry = { ...parsed, addedAt: new Date().toISOString() };
     this.state.repos.push(full);
