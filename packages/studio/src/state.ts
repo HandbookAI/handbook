@@ -4,7 +4,7 @@
  * evolution history) lives in each repo's work dir.
  */
 import { join } from 'node:path';
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
 import { fileExists, readValidatedJson, writeJsonFile } from '@handbook/core';
 
@@ -26,6 +26,15 @@ const stateSchema = z.object({
   repos: z.array(repoEntrySchema),
 });
 export type StudioState = z.infer<typeof stateSchema>;
+
+/** realpath when possible so two spellings of one tree compare equal. */
+function realOf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
 
 export class StateStore {
   private readonly path: string;
@@ -63,8 +72,10 @@ export class StateStore {
       }
       // Two entries sharing a source tree would let concurrent jobs patch the
       // same files (the job mutex is keyed on repo name).
-      if (parsed.sourceRoot === other.sourceRoot) {
-        throw new Error(`sourceRoot is already registered as repo "${other.name}"`);
+      const mine = realOf(parsed.sourceRoot);
+      const theirs = realOf(other.sourceRoot);
+      if (inside(mine, theirs) || inside(theirs, mine)) {
+        throw new Error(`sourceRoot overlaps repo "${other.name}" (${other.sourceRoot}) — one tree, one repo`);
       }
     }
     const full: RepoEntry = { ...parsed, addedAt: new Date().toISOString() };

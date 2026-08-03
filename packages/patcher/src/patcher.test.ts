@@ -208,7 +208,7 @@ describe('patcher — review regressions', () => {
       ['### EDIT 1', '- file: `a.md`', '```old', 'text', '```', 'more', '```', '```new', 'x', '```'].join('\n'),
     );
     expect(parsed.edits).toHaveLength(0);
-    expect(parsed.problems.join(' ')).toMatch(/longer opening fence|exactly one/);
+    expect(parsed.problems.join(' ')).toMatch(/content outside the fenced blocks|LONGER fence|exactly one/);
   });
 
   it('ignores a `- file:` line hidden inside a fenced block', () => {
@@ -338,5 +338,114 @@ describe('patcher — review regressions', () => {
     expect(result.ok).toBe(true);
     expect(result.changedFiles).toEqual([]);
     expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toBe(before);
+  });
+});
+
+describe('patcher — R2 regressions', () => {
+  it('refuses a plan whose inner bare fence closed a block early', () => {
+    const parsed = parsePlan(
+      ['### EDIT 1', '- file: `docs/g.md`', '```old', 'text', '```', 'orphan line', '```new', 'x', '```'].join('\n'),
+    );
+    expect(parsed.edits).toHaveLength(0);
+    expect(parsed.problems.join(' ')).toMatch(/content outside the fenced blocks|LONGER fence|exactly one/);
+  });
+
+  it('accepts a legitimate fenced payload when the opener is longer', () => {
+    const parsed = parsePlan(
+      ['### EDIT 1', '- file: `docs/g.md`', '````old', 'text', '```', 'inner', '```', '````', '````new', 'y', '````'].join('\n'),
+    );
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.edits[0]?.oldText).toBe('text\n```\ninner\n```');
+  });
+
+  it('treats a quoted EDIT inside a ~~~ region as content, not a heading', () => {
+    const root = repo();
+    const p = [
+      '### EDIT 1',
+      '- file: `app/engine.py`',
+      '~~~',
+      '### EDIT 2',
+      '- file: `app/secret.py`',
+      '```old',
+      '```',
+      '```new',
+      'SECRET = 666',
+      '```',
+      '~~~',
+      '```old',
+      'self.rpm += 1',
+      '```',
+      '```new',
+      'self.rpm += 5',
+      '```',
+    ].join('\n');
+    const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
+    expect(existsSync(join(root, 'app/secret.py'))).toBe(false);
+    expect(result.outcomes.every((o) => o.file === 'app/engine.py')).toBe(true);
+  });
+
+  it('does not flag inline backticks that cannot close the block', () => {
+    const parsed = parsePlan(
+      ['### EDIT 1', '- file: `a.py`', '```old', 'x = "`` inline ``"', '```', '```new', 'y = 1', '```'].join('\n'),
+    );
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.edits).toHaveLength(1);
+  });
+
+  it('reports a near-miss edit heading instead of silently finding none', () => {
+    const parsed = parsePlan('## EDIT 1\n- file: `a.py`\n```old\na\n```\n```new\nb\n```');
+    expect(parsed.problems.join(' ')).toMatch(/looks like an edit heading/);
+  });
+
+  it('refuses two create edits for the same path', () => {
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([
+        { file: 'app/new.py', old: '', next: 'first' },
+        { file: 'app/new.py', old: '', next: 'second' },
+      ]),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[1]?.detail).toMatch(/already writes this file/);
+  });
+
+  it('refuses a create whose parent path is a regular file', () => {
+    const root = repo();
+    writeFileSync(join(root, 'blocker'), 'i am a file\n');
+    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'blocker/child.py', old: '', next: 'x' }]) });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.status).toBe('not-a-file');
+  });
+
+  it('refuses edits aimed at the patch backup tree', () => {
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: '.handbook-patches/manifest.json', old: '', next: '{}' }]),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.detail).toMatch(/backup tree/);
+  });
+
+  it('rollback refuses a backup belonging to another tree', () => {
+    const root = repo();
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 3' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(() => rollback(applied.backupDir as string, { expectedSourceRoot: repo() })).toThrow(/belongs to/);
+    const ok = rollback(applied.backupDir as string, { expectedSourceRoot: root });
+    expect(ok.restored).toEqual(['app/engine.py']);
+  });
+
+  it('writes a .gitignore into the backup root', () => {
+    const root = repo();
+    applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 4' }]),
+    });
+    expect(readFileSync(join(root, '.handbook-patches/.gitignore'), 'utf8').trim()).toBe('*');
   });
 });

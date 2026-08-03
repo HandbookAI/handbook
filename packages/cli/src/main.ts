@@ -261,7 +261,7 @@ program
   .requiredOption('--source <dir>', 'source tree to edit')
   .requiredOption('--plan <file>', 'plan file produced by `handbook plan`')
   .option('--dry-run', 'verify only — never write')
-  .option('--backup-root <dir>', 'where backups go (default <source>/../.handbook-patches)')
+  .option('--backup-root <dir>', 'where backups go (default <source>/.handbook-patches)')
   .action(async (opts: { source: string; plan: string; dryRun?: boolean; backupRoot?: string }) => {
     const { applyPlan } = await import('@handbook/patcher');
     const result = applyPlan({

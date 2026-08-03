@@ -117,6 +117,65 @@ function safeResolve(root: string, relPath: string): string | undefined {
   }
 }
 
+/** realpath when possible, else the input (missing paths compare literally). */
+function realpathOr(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Cross-process exclusive lock for the verify+write window: two `handbook apply`
+ * runs on one tree would otherwise interleave and silently lose an edit.
+ */
+function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
+  const lockDir = join(resolve(sourceRoot), '.handbook-patches', 'apply.lock');
+  mkdirSync(dirname(lockDir), { recursive: true });
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      mkdirSync(lockDir); // atomic: EEXIST means another run holds it
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      // A lock older than 5 minutes is stale (crashed run).
+      try {
+        if (Date.now() - statSync(lockDir).mtimeMs > 300_000) {
+          rmSync(lockDir, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error('another patch run holds the lock on this tree');
+      logger.info('[patch] waiting for another patch run to finish…');
+      const until = Date.now() + 200;
+      while (Date.now() < until) {
+        /* brief spin: applyPlan is synchronous by contract */
+      }
+    }
+  }
+  try {
+    return work();
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
+  }
+}
+
+/** The first ancestor of `relPath` under `root` that exists but is not a directory. */
+function blockingAncestor(root: string, relPath: string): string | undefined {
+  const parts = normalize(relPath).split('/').filter((p) => p !== '' && p !== '.');
+  let probe = resolve(root);
+  for (const part of parts.slice(0, -1)) {
+    probe = join(probe, part);
+    if (!existsSync(probe)) return undefined;
+    if (!statSync(probe).isDirectory()) return toPosix(relative(resolve(root), probe));
+  }
+  return undefined;
+}
+
 function lineOfOffset(text: string, offset: number): number {
   let line = 1;
   for (let i = 0; i < offset && i < text.length; i += 1) {
@@ -167,7 +226,13 @@ function toEol(text: string, eol: '\n' | '\r\n'): string {
  */
 export function applyPlan(options: ApplyOptions): ApplyResult {
   const logger = options.logger ?? silentLogger;
+  if (options.dryRun) return applyPlanInner(options, logger);
+  return withTreeLock(options.sourceRoot, logger, () => applyPlanInner(options, logger));
+}
+
+function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
   const dryRun = options.dryRun ?? false;
+  const effectiveBackupRoot = resolve(options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches'));
   const { edits, problems } = parsePlan(options.plan);
   const outcomes: EditOutcome[] = [];
   const resolvedByPath = new Map<string, ResolvedEdit>();
@@ -185,6 +250,15 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
     const absolutePath = safeResolve(options.sourceRoot, edit.file);
     if (!absolutePath) {
       fail(edit, 'unsafe-path', 'path escapes the source root (directly or through a symlink)');
+      continue;
+    }
+    if (absolutePath === effectiveBackupRoot || absolutePath.startsWith(effectiveBackupRoot + sep)) {
+      fail(edit, 'unsafe-path', 'target is inside the patch backup tree');
+      continue;
+    }
+    const blocked = blockingAncestor(options.sourceRoot, edit.file);
+    if (blocked) {
+      fail(edit, 'not-a-file', `"${blocked}" is a file, so it cannot contain this path`);
       continue;
     }
 
@@ -210,6 +284,9 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
         }
         current = read.text;
         modeByPath.set(absolutePath, read.mode);
+        if ((read.mode & 0o200) === 0) {
+          logger.warn(`[patch] ${edit.file} is read-only (mode ${(read.mode & 0o777).toString(8)}); its mode is preserved`);
+        }
         originalContent.set(absolutePath, read.text);
       } else if (creates) {
         current = '';
@@ -221,6 +298,10 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
     }
 
     if (creates) {
+      if (known) {
+        fail(edit, 'no-match', 'another edit in this plan already writes this file — merge them');
+        continue;
+      }
       // The "never silently overwrite" guard is judged against the file's
       // ON-DISK state, so an earlier edit in the same plan cannot unlock it.
       const onDisk = originalContent.get(absolutePath);
@@ -301,8 +382,7 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
     return { ok: true, dryRun: false, outcomes, changedFiles: [], problems };
   }
 
-  const backupRoot = options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches');
-  const backupDir = createStampDir(backupRoot);
+  const backupDir = createStampDir(effectiveBackupRoot);
   const manifest: Array<{ file: string; existed: boolean; sha256Before?: string; sha256After?: string }> = [];
   for (const item of pending) {
     const rel = toPosix(relative(resolve(options.sourceRoot), item.absolutePath));
@@ -360,6 +440,9 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
       else rmSync(target, { force: true });
     }
     for (const { tmp } of staged) rmSync(tmp, { force: true });
+    // The backup describes a patch that no longer exists — drop it so no one
+    // rolls "back" to it later.
+    rmSync(backupDir, { recursive: true, force: true });
     logger.error(`[patch] write failed and was rolled back: ${String(error)}`);
     throw error;
   }
@@ -374,6 +457,9 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
 /** Create a fresh timestamped directory, never reusing an existing one. */
 function createStampDir(backupRoot: string): string {
   mkdirSync(backupRoot, { recursive: true });
+  // Keep backups out of the repo's history and out of the analyzer's way.
+  const ignore = join(backupRoot, '.gitignore');
+  if (!existsSync(ignore)) writeFileSync(ignore, '*\n', 'utf8');
   const base = new Date().toISOString().replace(/[:.]/g, '-');
   for (let attempt = 0; ; attempt += 1) {
     const candidate = join(backupRoot, attempt === 0 ? base : `${base}-${attempt}`);
@@ -400,6 +486,11 @@ export interface RollbackResult {
 export interface RollbackOptions {
   /** Restore even when the file changed after the patch. Default false. */
   force?: boolean;
+  /**
+   * Refuse a backup whose manifest belongs to a different tree. Callers that
+   * know which repo they are rolling back should always pass this.
+   */
+  expectedSourceRoot?: string;
   logger?: Logger;
 }
 
@@ -446,12 +537,20 @@ function readManifest(backupDir: string): Manifest {
 export function rollback(backupDir: string, options: RollbackOptions = {}): RollbackResult {
   const logger = options.logger ?? silentLogger;
   const manifest = readManifest(backupDir);
+  if (options.expectedSourceRoot) {
+    const expected = realpathOr(resolve(options.expectedSourceRoot));
+    const actual = realpathOr(manifest.sourceRoot);
+    if (expected !== actual) {
+      throw new Error(`backup belongs to ${manifest.sourceRoot}, not ${resolve(options.expectedSourceRoot)}`);
+    }
+  }
   const restored: string[] = [];
   const removed: string[] = [];
   const skipped: RollbackResult['skipped'] = [];
 
   for (const entry of manifest.files) {
     const target = join(manifest.sourceRoot, entry.file);
+    try {
     const currentHash = existsSync(target) ? sha256Hex(readFileSync(target)) : undefined;
 
     if (!options.force && entry.sha256After && currentHash && currentHash !== entry.sha256After) {
@@ -476,6 +575,10 @@ export function rollback(backupDir: string, options: RollbackOptions = {}): Roll
       }
       rmSync(target, { force: true });
       removed.push(entry.file);
+    }
+    } catch (error) {
+      // One unwritable file must not abandon the rest of the rollback.
+      skipped.push({ file: entry.file, reason: `restore failed: ${error instanceof Error ? error.message : String(error)}` });
     }
   }
   logger.info(
