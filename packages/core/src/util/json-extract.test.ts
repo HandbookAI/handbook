@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractJsonBlock } from './json-extract.js';
+import { extractJsonBlock, repairJson } from './json-extract.js';
 
 describe('extractJsonBlock', () => {
   it('parses a fenced json block', () => {
@@ -53,5 +53,47 @@ describe('extractJsonBlock — info strings and meta-fences (round-2 review)', (
   it('keeps inner example fences of a four-backtick block literal', () => {
     const text = '````md\nexample:\n```json\n{"inner": true}\n```\n````\nreal:\n```json\n{"outer": true}\n```';
     expect(extractJsonBlock(text)).toEqual({ outer: true });
+  });
+});
+
+describe('repairJson', () => {
+  it('escapes an unescaped quote inside prose', () => {
+    expect(repairJson('{"a": "he said "hi" loudly"}')).toEqual({ a: 'he said "hi" loudly' });
+  });
+
+  it('handles the Chinese-prose case that broke real replies', () => {
+    const raw = '{"purpose": "把被测对象拿来"考一遍"。", "role": "test"}';
+    expect(repairJson(raw)).toEqual({ purpose: '把被测对象拿来"考一遍"。', role: 'test' });
+  });
+
+  it('escapes raw newlines inside strings', () => {
+    expect(repairJson('{"a": "one\ntwo"}')).toEqual({ a: 'one\ntwo' });
+  });
+
+  it('leaves valid JSON alone and refuses structural guesses', () => {
+    expect(repairJson('{"a": 1}')).toEqual({ a: 1 });
+    expect(repairJson('{"a": ')).toBeUndefined();
+    expect(repairJson('not json at all')).toBeUndefined();
+  });
+});
+
+describe('extractJsonBlock precedence', () => {
+  it('prefers a REPAIRED fenced block over a parseable nested fragment', () => {
+    // The fence is the declared answer but has a stray quote; the nested
+    // `functions` object parses on its own and must not win.
+    const reply = [
+      '```json',
+      '{',
+      '  "purpose": "测试 "考一遍" 的行为",',
+      '  "functions": {"parseVerdict": {"purpose": "解析裁决"}}',
+      '}',
+      '```',
+    ].join('\n');
+    const result = extractJsonBlock(reply) as Record<string, unknown>;
+    expect(Object.keys(result)).toEqual(['purpose', 'functions']);
+  });
+
+  it('still prefers a cleanly parsing fence over repair', () => {
+    expect(extractJsonBlock('```json\n{"ok": true}\n```')).toEqual({ ok: true });
   });
 });

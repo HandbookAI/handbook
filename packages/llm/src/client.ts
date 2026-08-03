@@ -90,7 +90,11 @@ export interface OpenAiChatClientOptions {
 /** HTTP statuses that will never succeed on retry. */
 const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 405, 410, 422]);
 
-/** Models that reject `temperature`/`max_tokens` in favor of reasoning-style params. */
+/**
+ * Models that take `max_completion_tokens` and reject `temperature`.
+ * (OpenAI's reasoning line; other vendors keep the classic parameters even when
+ * they reason — those are detected from the RESPONSE instead, see `sawReasoning`.)
+ */
 const REASONING_MODEL_RE = /gpt-5|gpt-4\.1|o[1-9]/i;
 
 export interface LlmUsageStats {
@@ -101,6 +105,14 @@ export interface LlmUsageStats {
 
 export class OpenAiChatClient implements ChatClient {
   readonly model: string;
+  /**
+   * True once a response carried `reasoning_content`. Reasoning tokens are
+   * billed against the same budget as the answer, so a long prompt can consume
+   * the whole allowance and come back with an EMPTY `content`. When that
+   * happens we retry with a larger budget instead of silently accepting
+   * nothing — the failure mode this closes produced 90 empty cards in a row.
+   */
+  private sawReasoning = false;
   private readonly config: LlmEnvConfig;
   private readonly limit: LimitFn;
   private readonly logger: Logger;
@@ -130,9 +142,9 @@ export class OpenAiChatClient implements ChatClient {
   async complete(prompt: string, options: ChatOptions = {}): Promise<ChatResult> {
     return this.limit(() =>
       retry(
-        async () => {
+        async (attempt) => {
           const startedAt = Date.now();
-          const text = await this.request(prompt, options);
+          const text = await this.request(prompt, options, attempt);
           const elapsedSec = (Date.now() - startedAt) / 1000;
           this.stats.calls += 1;
           this.stats.totalElapsedSec += elapsedSec;
@@ -150,12 +162,15 @@ export class OpenAiChatClient implements ChatClient {
     );
   }
 
-  private async request(prompt: string, options: ChatOptions): Promise<string> {
+  private async request(prompt: string, options: ChatOptions, attempt = 1): Promise<string> {
     const body: Record<string, unknown> = {
       model: this.model,
       messages: [{ role: 'user', content: prompt }],
     };
-    const maxTokens = options.maxTokens ?? this.config.maxTokens;
+    // A reasoning endpoint spends part of the budget thinking, so give a retry
+    // more room rather than asking the same impossible question again.
+    const growth = this.sawReasoning ? Math.min(4, attempt) : 1;
+    const maxTokens = Math.min(200_000, (options.maxTokens ?? this.config.maxTokens) * growth);
     if (REASONING_MODEL_RE.test(this.model)) {
       body.max_completion_tokens = maxTokens; // reasoning models also reject `temperature`
     } else {
@@ -181,8 +196,26 @@ export class OpenAiChatClient implements ChatClient {
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
+    const choice = ((payload.choices as Array<Record<string, any>> | undefined) ?? [])[0] ?? {};
+    const message = (choice.message ?? {}) as Record<string, unknown>;
+    if (typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0) {
+      this.sawReasoning = true;
+    }
     const text = extractAssistantText(payload);
     if (text === undefined) throw new Error('LLM response had no assistant text');
+    if (text.trim() === '') {
+      // Empty content is a FAILURE, not an empty answer: accepting it silently
+      // is how a whole run ends up with blank cards.
+      const finish = typeof choice.finish_reason === 'string' ? choice.finish_reason : 'unknown';
+      const usage = (payload.usage ?? {}) as Record<string, any>;
+      const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
+      const hint = this.sawReasoning
+        ? ` — the model spent its budget on reasoning${
+            reasoningTokens ? ` (${String(reasoningTokens)} reasoning tokens)` : ''
+          }; raise OPENAI_MAX_TOKENS or pick a non-reasoning model`
+        : '';
+      throw new Error(`LLM returned empty content (finish_reason=${finish}, max_tokens=${maxTokens})${hint}`);
+    }
     return text;
   }
 }

@@ -123,6 +123,22 @@ export class WorkDir {
     return cards;
   }
 
+  /**
+   * Keep a reply that produced no usable card, so a shape mismatch or refusal
+   * can be read after the run instead of being guessed at. Diagnostics must
+   * never break a run: failures here are swallowed.
+   */
+  saveRejectedReply(file: string, text: string): void {
+    try {
+      const dir = join(this.cardsDir, '_rejected');
+      ensureDir(dir);
+      const safe = file.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120) || 'reply';
+      writeFileAtomic(join(dir, `${safe}.txt`), text);
+    } catch {
+      // diagnostics are best-effort
+    }
+  }
+
   saveCardCoverage(coverage: CardCoverage): void {
     writeJsonFile(join(this.cardsDir, '_coverage.json'), coverage);
   }
