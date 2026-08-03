@@ -87,6 +87,11 @@ export interface OpenAiChatClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** Per-call retry state: whether this call's retries should ask for more room. */
+interface CallState {
+  grow: boolean;
+}
+
 /** HTTP statuses that will never succeed on retry. */
 const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 405, 410, 422]);
 
@@ -112,15 +117,11 @@ export interface LlmUsageStats {
 export class OpenAiChatClient implements ChatClient {
   readonly model: string;
   /**
-   * True once a response carried `reasoning_content`. Reasoning tokens are
-   * billed against the same budget as the answer, so a long prompt can consume
-   * the whole allowance and come back with an EMPTY `content`. When that
-   * happens we retry with a larger budget instead of silently accepting
-   * nothing — the failure mode this closes produced 90 empty cards in a row.
+   * The highest budget this endpoint has accepted, learned from a 400 that
+   * rejected a larger one. Shared across calls because it is a property of the
+   * model, not of a request.
    */
-  private sawReasoning = false;
-  /** True once a response was cut off at the token limit. */
-  private sawTruncation = false;
+  private budgetCeiling = Number.POSITIVE_INFINITY;
   private readonly config: LlmEnvConfig;
   private readonly limit: LimitFn;
   private readonly logger: Logger;
@@ -148,11 +149,14 @@ export class OpenAiChatClient implements ChatClient {
   }
 
   async complete(prompt: string, options: ChatOptions = {}): Promise<ChatResult> {
+    // Budget growth is per CALL: one truncated reply must not inflate every
+    // other request on a client shared by 16 concurrent workers.
+    const call: CallState = { grow: false };
     return this.limit(() =>
       retry(
         async (attempt) => {
           const startedAt = Date.now();
-          const text = await this.request(prompt, options, attempt);
+          const text = await this.request(prompt, options, attempt, call);
           const elapsedSec = (Date.now() - startedAt) / 1000;
           this.stats.calls += 1;
           this.stats.totalElapsedSec += elapsedSec;
@@ -170,15 +174,22 @@ export class OpenAiChatClient implements ChatClient {
     );
   }
 
-  private async request(prompt: string, options: ChatOptions, attempt = 1): Promise<string> {
+  private async request(
+    prompt: string,
+    options: ChatOptions,
+    attempt = 1,
+    call: CallState = { grow: false },
+  ): Promise<string> {
     const body: Record<string, unknown> = {
       model: this.model,
       messages: [{ role: 'user', content: prompt }],
     };
-    // A reasoning endpoint spends part of the budget thinking, so give a retry
-    // more room rather than asking the same impossible question again.
-    const growth = this.sawReasoning || this.sawTruncation ? Math.min(4, attempt) : 1;
-    const maxTokens = Math.min(200_000, (options.maxTokens ?? this.config.maxTokens) * growth);
+    // A reasoning endpoint spends part of the budget thinking, and a truncated
+    // reply needed more room, so grow the budget for THIS call's retries —
+    // never past a ceiling the endpoint has already rejected.
+    const base = options.maxTokens ?? this.config.maxTokens;
+    const growth = call.grow ? Math.min(2, attempt) : 1;
+    const maxTokens = Math.max(1, Math.min(base * growth, this.budgetCeiling));
     if (REASONING_MODEL_RE.test(this.model)) {
       body.max_completion_tokens = maxTokens; // reasoning models also reject `temperature`
     } else {
@@ -209,6 +220,13 @@ export class OpenAiChatClient implements ChatClient {
         );
       }
       const message = `LLM endpoint returned ${response.status}: ${body.slice(0, 300)}`;
+      // A 400 complaining about the token parameter is a verdict on OUR budget,
+      // not on the request: remember the ceiling, stop growing, and retry.
+      if (response.status === 400 && /max_?(completion_)?tokens|token limit|max output/i.test(body)) {
+        this.budgetCeiling = Math.min(this.budgetCeiling, Math.max(1, Math.floor(maxTokens / 2)));
+        call.grow = false;
+        throw new Error(`${message} — retrying with max_tokens=${this.budgetCeiling}`);
+      }
       if (PERMANENT_STATUSES.has(response.status)) throw new PermanentError(message);
       throw new Error(message); // 408/429/5xx → retryable
     }
@@ -216,20 +234,26 @@ export class OpenAiChatClient implements ChatClient {
     const payload = (await response.json()) as Record<string, unknown>;
     const choice = ((payload.choices as Array<Record<string, any>> | undefined) ?? [])[0] ?? {};
     const message = (choice.message ?? {}) as Record<string, unknown>;
-    if (typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0) {
-      this.sawReasoning = true;
-    }
+    const reasoned = typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0;
     const finishReason = typeof choice.finish_reason === 'string' ? choice.finish_reason : 'unknown';
     const text = extractAssistantText(payload);
     if (text === undefined) throw new Error('LLM response had no assistant text');
     if (finishReason === 'length' && text.trim() !== '') {
-      // A completion cut off at the token limit is a PARTIAL answer: its JSON
-      // will not parse and its prose stops mid-sentence. Treated as success it
-      // becomes silently missing output, so fail and retry with more room.
-      this.sawTruncation = true;
-      throw new Error(
-        `LLM response was truncated at the token limit (max_tokens=${maxTokens}, ${text.length} chars) — ` +
-          'raise OPENAI_MAX_TOKENS if this persists',
+      // A completion cut off at the limit is a PARTIAL answer. Whether that is
+      // fatal depends on what was asked for: a broken JSON document is useless,
+      // but a paragraph missing its last clause beats the canned fallback that
+      // replaces it. So refuse it only when structure was wanted and is broken.
+      const structureWanted = /[{[]/.test(text);
+      const structureUsable = extractJsonBlock(text) !== undefined;
+      if (structureWanted && !structureUsable) {
+        call.grow = true;
+        throw new Error(
+          `LLM response was truncated mid-structure (max_tokens=${maxTokens}, ${text.length} chars) — ` +
+            'raise OPENAI_MAX_TOKENS if this persists',
+        );
+      }
+      this.logger.warn(
+        `LLM response hit the token limit (max_tokens=${maxTokens}); using the ${text.length} characters returned`,
       );
     }
     if (text.trim() === '') {
@@ -237,7 +261,8 @@ export class OpenAiChatClient implements ChatClient {
       // is how a whole run ends up with blank cards.
       const usage = (payload.usage ?? {}) as Record<string, any>;
       const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
-      const hint = this.sawReasoning
+      if (reasoned) call.grow = true;
+      const hint = reasoned
         ? ` — the model spent its budget on reasoning${
             reasoningTokens ? ` (${String(reasoningTokens)} reasoning tokens)` : ''
           }; raise OPENAI_MAX_TOKENS or pick a non-reasoning model`

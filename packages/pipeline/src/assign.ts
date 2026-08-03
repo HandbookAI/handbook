@@ -77,10 +77,12 @@ async function assignBatch(
       single: { fields: ['stage', 'file'] },
     });
     const batchFiles = new Set(batch.map((d) => d.file));
-    const soleFile = batch.length === 1 ? batch[0]?.file : undefined;
+    const soleFile = batch.length === 1 && entries.length === 1 ? batch[0]?.file : undefined;
     for (const entry of entries) {
-      const named = typeof entry.file === 'string' ? entry.file : undefined;
-      const file = named && batchFiles.has(named) ? named : entries.length === 1 ? soleFile : undefined;
+      const named = typeof entry.file === 'string' ? entry.file.trim() : undefined;
+      // A named file must be one we asked about; only an entry with NO file at
+      // all inherits the single-file batch's identity.
+      const file = named ? (batchFiles.has(named) ? named : undefined) : soleFile;
       if (!file) continue;
       const stage = typeof entry.stage === 'string' && validIds.has(entry.stage) ? entry.stage : 'unassigned';
       const also = Array.isArray(entry.also)

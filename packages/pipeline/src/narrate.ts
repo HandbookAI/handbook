@@ -306,7 +306,8 @@ export async function extractRegisters(
       // container names, a lone register) plus name/description spelled instead
       // of id/semantics.
       const entries = extractEntryList(response.json, ['registers', 'state', 'variables'], {
-        single: { fields: ['id', 'name', 'semantics'] },
+        // `id`/`name` alone would turn an error envelope into a register.
+        single: { fields: ['semantics', 'description'] },
       });
       if (entries.length === 0) {
         logger.warn(
@@ -362,7 +363,7 @@ export async function extractRegisters(
     try {
       const response = await client.complete(fillPrompt, { temperature: 0 });
       const entries = extractEntryList(response.json, ['assignments', 'registers'], {
-        single: { fields: ['id', 'stages'] },
+        single: { fields: ['stages'] },
       });
       for (const a of entries) {
         const id = typeof a.id === 'string' ? a.id.trim() : '';

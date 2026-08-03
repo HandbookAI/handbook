@@ -46,8 +46,9 @@ import {
   type Organization,
   type Registers,
   type Skeleton,
+  sha256Hex,
 } from '@handbook/core';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 
 export class WorkDir {
   constructor(readonly root: string) {}
@@ -123,19 +124,50 @@ export class WorkDir {
     return cards;
   }
 
+  /** How many replies this run kept for inspection. */
+  private rejectedReplies = 0;
+
+  /** Cap the kept replies: a large repo at batchSize 1 would keep one per file. */
+  private static readonly MAX_REJECTED_REPLIES = 20;
+
   /**
    * Keep a reply that produced no usable card, so a shape mismatch or refusal
    * can be read after the run instead of being guessed at. Diagnostics must
    * never break a run: failures here are swallowed.
+   *
+   * The name is derived from the file but disambiguated with a hash — sanitising
+   * alone collapses every CJK path onto the same name, so one file's reply would
+   * overwrite another's.
    */
   saveRejectedReply(file: string, text: string): void {
+    if (this.rejectedReplies >= WorkDir.MAX_REJECTED_REPLIES) return;
     try {
       const dir = join(this.cardsDir, '_rejected');
       ensureDir(dir);
-      const safe = file.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120) || 'reply';
-      writeFileAtomic(join(dir, `${safe}.txt`), text);
+      const stem = file.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80);
+      const name = `${stem || 'reply'}-${sha256Hex(file).slice(0, 8)}.txt`;
+      writeFileAtomic(join(dir, name), text);
+      this.rejectedReplies += 1;
     } catch {
       // diagnostics are best-effort
+    }
+  }
+
+  /** Replies kept this run — reported when a run aborts for lack of coverage. */
+  rejectedReplyCount(): number {
+    return this.rejectedReplies;
+  }
+
+  /**
+   * Drop replies kept by an earlier run. Without this, a diagnosis reads stale
+   * replies from a previous generation with nothing to tell them apart.
+   */
+  clearRejectedReplies(): void {
+    this.rejectedReplies = 0;
+    try {
+      rmSync(join(this.cardsDir, '_rejected'), { recursive: true, force: true });
+    } catch {
+      // best-effort
     }
   }
 

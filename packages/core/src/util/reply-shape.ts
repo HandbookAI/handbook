@@ -26,13 +26,19 @@ export function extractEntryList(
   keys: readonly string[],
   options: { single?: { fields: readonly string[] } } = {},
 ): Array<Record<string, unknown>> {
+  // An array that holds no plain objects is NOT a match: returning an empty list
+  // would short-circuit the remaining container keys and the `single` fallback,
+  // discarding a real list sitting under the next key. Arrays are excluded too —
+  // callers are typed for objects, and a nested array would reach them as one.
   const asList = (value: unknown): Array<Record<string, unknown>> | undefined => {
     if (!Array.isArray(value)) return undefined;
-    return value.filter((v): v is Record<string, unknown> => typeof v === 'object' && v !== null);
+    const objects = value.filter(
+      (v): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v),
+    );
+    return objects.length > 0 ? objects : undefined;
   };
 
-  const bare = asList(json);
-  if (bare) return bare;
+  if (Array.isArray(json)) return asList(json) ?? [];
   if (typeof json !== 'object' || json === null) return [];
   const record = json as Record<string, unknown>;
 

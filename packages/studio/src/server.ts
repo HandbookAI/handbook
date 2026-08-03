@@ -238,6 +238,15 @@ function jobSummary(job: Job): Record<string, unknown> {
 // Job bodies
 // ---------------------------------------------------------------------------
 
+/** Read an optional artifact: a malformed one must not 404 the whole overview. */
+function readOptional<T>(read: () => T): T | null {
+  try {
+    return read();
+  } catch {
+    return null;
+  }
+}
+
 async function runGenerate(
   ctx: Ctx,
   repo: RepoEntry,
@@ -488,7 +497,7 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
           // Assignment coverage says every file found a chapter; it says nothing
           // about whether the files were actually DESCRIBED. Report both, so a
           // run whose cards came back empty cannot look complete.
-          cardCoverage: work.loadCardCoverage() ?? null,
+          cardCoverage: readOptional(() => work.loadCardCoverage() ?? null),
           registers,
         });
       } catch (error) {
