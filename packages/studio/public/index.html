@@ -278,7 +278,9 @@ function renderEvolve(c) {
 
 async function renderHistory(c) {
   c.style.padding='24px 26px';
-  const evos = await api(`/api/repos/${current.name}/history`);
+  let evos;
+  try { evos = await api(`/api/repos/${current.name}/history`); }
+  catch(e){ c.innerHTML = `<div class="empty"><h3>历史加载失败</h3><p>${escapeHtml(e.message)}</p></div>`; return; }
   c.innerHTML = evos.length ? evos.map(e => `
     <div class="evo">
       <span class="d">${escapeHtml(e.description||'')}</span>
@@ -300,24 +302,30 @@ async function addRepo() {
   } catch (e) { $('fErr').textContent = e.message; }
 }
 
-async function startAnalyze(){ runJob(await api(`/api/repos/${current.name}/analyze`, {method:'POST', body:'{}'}), '静态分析'); }
+async function startAnalyze(){ try { runJob(await api(`/api/repos/${current.name}/analyze`, {method:'POST', body:'{}'}), '静态分析'); } catch(e){ showError('静态分析', e.message); } }
 async function startGenerate(){
   dlgGen.close();
-  runJob(await api(`/api/repos/${current.name}/generate`, {method:'POST', body: JSON.stringify({
-    narrateLang: $('gLang').value, detail: $('gDetail').value, synthMode: $('gSynth').value })}), '生成手册');
+  try {
+    runJob(await api(`/api/repos/${current.name}/generate`, {method:'POST', body: JSON.stringify({
+      narrateLang: $('gLang').value, detail: $('gDetail').value, synthMode: $('gSynth').value })}), '生成手册');
+  } catch(e){ showError('生成手册', e.message); }
 }
 async function startPlan(){
   const request = $('planReq').value.trim(); if(!request) return;
+  try {
   runJob(await api(`/api/repos/${current.name}/plan`, {method:'POST', body: JSON.stringify({request})}), '变更定位', async (job)=>{
     const full = await api(`/api/jobs/${job.id}`);
     if (full.status==='succeeded' && full.result?.plan) {
       $('planOut').innerHTML = `<div class="card"><span class="k">PLAN 输出（${full.result.turns} 轮）</span><div class="plan">${escapeHtml(full.result.plan)}</div></div>`;
     }
   });
+  } catch(e){ showError('变更定位', e.message); }
 }
 async function startResync(noLlm){
-  runJob(await api(`/api/repos/${current.name}/resync`, {method:'POST', body: JSON.stringify({
-    description: $('resyncDesc').value.trim(), noLlm })}), noLlm?'结构重同步':'增量重同步');
+  try {
+    runJob(await api(`/api/repos/${current.name}/resync`, {method:'POST', body: JSON.stringify({
+      description: $('resyncDesc').value.trim(), noLlm })}), noLlm?'结构重同步':'增量重同步');
+  } catch(e){ showError(noLlm?'结构重同步':'增量重同步', e.message); }
 }
 
 // ---- job drawer + SSE ----
@@ -341,8 +349,14 @@ function runJob(job, title, onDone) {
   });
 }
 function hideDrawer(){ $('drawer').classList.remove('show'); if(evtSource) evtSource.close(); }
+function showError(title, message){
+  $('drawer').classList.add('show');
+  $('jobTitle').textContent = title;
+  $('jobStatus').textContent = 'failed';
+  $('jobLog').textContent = '✖ ' + message;
+}
 
-function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 refresh();
 </script>

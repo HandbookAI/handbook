@@ -5,7 +5,7 @@
  * LLM endpoint used by the pipeline itself).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFileSync, statSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, rmSync, statSync, readdirSync, existsSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -59,11 +59,15 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  let raw = '';
+  const chunks: Buffer[] = [];
+  let size = 0;
   for await (const chunk of req) {
-    raw += chunk;
-    if (raw.length > 1_000_000) throw new Error('request body too large');
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buf.length;
+    if (size > 1_000_000) throw new Error('request body too large');
+    chunks.push(buf);
   }
+  const raw = Buffer.concat(chunks).toString('utf8'); // decode ONCE — multi-byte chars can straddle chunks
   if (!raw.trim()) return {};
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== 'object' || parsed === null) throw new Error('body must be a JSON object');
@@ -100,7 +104,9 @@ function evolutionsDir(repo: RepoEntry): string {
 
 function countEvolutions(repo: RepoEntry): number {
   try {
-    return readdirSync(evolutionsDir(repo)).filter((d) => !d.startsWith('.')).length;
+    return readdirSync(evolutionsDir(repo)).filter(
+      (d) => !d.startsWith('.') && fileExists(join(evolutionsDir(repo), d, 'evolution.json')),
+    ).length;
   } catch {
     return 0;
   }
@@ -110,13 +116,12 @@ function listEvolutions(repo: RepoEntry): unknown[] {
   const dir = evolutionsDir(repo);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((d) => !d.startsWith('.'))
+    .filter((d) => !d.startsWith('.') && fileExists(join(dir, d, 'evolution.json')))
     .sort()
     .reverse()
     .map((entry) => {
-      const meta = join(dir, entry, 'evolution.json');
       try {
-        return readJsonFile(meta);
+        return readJsonFile(join(dir, entry, 'evolution.json'));
       } catch {
         return { id: entry, error: 'unreadable' };
       }
@@ -168,9 +173,16 @@ async function runGenerate(
     resume: body.resume === true,
     logger,
   });
+  const work = new WorkDir(repo.workDir);
+  if (!fileExists(work.narrationPath)) {
+    logger.info('narration not present — partial phase run, skipping render');
+    return { ...stats, render: null };
+  }
   logger.info('rendering handbook…');
   const outDir = join(repo.workDir, 'handbook');
-  const model = loadHandbookModel(repo.workDir, typeof body.title === 'string' ? body.title : `${repo.name} Handbook`);
+  const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : (repo.title ?? `${repo.name} Handbook`);
+  ctx.store.setTitle(repo.name, title);
+  const model = loadHandbookModel(repo.workDir, title);
   const md = renderMarkdownHandbook(model, outDir);
   const agent = renderAgentSite(model, join(outDir, 'agent'));
   const html = renderHtmlSite(model, join(outDir, 'html'));
@@ -202,7 +214,9 @@ async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown
   ensureDir(caseDir);
   const planText = typeof body.description === 'string' ? body.description : undefined;
   const noLlm = body.noLlm === true;
-  const report = await resyncHandbook({
+  let report;
+  try {
+    report = await resyncHandbook({
     caseDir,
     editedRoot: repo.sourceRoot,
     planText,
@@ -211,10 +225,15 @@ async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown
     noLlm,
     lang: body.narrateLang === 'zh' ? 'zh' : body.narrateLang === 'en' ? 'en' : undefined,
     logger,
-  });
+    });
+  } catch (error) {
+    // A failed resync must not leave a phantom history entry behind.
+    rmSync(caseDir, { recursive: true, force: true });
+    throw error;
+  }
   logger.info('re-rendering handbook…');
   const outDir = join(repo.workDir, 'handbook');
-  const model = loadHandbookModel(repo.workDir, `${repo.name} Handbook`);
+  const model = loadHandbookModel(repo.workDir, repo.title ?? `${repo.name} Handbook`);
   renderMarkdownHandbook(model, outDir);
   renderAgentSite(model, join(outDir, 'agent'));
   renderHtmlSite(model, join(outDir, 'html'));
@@ -253,7 +272,12 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   if (path === '/api/repos' && method === 'POST') {
     const body = await readBody(req);
     const name = String(body.name ?? '').trim();
-    const sourceRoot = resolve(String(body.sourceRoot ?? ''));
+    const rawSource = String(body.sourceRoot ?? '').trim();
+    if (!name || !rawSource) {
+      json(res, 400, { error: 'name and sourceRoot are required' });
+      return;
+    }
+    const sourceRoot = resolve(rawSource);
     const workDir = body.workDir ? resolve(String(body.workDir)) : join(ctx.stateDirWork, name);
     const entry = ctx.store.add({ name, sourceRoot, workDir });
     ensureDir(workDir);
@@ -271,6 +295,10 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     const sub = repoMatch[2] ?? '';
 
     if (method === 'DELETE' && sub === '') {
+      if (ctx.jobs.isBusy(repo.name)) {
+        json(res, 409, { error: 'repo has a running job — wait for it to finish' });
+        return;
+      }
       ctx.store.remove(repo.name);
       json(res, 200, { removed: true });
       return;
@@ -366,6 +394,17 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   json(res, 404, { error: `no route: ${method} ${path}` });
 }
 
+const LOOPBACK_HOST_RE = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
+const LOOPBACK_ORIGIN_RE = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
+
+function isLoopbackRequest(req: IncomingMessage): boolean {
+  const host = req.headers.host ?? '';
+  if (!LOOPBACK_HOST_RE.test(host)) return false;
+  const origin = req.headers.origin;
+  if (origin !== undefined && !LOOPBACK_ORIGIN_RE.test(origin)) return false;
+  return true;
+}
+
 export function createStudioServer(options: StudioOptions): Server {
   ensureDir(options.stateDir);
   const ctx: Ctx = {
@@ -376,6 +415,17 @@ export function createStudioServer(options: StudioOptions): Server {
     stateDirWork: join(options.stateDir, 'work'),
   };
   return createServer((req, res) => {
+    // Local-tool CSRF defence: a hostile web page can fire requests at
+    // 127.0.0.1, so only loopback Hosts and (when present) loopback Origins
+    // are accepted, and mutating requests must be real JSON.
+    if (!isLoopbackRequest(req)) {
+      json(res, 403, { error: 'forbidden: studio only accepts local requests' });
+      return;
+    }
+    if (req.method === 'POST' && !(req.headers['content-type'] ?? '').includes('application/json')) {
+      json(res, 415, { error: 'POST bodies must be application/json' });
+      return;
+    }
     route(ctx, req, res).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       if (!res.headersSent) json(res, 400, { error: message });

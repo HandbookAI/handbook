@@ -21,6 +21,8 @@ import { writeFileAtomic, writeJsonFile } from '@handbook/core';
 export interface BuildGraphOptions {
   sourceRoot: string;
   scannedFiles: readonly string[];
+  /** sha256 per scanned file (in-place edit detection for resync). */
+  fileHashes?: Record<string, string>;
   /** Language label for metadata (`multi` for merged graphs). */
   language: string;
   /**
@@ -69,6 +71,7 @@ export function buildGraph(analysis: ModuleAnalysis, options: BuildGraphOptions)
       language: options.language,
       sourceRoot: options.sourceRoot,
       scannedFiles: [...options.scannedFiles],
+      fileHashes: options.fileHashes,
       nInternalFunctions: internalCount,
       nBoundaryNodes: boundaryCount,
       nEdges: kept.length,

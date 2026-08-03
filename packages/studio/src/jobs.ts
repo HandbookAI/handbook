@@ -48,7 +48,13 @@ export class JobRunner {
     const emit = (line: string, done = false): void => {
       job.log.push(line);
       if (job.log.length > 2000) job.log.splice(0, job.log.length - 2000);
-      for (const listener of this.listeners.get(job.id) ?? []) listener(line, done);
+      for (const listener of this.listeners.get(job.id) ?? []) {
+        try {
+          listener(line, done);
+        } catch {
+          // a dead subscriber must not kill the job chain
+        }
+      }
     };
     const logger: Logger = {
       debug: () => {},
@@ -58,7 +64,16 @@ export class JobRunner {
       child: () => logger,
     };
 
-    void work(logger)
+    // Evict old finished jobs so a long-running studio doesn't grow forever.
+    const finished = [...this.jobs.values()]
+      .filter((j) => j.status !== 'running')
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    for (const old of finished.slice(0, Math.max(0, finished.length - 100))) this.jobs.delete(old.id);
+
+    // Promise.resolve() guard: a synchronously-throwing work fn must still
+    // flow into the cleanup chain instead of wedging busyRepos.
+    void Promise.resolve()
+      .then(() => work(logger))
       .then((result) => {
         job.status = 'succeeded';
         job.result = result;
@@ -76,6 +91,10 @@ export class JobRunner {
       });
 
     return job;
+  }
+
+  isBusy(repo: string): boolean {
+    return this.busyRepos.has(repo);
   }
 
   get(id: string): Job | undefined {
