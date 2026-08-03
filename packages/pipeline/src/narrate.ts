@@ -244,6 +244,26 @@ export interface RegistersOptions {
   logger?: Logger;
 }
 
+/**
+ * Read registers out of a plain-text list: `- reg-task-queue: what it holds`.
+ *
+ * Deliberately strict — a line must carry a `reg-`-shaped id, a `:`/`—`/`-`
+ * separator and prose — so ordinary sentences in a reply cannot become
+ * registers. Anything looser belongs in the JSON path, not here.
+ */
+export function parseRegisterLines(text: string): Array<Record<string, unknown>> {
+  const found = new Map<string, Record<string, unknown>>();
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*(?:[-*•]|\d+[.)])?\s*`?(reg[-_][A-Za-z0-9_-]+)`?\s*(?::|—|–|\s-\s)\s*(.+?)\s*$/.exec(line);
+    if (!match) continue;
+    const id = (match[1] as string).replace(/_/g, '-').toLowerCase();
+    const semantics = (match[2] as string).replace(/^\*\*|\*\*$/g, '').trim();
+    if (semantics.length < 4 || found.has(id)) continue;
+    found.set(id, { id, semantics });
+  }
+  return [...found.values()];
+}
+
 export async function extractRegisters(
   client: ChatClient,
   skeleton: Skeleton,
@@ -305,10 +325,19 @@ export async function extractRegisters(
       // Tolerate the shape drift real endpoints produce (bare array, other
       // container names, a lone register) plus name/description spelled instead
       // of id/semantics.
-      const entries = extractEntryList(response.json, ['registers', 'state', 'variables'], {
+      let entries = extractEntryList(response.json, ['registers', 'state', 'variables'], {
         // `id`/`name` alone would turn an error envelope into a register.
         single: { fields: ['semantics', 'description'] },
       });
+      if (entries.length === 0) {
+        // A model that answers `- reg-task-queue: 待办任务队列…` has done the work
+        // in a shape the prompt did not ask for. That line format is unambiguous
+        // (a `reg-` id, a separator, prose), so read it instead of losing a round.
+        entries = parseRegisterLines(response.text);
+        if (entries.length > 0) {
+          logger.info(`[registers] read ${entries.length} register(s) from a plain-text reply`);
+        }
+      }
       if (entries.length === 0) {
         logger.warn(
           `[registers] round returned no usable registers (${describeJsonShape(
