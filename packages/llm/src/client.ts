@@ -47,13 +47,17 @@ export interface LlmEnvConfig {
   maxTokens: number;
   maxRetries: number;
   retryBackoffMs: number;
+  /** Per-request deadline. A stalled endpoint must not hold a phase hostage. */
+  timeoutMs: number;
 }
 
 /**
  * Resolve client configuration from the standard OpenAI environment variables,
  * with `HANDBOOK_LLM_*` accepted as fallbacks:
  * `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-4o-mini`), `OPENAI_BASE_URL`
- * (default `https://api.openai.com/v1`), `OPENAI_MAX_TOKENS` (default 16000).
+ * (default `https://api.openai.com/v1`), `OPENAI_MAX_TOKENS` (default 16000),
+ * `OPENAI_TIMEOUT` in seconds (default 300 — a stalled request is retried rather
+ * than allowed to hold a phase hostage).
  * Use `OPENAI_API_KEY=EMPTY` for keyless local endpoints.
  */
 export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfig {
@@ -73,6 +77,7 @@ export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfi
     // silently replace it with the default.
     maxRetries: Math.max(1, num(env.HANDBOOK_LLM_MAX_RETRIES || '6', 6, 0)),
     retryBackoffMs: Math.round(num(env.HANDBOOK_LLM_RETRY_BACKOFF || '3', 3, 0) * 1000),
+    timeoutMs: Math.round(num(pick('OPENAI_TIMEOUT', 'HANDBOOK_LLM_TIMEOUT', '300'), 300, 1) * 1000),
   };
 }
 
@@ -81,7 +86,7 @@ export interface OpenAiChatClientOptions {
   /** Global cap on concurrent requests through this client. Default 16. */
   concurrency?: number;
   logger?: Logger;
-  /** Request timeout in ms. Default 600_000. */
+  /** Request timeout in ms. Overrides `OPENAI_TIMEOUT`. */
   timeoutMs?: number;
   /** Injectable fetch for tests. */
   fetchImpl?: typeof fetch;
@@ -140,7 +145,7 @@ export class OpenAiChatClient implements ChatClient {
     this.model = this.config.model;
     this.limit = pLimit(options.concurrency ?? 16);
     this.logger = options.logger ?? silentLogger;
-    this.timeoutMs = options.timeoutMs ?? 600_000;
+    this.timeoutMs = options.timeoutMs ?? this.config.timeoutMs;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
