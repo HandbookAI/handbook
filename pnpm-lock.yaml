@@ -50,6 +50,9 @@ importers:
       '@handbook/llm':
         specifier: workspace:*
         version: link:../llm
+      '@handbook/patcher':
+        specifier: workspace:*
+        version: link:../patcher
       '@handbook/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -79,6 +82,12 @@ importers:
         version: 4.4.3
 
   packages/llm:
+    dependencies:
+      '@handbook/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/patcher:
     dependencies:
       '@handbook/core':
         specifier: workspace:*
@@ -153,6 +162,9 @@ importers:
       '@handbook/llm':
         specifier: workspace:*
         version: link:../llm
+      '@handbook/patcher':
+        specifier: workspace:*
+        version: link:../patcher
       '@handbook/pipeline':
         specifier: workspace:*
         version: link:../pipeline

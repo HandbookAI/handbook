@@ -8,11 +8,14 @@
  *   skill      rendered handbook → agent SKILL package (no LLM)
  *   validate   check a SKILL package structure + freshness (no LLM)
  *   plan       handbook-guided change localization (read-only agent)
+ *   apply      apply a plan's EDIT blocks byte-exactly (backups + rollback)
+ *   rollback   restore a source tree from a patch backup
  *   resync     roll a handbook forward after a code change
+ *   studio     local web UI over all of the above
  */
 import { Command } from 'commander';
 import { resolve } from 'node:path';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { applyEnvFile } from './env-file.js';
 import { createLogger, type LogLevel } from '@handbook/core';
 import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
@@ -250,6 +253,35 @@ program
       logger: logger(),
     });
     printJson(report);
+  });
+
+program
+  .command('apply')
+  .description('Apply a plan\'s EDIT blocks to a source tree (byte-exact, all-or-nothing, with backups)')
+  .requiredOption('--source <dir>', 'source tree to edit')
+  .requiredOption('--plan <file>', 'plan file produced by `handbook plan`')
+  .option('--dry-run', 'verify only — never write')
+  .option('--backup-root <dir>', 'where backups go (default <source>/../.handbook-patches)')
+  .action(async (opts: { source: string; plan: string; dryRun?: boolean; backupRoot?: string }) => {
+    const { applyPlan } = await import('@handbook/patcher');
+    const result = applyPlan({
+      sourceRoot: resolve(opts.source),
+      plan: readFileSync(resolve(opts.plan), 'utf8'),
+      dryRun: Boolean(opts.dryRun),
+      backupRoot: opts.backupRoot ? resolve(opts.backupRoot) : undefined,
+      logger: logger(),
+    });
+    printJson(result);
+    process.exitCode = result.ok ? 0 : 2;
+  });
+
+program
+  .command('rollback')
+  .description('Restore a source tree from a patch backup produced by `handbook apply`')
+  .requiredOption('--backup <dir>', 'backup directory (contains manifest.json)')
+  .action(async (opts: { backup: string }) => {
+    const { rollback } = await import('@handbook/patcher');
+    printJson(rollback(resolve(opts.backup), logger()));
   });
 
 program
