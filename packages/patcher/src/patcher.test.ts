@@ -509,9 +509,11 @@ describe('patcher — R3: the planner\'s real output shape', () => {
 
   it('fails fast instead of freezing when a live process holds the lock', () => {
     const root = repo();
-    const lockDir = join(root, '.handbook-patches', 'apply.lock');
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+    mkdirSync(join(root, '.handbook-patches'), { recursive: true });
+    writeFileSync(
+      join(root, '.handbook-patches', 'apply.lock'),
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
+    );
     const started = Date.now();
     expect(() =>
       applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
@@ -521,9 +523,11 @@ describe('patcher — R3: the planner\'s real output shape', () => {
 
   it('reclaims a lock whose owner is gone', () => {
     const root = repo();
-    const lockDir = join(root, '.handbook-patches', 'apply.lock');
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({ pid: 2147483646, startedAt: '2000-01-01T00:00:00Z' }));
+    mkdirSync(join(root, '.handbook-patches'), { recursive: true });
+    writeFileSync(
+      join(root, '.handbook-patches', 'apply.lock'),
+      JSON.stringify({ pid: 2147483646, startedAt: '2000-01-01T00:00:00Z' }),
+    );
     const result = applyPlan({
       sourceRoot: root,
       plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 8' }]),
@@ -538,5 +542,102 @@ describe('patcher — R3: the planner\'s real output shape', () => {
     const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/big.py', old: 'x = 1', next: 'x = 2' }]) });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('undecodable');
+  });
+});
+
+describe('patcher — R4 regressions', () => {
+  it('refuses a plan whose new block opens with a fence (truncation debris)', () => {
+    const root = repo();
+    writeFileSync(join(root, 'README.md'), 'Install:\nrun it\n');
+    const p = ['### EDIT 1', '- file: `README.md`', '```old', 'Install:', '```', '```new', '```', 'run it', '```', '```'].join('\n');
+    const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
+    expect(result.ok).toBe(false);
+    expect(result.problems.join(' ')).toMatch(/untagged|between the fenced blocks|exactly one/);
+    expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('Install:\nrun it\n');
+  });
+
+  it('still accepts the planner epilogue (tagged json block + prose)', () => {
+    const root = repo();
+    const p = [
+      'Summary of the change.',
+      '### EDIT 1',
+      '- file: `app/engine.py`',
+      '```old',
+      'self.rpm += 1',
+      '```',
+      '```new',
+      'self.rpm += 3',
+      '```',
+      'Notes: keeps the API stable.',
+      '```json',
+      '{"will_modify": ["Engine.spin"], "will_add": [], "will_remove": []}',
+      '```',
+    ].join('\n');
+    const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toContain('self.rpm += 3');
+  });
+
+  it('treats an unreadable owner record as a live lock (fails closed)', () => {
+    const root = repo();
+    const lockPath = join(root, '.handbook-patches', 'apply.lock');
+    mkdirSync(join(root, '.handbook-patches'), { recursive: true });
+    writeFileSync(lockPath, 'NOT JSON');
+    expect(() =>
+      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+    ).toThrow(/another patch run/);
+  });
+
+  it('uses one lock per TREE regardless of where backups go', () => {
+    const root = repo();
+    const lockPath = join(root, '.handbook-patches', 'apply.lock');
+    mkdirSync(join(root, '.handbook-patches'), { recursive: true });
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: 'now' }));
+    // A different backupRoot must NOT bypass the tree's lock.
+    expect(() =>
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]),
+        backupRoot: join(mkdtempSync(join(tmpdir(), 'hb-elsewhere-')), 'patches'),
+      }),
+    ).toThrow(/another patch run/);
+  });
+
+  it('releases the lock when the work throws', () => {
+    const root = repo();
+    const lockPath = join(root, '.handbook-patches', 'apply.lock');
+    writeFileSync(join(root, 'blocker'), 'file\n');
+    // A plan that throws nothing but fails verification still must not leak the lock.
+    applyPlan({ sourceRoot: root, plan: plan([{ file: 'blocker/child.py', old: '', next: 'x' }]) });
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('patches a read-only file when its directory is writable', () => {
+    const root = repo();
+    const target = join(root, 'app/ro.py');
+    writeFileSync(target, 'VALUE = 1\n', { mode: 0o444 });
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/ro.py', old: 'VALUE = 1', next: 'VALUE = 2' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(target, 'utf8')).toContain('VALUE = 2');
+    expect(statSync(target).mode & 0o777).toBe(0o444);
+  });
+
+  it('rollback reports an already-restored file honestly', () => {
+    const root = repo();
+    const engine = join(root, 'app/engine.py');
+    const before = readFileSync(engine, 'utf8');
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 7' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    writeFileSync(engine, before); // a human undid it by hand
+    const back = rollback(applied.backupDir as string, { expectedSourceRoot: root });
+    expect(back.restored).toEqual([]);
+    expect(back.skipped[0]?.reason).toMatch(/already back at its pre-patch content/);
   });
 });

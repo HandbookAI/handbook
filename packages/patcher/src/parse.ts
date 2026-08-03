@@ -272,9 +272,20 @@ export function parsePlan(plan: string): ParsedPlan {
     blocks.forEach((block, at) => {
       if (block.kind === 'old' || block.kind === 'new') lastEditBlock = at + 1;
     });
+    // Untagged fenced blocks are never part of a well-formed edit: the planner
+    // emits `old`, `new`, and a tagged epilogue block. An untagged one is the
+    // debris of an inner fence having closed `old`/`new` early — refuse it no
+    // matter where it sits, or a truncated anchor can slip through as epilogue.
+    const untagged = blocks.filter((b) => b.kind === '');
     const unexpected = blocks
       .slice(0, lastEditBlock)
       .filter((b) => b.kind !== 'old' && b.kind !== 'new');
+    if (untagged.length > 0) {
+      problems.push(
+        `${label} (${file}): an untagged \`\`\` block appeared — \`old\`/\`new\` content containing a fence must be opened with a LONGER fence (\`\`\`\`) so it is not closed early`,
+      );
+      continue;
+    }
     if (oldBlocks.length !== 1 || newBlocks.length !== 1) {
       problems.push(
         `${label} (${file}): needs exactly one \`\`\`old and one \`\`\`new block (found ${oldBlocks.length} old, ${newBlocks.length} new)`,
