@@ -364,6 +364,11 @@
   @media (prefers-reduced-motion:reduce){
     *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
   }
+  .warnbox{border:1px solid rgba(224,112,92,.45);background:rgba(224,112,92,.07);border-radius:12px;padding:14px 16px;font-size:13px}
+  .warnbox b{display:block;margin-bottom:8px;color:var(--fg)}
+  .warnbox ul{margin:0 0 10px 18px;color:var(--dim)}
+  .warnbox li{padding:2px 0}
+  .warnbox code{font-family:var(--mono);font-size:11.5px;color:var(--ice)}
 </style>
 </head>
 <body>
@@ -440,7 +445,7 @@ const DICT = {
     nav: { home: '首页', guide: '使用说明', ghistory: '演化历史', repos: 'REPOSITORIES', add: '＋ 添加仓库',
            noRepos: '还没有仓库 — 点下面的按钮加一个' },
     tabs: { overview: '总览', browse: '浏览手册', graph: '影响图', source: '源码', evolve: '演化', history: '历史' },
-    common: { loading: '加载中…', retry: '重试', open: '打开', close: '关闭', cancel: '取消', copy: '复制',
+    common: { dismiss: '知道了', loading: '加载中…', retry: '重试', open: '打开', close: '关闭', cancel: '取消', copy: '复制',
               viewAll: '查看全部', files: '文件', stage: '阶段', degree: '调用度', none: '—',
               failed: '加载失败', delete: '删除', confirmDelete: '删除仓库 “{0}”？只从 Studio 注册表移除，源码与 work 目录都不会被删。' },
     home: {
@@ -544,6 +549,8 @@ const DICT = {
       patchD: '计划生成后会自动填到这里；也可以把 CLI 里的计划直接粘进来。先 dry-run，再应用。',
       patchPh: '### EDIT 1\n- file: `path/to/file.ts`\n- where: `Fn (~12)` — 为什么\n```old\n<原文>\n```\n```new\n<新文>\n```',
       dry: '校验计划（dry-run）', apply: '应用补丁', rollback: '回滚',
+      skippedTitle: '这些文件在打补丁之后被改过，已跳过（未覆盖）：',
+      rollbackForce: '仍然回滚（覆盖这些改动）',
       dryOk: 'dry-run 通过：{0} 处编辑都能落地，未写盘。',
       dryBad: 'dry-run 未通过 —— 没有写任何文件。',
       applyOk: '已写入 {0} 个文件。备份：{1}',
@@ -582,7 +589,7 @@ const DICT = {
     nav: { home: 'Home', guide: 'Instructions', ghistory: 'Evolution history', repos: 'REPOSITORIES',
            add: '＋ Add repository', noRepos: 'No repositories yet — add one below' },
     tabs: { overview: 'Overview', browse: 'Handbook', graph: 'Impact graph', source: 'Source', evolve: 'Evolve', history: 'History' },
-    common: { loading: 'loading…', retry: 'Retry', open: 'Open', close: 'Close', cancel: 'Cancel', copy: 'Copy',
+    common: { dismiss: 'Dismiss', loading: 'loading…', retry: 'Retry', open: 'Open', close: 'Close', cancel: 'Cancel', copy: 'Copy',
               viewAll: 'View all', files: 'files', stage: 'stage', degree: 'degree', none: '—',
               failed: 'Failed to load', delete: 'Remove',
               confirmDelete: 'Remove repository "{0}"? This only drops it from the Studio registry — source and work dir are untouched.' },
@@ -687,6 +694,8 @@ const DICT = {
       patchD: 'A finished plan lands here automatically; you can also paste a plan from the CLI. Dry-run first, then apply.',
       patchPh: '### EDIT 1\n- file: `path/to/file.ts`\n- where: `Fn (~12)` — why\n```old\n<current text>\n```\n```new\n<replacement>\n```',
       dry: 'Verify plan (dry-run)', apply: 'Apply patch', rollback: 'Rollback',
+      skippedTitle: 'These files changed after the patch and were left untouched:',
+      rollbackForce: 'Roll back anyway (overwrite them)',
       dryOk: 'Dry-run passed: all {0} edits would land. Nothing written.',
       dryBad: 'Dry-run failed — nothing was written.',
       applyOk: 'Wrote {0} file(s). Backup: {1}',
@@ -1537,6 +1546,16 @@ function patchPanel() {
         esc(t('ev.rollback')) + '</button><span class="hint">' + esc(t('ev.afterApply')) + '</span></div>';
     }
   }
+  // Guarded rollback: list what was left alone and offer an explicit override.
+  const rs = state.rollbackSkipped;
+  if (rs) {
+    h += '<div class="warnbox" style="margin-top:14px"><b>' + esc(t('ev.skippedTitle')) + '</b><ul>' +
+      rs.skipped.map((s) => '<li><code>' + esc(s.file) + '</code> — ' + esc(s.reason) + '</li>').join('') +
+      '</ul><div class="row"><button class="danger" data-act="rollback" data-force="1"' +
+      (rs.backup ? ' data-backup="' + esc(rs.backup) + '"' : '') + '>' +
+      esc(t('ev.rollbackForce')) + '</button>' +
+      '<button class="sm ghost" data-act="skipped-dismiss">' + esc(t('common.dismiss')) + '</button></div></div>';
+  }
   const b = state.backups;
   h += '<div class="sechead" style="margin:20px 0 6px"><h3>' + esc(t('ev.backups')) + '</h3>' +
     '<span class="c">' + (b ? b.length : '') + '</span><span class="sp"></span>' +
@@ -1796,16 +1815,24 @@ const ACT = {
   'patch-dry': () => runPatch(true),
   'patch-apply': () => runPatch(false),
   'patches-refresh': () => { state.backups = null; render(); },
+  'skipped-dismiss': () => { state.rollbackSkipped = null; render(); },
   'rollback': async (el) => {
     const repo = current();
     if (!repo) return;
     const body = el.dataset.backup ? { backup: el.dataset.backup } : {};
+    if (el.dataset.force === '1') body.force = true;
     try {
       const job = await api('/api/repos/' + enc(repo.name) + '/rollback', {
         method: 'POST', body: JSON.stringify(body),
       });
-      runJob(job, t('ev.rollback'), async () => {
+      runJob(job, t('ev.rollback'), async (full) => {
         state.patch = null; state.backups = null;
+        // Files edited after the patch are skipped, not clobbered. Surface them
+        // with an explicit opt-in rather than leaving a silent dead end.
+        const skipped = (full && full.result && full.result.skipped) || [];
+        state.rollbackSkipped = skipped.length > 0
+          ? { backup: (full.result && full.result.backup) || el.dataset.backup || '', skipped: skipped }
+          : null;
         await render();
       });
     } catch (e) { showError(t('ev.rollback'), errMsg(e)); }

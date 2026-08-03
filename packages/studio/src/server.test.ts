@@ -275,6 +275,40 @@ describe('studio server (integration, mock LLM)', () => {
     expect(readFileSync(engine, 'utf8')).toBe(before);
   });
 
+  it('rollback reports skipped files and honours force', async () => {
+    const engine = join(sourceRoot, 'app', 'engine.py');
+    const before = readFileSync(engine, 'utf8');
+    const anchor = before.split('\n').find((l) => l.includes('self.rpm')) as string;
+    const plan = [
+      '### EDIT 1',
+      '- file: `app/engine.py`',
+      '- where: `Engine.spin` — bump',
+      '```old',
+      anchor,
+      '```',
+      '```new',
+      anchor.replace(/\d+$/, '42'),
+      '```',
+    ].join('\n');
+    const applied = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id);
+    expect(applied.status).toBe('succeeded');
+
+    // Someone edits the file after the patch: rollback must skip, not clobber.
+    writeFileSync(engine, `${readFileSync(engine, 'utf8')}\n# later work\n`);
+    const guarded = await waitJob((await api('/api/repos/demo/rollback', { method: 'POST', body: '{}' })).id);
+    expect(guarded.status).toBe('succeeded');
+    expect(guarded.result.restored).toEqual([]);
+    expect(guarded.result.skipped[0].reason).toMatch(/changed after the patch/);
+    expect(readFileSync(engine, 'utf8')).toContain('# later work');
+
+    // Explicit override restores the pre-patch bytes.
+    const forced = await waitJob(
+      (await api('/api/repos/demo/rollback', { method: 'POST', body: JSON.stringify({ force: true }) })).id,
+    );
+    expect(forced.status).toBe('succeeded');
+    expect(readFileSync(engine, 'utf8')).toBe(before);
+  });
+
   it('aggregates global history across repos', async () => {
     const all = await api('/api/history');
     expect(all.length).toBeGreaterThan(0);
