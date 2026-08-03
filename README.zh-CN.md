@@ -43,6 +43,10 @@ export OPENAI_BASE_URL=https://api.openai.com/v1    # 也可以是 vLLM / 代理
 不想每次 export？CLI 会自动加载运行目录下的 `./.env`（shell 变量优先；模板见
 [.env.example](.env.example)），也可用 `--env-file <path>` 显式指定。
 
+更喜欢点而不是敲？`handbook studio` 在 http://127.0.0.1:4860 打开本地 Web 界面——仓库注册、
+带实时日志的生成、手册浏览、影响图、源码查看，以及完整的
+plan → dry-run → 应用补丁 → 回滚 → 重同步闭环。
+
 ## 快速上手
 
 ```bash
