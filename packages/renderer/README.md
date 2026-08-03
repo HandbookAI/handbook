@@ -2,6 +2,8 @@
 
 The presentation arm of the toolchain. It takes a completed `HandbookModel` (loaded from a finished work directory by `@handbook/pipeline`) and renders it three ways: a markdown handbook for humans, an "agent locator" site optimized for coding agents, and self-contained HTML (multi-page or single-page). Rendering is fully deterministic — no LLM, no network.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Render the markdown handbook: one page per content-bearing stage plus `overview.md`, `index.md`, and `register.md`.

@@ -2,6 +2,8 @@
 
 Rolls a handbook's derived layer forward after a real code change, without re-running the full pipeline. Given a "case" directory (`edited/` source tree, optional `plan.md` with declarations, optional `change.diff`), it re-analyzes the edited tree, diffs the old and new call graphs into changed/added/deleted file sets, and updates only what those sets touch: cards, assignment, organization, narration, and registers — writing a `resync-report.json` alongside the case. It closes the loop that `@handbook/planner` opens: plan → apply → resync.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Load and validate the case contract (`loadCase`): `edited/` required, `plan.md` and `change.diff` optional, empty diff short-circuits to a skip.

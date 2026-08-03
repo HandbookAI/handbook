@@ -2,6 +2,8 @@
 
 A handbook-guided, read-only planning agent. Given a natural-language change request, it routes through a mounted handbook (or skill `references/` directory) to find the sites in scope, reads the real source through a sandboxed tool belt, and emits a precise, self-contained edit plan — verbatim old/new edit blocks plus a machine-readable declarations JSON that `@handbook/resync` later uses to scope its update. It plans; it never edits.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Run the agent loop (`runPlanner`): route with the handbook, read real source, emit the plan within a turn budget.

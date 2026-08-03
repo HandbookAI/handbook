@@ -4,6 +4,8 @@ Applies the EDIT blocks of a plan (as produced by `@handbook/planner`) to a sour
 byte-exactly, all-or-nothing, with backups and an exact-bytes rollback. This is the step
 that turns a handbook-guided plan into real code changes without ever guessing.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Parse a plan's `### EDIT n` blocks into a typed edit list, reporting problems instead of
