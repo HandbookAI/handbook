@@ -82,7 +82,12 @@ handbook validate --skill skills/myrepo --source /path/to/repo
 handbook plan --source /path/to/repo --handbook skills/myrepo/references \
     --request "Retry failed uploads three times before giving up" --out plan.md
 
-# 7. After the change lands, roll the handbook forward:
+# 7. Apply the plan for real (verify first, then write with backups):
+handbook apply --source /path/to/repo --plan plan.md --dry-run
+handbook apply --source /path/to/repo --plan plan.md
+#    …changed your mind? handbook rollback --backup <dir printed above>
+
+# 8. After the change lands, roll the handbook forward:
 handbook resync --case cases/upload-retry --work work/myrepo
 ```
 
@@ -117,6 +122,7 @@ independently and a crashed run resumes where it stopped.
 | [`@handbook/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, self-contained HTML site — no LLM |
 | [`@handbook/skill`](packages/skill/README.md) | SKILL packaging + validation + coverage drift detection — no LLM |
 | [`@handbook/planner`](packages/planner/README.md) | Handbook-guided read-only planning agent |
+| [`@handbook/patcher`](packages/patcher/README.md) | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback |
 | [`@handbook/resync`](packages/resync/README.md) | Incremental handbook roll-forward after code changes |
 | [`@handbook/studio`](packages/studio/README.md) | Local web UI: repos · generate · browse · evolve (127.0.0.1) |
 | [`@handbook/cli`](packages/cli/README.md) | The `handbook` command |
