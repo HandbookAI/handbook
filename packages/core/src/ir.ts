@@ -132,6 +132,12 @@ export const codeGraphSchema = z.object({
     sourceRoot: z.string(),
     /** Every file that was scanned (relative POSIX paths). */
     scannedFiles: z.array(z.string()),
+    /**
+     * Content hash (sha256) per scanned file. Optional for artifacts written
+     * by older versions; resync uses it to detect in-place body edits that
+     * leave line numbers and signatures untouched.
+     */
+    fileHashes: z.record(z.string(), z.string()).optional(),
     nInternalFunctions: z.number().int(),
     nBoundaryNodes: z.number().int(),
     nEdges: z.number().int(),

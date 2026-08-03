@@ -16,6 +16,8 @@ export const repoEntrySchema = z.object({
   /** Absolute path of the work dir holding handbook artifacts. */
   workDir: z.string(),
   addedAt: z.string(),
+  /** Handbook title chosen at generate time; resync re-renders under it. */
+  title: z.string().optional(),
 });
 export type RepoEntry = z.infer<typeof repoEntrySchema>;
 
@@ -50,10 +52,28 @@ export class StateStore {
     if (!fileExists(parsed.sourceRoot) || !statSync(parsed.sourceRoot).isDirectory()) {
       throw new Error(`sourceRoot is not a directory: ${parsed.sourceRoot}`);
     }
+    const inside = (child: string, parent: string): boolean =>
+      child === parent || child.startsWith(`${parent}/`);
+    if (inside(parsed.workDir, parsed.sourceRoot)) {
+      throw new Error('workDir must live outside sourceRoot (generated artifacts would be re-analyzed)');
+    }
+    for (const other of this.state.repos) {
+      if (inside(parsed.workDir, other.workDir) || inside(other.workDir, parsed.workDir)) {
+        throw new Error(`workDir overlaps repo "${other.name}" (${other.workDir}) — artifacts would clobber each other`);
+      }
+    }
     const full: RepoEntry = { ...parsed, addedAt: new Date().toISOString() };
     this.state.repos.push(full);
     this.save();
     return full;
+  }
+
+  setTitle(name: string, title: string): void {
+    const repo = this.state.repos.find((r) => r.name === name);
+    if (repo) {
+      repo.title = title;
+      this.save();
+    }
   }
 
   remove(name: string): boolean {

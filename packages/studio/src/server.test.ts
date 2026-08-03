@@ -177,6 +177,46 @@ describe('studio server (integration, mock LLM)', () => {
     expect(text).toContain('event: done');
   });
 
+  it('rejects cross-origin requests (CSRF guard)', async () => {
+    const res = await fetch(`${base}/api/repos`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+      body: JSON.stringify({ name: 'evil', sourceRoot }),
+    });
+    expect(res.status).toBe(403);
+    const text = await fetch(`${base}/api/repos`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ name: 'evil2', sourceRoot }),
+    });
+    expect(text.status).toBe(415);
+  });
+
+  it('detects in-place body-only edits via content hashes', async () => {
+    // Change ONLY a function body: same lines, same signature.
+    writeFileSync(
+      join(sourceRoot, 'app', 'engine.py'),
+      'class Engine:\n    def __init__(self):\n        self.rpm = 0\n\n    def spin(self):\n        self.rpm += 7\n        return self.rpm\n',
+    );
+    const job = await api('/api/repos/demo/resync', {
+      method: 'POST',
+      body: JSON.stringify({ description: 'body-only tweak', noLlm: true }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status).toBe('succeeded');
+    expect(done.result.report.changedFiles).toContain('app/engine.py');
+  });
+
+  it('rejects overlapping work dirs', async () => {
+    const other = (await api('/api/repos')).find((r: any) => r.name === 'demo');
+    await expect(
+      api('/api/repos', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'clone', sourceRoot, workDir: other.workDir }),
+      }),
+    ).rejects.toThrow(/overlaps/);
+  });
+
   it('removes a repo', async () => {
     const out = await api('/api/repos/demo', { method: 'DELETE' });
     expect(out.removed).toBe(true);

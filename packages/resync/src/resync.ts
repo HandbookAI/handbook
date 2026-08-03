@@ -119,8 +119,31 @@ export interface GraphDelta {
   deleted: string[];
 }
 
-/** Per-file structural fingerprints → changed/added/deleted file sets. */
+/**
+ * Changed/added/deleted file sets. Uses per-file CONTENT hashes when both
+ * graphs carry them (catches in-place body edits that keep line numbers and
+ * signatures identical); structural fingerprints remain as the fallback for
+ * graphs written before hashes existed.
+ */
 export function diffGraphs(before: CodeGraph, after: CodeGraph): GraphDelta {
+  const beforeHashes = before.metadata.fileHashes;
+  const afterHashes = after.metadata.fileHashes;
+  if (beforeHashes && afterHashes) {
+    const changed: string[] = [];
+    const added: string[] = [];
+    for (const file of after.metadata.scannedFiles) {
+      if (!(file in beforeHashes)) added.push(file);
+      else if (beforeHashes[file] !== afterHashes[file]) changed.push(file);
+    }
+    const afterSet = new Set(after.metadata.scannedFiles);
+    const deleted = before.metadata.scannedFiles.filter((f) => !afterSet.has(f));
+    return { changed: changed.sort(), added: added.sort(), deleted: deleted.sort() };
+  }
+  return diffGraphsStructural(before, after);
+}
+
+/** Legacy fallback: line/signature fingerprints (blind to body-only edits). */
+function diffGraphsStructural(before: CodeGraph, after: CodeGraph): GraphDelta {
   const fingerprint = (graph: CodeGraph): Map<string, string> => {
     const byFile = new Map<string, string[]>();
     for (const node of Object.values(graph.nodes)) {
@@ -182,6 +205,16 @@ export interface ResyncReport {
 }
 
 export async function resyncHandbook(options: ResyncOptions): Promise<ResyncReport> {
+  const stagingRoot = join(options.caseDir, '.resync-phase1');
+  try {
+    return await resyncHandbookInner(options);
+  } finally {
+    // The staging area must never outlive the call — success or failure.
+    rmSync(stagingRoot, { recursive: true, force: true });
+  }
+}
+
+async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport> {
   const logger = options.logger ?? silentLogger;
   const work = new WorkDir(options.workDir);
   const noLlm = options.noLlm ?? false;
@@ -234,6 +267,27 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
     for (const file of filesFromDiff(resyncCase.diffText)) {
       if (scanned.has(file) && !delta.added.includes(file) && !delta.changed.includes(file)) {
         delta.changed.push(file);
+      }
+    }
+    delta.changed.sort();
+  }
+  // Declarations widen too: every declared function name maps (via the OLD
+  // graph) to its file, so a plan's will_modify/will_add/will_remove can only
+  // ADD refresh targets, never narrow them.
+  if (resyncCase.declarations) {
+    const declared = new Set(
+      [
+        ...resyncCase.declarations.willModify,
+        ...resyncCase.declarations.willAdd,
+        ...resyncCase.declarations.willRemove,
+      ].map((name) => name.trim()),
+    );
+    const scanned = new Set(after.metadata.scannedFiles);
+    for (const node of Object.values(before.nodes)) {
+      if (!isInternalNode(node)) continue;
+      if (!declared.has(node.qualname) && !declared.has(node.name) && !declared.has(node.id)) continue;
+      if (scanned.has(node.file) && !delta.added.includes(node.file) && !delta.changed.includes(node.file)) {
+        delta.changed.push(node.file);
       }
     }
     delta.changed.sort();
@@ -438,7 +492,6 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
   // 7. Promote the staged phase-1 artifacts LAST — only a fully-completed
   // resync moves the delta baseline forward.
   cpSync(staging.phase1Dir, work.phase1Dir, { recursive: true });
-  rmSync(stagingRoot, { recursive: true, force: true });
 
   writeJsonFile(join(options.caseDir, 'resync-report.json'), report);
   return report;

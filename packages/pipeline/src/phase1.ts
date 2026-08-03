@@ -8,8 +8,10 @@ import {
   registerBuiltinAdapters,
   writeGraphArtifacts,
 } from '@handbook/analyzer';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ModuleAnalysis } from '@handbook/core';
-import { ensureDir, silentLogger, type Logger } from '@handbook/core';
+import { ensureDir, sha256Hex, silentLogger, type Logger } from '@handbook/core';
 import { WorkDir } from './workdir.js';
 
 export interface Phase1Options {
@@ -72,11 +74,20 @@ export async function runPhase1(options: Phase1Options): Promise<Phase1Stats> {
     edges: analyses.flatMap((a) => a.edges),
   };
   const defaultExt = language === 'multi' ? '' : (getAdapter(language).extensions[0] ?? '');
+  const fileHashes: Record<string, string> = {};
+  for (const file of scannedFiles) {
+    try {
+      fileHashes[file] = sha256Hex(readFileSync(join(options.sourceRoot, file)));
+    } catch {
+      // unreadable files simply have no hash; resync falls back to structure
+    }
+  }
   const result = buildGraph(merged, {
     sourceRoot: options.sourceRoot,
     scannedFiles,
     language,
     defaultExt,
+    fileHashes,
   });
   ensureDir(work.phase1Dir);
   writeGraphArtifacts(result, work.phase1Dir);
