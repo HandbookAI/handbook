@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OpenAiChatClient, extractAssistantText, resolveLlmEnv } from './client.js';
+import { OpenAiChatClient, extractAssistantText, looksLikeGatewayPage, resolveLlmEnv } from './client.js';
 import { PermanentError } from '@handbook/core';
 
 function fakeFetch(handler: (calls: number) => { status: number; body: unknown }): typeof fetch {
@@ -158,5 +158,44 @@ describe('OpenAiChatClient with a reasoning endpoint', () => {
         })) as unknown as typeof fetch,
     });
     await expect(client.complete('p')).rejects.toThrow(/empty content/i);
+  });
+});
+
+describe('gateway pages vs API errors', () => {
+  const base = { apiKey: 'test', baseUrl: 'http://x/v1', maxRetries: 3, retryBackoffMs: 1 };
+  const gateway = '<!doctypehtml><html lang="zh-cn"><title>405</title><body>blocked</body></html>';
+
+  it('recognises an edge-served page', () => {
+    expect(looksLikeGatewayPage(gateway)).toBe(true);
+    expect(looksLikeGatewayPage('  <html><body>nope</body></html>')).toBe(true);
+    expect(looksLikeGatewayPage('{"error":{"message":"bad request"}}')).toBe(false);
+  });
+
+  it('retries a normally-permanent status when a gateway answered', async () => {
+    let calls = 0;
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async () => {
+        calls += 1;
+        return calls < 3
+          ? new Response(gateway, { status: 405 })
+          : new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":1}' } }] }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
+    expect(calls).toBe(3);
+  });
+
+  it('still refuses to retry a genuine API rejection', async () => {
+    let calls = 0;
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ error: { message: 'unsupported model' } }), { status: 400 });
+      }) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).rejects.toThrow(PermanentError);
+    expect(calls).toBe(1);
   });
 });

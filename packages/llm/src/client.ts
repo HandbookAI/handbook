@@ -97,6 +97,12 @@ const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 405, 410, 422]);
  */
 const REASONING_MODEL_RE = /gpt-5|gpt-4\.1|o[1-9]/i;
 
+/** Is this error body an edge/gateway HTML page rather than an API response? */
+export function looksLikeGatewayPage(body: string): boolean {
+  const head = body.trimStart().slice(0, 200).toLowerCase();
+  return head.startsWith('<!doctype') || head.startsWith('<html') || head.startsWith('<?xml');
+}
+
 export interface LlmUsageStats {
   calls: number;
   failures: number;
@@ -189,10 +195,16 @@ export class OpenAiChatClient implements ChatClient {
     });
 
     if (!response.ok) {
-      const detail = (await response.text().catch(() => '')).slice(0, 300);
+      const body = await response.text().catch(() => '');
+      const detail = body.slice(0, 300);
       const message = `LLM endpoint returned ${response.status}: ${detail}`;
-      if (PERMANENT_STATUSES.has(response.status)) throw new PermanentError(message);
-      throw new Error(message); // 408/429/5xx → retryable
+      // An HTML body means the API never saw the request — a gateway, WAF or
+      // load balancer answered instead. Its verdict says nothing permanent
+      // about the request, so retry it even on a normally-permanent status.
+      if (PERMANENT_STATUSES.has(response.status) && !looksLikeGatewayPage(body)) {
+        throw new PermanentError(message);
+      }
+      throw new Error(message); // 408/429/5xx, and any edge-served page → retryable
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
