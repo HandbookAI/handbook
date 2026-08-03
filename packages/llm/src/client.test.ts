@@ -14,6 +14,13 @@ function fakeFetch(handler: (calls: number) => { status: number; body: unknown }
 const okBody = { choices: [{ message: { content: 'hello ```json\n{"a":1}\n```' } }] };
 
 describe('resolveLlmEnv', () => {
+  it('reads a configurable request timeout, in seconds', () => {
+    expect(resolveLlmEnv({} as NodeJS.ProcessEnv).timeoutMs).toBe(300_000);
+    expect(resolveLlmEnv({ OPENAI_TIMEOUT: '90' } as NodeJS.ProcessEnv).timeoutMs).toBe(90_000);
+    expect(resolveLlmEnv({ HANDBOOK_LLM_TIMEOUT: '45' } as NodeJS.ProcessEnv).timeoutMs).toBe(45_000);
+    expect(resolveLlmEnv({ OPENAI_TIMEOUT: 'nonsense' } as NodeJS.ProcessEnv).timeoutMs).toBe(300_000);
+  });
+
   it('prefers OPENAI_* and strips trailing slashes', () => {
     const env = resolveLlmEnv({
       OPENAI_API_KEY: 'k',
