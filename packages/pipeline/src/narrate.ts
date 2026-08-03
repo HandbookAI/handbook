@@ -26,6 +26,9 @@ import {
   type Organization,
   type RegisterEntry,
   type Skeleton,
+  describeJsonShape,
+  extractEntryList,
+  replyExcerpt,
 } from '@handbook/core';
 import { readFileSync } from 'node:fs';
 
@@ -299,15 +302,20 @@ export async function extractRegisters(
     let added = 0;
     try {
       const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, { temperature: 0 });
-      // Tolerate the shape drift real endpoints produce: a top-level array
-      // instead of {registers: […]}, and name/description instead of
-      // id/semantics.
-      const raw = Array.isArray(response.json)
-        ? response.json
-        : (response.json as { registers?: unknown } | undefined)?.registers;
-      for (const entry of Array.isArray(raw) ? raw : []) {
-        if (typeof entry !== 'object' || entry === null) continue;
-        const r = entry as Record<string, unknown>;
+      // Tolerate the shape drift real endpoints produce (bare array, other
+      // container names, a lone register) plus name/description spelled instead
+      // of id/semantics.
+      const entries = extractEntryList(response.json, ['registers', 'state', 'variables'], {
+        single: { fields: ['id', 'name', 'semantics'] },
+      });
+      if (entries.length === 0) {
+        logger.warn(
+          `[registers] round returned no usable registers (${describeJsonShape(
+            response.json,
+          )}) — reply: ${replyExcerpt(response.text)}`,
+        );
+      }
+      for (const r of entries) {
         // Coerce near-miss ids (`reg_task_queue`, `Task Queue`) into the
         // canonical form instead of silently dropping the register.
         const rawId = typeof r.id === 'string' ? r.id : typeof r.name === 'string' ? r.name : '';
@@ -353,12 +361,10 @@ export async function extractRegisters(
     }\n\n## Stage menu (valid IDs)\n${menu}\n\n## Registers to map\n${list}`;
     try {
       const response = await client.complete(fillPrompt, { temperature: 0 });
-      const raw = Array.isArray(response.json)
-        ? response.json
-        : (response.json as { assignments?: unknown } | undefined)?.assignments;
-      for (const entry of Array.isArray(raw) ? raw : []) {
-        if (typeof entry !== 'object' || entry === null) continue;
-        const a = entry as Record<string, unknown>;
+      const entries = extractEntryList(response.json, ['assignments', 'registers'], {
+        single: { fields: ['id', 'stages'] },
+      });
+      for (const a of entries) {
         const id = typeof a.id === 'string' ? a.id.trim() : '';
         const target = found.get(id);
         if (!target || target.stages.length > 0) continue;
