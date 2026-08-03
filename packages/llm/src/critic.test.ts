@@ -75,3 +75,26 @@ describe('actorCriticLoop', () => {
     expect(result.accepted).toBe(false);
   });
 });
+
+describe('parseVerdict shape tolerance', () => {
+  it('accepts the alternative key names models use', () => {
+    for (const key of ['decision', 'verdict', 'judgement', 'judgment', 'status']) {
+      expect(parseVerdict({ [key]: 'approve' })?.decision).toBe('APPROVE');
+    }
+  });
+
+  it('reads a reply that is only a decision word', () => {
+    expect(parseVerdict(undefined, 'APPROVE')?.decision).toBe('APPROVE');
+    expect(parseVerdict(undefined, 'decision: REJECT')?.decision).toBe('REJECT');
+    expect(parseVerdict(undefined, '**Decision:** APPROVE.')?.decision).toBe('APPROVE');
+    // A bare REVISE has no concerns to act on — same rule as the JSON path.
+    expect(parseVerdict(undefined, 'REVISE')?.decision).toBe('APPROVE');
+  });
+
+  it('refuses to read a decision out of prose', () => {
+    expect(parseVerdict(undefined, 'I would not approve this proposal.')).toBeUndefined();
+    expect(parseVerdict(undefined, 'APPROVE the first part but REJECT the second')).toBeUndefined();
+    expect(parseVerdict(undefined, 'Looks fine to me')).toBeUndefined();
+    expect(parseVerdict(undefined, '')).toBeUndefined();
+  });
+});

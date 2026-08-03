@@ -59,6 +59,22 @@ export function extractEntryList(
   return [];
 }
 
+/**
+ * Read a string field that the model may have named slightly differently —
+ * `semantic` for `semantics`, `desc` for `description`. Returns the first
+ * non-empty match, trimmed.
+ *
+ * Field-name drift is the quietest failure in this toolchain: a perfectly good
+ * answer arrives, one key is singular, and the entry is dropped without a trace.
+ */
+export function pickString(entry: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = entry[key];
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+  return undefined;
+}
+
 /** A short, log-safe description of a reply's actual JSON shape. */
 export function describeJsonShape(json: unknown): string {
   if (json === undefined || json === null) return 'no JSON block in the reply';
