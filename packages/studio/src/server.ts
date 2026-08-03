@@ -326,6 +326,7 @@ async function runRollback(repo: RepoEntry, body: Record<string, unknown>, logge
   if (!known.includes(requested)) throw new Error(`unknown backup "${requested}"`);
   const result = rollback(join(patchBackupRoot(repo), requested), {
     force: body.force === true,
+    expectedSourceRoot: repo.sourceRoot,
     logger,
   });
   if (result.skipped.length > 0) {

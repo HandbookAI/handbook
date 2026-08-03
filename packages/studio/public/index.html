@@ -164,8 +164,7 @@
   .hero .row{margin-top:16px}
   .flow{display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding:4px 2px 10px}
   .flow .arrow{align-self:center;color:var(--faint);font-size:13px;flex:none}
-  .bookend{flex:none;border:1px dashed var(--line);border-radius:12px;padding:12px 15px;min-width:132px;
-    background:none}
+  .bookend{flex:0 0 156px;border:1px dashed var(--line);border-radius:12px;padding:12px 15px;background:none}
   .bookend b{display:block;font-size:13px;color:var(--fg)}
   .bookend small{color:var(--faint);font-size:11px;line-height:1.5;display:block;margin-top:3px}
   .step{flex:1 1 0;min-width:126px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;
@@ -353,8 +352,11 @@
     .srcgrid{grid-template-columns:1fr}
     .fnlist{position:static}
     .content{padding:16px 14px 40px}
-    header{padding:10px 14px}
-    .hleft{flex:1 1 100%}
+    header{padding:10px 14px;gap:10px}
+    .hleft{flex:1 1 auto;min-width:0}
+    .hleft .path{display:none}
+    .hright{order:1}
+    .tabs{order:2;flex:1 1 100%;overflow-x:auto}
     .hero h2{font-size:23px}
     .drawer{width:100vw;border-radius:0}
   }
@@ -1113,7 +1115,7 @@ async function renderOverview(c, tok, repo) {
       '<button class="primary" data-act="gen-open">' + esc(t('ov.gen')) + '</button></div></div>';
     const cov = $('ovCov');
     if (cov) cov.innerHTML = '<span class="k">' + esc(t('ov.coverage')) + '</span><div class="num">—</div>' +
-      '<p class="hint">' + esc(t('ov.emptyD')) + '</p>';
+      '<p class="hint">' + esc(t('ov.' + st + 'D')) + '</p>';
     return;
   }
   if (stale(tok)) return;

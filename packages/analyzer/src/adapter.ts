@@ -31,6 +31,7 @@ export const COMMON_SKIP_DIRS: ReadonlySet<string> = new Set([
   'site-packages',
   '.idea',
   '.vscode',
+  '.handbook-patches',
 ]);
 
 export interface LanguageAdapter {
