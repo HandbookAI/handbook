@@ -49,7 +49,18 @@ export interface LlmEnvConfig {
   retryBackoffMs: number;
   /** Per-request deadline. A stalled endpoint must not hold a phase hostage. */
   timeoutMs: number;
+  /**
+   * Vendor-specific fields merged into every request body, from
+   * `OPENAI_EXTRA_BODY` (JSON). The escape hatch for parameters outside the
+   * OpenAI schema — e.g. `{"thinking":{"type":"disabled"}}` on an endpoint whose
+   * model spends 90% of its token budget reasoning. Cannot override `model`,
+   * `messages`, or the token/temperature fields this client manages.
+   */
+  extraBody: Record<string, unknown>;
 }
+
+/** Fields the client owns; extra-body must not fight them. */
+const RESERVED_BODY_FIELDS = new Set(['model', 'messages', 'max_tokens', 'max_completion_tokens', 'stream']);
 
 /**
  * Resolve client configuration from the standard OpenAI environment variables,
@@ -78,7 +89,22 @@ export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfi
     maxRetries: Math.max(1, num(env.HANDBOOK_LLM_MAX_RETRIES || '6', 6, 0)),
     retryBackoffMs: Math.round(num(env.HANDBOOK_LLM_RETRY_BACKOFF || '3', 3, 0) * 1000),
     timeoutMs: Math.round(num(pick('OPENAI_TIMEOUT', 'HANDBOOK_LLM_TIMEOUT', '300'), 300, 1) * 1000),
+    extraBody: parseExtraBody(pick('OPENAI_EXTRA_BODY', 'HANDBOOK_LLM_EXTRA_BODY', '')),
   };
+}
+
+/** Parse `OPENAI_EXTRA_BODY`; malformed JSON is ignored, never fatal. */
+function parseExtraBody(raw: string): Record<string, unknown> {
+  if (!raw.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(([key]) => !RESERVED_BODY_FIELDS.has(key)),
+    );
+  } catch {
+    return {};
+  }
 }
 
 export interface OpenAiChatClientOptions {
@@ -201,6 +227,8 @@ export class OpenAiChatClient implements ChatClient {
       body.max_tokens = maxTokens;
       if (options.temperature !== undefined) body.temperature = options.temperature;
     }
+
+    Object.assign(body, this.config.extraBody);
 
     const response = await this.fetchImpl(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
