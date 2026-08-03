@@ -37,6 +37,31 @@ describe('resolveLlmEnv', () => {
   });
 });
 
+describe('OPENAI_EXTRA_BODY', () => {
+  it('merges vendor fields and refuses to fight the client', async () => {
+    const env = { OPENAI_EXTRA_BODY: '{"thinking":{"type":"disabled"},"model":"hijacked","max_tokens":1}' };
+    const config = resolveLlmEnv(env as NodeJS.ProcessEnv);
+    expect(config.extraBody).toEqual({ thinking: { type: 'disabled' } });
+
+    const bodies: Array<Record<string, any>> = [];
+    const client = new OpenAiChatClient({
+      config: { apiKey: 'k', baseUrl: 'http://x/v1', maxRetries: 1, extraBody: config.extraBody, maxTokens: 800 },
+      fetchImpl: (async (_u: string, init: RequestInit) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    await client.complete('p');
+    expect(bodies[0]).toMatchObject({ thinking: { type: 'disabled' }, max_tokens: 800 });
+    expect(bodies[0]?.model).not.toBe('hijacked');
+  });
+
+  it('ignores malformed JSON instead of failing every call', () => {
+    expect(resolveLlmEnv({ OPENAI_EXTRA_BODY: 'not json' } as NodeJS.ProcessEnv).extraBody).toEqual({});
+    expect(resolveLlmEnv({ OPENAI_EXTRA_BODY: '[1,2]' } as NodeJS.ProcessEnv).extraBody).toEqual({});
+  });
+});
+
 describe('OpenAiChatClient', () => {
   const base = { apiKey: 'test', baseUrl: 'http://x/v1', maxRetries: 3, retryBackoffMs: 1 };
 
