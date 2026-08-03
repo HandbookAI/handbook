@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
@@ -215,6 +215,70 @@ describe('studio server (integration, mock LLM)', () => {
         body: JSON.stringify({ name: 'clone', sourceRoot, workDir: other.workDir }),
       }),
     ).rejects.toThrow(/overlaps/);
+  });
+
+  it('serves impact-graph data', async () => {
+    const graph = await api('/api/repos/demo/graph');
+    expect(graph.totalFiles).toBeGreaterThan(0);
+    expect(Array.isArray(graph.nodes)).toBe(true);
+    expect(graph.nodes.every((n: any) => typeof n.file === 'string' && typeof n.degree === 'number')).toBe(true);
+    const scoped = await api('/api/repos/demo/graph?stage=stage-2&limit=10');
+    expect(scoped.stage).toBe('stage-2');
+  });
+
+  it('serves source with function anchors and blocks escapes', async () => {
+    const src = await api('/api/repos/demo/source?path=app/engine.py');
+    expect(src.content).toContain('class Engine');
+    expect(src.functions.some((f: any) => f.qualname.includes('spin'))).toBe(true);
+    const bad = await fetch(`${base}/api/repos/demo/source?path=../../etc/passwd`);
+    expect(bad.status).toBe(400);
+  });
+
+  it('applies a plan for real, then rolls it back', async () => {
+    const engine = join(sourceRoot, 'app', 'engine.py');
+    const before = readFileSync(engine, 'utf8');
+    const oldLine = '        self.rpm += 7';
+    const plan = [
+      '### EDIT 1',
+      '- file: `app/engine.py`',
+      '- where: `Engine.spin` — bump step',
+      '```old',
+      oldLine,
+      '```',
+      '```new',
+      '        self.rpm += 11',
+      '```',
+    ].join('\n');
+
+    // dry-run writes nothing
+    const dry = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan, dryRun: true }) })).id);
+    expect(dry.status).toBe('succeeded');
+    expect(dry.result.changedFiles).toEqual([]);
+    expect(readFileSync(engine, 'utf8')).toBe(before);
+
+    // real apply
+    const applied = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id);
+    expect(applied.status).toBe('succeeded');
+    expect(applied.result.changedFiles).toEqual(['app/engine.py']);
+    expect(readFileSync(engine, 'utf8')).toContain('self.rpm += 11');
+
+    // a stale plan fails the job and changes nothing
+    const stale = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id);
+    expect(stale.status).toBe('failed');
+    expect(readFileSync(engine, 'utf8')).toContain('self.rpm += 11');
+
+    // backups are listed and rollback restores the bytes
+    const backups = await api('/api/repos/demo/patches');
+    expect(backups.length).toBeGreaterThan(0);
+    const back = await waitJob((await api('/api/repos/demo/rollback', { method: 'POST', body: '{}' })).id);
+    expect(back.status).toBe('succeeded');
+    expect(readFileSync(engine, 'utf8')).toBe(before);
+  });
+
+  it('aggregates global history across repos', async () => {
+    const all = await api('/api/history');
+    expect(all.length).toBeGreaterThan(0);
+    expect(all[0].repo).toBe('demo');
   });
 
   it('removes a repo', async () => {

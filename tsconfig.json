@@ -9,6 +9,7 @@
     { "path": "packages/skill" },
     { "path": "packages/planner" },
     { "path": "packages/resync" },
+    { "path": "packages/patcher" },
     { "path": "packages/studio" },
     { "path": "packages/cli" }
   ]

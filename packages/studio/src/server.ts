@@ -18,11 +18,13 @@ import {
 } from '@handbook/core';
 import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
+import { isInternalNode } from '@handbook/core';
 import { renderAgentSite, renderHtmlSite, renderMarkdownHandbook, renderSinglePageHtml } from '@handbook/renderer';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
+import { applyPlan, listBackups, rollback } from '@handbook/patcher';
 import { StateStore, type RepoEntry } from './state.js';
-import { JobRunner, type Job } from './jobs.js';
+import { JobRunner, type Job, type JobKind } from './jobs.js';
 
 export interface StudioOptions {
   /** Directory for studio.json and default work dirs. */
@@ -128,6 +130,87 @@ function listEvolutions(repo: RepoEntry): unknown[] {
     });
 }
 
+/**
+ * File-level impact graph for visualization: nodes are files (optionally
+ * restricted to one stage's bucket plus its immediate neighbours), edges are
+ * internal call relations aggregated per file pair.
+ */
+function impactGraph(repo: RepoEntry, stage: string | null, limit: number): Record<string, unknown> {
+  const work = new WorkDir(repo.workDir);
+  const graph = work.loadGraph();
+  const fileOf = new Map<string, string>();
+  for (const node of Object.values(graph.nodes)) {
+    if (isInternalNode(node)) fileOf.set(node.id, node.file);
+  }
+  const weights = new Map<string, number>();
+  for (const edge of graph.edges) {
+    const from = fileOf.get(edge.callerId);
+    const to = fileOf.get(edge.calleeId);
+    if (!from || !to || from === to) continue;
+    const key = `${from}\u0000${to}`;
+    weights.set(key, (weights.get(key) ?? 0) + 1);
+  }
+
+  let focus: Set<string> | undefined;
+  if (stage) {
+    const bucket = work.loadAssignment().buckets[stage] ?? [];
+    focus = new Set(bucket);
+    for (const key of weights.keys()) {
+      const [from, to] = key.split('\u0000') as [string, string];
+      if (focus.has(from)) focus.add(to);
+      else if (focus.has(to)) focus.add(from);
+    }
+  }
+
+  const degree = new Map<string, number>();
+  for (const [key, weight] of weights) {
+    const [from, to] = key.split('\u0000') as [string, string];
+    if (focus && !(focus.has(from) && focus.has(to))) continue;
+    degree.set(from, (degree.get(from) ?? 0) + weight);
+    degree.set(to, (degree.get(to) ?? 0) + weight);
+  }
+  const keep = new Set(
+    [...degree.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, Math.max(4, Math.min(200, limit)))
+      .map(([file]) => file),
+  );
+
+  const assignment = work.loadAssignment();
+  const stageOf = (file: string): string => assignment.fileStage[file]?.stage ?? 'unassigned';
+  const nodes = [...keep].sort().map((file) => ({
+    file,
+    stage: stageOf(file),
+    degree: degree.get(file) ?? 0,
+    functions: (fileOf.size > 0 ? [...fileOf.entries()].filter(([, f]) => f === file).length : 0),
+  }));
+  const links = [...weights.entries()]
+    .map(([key, weight]) => {
+      const [from, to] = key.split('\u0000') as [string, string];
+      return { from, to, weight };
+    })
+    .filter((l) => keep.has(l.from) && keep.has(l.to))
+    .sort((a, b) => b.weight - a.weight);
+  return { stage, nodes, links, totalFiles: graph.metadata.scannedFiles.length };
+}
+
+/** Function anchors (name + line range) for one file, from the call graph. */
+function fileFunctions(repo: RepoEntry, relFile: string): Array<Record<string, unknown>> {
+  try {
+    const graph = new WorkDir(repo.workDir).loadGraph();
+    return Object.values(graph.nodes)
+      .filter((n) => isInternalNode(n) && n.file === relFile && !n.synthetic && n.lineStart > 0)
+      .map((n) => ({
+        qualname: (n as { qualname: string }).qualname,
+        lineStart: (n as { lineStart: number }).lineStart,
+        lineEnd: (n as { lineEnd: number }).lineEnd,
+      }))
+      .sort((a, b) => (a.lineStart as number) - (b.lineStart as number));
+  } catch {
+    return [];
+  }
+}
+
 /** Serve a file from inside `root` (path-traversal safe). */
 function serveStatic(res: ServerResponse, root: string, relPath: string): void {
   const full = resolve(root, normalize(relPath));
@@ -208,6 +291,36 @@ async function runPlan(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>,
   return { plan: result.plan, declarations: result.declarations, turns: result.turns, trace: result.trace };
 }
 
+function patchBackupRoot(repo: RepoEntry): string {
+  return join(repo.workDir, 'patches');
+}
+
+async function runApply(repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
+  const plan = typeof body.plan === 'string' ? body.plan : '';
+  if (!plan.trim()) throw new Error('missing "plan"');
+  const dryRun = body.dryRun === true;
+  const result = applyPlan({
+    sourceRoot: repo.sourceRoot,
+    plan,
+    dryRun,
+    backupRoot: patchBackupRoot(repo),
+    logger,
+  });
+  for (const outcome of result.outcomes) {
+    const mark = outcome.status === 'applied' || outcome.status === 'created' ? '✓' : '✗';
+    logger.info(`${mark} EDIT ${outcome.index} ${outcome.file} — ${outcome.status}${outcome.detail ? `: ${outcome.detail}` : ''}`);
+  }
+  if (!result.ok) throw new Error('plan did not verify — nothing was written (see the per-edit results)');
+  return result;
+}
+
+async function runRollback(repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
+  const stamp = typeof body.backup === 'string' && body.backup ? body.backup : listBackups(patchBackupRoot(repo))[0];
+  if (!stamp) throw new Error('no patch backups to roll back');
+  const result = rollback(join(patchBackupRoot(repo), stamp), logger);
+  return { backup: stamp, ...result };
+}
+
 async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const caseDir = join(evolutionsDir(repo), stamp);
@@ -285,6 +398,15 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     return;
   }
 
+  if (path === '/api/history' && method === 'GET') {
+    const all: Array<Record<string, unknown>> = ctx.store
+      .list()
+      .flatMap((repo) => listEvolutions(repo).map((e) => ({ repo: repo.name, ...(e as Record<string, unknown>) })));
+    all.sort((a, b) => String(b.at ?? b.id ?? '').localeCompare(String(a.at ?? a.id ?? '')));
+    json(res, 200, all);
+    return;
+  }
+
   const repoMatch = path.match(/^\/api\/repos\/([^/]+)(\/.*)?$/);
   if (repoMatch) {
     const repo = ctx.store.get(decodeURIComponent(repoMatch[1] ?? ''));
@@ -307,10 +429,15 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       json(res, 200, repoStatus(repo));
       return;
     }
-    if (method === 'POST' && (sub === '/generate' || sub === '/analyze' || sub === '/plan' || sub === '/resync')) {
+    if (
+      method === 'POST' &&
+      (sub === '/generate' || sub === '/analyze' || sub === '/plan' || sub === '/resync' || sub === '/apply' || sub === '/rollback')
+    ) {
       const body = await readBody(req);
-      const kind = sub.slice(1) as 'generate' | 'analyze' | 'plan' | 'resync';
-      const job = ctx.jobs.start(repo.name, kind === 'analyze' ? 'generate' : kind, (logger) => {
+      const kind = sub.slice(1) as 'generate' | 'analyze' | 'plan' | 'resync' | 'apply' | 'rollback';
+      const jobKind: JobKind =
+        kind === 'analyze' ? 'generate' : kind === 'rollback' ? 'apply' : (kind as JobKind);
+      const job = ctx.jobs.start(repo.name, jobKind, (logger) => {
         switch (kind) {
           case 'analyze':
             return runAnalyzeOnly(repo, logger);
@@ -320,6 +447,10 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
             return runPlan(ctx, repo, body, logger);
           case 'resync':
             return runResync(ctx, repo, body, logger);
+          case 'apply':
+            return runApply(repo, body, logger);
+          case 'rollback':
+            return runRollback(repo, body, logger);
         }
       });
       json(res, 202, jobSummary(job));
@@ -345,6 +476,36 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       } catch (error) {
         json(res, 409, { error: `handbook not generated yet: ${error instanceof Error ? error.message : error}` });
       }
+      return;
+    }
+    if (method === 'GET' && sub === '/graph') {
+      try {
+        json(res, 200, impactGraph(repo, url.searchParams.get('stage'), Number(url.searchParams.get('limit') ?? '60')));
+      } catch (error) {
+        json(res, 409, { error: `no call graph yet: ${error instanceof Error ? error.message : error}` });
+      }
+      return;
+    }
+    if (method === 'GET' && sub === '/source') {
+      const rel = url.searchParams.get('path') ?? '';
+      const full = resolve(repo.sourceRoot, normalize(rel));
+      if (!rel || (full !== resolve(repo.sourceRoot) && !full.startsWith(resolve(repo.sourceRoot) + sep))) {
+        json(res, 400, { error: 'path escapes the source root' });
+        return;
+      }
+      try {
+        if (statSync(full).size > 2_000_000) {
+          json(res, 413, { error: 'file too large to display' });
+          return;
+        }
+        json(res, 200, { path: rel, content: readFileSync(full, 'utf8'), functions: fileFunctions(repo, rel) });
+      } catch {
+        json(res, 404, { error: `not found: ${rel}` });
+      }
+      return;
+    }
+    if (method === 'GET' && sub === '/patches') {
+      json(res, 200, listBackups(patchBackupRoot(repo)));
       return;
     }
     if (method === 'GET' && sub === '/history') {
