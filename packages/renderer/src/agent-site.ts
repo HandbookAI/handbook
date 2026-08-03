@@ -6,6 +6,7 @@
  * locator block; the data-gating invariant is that a field is emitted iff its
  * structural signal exists — an empty field is information.
  */
+import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { FileRole, HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
@@ -411,6 +412,10 @@ export function renderAgentSite(
     fileStage: view.fileStageIndex(),
   };
   ensureDir(outDir);
+  // The agent dir is fully renderer-owned: clear pages from previous renders.
+  for (const stale of readdirSync(outDir)) {
+    if (stale.endsWith('.md')) rmSync(join(outDir, stale), { force: true });
+  }
 
   const contentStages = view.contentStages();
   const written = new Set(contentStages);

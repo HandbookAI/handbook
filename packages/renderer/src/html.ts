@@ -7,7 +7,7 @@
  * page with numbered sections and every stage as a collapsed `<details>`.
  * All CSS/JS is inlined and every link is relative, so both work over file://.
  */
-import { statSync } from 'node:fs';
+import { readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import type { MarkdownIt as Markdown } from 'markdown-it';
@@ -311,6 +311,11 @@ export function renderHtmlSite(model: HandbookModel, outDir: string): { nPages: 
   const L = LABELS[lang];
   const md = makeMd();
   ensureDir(outDir);
+  // The html dir is fully renderer-owned: drop pages from previous renders so
+  // stale stage ids never linger as orphan files.
+  for (const stale of readdirSync(outDir)) {
+    if (stale.endsWith('.html')) rmSync(join(outDir, stale), { force: true });
+  }
   let nPages = 0;
   const write = (name: string, content: string): void => {
     writeFileAtomic(join(outDir, name), content);
