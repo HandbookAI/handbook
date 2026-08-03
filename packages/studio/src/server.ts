@@ -484,6 +484,10 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
           })),
           systemOverview: narration?.systemOverview ?? '',
           coverage: assignment.coverage,
+          // Assignment coverage says every file found a chapter; it says nothing
+          // about whether the files were actually DESCRIBED. Report both, so a
+          // run whose cards came back empty cannot look complete.
+          cardCoverage: work.loadCardCoverage() ?? null,
           registers,
         });
       } catch (error) {

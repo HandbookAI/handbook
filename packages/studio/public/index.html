@@ -1136,9 +1136,18 @@ async function renderOverview(c, tok, repo) {
   const cov = $('ovCov');
   if (cov) {
     const pct = cv.nFiles ? Math.round((cv.nAssigned / cv.nFiles) * 100) : 0;
+    // Described coverage is the honest headline: a file can be filed into a
+    // chapter while carrying no description at all.
+    const cc = ov.cardCoverage || null;
+    const dPct = cc && cc.nFiles ? Math.round((cc.nDescribed / cc.nFiles) * 100) : null;
+    const dLine = cc
+      ? '<p style="margin-top:6px' + (dPct !== null && dPct < 100 ? ';color:var(--warn,#d08a2a)' : '') + '">' +
+        esc(zh ? '已描述 ' : 'described ') + cc.nDescribed + '/' + cc.nFiles +
+        (cc.missing && cc.missing.length ? ' · ' + cc.missing.length + esc(zh ? ' 个为空卡片' : ' empty') : '') + '</p>'
+      : '';
     cov.innerHTML = '<span class="k">' + esc(t('ov.coverage')) + '</span><div class="num">' + pct +
       '<i>%' + esc(t('ov.assigned')) + '</i></div><p>' + esc(fmt(t('ov.ofFiles'), cv.nFiles || 0)) +
-      (Array.isArray(cv.unassigned) && cv.unassigned.length ? ' · ' + cv.unassigned.length + (zh ? ' 个未归档' : ' unassigned') : '') + '</p>';
+      (Array.isArray(cv.unassigned) && cv.unassigned.length ? ' · ' + cv.unassigned.length + (zh ? ' 个未归档' : ' unassigned') : '') + '</p>' + dLine;
   }
 
   let b = '';
