@@ -169,24 +169,36 @@ function fileBlock(
  * work, and rejecting that silently is how 90 files end up with empty cards.
  */
 /**
- * Resolve a loosely-named path against the batch: `./a/b.ts`, a bare basename,
- * or a path prefixed with the repo name all name the same file unambiguously.
- * Ambiguous basenames (two `index.ts`) resolve to nothing.
+ * Resolve a loosely-named path against the batch: `./a/b.ts` or a path carrying
+ * an extra leading segment name the same file unambiguously. A BARE basename is
+ * deliberately not accepted — `src/b/config.ts` must not resolve onto
+ * `src/a/config.ts` and overwrite a correct card with prose about another file.
  */
 function matchLoosely(named: string, valid: ReadonlySet<string>): string | undefined {
   const cleaned = named.trim().replace(/^\.\/+/, '').replace(/^`+|`+$/g, '');
   if (valid.has(cleaned)) return cleaned;
   const suffixHits = [...valid].filter((f) => f === cleaned || f.endsWith(`/${cleaned}`));
-  if (suffixHits.length === 1) return suffixHits[0];
-  const base = cleaned.split('/').pop() ?? cleaned;
-  const baseHits = [...valid].filter((f) => (f.split('/').pop() ?? f) === base);
-  return baseHits.length === 1 ? baseHits[0] : undefined;
+  return suffixHits.length === 1 ? suffixHits[0] : undefined;
+}
+
+/** Keys that mark an object as a FUNCTION note rather than a file card. */
+const FUNCTION_NOTE_KEYS = ['qualname', 'data_flow', 'dataFlow', 'relations'] as const;
+
+/** A function note promoted to a file card would silently replace a real card. */
+function isFunctionNote(entry: Record<string, unknown>): boolean {
+  const looksLikeNote = FUNCTION_NOTE_KEYS.some((key) => key in entry);
+  const looksLikeCard = ['file', 'description', 'role', 'lifecycle', 'functions'].some((key) => key in entry);
+  return looksLikeNote && !looksLikeCard;
 }
 
 export function extractCardEntries(json: unknown): RawEntry[] {
-  const entries = extractEntryList(json, ['purposes', 'files', 'cards'], {
-    single: { fields: ['purpose', 'description', 'role', 'lifecycle', 'functions'] },
-  }) as RawEntry[];
+  const entries = (
+    extractEntryList(json, ['purposes', 'files', 'cards'], {
+      // `purpose` alone is too generic to identify a card: a function note has
+      // one too. Require a field only a file card carries.
+      single: { fields: ['file', 'description', 'role', 'lifecycle', 'functions'] },
+    }) as RawEntry[]
+  ).filter((entry) => !isFunctionNote(entry as Record<string, unknown>));
   if (entries.length > 0) return entries;
   // Keyed by path: {"a/b.ts": {"purpose": "…"}, …}.
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return [];
@@ -198,6 +210,13 @@ export function extractCardEntries(json: unknown): RawEntry[] {
   }
   return [];
 }
+
+/**
+ * Below this many files, "nothing was described" is more likely one flaky call
+ * than a broken configuration, so the run continues with honest partial
+ * coverage instead of aborting.
+ */
+const SYSTEMIC_FAILURE_FLOOR = 3;
 
 interface RawEntry {
   file?: unknown;
@@ -323,7 +342,12 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
 
   const rules = rulesFor(detail, lang);
 
+  /** LLM calls actually issued — the guard must not blame a model never called. */
+  let attempted = 0;
+  work.clearRejectedReplies(); // a diagnosis must read THIS run's replies
+
   const describeBatch = async (batch: NavFileDescriptor[]): Promise<Record<string, FileCard>> => {
+    attempted += 1;
     const blocks = batch.map((d) => fileBlock(d, readSource(d.file), maxCharsPerFile, inventory[d.file]));
     const prompt = [rules, `## Files to describe (${batch.length})`, ...blocks, 'Return the JSON block only — no commentary.'].join('\n\n');
     const result: Record<string, FileCard> = {};
@@ -331,16 +355,25 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
       const response = await client.complete(prompt, { temperature: 0 });
       const entries = extractCardEntries(response.json);
       const valid = new Set(batch.map((d) => d.file));
-      const soleFile = batch.length === 1 ? batch[0]?.file : undefined;
+      const soleFile = batch.length === 1 && entries.length === 1 ? batch[0]?.file : undefined;
+      const exact = new Set<string>();
       for (const entry of entries) {
-        // An entry may omit `file`, or name it loosely (basename, leading "./").
-        const named = typeof entry.file === 'string' ? entry.file : undefined;
-        const file =
-          named && valid.has(named)
-            ? named
-            : (named && matchLoosely(named, valid)) ?? (entries.length === 1 ? soleFile : undefined);
+        const named = typeof entry.file === 'string' ? entry.file.trim() : undefined;
+        // An entry that NAMES a file must resolve to one in this batch. Falling
+        // back to "the only file we asked about" would accept a card written for
+        // something else entirely — a wrong answer, not a loosely named one.
+        const file = named ? (valid.has(named) ? named : matchLoosely(named, valid)) : soleFile;
         if (!file) continue;
-        result[file] = entryToCard(entry, file, detail, inventory[file]);
+        // First exact naming wins: a loose match must never overwrite the card
+        // the model explicitly wrote for that path.
+        if (exact.has(file)) continue;
+        if (named && valid.has(named)) exact.add(file);
+        const card = entryToCard(entry, file, detail, inventory[file]);
+        // An entry that produced no purpose is not a description. Leaving it out
+        // keeps the file in `dropped` so the single-file and chunk fallbacks
+        // still run for it.
+        if (card.purpose.trim() === '') continue;
+        result[file] = card;
       }
       if (Object.keys(result).length === 0) {
         // The call SUCCEEDED but nothing usable came back — a shape mismatch or
@@ -394,6 +427,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
         `Return ONE "purposes" entry for ${descriptor.file} covering exactly these functions.`,
       ].join('\n\n');
       try {
+        attempted += 1;
         const response = await client.complete(prompt, { temperature: 0 });
         const entry = extractCardEntries(response.json)[0];
         if (!entry) continue;
@@ -479,12 +513,16 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   if (missing.length > 0) logger.warn(`[cards] ${missing.length} files backfilled with empty cards`);
   // Degrading SOME files to empty cards is honest partial coverage. Degrading
   // EVERY file is a broken LLM configuration wearing a success costume: the
-  // handbook that follows would be pure scaffolding, and the narration phase
-  // would burn the same failing calls again. Stop and say so.
-  if (files.length > 0 && coverage.nDescribed === 0) {
+  // handbook that follows would be pure scaffolding, and narration would burn
+  // the same failing calls again. Stop — but only when the evidence is
+  // systemic. One flaky call on a 1-file repo is not a broken configuration,
+  // and a scope that made no calls at all is not the model's fault.
+  if (coverage.nDescribed === 0 && files.length >= SYSTEMIC_FAILURE_FLOOR && attempted > 0) {
+    const kept = work.rejectedReplyCount();
     throw new Error(
-      `[cards] all ${files.length} files failed to be described — the model returned nothing usable. ` +
-        `Check OPENAI_MODEL/OPENAI_BASE_URL and the warnings above; reasoning models need a larger OPENAI_MAX_TOKENS.`,
+      `[cards] all ${files.length} files failed to be described after ${attempted} LLM call(s) — ` +
+        `${kept > 0 ? `${kept} reply/replies kept under cards/_rejected for inspection; ` : 'no reply was usable; '}` +
+        'check the warnings above, OPENAI_MODEL/OPENAI_BASE_URL, and OPENAI_MAX_TOKENS for reasoning models.',
     );
   }
   return { cards, coverage };

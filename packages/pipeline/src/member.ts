@@ -139,17 +139,22 @@ export async function classifyMembers(
       });
       const batchIds = new Set(batch.map((m) => m.id));
       let usable = 0;
+      // Only a batch of ONE is unambiguous. Pinning an unrecognised entry onto
+      // batch[0] would file a member the model never mentioned into a stage.
+      const soleMember = batch.length === 1 && entries.length === 1 ? batch[0]?.id : undefined;
       for (const entry of entries) {
         const named = typeof entry.member === 'string' ? entry.member : undefined;
-        const member = named && batchIds.has(named) ? named : entries.length === 1 ? batch[0]?.id : undefined;
+        const member = named ? (batchIds.has(named) ? named : undefined) : soleMember;
         if (!member) continue;
         usable += 1;
         memberStage[member] =
           typeof entry.stage === 'string' && validIds.has(entry.stage) ? entry.stage : 'unassigned';
       }
-      if (usable === 0) {
+      // Warn on a mostly-lost batch too, not only a fully lost one: 1 usable
+      // entry out of 40 members is a failed call wearing a success costume.
+      if (usable * 2 < batch.length) {
         logger.warn(
-          `[members] batch of ${batch.length} returned no usable assignments (${describeJsonShape(
+          `[members] batch of ${batch.length} yielded only ${usable} usable assignment(s) (${describeJsonShape(
             response.json,
           )}) — reply: ${replyExcerpt(response.text)}`,
         );

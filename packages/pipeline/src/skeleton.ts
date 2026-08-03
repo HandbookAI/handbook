@@ -127,9 +127,11 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
   // The prompt asks for {stages:[…]}; accept the neighbouring shapes a model may
   // answer with (a bare list, `chapters`, one level of wrapping) rather than
   // losing the whole handbook's spine to a naming difference.
-  const rawStages = extractEntryList(raw, ['stages', 'chapters', 'skeleton'], {
-    single: { fields: ['id', 'title'] },
-  });
+  // No `single` tolerance here: `id`/`title` are the two most generic keys in
+  // JSON, so accepting a lone object would turn a nested stage fragment — or an
+  // error envelope — into a plausible-looking one-chapter handbook, and the
+  // "no usable stages" guard could never fire on it.
+  const rawStages = extractEntryList(raw, ['stages', 'chapters', 'skeleton']);
   const seen = new Set<string>(RESERVED_STAGE_IDS);
   const stages: Stage[] = [];
   // Original id → final id for ids that got renamed (sanitized, reserved, or

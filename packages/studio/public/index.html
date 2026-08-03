@@ -11,7 +11,7 @@
     --bg:#0B0E11;--panel:#10151A;--panel2:#131A20;
     --card:rgba(233,237,240,.035);--card2:rgba(233,237,240,.07);--line:rgba(233,237,240,.10);
     --fg:#E9EDF0;--dim:#9AA6AE;--faint:#5C6870;
-    --gold:#D8B36A;--gold-hi:#F0D9A8;--ice:#8FB8CE;--jade:#86C7A5;--red:#E0705C;--plum:#A99BD8;
+    --gold:#D8B36A;--gold-hi:#F0D9A8;--ice:#8FB8CE;--jade:#86C7A5;--red:#E0705C;--plum:#A99BD8;--warn:#D8A24A;
     --on-gold:#0B0E11;--grad-a:#8a6d35;--grad-b:#b3903f;
     --field:#0E1317;--code-bg:#080B0D;--code-fg:#C9D4DA;--hl:rgba(216,179,106,.13);
     --shadow:0 -18px 60px rgba(0,0,0,.5);--shadow-card:0 1px 0 rgba(255,255,255,.02);
@@ -23,7 +23,7 @@
     --bg:#F7F2E8;--panel:#F1EADB;--panel2:#EDE5D3;
     --card:rgba(92,68,26,.045);--card2:rgba(92,68,26,.09);--line:rgba(92,68,26,.18);
     --fg:#231F19;--dim:#5C5548;--faint:#8A8171;
-    --gold:#8E6A26;--gold-hi:#6A4C14;--ice:#286078;--jade:#256546;--red:#A03720;--plum:#5D479A;
+    --gold:#8E6A26;--gold-hi:#6A4C14;--ice:#286078;--jade:#256546;--red:#A03720;--plum:#5D479A;--warn:#8A5A10;
     --on-gold:#FFF8E8;--grad-a:#7d6229;--grad-b:#a3812f;
     --field:#FFFDF6;--code-bg:#FFFCF4;--code-fg:#2C2822;--hl:rgba(142,106,38,.14);
     --shadow:0 -18px 60px rgba(92,68,26,.20);--shadow-card:0 1px 0 rgba(255,255,255,.5);
@@ -1141,7 +1141,7 @@ async function renderOverview(c, tok, repo) {
     const cc = ov.cardCoverage || null;
     const dPct = cc && cc.nFiles ? Math.round((cc.nDescribed / cc.nFiles) * 100) : null;
     const dLine = cc
-      ? '<p style="margin-top:6px' + (dPct !== null && dPct < 100 ? ';color:var(--warn,#d08a2a)' : '') + '">' +
+      ? '<p style="margin-top:6px' + (dPct !== null && dPct < 100 ? ';color:var(--warn)' : '') + '">' +
         esc(zh ? '已描述 ' : 'described ') + cc.nDescribed + '/' + cc.nFiles +
         (cc.missing && cc.missing.length ? ' · ' + cc.missing.length + esc(zh ? ' 个为空卡片' : ' empty') : '') + '</p>'
       : '';

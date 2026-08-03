@@ -97,3 +97,79 @@ describe('extractJsonBlock precedence', () => {
     expect(extractJsonBlock('```json\n{"ok": true}\n```')).toEqual({ ok: true });
   });
 });
+
+describe('repairJson backtracking (review R1 F2/F8)', () => {
+  /** Serialise the intended value, then un-escape the quotes a model forgets. */
+  const wire = (value: unknown): string => JSON.stringify(value, null, 2).replace(/\\"/g, '"');
+
+  const prose = [
+    'the "config" file',
+    'supports "list", "map" and "filter"',
+    'she said "no", then left',
+    'a "queue": a waiting line',
+    '"main" is where it starts',
+    'reads "cfg", writes state',
+    '解析 "配置" 文件，然后写回',
+    'ends with a "quote"',
+  ];
+
+  it.each(prose)('recovers an unescaped quote in prose: %s', (text) => {
+    const intended = { purposes: [{ file: 'a.ts', purpose: text, role: 'util' }] };
+    expect(repairJson(wire(intended))).toEqual(intended);
+  });
+
+  it('recovers a quoted term inside an array element without splitting it', () => {
+    const intended = { also: ['sets "mode" to "on", "off"', 'stage-2'] };
+    expect(repairJson(wire(intended))).toEqual(intended);
+  });
+
+  it('never invents structure: truncated input stays a failure', () => {
+    expect(repairJson('{"a": "unterminated')).toBeUndefined();
+    expect(repairJson('{"a": 1')).toBeUndefined();
+    expect(repairJson('[1, 2')).toBeUndefined();
+    expect(repairJson('{"a": [1,,2]}')).toBeUndefined(); // a hole is not repairable
+  });
+
+  it('accepts a trailing comma — unambiguous, so it costs nothing', () => {
+    expect(repairJson('{"a": 1,}')).toEqual({ a: 1 });
+    expect(repairJson('[1, 2,]')).toEqual([1, 2]);
+  });
+
+  it('leaves ordinary documents exactly as JSON.parse would', () => {
+    for (const text of ['{"a":"plain"}', '["a", "b"]', '{"n":-1.5e3,"t":true,"z":null}', '{"u":"\\u4e2d"}']) {
+      expect(repairJson(text)).toEqual(JSON.parse(text));
+    }
+  });
+
+  it('is bounded on adversarial input', () => {
+    // 400 ambiguous quotes: exponential backtracking would hang. Whatever it
+    // decides, it must decide fast.
+    const started = Date.now();
+    repairJson(`{"a": "${'" '.repeat(400)}"}`);
+    repairJson(`[${'"a" '.repeat(300)}]`);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
+describe('extractJsonBlock never returns a nested fragment (review R1 F1/F4)', () => {
+  it('repairs the declared fence instead of scanning inside it', () => {
+    const reply = [
+      '```json',
+      '{"purposes": [{"file": "app/queue.py", "purpose": "Holds waiting work.",',
+      '  "description": "A "queue": a waiting line.",',
+      '  "functions": [{"qualname": "Queue.push", "purpose": "Adds a job."}],',
+      '  "role": "data_model"}]}',
+      '```',
+    ].join('\n');
+    const result = extractJsonBlock(reply) as { purposes: Array<Record<string, unknown>> };
+    expect(Object.keys(result)).toEqual(['purposes']);
+    expect(result.purposes[0]?.description).toBe('A "queue": a waiting line.');
+  });
+
+  it('reports failure rather than a fragment when a fence cannot be repaired', () => {
+    // Truncated mid-structure: the nested object parses on its own, and returning
+    // it would let a function note masquerade as the answer.
+    const reply = ['```json', '{"purposes": [{"file": "a.ts", "functions": [{"qualname": "f"}]', '```'].join('\n');
+    expect(extractJsonBlock(reply)).toBeUndefined();
+  });
+});

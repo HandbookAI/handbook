@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OpenAiChatClient, extractAssistantText, looksLikeGatewayPage, resolveLlmEnv } from './client.js';
-import { PermanentError } from '@handbook/core';
+import { PermanentError, silentLogger } from '@handbook/core';
 
 function fakeFetch(handler: (calls: number) => { status: number; body: unknown }): typeof fetch {
   let calls = 0;
@@ -127,11 +127,48 @@ describe('OpenAiChatClient with a reasoning endpoint', () => {
     });
     const result = await client.complete('describe this file');
     expect(result.json).toEqual({ ok: 1 });
-    // First attempt uses the configured budget; later attempts get more room
-    // because the endpoint proved it spends the budget on reasoning.
+    // First attempt uses the configured budget; this call's retries get more
+    // room, capped at 2× so an endpoint's own limit is not blown past.
     expect(bodies[0]?.max_tokens).toBe(1000);
     expect(bodies[1]?.max_tokens).toBe(2000);
-    expect(bodies[2]?.max_tokens).toBe(3000);
+    expect(bodies[2]?.max_tokens).toBe(2000);
+  });
+
+  it('keeps budget growth to the call that needed it', async () => {
+    const bodies: Array<Record<string, any>> = [];
+    const client = new OpenAiChatClient({
+      config: { ...base, maxTokens: 1000 },
+      fetchImpl: recordingFetch(bodies, (n) =>
+        n === 1
+          ? { choices: [{ finish_reason: 'length', message: { content: '{"partial":' } }] }
+          : { choices: [{ message: { content: '{"ok":1}' } }] },
+      ),
+    });
+    await client.complete('first call'); // truncated once, retried at 2×
+    await client.complete('second call'); // unrelated: must start at 1× again
+    expect(bodies.map((b) => b.max_tokens)).toEqual([1000, 2000, 1000]);
+  });
+
+  it('learns a budget ceiling from a 400 and stays retryable', async () => {
+    const bodies: Array<Record<string, any>> = [];
+    let calls = 0;
+    const client = new OpenAiChatClient({
+      config: { ...base, maxTokens: 4000, maxRetries: 4 },
+      fetchImpl: (async (_u: string, init: RequestInit) => {
+        calls += 1;
+        const body = JSON.parse(String(init.body));
+        bodies.push(body);
+        if (body.max_tokens > 2000) {
+          return new Response(JSON.stringify({ error: { message: 'max_tokens too large' } }), { status: 400 });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":1}' } }] }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    // A 400 about the token parameter must not be permanent: it is a verdict on
+    // our budget, so the ceiling is learned and the call still succeeds.
+    await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
+    expect(bodies.map((b) => b.max_tokens)).toEqual([4000, 2000]);
+    expect(calls).toBe(2);
   });
 
   it('reports the reasoning hint when every attempt comes back blank', async () => {
@@ -237,14 +274,55 @@ describe('truncated completions', () => {
     expect(bodies[1]?.max_tokens).toBe(1000); // more room on the retry
   });
 
-  it('reports truncation rather than returning half an answer', async () => {
+  it('refuses a truncated answer whose structure is broken', async () => {
     const client = new OpenAiChatClient({
       config: { ...base, maxRetries: 1 },
       fetchImpl: (async () =>
-        new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: 'half a sen' } }] }), {
-          status: 200,
-        })) as unknown as typeof fetch,
+        new Response(
+          JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{"stages": [{"id": "a"' } }] }),
+          { status: 200 },
+        )) as unknown as typeof fetch,
     });
-    await expect(client.complete('p')).rejects.toThrow(/truncated at the token limit/);
+    await expect(client.complete('p')).rejects.toThrow(/truncated mid-structure/);
+  });
+
+  it('keeps truncated PROSE rather than discarding a usable paragraph', async () => {
+    const warnings: string[] = [];
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: 1 },
+      logger: {
+        info: () => {},
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+        error: () => {},
+        debug: () => {},
+        child: () => silentLogger,
+      },
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: 'length', message: { content: 'The queue stage takes work from the' } }],
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch,
+    });
+    const result = await client.complete('write the stage overview');
+    expect(result.text).toBe('The queue stage takes work from the');
+    expect(warnings.join(' ')).toMatch(/hit the token limit/);
+  });
+
+  it('keeps a truncated reply whose JSON is nonetheless complete', async () => {
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: 1 },
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: 'length', message: { content: '```json\n{"ok":1}\n```\nand then some trail' } }],
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
   });
 });
