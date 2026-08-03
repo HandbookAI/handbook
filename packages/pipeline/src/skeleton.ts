@@ -5,6 +5,7 @@
  */
 import type { NavPack } from '@handbook/analyzer';
 import type { ChatClient } from '@handbook/llm';
+import { describeJsonShape, extractEntryList, replyExcerpt } from '@handbook/core';
 import type { FileCard, NarrateLang, Skeleton, Stage } from '@handbook/core';
 
 export interface DirRollup {
@@ -123,7 +124,12 @@ const RESERVED_STAGE_IDS = new Set([
 /** Coerce a raw LLM skeleton into the canonical, internally-consistent form. */
 export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): Skeleton {
   const rawObj = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-  const rawStages = Array.isArray(rawObj.stages) ? rawObj.stages : [];
+  // The prompt asks for {stages:[…]}; accept the neighbouring shapes a model may
+  // answer with (a bare list, `chapters`, one level of wrapping) rather than
+  // losing the whole handbook's spine to a naming difference.
+  const rawStages = extractEntryList(raw, ['stages', 'chapters', 'skeleton'], {
+    single: { fields: ['id', 'title'] },
+  });
   const seen = new Set<string>(RESERVED_STAGE_IDS);
   const stages: Stage[] = [];
   // Original id → final id for ids that got renamed (sanitized, reserved, or
@@ -210,12 +216,20 @@ export async function synthesizeSkeleton(
   nav: NavPack,
   cards: Record<string, FileCard>,
   lang: NarrateLang = 'en',
+  onRejected?: (reply: string) => void,
 ): Promise<Skeleton> {
   const prompt = buildSynthPrompt(nav, dirRollups(cards), lang);
   const response = await client.complete(prompt, { temperature: 0 });
   const skeleton = normalizeSkeleton(response.json);
   if (skeleton.stages.length === 0) {
-    throw new Error('skeleton synthesis returned no usable stages');
+    // The stage list is the spine of the whole handbook, so a failure here ends
+    // the run. Report what DID come back, not just that nothing usable did.
+    onRejected?.(response.text);
+    throw new Error(
+      `skeleton synthesis returned no usable stages (${describeJsonShape(response.json)}) — reply: ${replyExcerpt(
+        response.text,
+      )}`,
+    );
   }
   return skeleton;
 }

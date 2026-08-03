@@ -175,6 +175,7 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
         assignBatchSize: options.assignBatchSize,
         assignWorkers: options.assignWorkers,
         logger,
+        onRejectedReply: (reply) => work.saveRejectedReply('skeleton-synth-doctor', reply),
       });
       work.saveSkeleton(skeleton);
       work.saveAssignment(assignment);
@@ -182,7 +183,9 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
       stats.nUnassignedFiles = assignment.coverage.unassigned.length;
     } else {
       const nav = buildNavPack(graph);
-      const skeleton = await synthesizeSkeleton(client, nav, cards, narrateLang);
+      const skeleton = await synthesizeSkeleton(client, nav, cards, narrateLang, (reply) =>
+        work.saveRejectedReply('skeleton-synth', reply),
+      );
       const assignment = await assignFiles(client, graph, skeleton, {
         batchSize: options.assignBatchSize,
         maxWorkers: options.assignWorkers,

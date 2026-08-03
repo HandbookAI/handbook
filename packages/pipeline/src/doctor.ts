@@ -315,6 +315,8 @@ export interface SynthLoopOptions {
   assignBatchSize?: number;
   assignWorkers?: number;
   logger?: Logger;
+  /** Keep a synthesis reply that produced no usable stages, for inspection. */
+  onRejectedReply?: (reply: string) => void;
 }
 
 /** Draft → assign → doctor rounds until convergence (doctor synth mode). */
@@ -334,7 +336,7 @@ export async function synthesizeWithDoctor(
   };
 
   const nav = buildNavPack(graph);
-  const skeleton = await synthesizeSkeleton(client, nav, cards, lang);
+  const skeleton = await synthesizeSkeleton(client, nav, cards, lang, options.onRejectedReply);
   let assignment = await assignFiles(client, graph, skeleton, assignOptions);
 
   let noProgressStreak = 0;
