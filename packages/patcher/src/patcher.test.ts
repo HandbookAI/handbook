@@ -449,3 +449,94 @@ describe('patcher — R2 regressions', () => {
     expect(readFileSync(join(root, '.handbook-patches/.gitignore'), 'utf8').trim()).toBe('*');
   });
 });
+
+describe('patcher — R3: the planner\'s real output shape', () => {
+  /** Exactly what packages/planner/src/prompt.ts instructs the agent to emit. */
+  function plannerShapedPlan(file: string, oldText: string, newText: string): string {
+    return [
+      'Bump the step so the engine advances faster.',
+      '',
+      '### EDIT 1',
+      `- file: \`${file}\``,
+      '- where: `Engine.spin (~5)` — the increment',
+      '```old',
+      oldText,
+      '```',
+      '```new',
+      newText,
+      '```',
+      '',
+      'This keeps the public API stable.',
+      '',
+      '```json',
+      '{"will_modify": ["Engine.spin"], "will_add": [], "will_remove": []}',
+      '```',
+    ].join('\n');
+  }
+
+  it('applies an unedited planner plan, declarations block and prose included', () => {
+    const root = repo();
+    const parsed = parsePlan(plannerShapedPlan('app/engine.py', 'self.rpm += 1', 'self.rpm += 6'));
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.edits).toHaveLength(1);
+
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plannerShapedPlan('app/engine.py', 'self.rpm += 1', 'self.rpm += 6'),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.changedFiles).toEqual(['app/engine.py']);
+    expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toContain('self.rpm += 6');
+  });
+
+  it('still refuses content BETWEEN the old and new blocks', () => {
+    const parsed = parsePlan(
+      ['### EDIT 1', '- file: `a.py`', '```old', 'a', '```', 'orphan between', '```new', 'b', '```'].join('\n'),
+    );
+    expect(parsed.edits).toHaveLength(0);
+    expect(parsed.problems.join(' ')).toMatch(/content between the fenced blocks/);
+  });
+
+  it('does not let an indented inner fence close a block', () => {
+    const parsed = parsePlan(
+      ['### EDIT 1', '- file: `a.md`', '```old', 'text', '    ```', '    indented', '    ```', 'tail', '```', '```new', 'y', '```'].join('\n'),
+    );
+    // The indented fences are content; the block closes at the unindented one.
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.edits[0]?.oldText).toContain('indented');
+  });
+
+  it('fails fast instead of freezing when a live process holds the lock', () => {
+    const root = repo();
+    const lockDir = join(root, '.handbook-patches', 'apply.lock');
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+    const started = Date.now();
+    expect(() =>
+      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+    ).toThrow(/another patch run/);
+    expect(Date.now() - started).toBeLessThan(2000); // no busy-wait
+  });
+
+  it('reclaims a lock whose owner is gone', () => {
+    const root = repo();
+    const lockDir = join(root, '.handbook-patches', 'apply.lock');
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({ pid: 2147483646, startedAt: '2000-01-01T00:00:00Z' }));
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 8' }]),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses files larger than the patch size cap', () => {
+    const root = repo();
+    const big = join(root, 'app/big.py');
+    writeFileSync(big, `x = 1\n${'# pad\n'.repeat(1_600_000)}`); // > 8 MiB
+    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/big.py', old: 'x = 1', next: 'x = 2' }]) });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.status).toBe('undecodable');
+  });
+});
