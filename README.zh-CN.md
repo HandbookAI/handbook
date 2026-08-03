@@ -95,17 +95,17 @@ handbook resync   --case cases/upload-retry --work work/myrepo       # 8. 变更
 
 | 包 | 职责 |
 |---|---|
-| [`@handbook/core`](packages/core/README.md) | 数据模型（调用图 IR + 手册模型）、zod schema、零依赖工具库 |
-| [`@handbook/analyzer`](packages/analyzer/README.md) | 多语言静态调用图（tree-sitter WASM），无 LLM |
-| [`@handbook/llm`](packages/llm/README.md) | OpenAI 兼容客户端 + actor-critic 编排 + 离线 mock |
-| [`@handbook/pipeline`](packages/pipeline/README.md) | 生成管线（阶段 1–3，file/member 双策略） |
-| [`@handbook/renderer`](packages/renderer/README.md) | markdown 页面、agent 定位索引、自包含 HTML 站点，无 LLM |
-| [`@handbook/skill`](packages/skill/README.md) | SKILL 打包 + 校验 + 覆盖率漂移检测，无 LLM |
-| [`@handbook/planner`](packages/planner/README.md) | 手册驱动的只读规划 agent |
-| [`@handbook/patcher`](packages/patcher/README.md) | 逐字节应用计划里的 EDIT 块——全成或全不成、自动备份、可回滚 |
-| [`@handbook/resync`](packages/resync/README.md) | 代码变更后的手册增量前滚 |
-| [`@handbook/studio`](packages/studio/README.md) | 本地 Web 界面：仓库 · 生成 · 浏览 · 演化（仅 127.0.0.1） |
-| [`@handbook/cli`](packages/cli/README.md) | `handbook` 命令行 |
+| [`@handbook/core`](packages/core/README.zh-CN.md) | 数据模型（调用图 IR + 手册模型）、zod schema、零依赖工具库 |
+| [`@handbook/analyzer`](packages/analyzer/README.zh-CN.md) | 多语言静态调用图（tree-sitter WASM），无 LLM |
+| [`@handbook/llm`](packages/llm/README.zh-CN.md) | OpenAI 兼容客户端 + actor-critic 编排 + 离线 mock |
+| [`@handbook/pipeline`](packages/pipeline/README.zh-CN.md) | 生成管线（阶段 1–3，file/member 双策略） |
+| [`@handbook/renderer`](packages/renderer/README.zh-CN.md) | markdown 页面、agent 定位索引、自包含 HTML 站点，无 LLM |
+| [`@handbook/skill`](packages/skill/README.zh-CN.md) | SKILL 打包 + 校验 + 覆盖率漂移检测，无 LLM |
+| [`@handbook/planner`](packages/planner/README.zh-CN.md) | 手册驱动的只读规划 agent |
+| [`@handbook/patcher`](packages/patcher/README.zh-CN.md) | 逐字节应用计划里的 EDIT 块——全成或全不成、自动备份、可回滚 |
+| [`@handbook/resync`](packages/resync/README.zh-CN.md) | 代码变更后的手册增量前滚 |
+| [`@handbook/studio`](packages/studio/README.zh-CN.md) | 本地 Web 界面：仓库 · 生成 · 浏览 · 演化（仅 127.0.0.1） |
+| [`@handbook/cli`](packages/cli/README.zh-CN.md) | `handbook` 命令行 |
 
 依赖方向严格单向（`cli → pipeline/renderer/skill/planner/resync → analyzer/llm → core`）；
 触碰 LLM 的代码与确定性代码按包边界分层，analyzer / renderer / skill 完全不依赖 LLM，可独立复用。
@@ -116,7 +116,7 @@ handbook resync   --case cases/upload-retry --work work/myrepo       # 8. 变更
 - [docs/formats.md](docs/formats.md) — 全部产物 schema（graph、cards、skeleton……）
 - [docs/prompts.md](docs/prompts.md) — 完整提示词目录
 - [examples/](examples/) — 离线端到端演示（内置 mock LLM 服务器）
-- 各包 README 见 [packages/](packages/)
+- 各包中文 README 见 [packages/](packages/)（每个包都有 `README.zh-CN.md`，英文版为 `README.md`）
 
 ## 开发
 

@@ -2,6 +2,8 @@
 
 Multi-language static call-graph extraction, entirely LLM-free. Language adapters parse source files with tree-sitter (WASM) into the shared IR from `@handbook/core`; the graph builder assembles that IR into the persisted `graph.json` (plus CSV/DOT/dropped-calls artifacts) that phase 1 of the pipeline writes and every later phase consumes. It also derives the "navigation pack" — a deterministic orientation summary that feeds skeleton synthesis and file assignment.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Define the `LanguageAdapter` contract and the adapter registry (`registerAdapter`, `getAdapter`, `adapterForFile`, `discoverAll`).

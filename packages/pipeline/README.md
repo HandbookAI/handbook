@@ -2,6 +2,8 @@
 
 The handbook generation pipeline: from a static call graph to a fully narrated handbook model. It owns the work-directory layout and orchestrates the phases — 1 (graph extraction via `@handbook/analyzer`), 2a (per-file cards), 2b (stage skeleton + file assignment, optionally with the actor–critic "doctor"), 2c (intra-stage organization), and 3 (bottom-up narration + state registers). Its output is a work directory that `loadHandbookModel` turns into the `HandbookModel` consumed by `@handbook/renderer` and `@handbook/skill`.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Own the work-directory layout and typed, schema-validated artifact I/O (`WorkDir`).

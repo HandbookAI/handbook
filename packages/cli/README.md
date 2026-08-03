@@ -2,10 +2,13 @@
 
 The `handbook` command-line interface — the single entry point that wires every other package into one toolchain: analyze a codebase into a call graph, generate the handbook, render it for humans and agents, package it as a skill, validate that skill, plan changes with it, and resync it after the code moves. It contains no domain logic of its own; each subcommand is a thin adapter from flags to one package's API, printing JSON results to stdout and logs to stderr.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
-- Define the seven subcommands (`analyze`, `generate`, `render`, `skill`, `validate`, `plan`, `resync`) and map their flags onto the underlying package APIs.
+- Define the ten subcommands (`analyze`, `generate`, `render`, `skill`, `validate`, `plan`, `apply`, `rollback`, `resync`, `studio`) and map their flags onto the underlying package APIs.
 - Construct shared infrastructure per invocation: the leveled logger (`-v`/`-q`) and the `OpenAiChatClient` from environment variables for LLM-needing commands.
+- Load `./.env` (or `--env-file`) before every subcommand action; shell environment variables always win.
 - Resolve all path flags to absolute paths and print machine-readable JSON results.
 - Set exit codes (`validate` exits 2 on failure; any error exits 1 with a one-line message).
 - Does NOT implement any pipeline, rendering, planning, or resync logic — that all lives in the other `@handbook/*` packages.
@@ -13,7 +16,7 @@ The `handbook` command-line interface — the single entry point that wires ever
 
 ## Public API
 
-None. The package's product is the `handbook` binary (`bin: { "handbook": "./dist/main.js" }`); `src/index.ts` exports nothing. Global flags: `-v, --verbose` (debug logging), `-q, --quiet` (errors only). LLM-backed commands (`generate` beyond phase 1, `plan`, `resync` without `--no-llm`) read `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_MAX_TOKENS` (with `HANDBOOK_LLM_*` fallbacks).
+None. The package's product is the `handbook` binary (`bin: { "handbook": "./dist/main.js" }`); `src/index.ts` exports nothing. Global flags: `-v, --verbose` (debug logging), `-q, --quiet` (errors only), `--env-file <path>`. LLM-backed commands (`generate` beyond phase 1, `plan`, `resync` without `--no-llm`) read `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_MAX_TOKENS`, `OPENAI_TIMEOUT` (seconds, default 300) and `OPENAI_EXTRA_BODY` (JSON, vendor fields) — all with `HANDBOOK_LLM_*` fallbacks.
 
 ## Usage
 
@@ -44,9 +47,20 @@ handbook validate --skill ./skills/myproject --source ./project
 handbook plan --source ./project --handbook ./skills/myproject/references \
   --request "Add a --json flag to the export command" --max-turns 30 --out plan.md
 
-# 7. resync — roll the handbook forward after a code change
+# 7. apply — write a plan's EDIT blocks into the tree (verify first)
+handbook apply --source ./project --plan plan.md --dry-run
+handbook apply --source ./project --plan plan.md
+
+# 8. rollback — restore the exact pre-patch bytes
+handbook rollback --backup ./project/.handbook-patches/2026-08-03T…
+handbook rollback --backup … --force   # override the post-patch-edit guard
+
+# 9. resync — roll the handbook forward after a code change
 handbook resync --case ./case --work ./work --detail deep
 handbook resync --case ./case --work ./work --no-llm   # structural refresh only
+
+# 10. studio — the local web UI (127.0.0.1 only)
+handbook studio --port 4860 --state-dir ~/.handbook-studio
 ```
 
 Key flags per command:
@@ -56,7 +70,10 @@ Key flags per command:
 - `skill`: `--handbook`, `--out`, `--name` (required); `--project`, `--work` (adds coverage.json), `--source` (adds content hashes).
 - `validate`: `--skill` (required); `--source` (enables hash freshness checks).
 - `plan`: `--source`, `--request` (required); `--handbook`, `--out`, `--max-turns <n>`.
+- `apply`: `--source`, `--plan` (required); `--dry-run`, `--backup-root <dir>`.
+- `rollback`: `--backup` (required); `--source`, `--force`.
 - `resync`: `--case`, `--work` (required); `--no-llm`, `--detail brief|deep`, `--narrate-lang en|zh`.
+- `studio`: `--port <n>`, `--state-dir <dir>`.
 
 ## Design notes
 
@@ -68,13 +85,15 @@ Key flags per command:
 ## Dependencies
 
 Internal:
-- `@handbook/core` — logger creation and log-level types.
+- `@handbook/core` — logger creation, log-level types, `.env` parsing.
 - `@handbook/llm` — `OpenAiChatClient` for LLM-backed commands.
 - `@handbook/pipeline` — `runPhase1`, `generateHandbook`, `loadHandbookModel`, `WorkDir`.
 - `@handbook/renderer` — the four render functions behind `render`.
 - `@handbook/skill` — `buildSkill` / `validateSkill`.
 - `@handbook/planner` — `runPlanner` behind `plan`.
+- `@handbook/patcher` — `applyPlan` / `rollback` / `listBackups` behind `apply` and `rollback`.
 - `@handbook/resync` — `resyncHandbook` behind `resync`.
+- `@handbook/studio` — `startStudio` behind `studio`.
 - `@handbook/analyzer` — pulled in for the analysis stack (used via the pipeline).
 
 External:

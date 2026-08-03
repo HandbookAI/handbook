@@ -5,6 +5,8 @@ live logs, browse rendered handbooks, plan changes with the handbook-guided plan
 roll handbooks forward after code changes — all on `127.0.0.1`, with source code leaving
 the machine only via the LLM endpoint the pipeline itself is configured to use.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Serve a single-page dashboard (`public/index.html`) and a JSON API over `node:http` —

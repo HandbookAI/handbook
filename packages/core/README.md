@@ -2,6 +2,8 @@
 
 Shared foundation for the whole toolchain: the language-agnostic call-graph IR, the handbook domain model (cards, skeleton, assignment, organization, narration, registers), a small error taxonomy, a leveled logger, and dependency-free utilities (concurrency, retry, hashing, atomic file I/O, text, JSON extraction, progress). Every other `@handbook/*` package depends on it; it depends on nothing but `zod`.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Define the call-graph IR (`FunctionNode`, `BoundaryNode`, `CallEdge`, `CodeGraph`, `DroppedCalls`) that all language analyzers target.

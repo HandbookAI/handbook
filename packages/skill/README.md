@@ -2,6 +2,8 @@
 
 Packages a rendered handbook directory as an agent SKILL — a self-contained, shareable folder with a `SKILL.md` navigation guide and a `references/` tree (overview, index, registers, per-stage pages, optional coverage manifest) — and validates such packages for structural integrity and freshness against the live source. It sits after `@handbook/renderer` in the toolchain and produces the artifact that `@handbook/planner` mounts as its handbook.
 
+> 中文版：[README.zh-CN.md](README.zh-CN.md)
+
 ## Responsibilities
 
 - Build the skill layout from a rendered handbook: `SKILL.md` plus `references/{overview.md,index.md,registers.md,stages/<sid>.md}`.
