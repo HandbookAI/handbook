@@ -4,361 +4,1913 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Handbook Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0E11'/%3E%3Cpath d='M9 8h4v16H9zM19 8h4v16h-4zM13 15h6v2h-6z' fill='%23D8B36A'/%3E%3C/svg%3E">
 <style>
-  :root{
-    --bg:#0B0E11;--panel:#10151A;--card:rgba(233,237,240,.035);--line:rgba(233,237,240,.10);
+  /* ---------------------------------------------------------------- tokens */
+  :root, :root[data-theme="dark"]{
+    --bg:#0B0E11;--panel:#10151A;--panel2:#131A20;
+    --card:rgba(233,237,240,.035);--card2:rgba(233,237,240,.07);--line:rgba(233,237,240,.10);
     --fg:#E9EDF0;--dim:#9AA6AE;--faint:#5C6870;
-    --gold:#D8B36A;--gold-hi:#F0D9A8;--ice:#8FB8CE;--jade:#86C7A5;--red:#E0705C;
-    --mono:"SF Mono",Menlo,Consolas,monospace;
-    --sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",-apple-system,sans-serif;
+    --gold:#D8B36A;--gold-hi:#F0D9A8;--ice:#8FB8CE;--jade:#86C7A5;--red:#E0705C;--plum:#A99BD8;
+    --on-gold:#0B0E11;--grad-a:#8a6d35;--grad-b:#b3903f;
+    --field:#0E1317;--code-bg:#080B0D;--code-fg:#C9D4DA;--hl:rgba(216,179,106,.13);
+    --shadow:0 -18px 60px rgba(0,0,0,.5);--shadow-card:0 1px 0 rgba(255,255,255,.02);
+    --iframe:#fff;
+    --mono:"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  :root[data-theme="light"]{
+    --bg:#F7F2E8;--panel:#F1EADB;--panel2:#EDE5D3;
+    --card:rgba(92,68,26,.045);--card2:rgba(92,68,26,.09);--line:rgba(92,68,26,.18);
+    --fg:#231F19;--dim:#5C5548;--faint:#8A8171;
+    --gold:#8E6A26;--gold-hi:#6A4C14;--ice:#286078;--jade:#256546;--red:#A03720;--plum:#5D479A;
+    --on-gold:#FFF8E8;--grad-a:#7d6229;--grad-b:#a3812f;
+    --field:#FFFDF6;--code-bg:#FFFCF4;--code-fg:#2C2822;--hl:rgba(142,106,38,.14);
+    --shadow:0 -18px 60px rgba(92,68,26,.20);--shadow-card:0 1px 0 rgba(255,255,255,.5);
+    --iframe:#fff;
   }
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:var(--bg);color:var(--fg);font:14px/1.7 var(--sans);height:100vh;display:flex;overflow:hidden}
-  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:6px 14px}
-  button:hover{border-color:var(--gold)}
-  button.primary{background:linear-gradient(100deg,#8a6d35,#b3903f);border-color:transparent;color:#0B0E11;font-weight:700}
-  button.primary:hover{filter:brightness(1.1)}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  input,textarea,select{font:inherit;background:#0E1317;border:1px solid var(--line);border-radius:8px;color:var(--fg);padding:7px 12px;width:100%}
-  input:focus,textarea:focus{outline:none;border-color:var(--gold)}
-  ::placeholder{color:var(--faint)}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--fg);font:14px/1.7 var(--sans);display:flex;overflow:hidden;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--gold);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px}
+  ::selection{background:var(--hl)}
+  /* Scrollbars: the default light chrome looks broken on a near-black surface. */
+  *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--fg) 24%,transparent) transparent}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--fg) 22%,transparent);border-radius:8px;
+    border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--gold) 60%,transparent);background-clip:content-box}
+  ::-webkit-scrollbar-corner{background:transparent}
 
-  /* 侧栏 */
-  aside{width:250px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
-  .brand{padding:20px 20px 14px;border-bottom:1px solid var(--line)}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);
+    color:var(--fg);padding:6px 14px;transition:border-color .15s,background .15s,color .15s}
+  button:hover:not(:disabled){border-color:var(--gold);color:var(--gold-hi)}
+  button.primary{background:linear-gradient(100deg,var(--grad-a),var(--grad-b));border-color:transparent;
+    color:var(--on-gold);font-weight:700}
+  button.primary:hover:not(:disabled){filter:brightness(1.12);color:var(--on-gold)}
+  button.ghost{background:none}
+  button.sm{padding:3px 10px;font-size:12px}
+  button.danger:hover:not(:disabled){border-color:var(--red);color:var(--red)}
+  button:disabled{opacity:.42;cursor:not-allowed}
+  input,textarea,select{font:inherit;background:var(--field);border:1px solid var(--line);border-radius:8px;
+    color:var(--fg);padding:7px 12px;width:100%}
+  select{cursor:pointer}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--gold)}
+  ::placeholder{color:var(--faint)}
+  textarea{resize:vertical}
+
+  /* ------------------------------------------------------------- sidebar */
+  aside{width:252px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;z-index:40}
+  .brand{padding:18px 20px 14px;border-bottom:1px solid var(--line)}
   .brand h1{font-size:17px;font-weight:800;letter-spacing:.02em}
   .brand h1 em{font-style:normal;color:var(--gold)}
-  .brand small{color:var(--faint);font-size:11px}
-  .repos{flex:1;overflow-y:auto;padding:10px}
-  .repos .t{font:11px var(--mono);letter-spacing:.2em;color:var(--faint);padding:8px 10px 6px}
-  .repo{display:block;width:100%;text-align:left;background:none;border:none;border-left:2px solid transparent;
-    border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:2px;color:var(--dim)}
+  .brand small{color:var(--faint);font-size:11px;display:block;margin-top:2px}
+  .mainnav{padding:10px 10px 4px;display:flex;flex-direction:column;gap:2px}
+  .navitem{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;
+    border-left:2px solid transparent;border-radius:0 8px 8px 0;padding:8px 12px;color:var(--dim);font-size:13.5px}
+  .navitem:hover{background:var(--card);color:var(--fg);border-color:transparent}
+  .navitem.cur{background:var(--card2);border-left-color:var(--gold);color:var(--fg);font-weight:600}
+  .navitem .ic{width:16px;text-align:center;color:var(--gold);font-size:12px}
+  .navitem .badge{margin-left:auto;font:10px var(--mono);color:var(--faint)}
+  .repos{flex:1;overflow-y:auto;padding:6px 10px 10px;border-top:1px solid var(--line);margin-top:8px}
+  .repos .t{font:10.5px var(--mono);letter-spacing:.2em;color:var(--faint);padding:10px 10px 6px;
+    display:flex;align-items:center;gap:6px}
+  .repos .t span{margin-left:auto;color:var(--faint)}
+  .repo{display:flex;align-items:flex-start;gap:6px;width:100%;text-align:left;background:none;border:none;
+    border-left:2px solid transparent;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:2px;color:var(--dim)}
   .repo:hover{background:var(--card);border-color:transparent;color:var(--fg)}
-  .repo.cur{background:var(--card);border-left-color:var(--gold);color:var(--fg)}
-  .repo .n{font-weight:600;font-size:14px}
-  .repo .m{font:10.5px var(--mono);color:var(--faint);display:block;margin-top:1px}
+  .repo.cur{background:var(--card2);border-left-color:var(--gold);color:var(--fg)}
+  .repo .body{min-width:0;flex:1}
+  .repo .n{font-weight:600;font-size:13.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .repo .m{font:10.5px var(--mono);color:var(--faint);display:block;margin-top:1px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
   .repo .ok{color:var(--jade)}
+  .repo .half{color:var(--gold)}
+  .repo .x{flex:none;opacity:0;background:none;border:none;color:var(--faint);padding:2px 4px;font-size:13px;line-height:1}
+  .repo:hover .x,.repo .x:focus-visible{opacity:1}
+  .repo .x:hover{color:var(--red)}
   .sidefoot{padding:12px;border-top:1px solid var(--line)}
   .sidefoot button{width:100%}
+  .sideveil{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:35}
 
-  /* 主区 */
+  /* ---------------------------------------------------------------- main */
   main{flex:1;display:flex;flex-direction:column;min-width:0}
-  header{display:flex;align-items:center;gap:14px;padding:14px 26px;border-bottom:1px solid var(--line)}
-  header h2{font-size:18px;font-weight:700;flex:none}
-  header .path{font:11px var(--mono);color:var(--faint);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tabs{display:flex;gap:4px}
-  .tabs button{border:none;background:none;color:var(--dim);padding:6px 14px;border-radius:8px}
-  .tabs button.cur{background:var(--card);color:var(--gold-hi);font-weight:600}
-  .content{flex:1;overflow:auto;padding:24px 26px;position:relative}
+  header{display:flex;align-items:center;gap:14px;padding:12px 24px;border-bottom:1px solid var(--line);
+    flex-wrap:wrap;background:var(--bg)}
+  .hleft{display:flex;align-items:baseline;gap:12px;min-width:0;flex:1}
+  .hleft h2{font-size:17px;font-weight:700;flex:none;white-space:nowrap}
+  .hleft .path{font:11px var(--mono);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tabs{display:flex;gap:2px;flex-wrap:wrap}
+  .tabs button{border:none;background:none;color:var(--dim);padding:6px 12px;border-radius:8px;font-size:13.5px}
+  .tabs button.cur{background:var(--card2);color:var(--gold-hi);font-weight:600}
+  .hright{display:flex;gap:6px;flex:none}
+  .hright button{padding:5px 10px;font:11.5px var(--mono);letter-spacing:.06em}
+  .burger{display:none;padding:5px 10px}
+  .content{flex:1;overflow:auto;padding:22px 24px 40px;position:relative}
+  .content.flush{padding:12px}
+  .content.nopad{padding:0}
 
-  .empty{max-width:520px;margin:12vh auto;text-align:center;color:var(--dim)}
-  .empty h3{font-size:22px;color:var(--fg);margin-bottom:10px}
-  .empty .gold{color:var(--gold)}
-
+  /* --------------------------------------------------------- primitives */
   .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
   .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
-  .card .k{font:10.5px var(--mono);letter-spacing:.18em;color:var(--ice);display:block;margin-bottom:8px}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:17px 19px;
+    box-shadow:var(--shadow-card);min-width:0}
+  .card.pad0{padding:0;overflow:hidden}
+  .k{font:10.5px var(--mono);letter-spacing:.18em;color:var(--ice);display:block;margin-bottom:8px}
+  .k.g{color:var(--gold)}
   .card h3{font-size:15px;margin-bottom:6px}
   .card p{font-size:13px;color:var(--dim)}
-  .num{font-size:30px;font-weight:800;line-height:1.1}
-  .num i{font-style:normal;font-size:.5em;color:var(--gold)}
+  .num{font-size:28px;font-weight:800;line-height:1.2}
+  .num i{font-style:normal;font-size:.48em;color:var(--gold);font-weight:600}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.6}
+  .error{color:var(--red);font-size:12.5px;margin-top:8px;line-height:1.6;word-break:break-word}
+  .errbox{border:1px solid var(--red);border-radius:10px;padding:12px 14px;color:var(--red);font-size:12.5px;
+    background:color-mix(in srgb,var(--red) 8%,transparent)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row.end{justify-content:flex-end}
+  .sechead{display:flex;align-items:baseline;gap:12px;margin:26px 0 12px}
+  .sechead h3{font-size:15.5px;font-weight:700}
+  .sechead .c{font:11px var(--mono);color:var(--faint)}
+  .sechead .sp{margin-left:auto}
+  .pill{display:inline-block;font:10.5px var(--mono);border:1px solid var(--line);border-radius:99px;
+    padding:1px 9px;color:var(--dim);white-space:nowrap}
+  .pill.jade{color:var(--jade);border-color:color-mix(in srgb,var(--jade) 45%,transparent)}
+  .pill.gold{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 45%,transparent)}
+  .pill.ice{color:var(--ice);border-color:color-mix(in srgb,var(--ice) 45%,transparent)}
+  .pill.red{color:var(--red);border-color:color-mix(in srgb,var(--red) 45%,transparent)}
+  code,.mono{font-family:var(--mono);font-size:11.5px}
+  .empty{max-width:560px;margin:11vh auto;text-align:center;color:var(--dim)}
+  .empty h3{font-size:21px;color:var(--fg);margin-bottom:10px}
+  .empty p{font-size:13.5px}
+  .empty .gold{color:var(--gold)}
+  .empty .row{justify-content:center;margin-top:18px}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--gold);
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .loading{color:var(--faint);font-size:12.5px;padding:8px 0}
 
-  .stagelist{margin-top:16px}
-  .stage{display:grid;grid-template-columns:210px 150px 1fr;gap:16px;padding:11px 6px;border-bottom:1px dashed var(--line);font-size:13px}
-  .stage code{font:11px var(--mono);color:var(--gold-hi)}
-  .stage .files{color:var(--faint);font-family:var(--mono);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .stage .sum{color:var(--dim);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  /* ---------------------------------------------------------------- home */
+  .hero{padding:8px 0 22px;border-bottom:1px solid var(--line)}
+  .hero h2{font-size:30px;font-weight:800;letter-spacing:-.01em;line-height:1.25}
+  .hero h2 em{font-style:normal;color:var(--gold)}
+  .hero p{color:var(--dim);font-size:14.5px;margin-top:10px;max-width:70ch}
+  .hero .row{margin-top:16px}
+  .flow{display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding:4px 2px 10px}
+  .flow .arrow{align-self:center;color:var(--faint);font-size:13px;flex:none}
+  .bookend{flex:none;border:1px dashed var(--line);border-radius:12px;padding:12px 15px;min-width:132px;
+    background:none}
+  .bookend b{display:block;font-size:13px;color:var(--fg)}
+  .bookend small{color:var(--faint);font-size:11px;line-height:1.5;display:block;margin-top:3px}
+  .step{flex:1 1 0;min-width:126px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;
+    background:var(--card);border-top:2px solid var(--sc)}
+  .step .no{font:11px var(--mono);color:var(--sc);font-weight:700}
+  .step b{display:block;font-size:13px;margin-top:2px}
+  .step small{display:block;color:var(--dim);font-size:11.5px;line-height:1.55;margin-top:4px}
+  .feat{display:flex;flex-direction:column}
+  .feat ul{list-style:none;margin:10px 0 14px;display:flex;flex-direction:column;gap:5px}
+  .feat li{font-size:12.5px;color:var(--dim);padding-left:18px;position:relative;line-height:1.6}
+  .feat li::before{content:"✓";position:absolute;left:0;color:var(--jade);font-size:11px}
+  .feat .cta{margin-top:auto;align-self:flex-start}
+  .list{display:flex;flex-direction:column}
+  .li{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px dashed var(--line);
+    font-size:13px;min-width:0}
+  .li:last-child{border-bottom:none}
+  .li .g{min-width:0;flex:1}
+  .li .t1{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .li .t2{font:10.5px var(--mono);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .li .rt{flex:none;display:flex;gap:6px;align-items:center}
+  .zero{color:var(--faint);font-size:12.5px;padding:14px 4px;line-height:1.7}
 
-  iframe{width:100%;height:100%;border:1px solid var(--line);border-radius:12px;background:#fff}
+  /* ------------------------------------------------------------ overview */
+  .stage{display:grid;grid-template-columns:minmax(150px,1.3fr) 132px minmax(0,2.2fr) auto;gap:14px;
+    padding:11px 6px;border-bottom:1px dashed var(--line);font-size:13px;align-items:start}
+  .stage .ti{font-weight:600}
+  .stage .meta{font:11px var(--mono);color:var(--faint)}
+  .stage .meta code{color:var(--gold-hi);display:block;overflow:hidden;text-overflow:ellipsis}
+  .stage .sum{color:var(--dim);font-size:12.5px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;
+    -webkit-box-orient:vertical}
+  .stage .act{display:flex;gap:6px;flex:none}
+  .files{display:flex;flex-wrap:wrap;gap:6px}
+  .filechip{font:11px var(--mono);border:1px solid var(--line);border-radius:7px;padding:3px 9px;
+    background:var(--card);color:var(--dim);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .filechip:hover{border-color:var(--gold);color:var(--gold-hi)}
+  .filechip i{font-style:normal;color:var(--faint);margin-left:6px}
 
-  .term{background:#080B0D;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
-    font:12px/1.8 var(--mono);color:#C9D4DA;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
-  .plan{background:#080B0D;border:1px solid var(--line);border-radius:10px;padding:18px;
-    font:12.5px/1.8 var(--mono);white-space:pre-wrap;word-break:break-word;color:#D8E4E0;max-height:52vh;overflow:auto}
+  iframe{width:100%;height:100%;border:1px solid var(--line);border-radius:12px;background:var(--iframe);display:block}
 
-  .evo{border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:10px;background:var(--card)}
-  .evo .d{font-weight:600}
-  .evo .m{font:11px var(--mono);color:var(--faint)}
-  .evo .r{font-size:12.5px;color:var(--dim);margin-top:4px}
-  .pill{display:inline-block;font:10.5px var(--mono);border:1px solid var(--line);border-radius:99px;padding:1px 9px;color:var(--jade);margin-left:8px}
+  /* --------------------------------------------------------------- graph */
+  .gwrap{position:relative;border:1px solid var(--line);border-radius:12px;background:var(--card);
+    overflow:hidden;height:min(72vh,720px);min-height:400px}
+  .gsvg{display:block;width:100%;height:100%;touch-action:none}
+  .gsvg .link{fill:none;stroke-linecap:round;opacity:.42;transition:opacity .12s}
+  .gsvg .node circle{stroke:var(--bg);stroke-width:1.2;cursor:pointer}
+  .gsvg .node text{font-family:var(--mono);font-size:8.5px;fill:var(--dim);pointer-events:none}
+  .gsvg.dim .node{opacity:.16}
+  .gsvg.dim .link{opacity:.05}
+  .gsvg.dim .node.on{opacity:1}
+  .gsvg.dim .link.on{opacity:.95}
+  .gsvg .node.on text{fill:var(--fg);font-weight:700}
+  .gsvg .node.seed circle{stroke:var(--gold);stroke-width:2}
+  .gtip{position:absolute;pointer-events:none;opacity:0;transform:translate(-50%,-115%);
+    background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 11px;
+    font:11.5px/1.6 var(--mono);color:var(--fg);box-shadow:0 8px 30px rgba(0,0,0,.35);
+    width:max-content;max-width:340px;z-index:5}
+  .gtip.on{opacity:1}
+  .gtip b{color:var(--gold-hi);font-weight:700;overflow-wrap:anywhere}
+  .gtip span{color:var(--dim);display:block}
+  .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .lchip{display:inline-flex;align-items:center;gap:6px;font:10.5px var(--mono);border:1px solid var(--line);
+    border-radius:99px;padding:2px 10px;background:var(--card);color:var(--dim)}
+  .lchip:hover{border-color:var(--gold);color:var(--gold-hi)}
+  .lchip.cur{border-color:var(--gold);color:var(--gold-hi);background:var(--card2)}
+  .lchip .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .gbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .gbar label{font:10.5px var(--mono);letter-spacing:.14em;color:var(--faint)}
+  .gbar select{width:auto;min-width:150px;max-width:300px}
+  .gstat{font:11px var(--mono);color:var(--faint);margin-left:auto}
 
-  /* 任务抽屉 */
-  .drawer{position:fixed;right:0;bottom:0;width:min(560px,90vw);max-height:46vh;background:var(--panel);
+  /* -------------------------------------------------------------- source */
+  .srcgrid{display:grid;grid-template-columns:minmax(0,1fr) 268px;gap:14px;align-items:start}
+  .code{background:var(--code-bg);border:1px solid var(--line);border-radius:12px;overflow:auto;
+    max-height:min(74vh,860px);position:relative;font:12px/1.65 var(--mono)}
+  .cl{display:flex;white-space:pre}
+  .cl .cn{flex:none;width:56px;text-align:right;padding:0 12px 0 6px;color:var(--faint);user-select:none;
+    position:sticky;left:0;background:var(--code-bg);border-right:1px solid var(--line)}
+  .cl .cc{padding:0 16px 0 12px;color:var(--code-fg);flex:1}
+  .cl.fnhl{background:var(--hl)}
+  .cl.fnhl .cn{background:var(--hl);color:var(--gold-hi)}
+  .fnlist{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden;
+    position:sticky;top:0}
+  .fnlist .h{padding:11px 14px;border-bottom:1px solid var(--line);font:10.5px var(--mono);
+    letter-spacing:.16em;color:var(--ice)}
+  .fnlist .b{max-height:min(66vh,760px);overflow:auto}
+  .fnbtn{display:block;width:100%;text-align:left;background:none;border:none;border-radius:0;
+    padding:7px 14px;border-bottom:1px dashed var(--line);font:11.5px var(--mono);color:var(--dim)}
+  .fnbtn:hover{background:var(--card2);color:var(--gold-hi);border-color:var(--line)}
+  .fnbtn.cur{background:var(--card2);color:var(--gold-hi)}
+  .fnbtn b{display:block;font-weight:600;word-break:break-all}
+  .fnbtn i{font-style:normal;color:var(--faint);font-size:10.5px}
+  .srcbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .srcbar .pathin{flex:1;min-width:220px;font-family:var(--mono);font-size:12px}
+  .srcbar .info{font:11px var(--mono);color:var(--faint)}
+
+  /* --------------------------------------------------------------- code panes */
+  .term{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:13px 15px;
+    font:12px/1.75 var(--mono);color:var(--code-fg);max-height:320px;overflow:auto;white-space:pre-wrap;
+    word-break:break-word}
+  .plan{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:15px;
+    font:12px/1.75 var(--mono);white-space:pre-wrap;word-break:break-word;color:var(--code-fg);
+    max-height:46vh;overflow:auto}
+  textarea.plan{white-space:pre;overflow:auto;min-height:190px;width:100%}
+
+  /* ------------------------------------------------------------ outcomes */
+  table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  table.tbl th{text-align:left;font:10.5px var(--mono);letter-spacing:.14em;color:var(--faint);
+    padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.tbl td{padding:7px 8px;border-bottom:1px dashed var(--line);vertical-align:top;color:var(--dim)}
+  table.tbl td.f{font-family:var(--mono);font-size:11.5px;color:var(--fg);word-break:break-all}
+  table.tbl td.m{font-family:var(--mono);font-size:11.5px;word-break:break-word}
+  table.tbl tr.bad td{color:var(--red)}
+  table.tbl .mk{font-size:13px;width:22px;text-align:center}
+  table.tbl .ok{color:var(--jade)}
+  table.tbl .no{color:var(--red)}
+
+  /* ------------------------------------------------------------- history */
+  .day{font:11px var(--mono);letter-spacing:.16em;color:var(--faint);margin:22px 0 8px;
+    display:flex;align-items:center;gap:10px}
+  .day::after{content:"";flex:1;height:1px;background:var(--line)}
+  .evo{border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:8px;background:var(--card)}
+  .evo .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .evo .d{font-weight:600;font-size:13.5px}
+  .evo .m{font:10.5px var(--mono);color:var(--faint);margin-top:3px}
+  .evo .r{font-size:12.5px;color:var(--dim);margin-top:6px;display:flex;gap:14px;flex-wrap:wrap}
+  .evo .r b{color:var(--fg);font-weight:700}
+  .evo .st{margin-top:7px;display:flex;gap:5px;flex-wrap:wrap}
+
+  /* ----------------------------------------------------------- guide */
+  .guide{max-width:900px}
+  .guide .lead{font-size:14.5px;color:var(--dim);line-height:1.85;margin-bottom:6px}
+  .gsec{margin-top:26px}
+  .gsec h3{font-size:16px;display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .gsec h3 .n{font:11px var(--mono);color:var(--gold);border:1px solid var(--line);border-radius:6px;
+    padding:1px 7px;flex:none}
+  .gsec p{color:var(--dim);font-size:13.5px;line-height:1.85}
+  .gsec ul{list-style:none;margin:8px 0 0;display:flex;flex-direction:column;gap:7px}
+  .gsec li{font-size:13px;color:var(--dim);padding-left:16px;position:relative;line-height:1.8}
+  .gsec li::before{content:"—";position:absolute;left:0;color:var(--gold);opacity:.7}
+  .gsec li b{color:var(--fg)}
+  .kv{display:grid;grid-template-columns:minmax(120px,190px) minmax(0,1fr);gap:6px 16px;margin-top:10px}
+  .kv dt{font:11.5px var(--mono);color:var(--gold-hi);padding-top:2px}
+  .kv dd{font-size:12.5px;color:var(--dim);line-height:1.75}
+  .note{border-left:2px solid var(--gold);background:var(--card);border-radius:0 10px 10px 0;
+    padding:12px 16px;margin-top:12px;font-size:13px;color:var(--dim);line-height:1.8}
+  .note b{color:var(--gold-hi)}
+
+  /* -------------------------------------------------------------- drawer */
+  .drawer{position:fixed;right:0;bottom:0;width:min(600px,94vw);max-height:48vh;background:var(--panel);
     border:1px solid var(--line);border-right:none;border-bottom:none;border-radius:14px 0 0 0;
-    display:none;flex-direction:column;box-shadow:0 -18px 60px rgba(0,0,0,.5);z-index:50}
+    display:none;flex-direction:column;box-shadow:var(--shadow);z-index:60}
   .drawer.show{display:flex}
-  .drawer .head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .drawer .head{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)}
   .drawer .head b{font-size:13px}
-  .drawer .head .st{font:10.5px var(--mono);color:var(--gold)}
-  .drawer .head button{margin-left:auto;padding:2px 10px}
-  .drawer .term{flex:1;border:none;border-radius:0;max-height:none}
+  .drawer .head .st{font:10.5px var(--mono);color:var(--gold);letter-spacing:.08em}
+  .drawer .head .st.ok{color:var(--jade)}
+  .drawer .head .st.bad{color:var(--red)}
+  .drawer .head .sp{margin-left:auto}
+  .drawer .term{flex:1;border:none;border-radius:0;max-height:none;background:var(--code-bg)}
 
   dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:14px;
-    padding:26px;width:min(520px,92vw)}
-  dialog::backdrop{background:rgba(0,0,0,.6)}
-  dialog h3{margin-bottom:16px}
+    padding:24px;width:min(520px,93vw)}
+  dialog::backdrop{background:rgba(0,0,0,.62)}
+  dialog h3{margin-bottom:14px;font-size:16px}
   dialog label{display:block;font-size:12.5px;color:var(--dim);margin:12px 0 4px}
-  dialog .row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
-  .hint{font-size:11.5px;color:var(--faint);margin-top:4px}
-  .error{color:var(--red);font-size:12.5px;margin-top:8px;min-height:1em}
+  dialog .row{margin-top:20px;justify-content:flex-end}
+
+  /* ---------------------------------------------------------- responsive */
+  @media (max-width:1180px){
+    .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .srcgrid{grid-template-columns:minmax(0,1fr) 226px}
+  }
+  @media (max-width:1000px){
+    .g3{grid-template-columns:1fr}
+    .stage{grid-template-columns:minmax(120px,1fr) 120px;row-gap:6px}
+    .stage .sum{grid-column:1/-1}
+    .stage .act{grid-column:1/-1}
+  }
+  @media (max-width:900px){
+    aside{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s}
+    body.side aside{transform:none}
+    body.side .sideveil{display:block}
+    .burger{display:inline-block}
+    .g2,.g3,.g4{grid-template-columns:1fr}
+    .srcgrid{grid-template-columns:1fr}
+    .fnlist{position:static}
+    .content{padding:16px 14px 40px}
+    header{padding:10px 14px}
+    .hleft{flex:1 1 100%}
+    .hero h2{font-size:23px}
+    .drawer{width:100vw;border-radius:0}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+  }
 </style>
 </head>
 <body>
-<aside>
-  <div class="brand"><h1>Handbook <em>Studio</em></h1><small>生成 · 浏览 · 演化，全在本机</small></div>
-  <div class="repos"><div class="t">REPOSITORIES</div><div id="repoList"></div></div>
-  <div class="sidefoot"><button class="primary" onclick="dlgAdd.showModal()">＋ 添加仓库</button></div>
+<div class="sideveil" data-act="side-close"></div>
+<aside id="side">
+  <div class="brand"><h1>Handbook <em>Studio</em></h1><small id="brandSub"></small></div>
+  <nav class="mainnav" id="mainnav"></nav>
+  <div class="repos"><div class="t" id="reposT"></div><div id="repoList"></div></div>
+  <div class="sidefoot"><button class="primary" data-act="add-open" id="addBtn"></button></div>
 </aside>
 
 <main>
-  <header id="hdr" style="display:none">
-    <h2 id="hName"></h2><span class="path" id="hPath"></span>
-    <nav class="tabs" id="tabs">
-      <button data-tab="overview" class="cur">总览</button>
-      <button data-tab="browse">浏览手册</button>
-      <button data-tab="evolve">演化</button>
-      <button data-tab="history">历史</button>
-    </nav>
-  </header>
-  <div class="content" id="content">
-    <div class="empty">
-      <h3>把一个仓库，变成一本<span class="gold">活的手册</span></h3>
-      <p>左下角「添加仓库」→ 指向任意本地代码目录 → 生成。<br>
-      生成/浏览/演化全部在本机进行，源码只发往你在 .env 里配置的端点。</p>
+  <header>
+    <button class="burger" data-act="side-open" aria-label="menu">☰</button>
+    <div class="hleft" id="hleft"></div>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="hright">
+      <button data-act="lang" id="langBtn" title="language"></button>
+      <button data-act="theme" id="themeBtn" title="theme"></button>
     </div>
-  </div>
+  </header>
+  <div class="content" id="content"></div>
 </main>
 
-<div class="drawer" id="drawer">
-  <div class="head"><b id="jobTitle">任务</b><span class="st" id="jobStatus"></span>
-    <button onclick="hideDrawer()">收起</button></div>
+<div class="drawer" id="drawer" role="log" aria-live="polite">
+  <div class="head">
+    <b id="jobTitle"></b><span class="st" id="jobStatus"></span>
+    <span class="sp"></span>
+    <button class="sm ghost" data-act="drawer-hide" id="drawerHide"></button>
+  </div>
   <div class="term" id="jobLog"></div>
 </div>
 
 <dialog id="dlgAdd">
-  <h3>添加仓库</h3>
-  <label>名称（唯一，URL 安全）</label><input id="fName" placeholder="myproj">
-  <label>源码目录（绝对路径）</label><input id="fSource" placeholder="/Users/you/code/myproj">
-  <label>work 目录（可留空，自动创建）</label><input id="fWork" placeholder="留空 = Studio 托管">
+  <h3 id="addTitle"></h3>
+  <label id="lbName" for="fName"></label><input id="fName" placeholder="myproj" autocomplete="off">
+  <label id="lbSource" for="fSource"></label><input id="fSource" placeholder="/Users/you/code/myproj" autocomplete="off">
+  <label id="lbWork" for="fWork"></label><input id="fWork" autocomplete="off">
   <div class="error" id="fErr"></div>
-  <div class="row"><button onclick="dlgAdd.close()">取消</button>
-    <button class="primary" onclick="addRepo()">添加</button></div>
+  <div class="row end">
+    <button data-act="add-cancel" id="addCancel"></button>
+    <button class="primary" data-act="add-submit" id="addSubmit"></button>
+  </div>
 </dialog>
 
 <dialog id="dlgGen">
-  <h3>生成手册</h3>
-  <label>叙述语言</label>
+  <h3 id="genTitle"></h3>
+  <label id="lbLang" for="gLang"></label>
   <select id="gLang"><option value="zh">中文</option><option value="en">English</option></select>
-  <label>卡片深度</label>
-  <select id="gDetail"><option value="brief">brief — 便宜，先试水</option><option value="deep">deep — 逐函数精读</option></select>
-  <label>骨架模式</label>
-  <select id="gSynth"><option value="oneshot">oneshot — 快</option><option value="doctor">doctor — 评审循环修复</option></select>
-  <div class="hint">需要 .env / 环境变量里有 OPENAI_API_KEY；phase 1 静态分析免费。</div>
-  <div class="row"><button onclick="dlgGen.close()">取消</button>
-    <button class="primary" onclick="startGenerate()">开始生成</button></div>
+  <label id="lbDetail" for="gDetail"></label>
+  <select id="gDetail"></select>
+  <label id="lbSynth" for="gSynth"></label>
+  <select id="gSynth"></select>
+  <label id="lbGTitle" for="gTitle"></label><input id="gTitle" autocomplete="off">
+  <div class="hint" id="genHint"></div>
+  <div class="row end">
+    <button data-act="gen-cancel" id="genCancel"></button>
+    <button class="primary" data-act="gen-submit" id="genSubmit"></button>
+  </div>
 </dialog>
 
 <script>
-let repos = [], current = null, tab = 'overview', evtSource = null;
+"use strict";
+/* =====================================================================
+   Handbook Studio — single-file UI.
+   No external requests: no CDN, no fonts, no libraries. Everything the
+   page needs it computes itself (including the impact-graph layout).
+   ===================================================================== */
 
-const $ = (id) => document.getElementById(id);
-const api = async (path, opts) => {
-  const res = await fetch(path, opts ? { headers: {'content-type':'application/json'}, ...opts } : undefined);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || res.statusText);
-  return body;
+/* ------------------------------------------------------------ dictionary */
+const DICT = {
+  zh: {
+    tagline: '生成 · 浏览 · 演化，全在本机',
+    nav: { home: '首页', guide: '使用说明', ghistory: '演化历史', repos: 'REPOSITORIES', add: '＋ 添加仓库',
+           noRepos: '还没有仓库 — 点下面的按钮加一个' },
+    tabs: { overview: '总览', browse: '浏览手册', graph: '影响图', source: '源码', evolve: '演化', history: '历史' },
+    common: { loading: '加载中…', retry: '重试', open: '打开', close: '关闭', cancel: '取消', copy: '复制',
+              viewAll: '查看全部', files: '文件', stage: '阶段', degree: '调用度', none: '—',
+              failed: '加载失败', delete: '删除', confirmDelete: '删除仓库 “{0}”？只从 Studio 注册表移除，源码与 work 目录都不会被删。' },
+    home: {
+      title: '把一个仓库，变成一本<em>活的手册</em>',
+      sub: '本机运行的代码理解工作台：静态分析建图 → LLM 叙述成册 → 手册驱动定位 → 补丁落地 → 手册前滚。源码只发往你在 .env 里配置的那个端点。',
+      flow: '闭环',
+      startCard: { t: 'Hard Code', s: '一坨没人讲得清的老代码' },
+      endCard: { t: 'Evolved Harness', s: '代码与手册同时前进一格' },
+      steps: [
+        { t: 'Request', s: '用自然语言说出你想改什么' },
+        { t: 'Handbook', s: '手册按阶段把你路由到相关文件' },
+        { t: 'Plan', s: 'planner 读真实源码，产出字节精确的编辑计划' },
+        { t: 'Patch', s: 'dry-run 校验后写盘，带备份可回滚' },
+        { t: 'Sync', s: 'resync 只重写受影响章节，记一条演化' }
+      ],
+      feats: [
+        { k: 'GENERATE', t: '生成', items: ['免费静态分析：调用图 / 函数清单，先看规模', '三段流水线：骨架 → 归档 → 叙述', 'brief 便宜试水，deep 逐函数精读', '同时渲染 Markdown / HTML / agent 站点'], cta: '生成一本手册', tab: 'overview' },
+        { k: 'EXPLORE', t: '浏览', items: ['章节按阶段组织，读完知道系统怎么跑', '影响图：文件级调用关系，按阶段着色', '源码视图带行号与函数索引，点函数直接跳'], cta: '打开影响图', tab: 'graph' },
+        { k: 'EVOLVE', t: '演化', items: ['变更定位：手册路由 + 真实源码 = 编辑计划', '补丁执行器：dry-run → 应用 → 一键回滚', '增量重同步：只重写受影响章节', '每次演化都留一条可回溯的历史'], cta: '进入演化', tab: 'evolve' }
+      ],
+      recentRepos: '最近的仓库', recentEvos: '最近的演化',
+      noRepos: '还没有注册仓库。指向任意本地代码目录即可开始。',
+      noEvos: '还没有演化记录。改完代码在「演化」页跑一次重同步，这里就会出现时间线。',
+      addFirst: '添加第一个仓库'
+    },
+    guide: {
+      title: '使用说明',
+      lead: 'Handbook Studio 是一台本机的代码理解工作台。它先用静态分析把仓库拆成调用图，再让 LLM 把图叙述成一本按“阶段”组织的手册；之后每一次改动，都能沿着手册定位、落地、并让手册跟着前滚。',
+      secs: [
+        { n: '01', h: 'Studio 是什么', p: '三件事，一个循环。', li: [
+          '<b>生成</b>：扫源码 → 建调用图 → 合成阶段骨架 → 归档文件 → 叙述成章 → 渲染成站点。',
+          '<b>浏览</b>：手册按阶段读，影响图看文件之间怎么互相调用，源码视图看真相。',
+          '<b>演化</b>：提需求 → 出编辑计划 → 校验 → 应用 → 重同步手册，历史留痕。'
+        ] },
+        { n: '02', h: '五步闭环', p: '首页那条链子不是装饰，它就是操作顺序。', li: [
+          '<b>① Request</b> — 在「演化 · 变更定位」里用一句话说清你要改什么。',
+          '<b>② Handbook</b> — planner 先读手册的阶段索引，决定该去哪几个文件，而不是全库瞎搜。',
+          '<b>③ Plan</b> — 它再打开真实源码，输出 <code>### EDIT n</code> 格式的字节精确计划（只读，不改代码）。',
+          '<b>④ Patch</b> — 先「校验计划（dry-run）」确认每处 old 文本都还在，再「应用补丁」写盘；写盘前自动备份，可一键回滚。',
+          '<b>⑤ Sync</b> — 代码改完，跑「增量重同步」，只重写受影响的章节，并记一条演化历史。'
+        ] },
+        { n: '03', h: '按钮词典', kv: [
+          ['免费分析', '只做静态分析（phase 1）：建调用图、导出函数清单。不调用 LLM，不花钱，也不外发任何字节。'],
+          ['生成手册', '完整流水线 + 渲染。需要可用的 LLM 端点。首次跑建议 brief。'],
+          ['生成计划', 'planner 以手册为地图、以源码为事实，产出编辑计划。不会修改任何文件。'],
+          ['校验计划（dry-run）', '把计划里每个 EDIT 的 old 文本在源码里找一遍：找到几处、在第几行。不写盘。'],
+          ['应用补丁', '全部命中才写盘；任何一处不匹配就整体拒绝执行。写盘前把原文件备份到 work/patches/&lt;时间戳&gt;。'],
+          ['回滚', '把某个备份戳里的文件还原回去。新建的文件会被移除。'],
+          ['增量重同步', '对比源码与手册状态，只重写受影响的章节，然后重新渲染。'],
+          ['仅结构（免 LLM）', '同上但不调用 LLM：只前滚结构（调用图、归档、覆盖率），叙述文本保持不变。完全免费。']
+        ] },
+        { n: '04', h: '花多少钱', li: [
+          '<b>免费分析</b> 与 <b>仅结构重同步</b>：零 LLM 调用，零成本。',
+          '<b>brief</b>：每个阶段一张概览卡，先试水看效果，便宜。',
+          '<b>deep</b>：逐函数精读，卡片密度高很多，token 也高很多 —— 确认骨架靠谱后再上。',
+          '<b>oneshot</b> 一次合成骨架；<b>doctor</b> 会多跑评审-修复循环，更稳但更贵。',
+          '<b>增量重同步</b>只处理受影响章节，所以比重新生成整本便宜一个量级。'
+        ] },
+        { n: '05', h: '数据去哪了', p: '这是本机工具，不是服务。', li: [
+          '服务只绑 <code>127.0.0.1</code>：没有鉴权、没有 TLS，因为它不接受外部请求。所有 POST 必须是同源的 JSON。',
+          '源码与 prose 只会发往<b>你在 .env 里配置的那个 LLM 端点</b>，除此之外不外发。',
+          '把端点指向 mock / 本地模型 = <b>零外发</b>：静态分析、渲染、影响图、源码视图全部离线可用。',
+          '这个页面不请求任何 CDN、字体或第三方脚本。断网也能用。'
+        ] },
+        { n: '06', h: '心法', p: '', note: '<b>手册是定位索引，代码才是事实来源。</b>手册的价值在于把“我该看哪几个文件”从几小时压到几秒；一旦定位完成，判断对错要回到源码。所以补丁失败（no-match）不是 bug，是代码已经往前走了的信号 —— 重新生成计划，别去改计划迁就旧文本。' }
+      ]
+    },
+    ov: {
+      status: 'STATUS', chapters: 'CHAPTERS', coverage: 'COVERAGE', actions: 'ACTIONS',
+      ready: '就绪', half: '半程', empty: '空',
+      readyD: '手册已生成，可浏览 / 演化', halfD: '已有调用图，还没叙述', emptyD: '还没分析过',
+      chap: ' 章', strategy: '策略', assigned: ' 已归档', ofFiles: '共 {0} 个文件',
+      analyze: '① 免费分析', gen: '② 生成手册', regen: '重新生成',
+      actHint: '先免费分析看规模，再决定生成深度。',
+      sysOv: 'SYSTEM OVERVIEW', stages: '阶段索引', registers: 'STATE REGISTERS',
+      hotFiles: '热点文件', hotHint: '按调用度排序，来自调用图；点一个进源码视图。',
+      chapter: '章节', graph: '影响图', crosscut: '横切',
+      noStages: '还没有阶段数据', notGen: '这个仓库还没生成手册。先「免费分析」看看规模，再「生成手册」。'
+    },
+    graph: {
+      title: '影响图', stageAll: '全部阶段', limit: '节点上限',
+      stat: '{0} 节点 · {1} 条边 · 仓库共 {2} 文件',
+      hint: '圆点 = 文件，半径按调用度；连线 = 跨文件调用，粗细按调用次数。悬停高亮邻居，点击进源码视图。',
+      empty: '还没有调用图 — 先在「总览」跑一次「免费分析」。',
+      noNodes: '这个范围内没有跨文件调用关系。换个阶段或提高节点上限试试。',
+      reload: '重新加载'
+    },
+    src: {
+      title: '源码', open: '打开', ph: '相对源码根的路径，例如 core/src/model.ts',
+      fns: 'FUNCTIONS', noFns: '调用图里没有这个文件的函数锚点',
+      lines: '{0} 行 · {1} 个函数', pick: '选一个文件开始',
+      pickHint: '从影响图点节点，或在上面输入相对路径。下面是调用度最高的文件：',
+      notFound: '打不开这个文件'
+    },
+    ev: {
+      planK: 'PLAN · 变更定位（只读，不改代码）',
+      planD: '用自然语言描述想做的变更；planner 用手册路由 + 读真实源码，输出精确编辑计划。',
+      planPh: '例：上传失败自动重试三次，退避 1s / 2s / 4s',
+      planRun: '生成计划', planTurns: '{0} 轮对话', planDecl: '{0} 处声明',
+      patchK: 'PATCH · 补丁执行器',
+      patchD: '计划生成后会自动填到这里；也可以把 CLI 里的计划直接粘进来。先 dry-run，再应用。',
+      patchPh: '### EDIT 1\n- file: `path/to/file.ts`\n- where: `Fn (~12)` — 为什么\n```old\n<原文>\n```\n```new\n<新文>\n```',
+      dry: '校验计划（dry-run）', apply: '应用补丁', rollback: '回滚',
+      dryOk: 'dry-run 通过：{0} 处编辑都能落地，未写盘。',
+      dryBad: 'dry-run 未通过 —— 没有写任何文件。',
+      applyOk: '已写入 {0} 个文件。备份：{1}',
+      applyBad: '应用失败 —— 没有写任何文件（或已回退）。',
+      afterApply: '代码变了，手册还没有。跑一次「增量重同步」让手册追上。',
+      outcomes: '逐条结果', fromLog: '（从任务日志还原，缺少 where 字段）',
+      backups: '备份历史', noBackups: '还没有备份 —— 应用过补丁后这里会出现时间戳。',
+      resyncK: 'RESYNC · 代码已改，手册跟上',
+      resyncD: '你（或 agent）改完代码后，让手册增量前滚：只重写受影响的章节。',
+      resyncPh: '这次改了什么？（会写进演化历史）',
+      resyncNo: '仅结构（免 LLM）', resyncGo: '增量重同步',
+      needPlan: '先粘贴或生成一份计划', needReq: '先写一句需求'
+    },
+    hist: {
+      title: '演化历史', gtitle: '全部演化历史',
+      sub: '每一次重同步都是一条记录：改了哪些文件、影响哪些章节、有没有重写叙述。',
+      changed: '变更', added: '新增', deleted: '删除', stages: '受影响章节',
+      cards: '重生成卡片', narrated: '已重叙述', structural: '仅结构', skipped: '无变化',
+      empty: '还没有演化记录', emptyD: '在某个仓库的「演化」页跑一次重同步后，这里会出现按天分组的时间线。',
+      unreadable: '这条记录读不出来'
+    },
+    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: '收起' },
+    dlg: {
+      add: '添加仓库', name: '名称（唯一，URL 安全）', source: '源码目录（绝对路径）',
+      work: 'work 目录（可留空，自动创建）', workPh: '留空 = Studio 托管', addGo: '添加',
+      gen: '生成手册', lang: '叙述语言', detail: '卡片深度', synth: '骨架模式',
+      title2: '手册标题（可留空）',
+      detailBrief: 'brief — 便宜，先试水', detailDeep: 'deep — 逐函数精读',
+      synthOne: 'oneshot — 快', synthDoc: 'doctor — 评审循环修复',
+      genHint: '需要 .env 或环境变量里的 OPENAI_API_KEY；phase 1 静态分析免费。',
+      genGo: '开始生成', need: '名称与源码目录都必填'
+    }
+  },
+  en: {
+    tagline: 'Generate · Explore · Evolve — all on this machine',
+    nav: { home: 'Home', guide: 'Instructions', ghistory: 'Evolution history', repos: 'REPOSITORIES',
+           add: '＋ Add repository', noRepos: 'No repositories yet — add one below' },
+    tabs: { overview: 'Overview', browse: 'Handbook', graph: 'Impact graph', source: 'Source', evolve: 'Evolve', history: 'History' },
+    common: { loading: 'loading…', retry: 'Retry', open: 'Open', close: 'Close', cancel: 'Cancel', copy: 'Copy',
+              viewAll: 'View all', files: 'files', stage: 'stage', degree: 'degree', none: '—',
+              failed: 'Failed to load', delete: 'Remove',
+              confirmDelete: 'Remove repository "{0}"? This only drops it from the Studio registry — source and work dir are untouched.' },
+    home: {
+      title: 'Turn a repository into a <em>living handbook</em>',
+      sub: 'A local code-comprehension workbench: static analysis builds the call graph, an LLM narrates it into chapters, the handbook routes your changes, the patcher lands them, and resync rolls the handbook forward. Source only ever reaches the endpoint you configured in .env.',
+      flow: 'The loop',
+      startCard: { t: 'Hard Code', s: 'A codebase nobody can explain' },
+      endCard: { t: 'Evolved Harness', s: 'Code and handbook, both one step ahead' },
+      steps: [
+        { t: 'Request', s: 'Say what you want changed, in plain words' },
+        { t: 'Handbook', s: 'Stage index routes you to the relevant files' },
+        { t: 'Plan', s: 'The planner reads real source, emits byte-exact edits' },
+        { t: 'Patch', s: 'Dry-run verifies, then writes with a backup you can undo' },
+        { t: 'Sync', s: 'Resync rewrites only affected chapters, logs an evolution' }
+      ],
+      feats: [
+        { k: 'GENERATE', t: 'Generate', items: ['Free static analysis: call graph + function inventory', 'Three phases: skeleton → assignment → narration', 'brief to test the water, deep for per-function reading', 'Renders Markdown / HTML / agent site at once'], cta: 'Generate a handbook', tab: 'overview' },
+        { k: 'EXPLORE', t: 'Explore', items: ['Chapters organised by stage, not by folder', 'Impact graph: file-level call relations, coloured by stage', 'Source viewer with line numbers and a function index'], cta: 'Open the impact graph', tab: 'graph' },
+        { k: 'EVOLVE', t: 'Evolve', items: ['Change location: handbook routing + real source = edit plan', 'Patch executor: dry-run → apply → one-click rollback', 'Incremental resync rewrites only affected chapters', 'Every evolution leaves a traceable record'], cta: 'Go to Evolve', tab: 'evolve' }
+      ],
+      recentRepos: 'Recent repositories', recentEvos: 'Recent evolutions',
+      noRepos: 'No repositories registered yet. Point Studio at any local code directory.',
+      noEvos: 'No evolutions yet. Run a resync from the Evolve tab and the timeline shows up here.',
+      addFirst: 'Add the first repository'
+    },
+    guide: {
+      title: 'Instructions',
+      lead: 'Handbook Studio is a local code-comprehension workbench. Static analysis splits the repo into a call graph; an LLM narrates that graph into a handbook organised by stages; from then on every change is located through the handbook, landed by the patcher, and the handbook rolls forward with it.',
+      secs: [
+        { n: '01', h: 'What Studio is', p: 'Three things, one loop.', li: [
+          '<b>Generate</b>: scan source → build the call graph → synthesise a stage skeleton → assign files → narrate chapters → render a site.',
+          '<b>Explore</b>: read the handbook by stage, see how files call each other in the impact graph, check the truth in the source viewer.',
+          '<b>Evolve</b>: state a request → get an edit plan → verify → apply → resync the handbook, with history kept.'
+        ] },
+        { n: '02', h: 'The five-step loop', p: 'The chain on the home page is the operating order, not decoration.', li: [
+          '<b>① Request</b> — describe the change in one sentence under Evolve · Plan.',
+          '<b>② Handbook</b> — the planner reads the stage index first, so it opens a handful of files instead of grepping the world.',
+          '<b>③ Plan</b> — it then reads the real source and emits a byte-exact <code>### EDIT n</code> plan. Read-only: nothing is written.',
+          '<b>④ Patch</b> — run “Verify plan (dry-run)” to confirm every old text is still there, then “Apply patch”. Originals are backed up first; rollback is one click.',
+          '<b>⑤ Sync</b> — after the code changes, run “Incremental resync”: only affected chapters are rewritten, and an evolution is recorded.'
+        ] },
+        { n: '03', h: 'Button dictionary', kv: [
+          ['Free analysis', 'Phase 1 only: build the call graph, export the function inventory. No LLM, no cost, not a single byte leaves the machine.'],
+          ['Generate handbook', 'Full pipeline + render. Needs a working LLM endpoint. Use brief for the first run.'],
+          ['Plan a change', 'The planner uses the handbook as a map and the source as the truth, and produces an edit plan. It never writes files.'],
+          ['Verify plan (dry-run)', 'Looks for each EDIT\'s old text in the source: how many matches, at which line. Nothing is written.'],
+          ['Apply patch', 'Writes only when every edit matches; one mismatch rejects the whole plan. Originals are backed up to work/patches/&lt;stamp&gt;.'],
+          ['Rollback', 'Restores the files from a backup stamp. Files the patch created are removed.'],
+          ['Incremental resync', 'Diffs source against handbook state, rewrites only affected chapters, re-renders.'],
+          ['Structure only (no LLM)', 'Same, minus the LLM: structure (graph, assignment, coverage) rolls forward, narration is left as is. Free.']
+        ] },
+        { n: '04', h: 'What it costs', li: [
+          '<b>Free analysis</b> and <b>structure-only resync</b>: zero LLM calls, zero cost.',
+          '<b>brief</b>: one overview card per stage — cheap, good for a first look.',
+          '<b>deep</b>: per-function reading, far denser cards and far more tokens — turn it on once the skeleton looks right.',
+          '<b>oneshot</b> synthesises the skeleton once; <b>doctor</b> adds review-and-repair rounds: steadier, pricier.',
+          '<b>Incremental resync</b> touches only affected chapters, so it is an order of magnitude cheaper than regenerating.'
+        ] },
+        { n: '05', h: 'Where your code goes', p: 'This is a desktop tool, not a service.', li: [
+          'The server binds <code>127.0.0.1</code> only: no auth, no TLS, because it accepts no remote requests. Every POST must be same-origin JSON.',
+          'Source and prose only travel to <b>the LLM endpoint you configured in .env</b> — nowhere else.',
+          'Point that endpoint at a mock or a local model and egress is <b>exactly zero</b>: analysis, rendering, impact graph and source viewer all work offline.',
+          'This page loads no CDN, no fonts, no third-party script. It works with the network unplugged.'
+        ] },
+        { n: '06', h: 'The mental model', p: '', note: '<b>The handbook is a locator index; the code is the source of truth.</b> Its value is collapsing “which files should I read” from hours to seconds. Once you have located the change, correctness is decided by the source. So a failed patch (no-match) is not a bug — it is the signal that the code moved on. Re-plan; never bend the plan to fit stale text.' }
+      ]
+    },
+    ov: {
+      status: 'STATUS', chapters: 'CHAPTERS', coverage: 'COVERAGE', actions: 'ACTIONS',
+      ready: 'Ready', half: 'Halfway', empty: 'Empty',
+      readyD: 'Handbook generated — browse or evolve', halfD: 'Call graph present, not narrated yet', emptyD: 'Not analysed yet',
+      chap: ' ch.', strategy: 'strategy', assigned: ' assigned', ofFiles: 'of {0} files',
+      analyze: '① Free analysis', gen: '② Generate handbook', regen: 'Regenerate',
+      actHint: 'Analyse for free to see the size, then choose a depth.',
+      sysOv: 'SYSTEM OVERVIEW', stages: 'Stage index', registers: 'STATE REGISTERS',
+      hotFiles: 'Hot files', hotHint: 'Ranked by call degree, from the call graph. Click one to open the source viewer.',
+      chapter: 'Chapter', graph: 'Graph', crosscut: 'crosscut',
+      noStages: 'No stage data yet', notGen: 'No handbook for this repo yet. Run the free analysis first, then generate.'
+    },
+    graph: {
+      title: 'Impact graph', stageAll: 'All stages', limit: 'Node cap',
+      stat: '{0} nodes · {1} links · {2} files in repo',
+      hint: 'Dots are files, radius by call degree; curves are cross-file calls, width by call count. Hover highlights neighbours, click opens the source.',
+      empty: 'No call graph yet — run “Free analysis” from the Overview tab.',
+      noNodes: 'No cross-file calls in this slice. Try another stage or a higher node cap.',
+      reload: 'Reload'
+    },
+    src: {
+      title: 'Source', open: 'Open', ph: 'Path relative to the source root, e.g. core/src/model.ts',
+      fns: 'FUNCTIONS', noFns: 'The call graph has no function anchors for this file',
+      lines: '{0} lines · {1} functions', pick: 'Pick a file to start',
+      pickHint: 'Click a node in the impact graph, or type a relative path above. Highest-degree files:',
+      notFound: 'Could not open that file'
+    },
+    ev: {
+      planK: 'PLAN · locate the change (read-only)',
+      planD: 'Describe the change in plain words; the planner routes through the handbook, reads real source, and emits a precise edit plan.',
+      planPh: 'e.g. retry failed uploads three times with 1s / 2s / 4s backoff',
+      planRun: 'Plan the change', planTurns: '{0} turns', planDecl: '{0} declarations',
+      patchK: 'PATCH · executor',
+      patchD: 'A finished plan lands here automatically; you can also paste a plan from the CLI. Dry-run first, then apply.',
+      patchPh: '### EDIT 1\n- file: `path/to/file.ts`\n- where: `Fn (~12)` — why\n```old\n<current text>\n```\n```new\n<replacement>\n```',
+      dry: 'Verify plan (dry-run)', apply: 'Apply patch', rollback: 'Rollback',
+      dryOk: 'Dry-run passed: all {0} edits would land. Nothing written.',
+      dryBad: 'Dry-run failed — nothing was written.',
+      applyOk: 'Wrote {0} file(s). Backup: {1}',
+      applyBad: 'Apply failed — nothing was written (or it was reverted).',
+      afterApply: 'The code moved; the handbook did not. Run an incremental resync to catch it up.',
+      outcomes: 'Per-edit results', fromLog: '(recovered from the job log — no “where” field)',
+      backups: 'Backup history', noBackups: 'No backups yet — applying a patch creates a timestamp here.',
+      resyncK: 'RESYNC · code changed, handbook catches up',
+      resyncD: 'After you (or your agent) changed the code, roll the handbook forward: only affected chapters are rewritten.',
+      resyncPh: 'What changed this time? (goes into the evolution history)',
+      resyncNo: 'Structure only (no LLM)', resyncGo: 'Incremental resync',
+      needPlan: 'Paste or generate a plan first', needReq: 'Write a request first'
+    },
+    hist: {
+      title: 'History', gtitle: 'All evolution history',
+      sub: 'Every resync is a record: which files changed, which chapters were affected, whether narration was rewritten.',
+      changed: 'changed', added: 'added', deleted: 'deleted', stages: 'affected chapters',
+      cards: 'cards regenerated', narrated: 're-narrated', structural: 'structure only', skipped: 'no change',
+      empty: 'No evolutions yet', emptyD: 'Run a resync from any repo\'s Evolve tab and a day-grouped timeline appears here.',
+      unreadable: 'This record could not be read'
+    },
+    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: 'Hide' },
+    dlg: {
+      add: 'Add repository', name: 'Name (unique, URL-safe)', source: 'Source directory (absolute path)',
+      work: 'Work directory (optional)', workPh: 'empty = managed by Studio', addGo: 'Add',
+      gen: 'Generate handbook', lang: 'Narration language', detail: 'Card depth', synth: 'Skeleton mode',
+      title2: 'Handbook title (optional)',
+      detailBrief: 'brief — cheap, first look', detailDeep: 'deep — per-function reading',
+      synthOne: 'oneshot — fast', synthDoc: 'doctor — review & repair loop',
+      genHint: 'Needs OPENAI_API_KEY in .env or the environment; phase-1 static analysis is free.',
+      genGo: 'Start', need: 'Name and source directory are required'
+    }
+  }
 };
 
-async function refresh(keepTab) {
-  repos = await api('/api/repos');
-  renderRepoList();
-  if (current) {
-    current = repos.find(r => r.name === current.name) || null;
-    if (current) renderMain(keepTab); else renderEmpty();
+/* --------------------------------------------------------------- helpers */
+const $ = (id) => document.getElementById(id);
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+/** Escape for BOTH text nodes and quoted attribute values. */
+const esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, (c) => ESC[c]);
+const fmt = (s, ...a) => String(s).replace(/\{(\d+)\}/g, (_, i) => String(a[Number(i)] ?? ''));
+
+const state = {
+  view: 'home',            // home | guide | ghistory | repo
+  repo: null,              // repo name
+  tab: 'overview',
+  repos: [],
+  lang: localStorage.getItem('hb.lang') === 'en' ? 'en' : 'zh',
+  theme: localStorage.getItem('hb.theme') === 'light' ? 'light' : 'dark',
+  graph: { stage: '', limit: 60, data: null },
+  stages: null,            // cached overview stages for the stage picker
+  src: { path: '', data: null, fn: null },
+  browsePath: 'html/overview.html',
+  plan: '',
+  patch: null,             // { dryRun, ok, outcomes, changedFiles, backupDir, fromLog }
+  backups: null,
+  job: null,
+};
+
+function t(key) {
+  const parts = String(key).split('.');
+  let cur = DICT[state.lang];
+  for (const p of parts) cur = cur === undefined || cur === null ? undefined : cur[p];
+  if (cur !== undefined) return cur;
+  let alt = DICT.zh;
+  for (const p of parts) alt = alt === undefined || alt === null ? undefined : alt[p];
+  return alt === undefined ? key : alt;
+}
+
+/** Every server call funnels through here so no button can fail silently. */
+async function api(path, opts) {
+  let res;
+  try {
+    res = await fetch(path, opts ? { headers: { 'content-type': 'application/json' }, ...opts } : undefined);
+  } catch (e) {
+    throw new Error('network error: ' + (e && e.message ? e.message : String(e)));
   }
+  let body = null;
+  try { body = await res.json(); } catch { body = null; }
+  if (!res.ok) throw new Error((body && body.error) || (res.status + ' ' + res.statusText));
+  return body;
+}
+const errMsg = (e) => (e && e.message ? e.message : String(e));
+
+/* Async renders may resolve after the user moved on — guard every DOM write. */
+let seq = 0;
+const nextToken = () => ++seq;
+const stale = (tok) => tok !== seq;
+
+const repoOf = (name) => state.repos.find((r) => r.name === name) || null;
+const current = () => (state.repo ? repoOf(state.repo) : null);
+const enc = (s) => encodeURIComponent(s);
+
+function relTime(iso) {
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return String(iso || '');
+  const d = Math.max(0, Date.now() - ts) / 1000;
+  const zh = state.lang === 'zh';
+  if (d < 90) return zh ? '刚刚' : 'just now';
+  if (d < 3600) return Math.round(d / 60) + (zh ? ' 分钟前' : 'm ago');
+  if (d < 86400) return Math.round(d / 3600) + (zh ? ' 小时前' : 'h ago');
+  if (d < 86400 * 30) return Math.round(d / 86400) + (zh ? ' 天前' : 'd ago');
+  return String(iso).slice(0, 10);
+}
+/** Evolution stamps look like 2026-08-03T05-55-52-379Z — recover a Date-ish. */
+function stampIso(e) {
+  const raw = String((e && (e.at || e.id)) || '');
+  if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) return raw;
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/);
+  return m ? m[1] + 'T' + m[2] + ':' + m[3] + ':' + m[4] + '.' + m[5] + 'Z' : raw;
+}
+const dayOf = (e) => String(stampIso(e)).slice(0, 10) || '—';
+
+/* ------------------------------------------------------------- chrome */
+const NAV = [
+  { view: 'home', ic: '◆', key: 'nav.home' },
+  { view: 'guide', ic: '?', key: 'nav.guide' },
+  { view: 'ghistory', ic: '≡', key: 'nav.ghistory' },
+];
+const TABS = ['overview', 'browse', 'graph', 'source', 'evolve', 'history'];
+
+function renderChrome() {
+  document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : 'en';
+  document.documentElement.dataset.theme = state.theme;
+  $('brandSub').textContent = t('tagline');
+  $('langBtn').textContent = state.lang === 'zh' ? 'EN' : '中文';
+  $('themeBtn').textContent = state.theme === 'dark' ? 'LIGHT' : 'DARK';
+  $('themeBtn').setAttribute('aria-label', state.theme === 'dark' ? 'switch to light theme' : 'switch to dark theme');
+  $('langBtn').setAttribute('aria-label', state.lang === 'zh' ? 'switch to English' : '切换到中文');
+  $('addBtn').textContent = t('nav.add');
+  $('drawerHide').textContent = t('job.hide');
+  $('reposT').innerHTML = esc(t('nav.repos')) + '<span>' + state.repos.length + '</span>';
+
+  $('mainnav').innerHTML = NAV.map((n) => {
+    const on = state.view === n.view ? ' cur' : '';
+    const badge = n.view === 'ghistory' && state.evoCount ? '<span class="badge">' + state.evoCount + '</span>' : '';
+    return '<button class="navitem' + on + '" data-act="view" data-view="' + n.view + '">' +
+      '<span class="ic">' + n.ic + '</span>' + esc(t(n.key)) + badge + '</button>';
+  }).join('');
+
+  renderRepoList();
+
+  const repo = current();
+  const hleft = $('hleft');
+  if (state.view === 'repo' && repo) {
+    hleft.innerHTML = '<h2>' + esc(repo.name) + '</h2><span class="path" title="' + esc(repo.sourceRoot) + '">' +
+      esc(repo.sourceRoot) + '</span>';
+    $('tabs').innerHTML = TABS.map((tb) =>
+      '<button data-act="tab" data-tab="' + tb + '"' + (state.tab === tb ? ' class="cur"' : '') + '>' +
+      esc(t('tabs.' + tb)) + '</button>').join('');
+  } else {
+    const titles = { home: 'Handbook Studio', guide: t('guide.title'), ghistory: t('hist.gtitle') };
+    hleft.innerHTML = '<h2>' + esc(titles[state.view] || 'Handbook Studio') + '</h2>';
+    $('tabs').innerHTML = '';
+  }
+}
+
+function statusBits(r) {
+  if (r.hasHandbook) return { cls: 'ok', txt: state.lang === 'zh' ? '● 手册就绪' : '● handbook ready' };
+  if (r.hasGraph) return { cls: 'half', txt: state.lang === 'zh' ? '◐ 已分析' : '◐ analysed' };
+  return { cls: '', txt: state.lang === 'zh' ? '○ 未生成' : '○ not generated' };
 }
 
 function renderRepoList() {
-  $('repoList').innerHTML = repos.map(r => `
-    <button class="repo ${current && r.name===current.name ? 'cur':''}" onclick="selectRepo('${r.name}')">
-      <span class="n">${r.name}</span>
-      <span class="m">${r.hasHandbook ? '<span class="ok">● 手册就绪</span>' : r.hasGraph ? '◐ 已分析' : '○ 未生成'}
-        ${r.chapters ? ' · '+r.chapters+' 章' : ''}${r.evolutions ? ' · '+r.evolutions+' 次演化' : ''}</span>
-    </button>`).join('') || '<div style="padding:10px;color:var(--faint);font-size:12px">还没有仓库</div>';
+  const zh = state.lang === 'zh';
+  $('repoList').innerHTML = state.repos.length ? state.repos.map((r) => {
+    const s = statusBits(r);
+    const bits = [ '<span class="' + s.cls + '">' + s.txt + '</span>' ];
+    if (r.chapters) bits.push(r.chapters + (zh ? ' 章' : ' ch'));
+    if (r.evolutions) bits.push(r.evolutions + (zh ? ' 次演化' : ' evo'));
+    const on = state.view === 'repo' && state.repo === r.name ? ' cur' : '';
+    return '<div class="repo' + on + '">' +
+      '<button class="body" style="background:none;border:none;padding:0;text-align:left;color:inherit" ' +
+      'data-act="repo" data-name="' + esc(r.name) + '">' +
+      '<span class="n">' + esc(r.name) + '</span><span class="m">' + bits.join(' · ') + '</span></button>' +
+      '<button class="x" data-act="repo-del" data-name="' + esc(r.name) + '" ' +
+      'title="' + esc(t('common.delete')) + '" aria-label="' + esc(t('common.delete')) + '">✕</button></div>';
+  }).join('') : '<div class="zero" style="padding:10px">' + esc(t('nav.noRepos')) + '</div>';
 }
 
-function selectRepo(name) {
-  current = repos.find(r => r.name === name);
-  tab = 'overview';
-  renderMain();
-}
-
-function renderEmpty(){ $('hdr').style.display='none'; $('content').innerHTML =
-  '<div class="empty"><h3>把一个仓库，变成一本<span class="gold">活的手册</span></h3><p>左下角「添加仓库」开始。</p></div>'; }
-
-function setTab(t){ tab=t; renderMain(true); }
-document.getElementById('tabs').addEventListener('click', e => {
-  if (e.target.dataset.tab) setTab(e.target.dataset.tab);
-});
-
-async function renderMain(keepScroll) {
-  if (!current) return renderEmpty();
-  $('hdr').style.display='flex';
-  $('hName').textContent = current.name;
-  $('hPath').textContent = current.sourceRoot;
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('cur', b.dataset.tab===tab));
-  renderRepoList();
-  const c = $('content');
-  if (tab === 'overview') return renderOverview(c);
-  if (tab === 'browse') return renderBrowse(c);
-  if (tab === 'evolve') return renderEvolve(c);
-  if (tab === 'history') return renderHistory(c);
-}
-
-async function renderOverview(c) {
-  let head = `
-    <div class="grid g3">
-      <div class="card"><span class="k">STATUS</span>
-        <div class="num">${current.hasHandbook ? '就绪' : current.hasGraph ? '半程' : '空'}</div>
-        <p>${current.hasHandbook ? '手册已生成，可浏览 / 演化' : current.hasGraph ? '已有调用图，还未叙述' : '还未分析'}</p></div>
-      <div class="card"><span class="k">CHAPTERS</span><div class="num">${current.chapters||0}<i> 章</i></div>
-        <p>策略：${current.strategy||'—'}</p></div>
-      <div class="card"><span class="k">ACTIONS</span>
-        <p style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
-          <button onclick="startAnalyze()">① 免费分析</button>
-          <button class="primary" onclick="dlgGen.showModal()">② 生成手册</button>
-        </p><p class="hint" style="margin-top:8px">先免费分析看规模，再生成。</p></div>
-    </div>`;
-  c.innerHTML = head + '<div id="ovStages" class="stagelist"><p style="color:var(--faint)">加载章节…</p></div>';
+/* --------------------------------------------------------------- router */
+async function loadRepos() {
   try {
-    const ov = await api(`/api/repos/${current.name}/overview`);
-    $('ovStages').innerHTML =
-      (ov.systemOverview ? `<div class="card" style="margin-bottom:14px"><span class="k">SYSTEM OVERVIEW</span><p style="font-size:13.5px">${escapeHtml(ov.systemOverview)}</p></div>` : '') +
-      ov.stages.map(s => `
-        <div class="stage"><span>${escapeHtml(s.title)}${s.crosscut?' <span class="pill">横切</span>':''}</span>
-          <span class="files"><code>${s.id}</code> · ${s.files}f</span>
-          <span class="sum">${escapeHtml(s.summary||s.description||'')}</span></div>`).join('') +
-      (ov.registers.length ? `<div class="card" style="margin-top:14px"><span class="k">STATE REGISTERS</span><p>${ov.registers.map(r=>`<code style="font-family:var(--mono);font-size:11px;color:var(--jade)">${r.id}</code>`).join(' · ')}</p></div>` : '');
+    state.repos = await api('/api/repos');
+    state.reposError = null;
   } catch (e) {
-    $('ovStages').innerHTML = `<p style="color:var(--faint);margin-top:14px">尚无章节数据 — ${escapeHtml(e.message)}</p>`;
+    state.repos = [];
+    state.reposError = errMsg(e);
   }
 }
 
-function renderBrowse(c) {
-  if (!current.hasHandbook) { c.innerHTML = '<div class="empty"><h3>还没有手册</h3><p>先在「总览」里生成。</p></div>'; return; }
-  c.style.padding = '14px';
-  c.innerHTML = `<iframe src="/api/repos/${current.name}/handbook/html/overview.html"></iframe>`;
-  c.querySelector('iframe').onload = () => {};
-  return;
+async function render() {
+  const tok = nextToken();
+  renderChrome();
+  const c = $('content');
+  c.className = 'content';
+  if (state.view === 'home') return renderHome(c, tok);
+  if (state.view === 'guide') return renderGuide(c);
+  if (state.view === 'ghistory') return renderGlobalHistory(c, tok);
+  const repo = current();
+  if (!repo) { state.view = 'home'; return render(); }
+  if (state.tab === 'overview') return renderOverview(c, tok, repo);
+  if (state.tab === 'browse') return renderBrowse(c, repo);
+  if (state.tab === 'graph') return renderGraph(c, tok, repo);
+  if (state.tab === 'source') return renderSource(c, tok, repo);
+  if (state.tab === 'evolve') return renderEvolve(c, tok, repo);
+  if (state.tab === 'history') return renderRepoHistory(c, tok, repo);
 }
 
-function renderEvolve(c) {
-  c.style.padding='24px 26px';
-  c.innerHTML = `
-    <div class="grid" style="grid-template-columns:1fr 1fr;align-items:start">
-      <div class="card">
-        <span class="k">PLAN · 变更定位（只读，不改代码）</span>
-        <p>用自然语言描述想做的变更，planner 用手册路由 + 读真实源码，输出精确编辑计划。</p>
-        <textarea id="planReq" rows="3" style="margin-top:10px" placeholder="例：上传失败自动重试三次"></textarea>
-        <div class="row" style="display:flex;justify-content:flex-end;margin-top:10px">
-          <button class="primary" onclick="startPlan()">生成计划</button></div>
-      </div>
-      <div class="card">
-        <span class="k">RESYNC · 代码已改，手册跟上</span>
-        <p>你（或 agent）改完代码后，让手册增量前滚：只重写受影响的章节。</p>
-        <textarea id="resyncDesc" rows="3" style="margin-top:10px" placeholder="这次改了什么？（写进演化历史）"></textarea>
-        <div class="row" style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-          <button onclick="startResync(true)">仅结构（免 LLM）</button>
-          <button class="primary" onclick="startResync(false)">增量重同步</button></div>
-      </div>
-    </div>
-    <div id="planOut" style="margin-top:18px"></div>`;
+function go(view) {
+  state.view = view;
+  if (view !== 'repo') state.repo = null;
+  document.body.classList.remove('side');
+  render();
+}
+function openRepo(name, tab) {
+  const r = repoOf(name);
+  if (!r) return;
+  if (state.repo !== name) {
+    state.graph = { stage: '', limit: 60, data: null };
+    state.stages = null;
+    state.src = { path: '', data: null, fn: null };
+    state.plan = ''; state.patch = null; state.backups = null;
+    state.browsePath = 'html/overview.html';
+  }
+  state.repo = name;
+  state.view = 'repo';
+  state.tab = tab || 'overview';
+  document.body.classList.remove('side');
+  render();
 }
 
-async function renderHistory(c) {
-  c.style.padding='24px 26px';
-  let evos;
-  try { evos = await api(`/api/repos/${current.name}/history`); }
-  catch(e){ c.innerHTML = `<div class="empty"><h3>历史加载失败</h3><p>${escapeHtml(e.message)}</p></div>`; return; }
-  c.innerHTML = evos.length ? evos.map(e => `
-    <div class="evo">
-      <span class="d">${escapeHtml(e.description||'')}</span>
-      <span class="pill">${(e.report&&e.report.narrated)?'已重叙述':'结构更新'}</span>
-      <div class="m">${e.at||e.id||''}</div>
-      <div class="r">变更 ${e.report?.changedFiles?.length??0} · 新增 ${e.report?.addedFiles?.length??0} · 删除 ${e.report?.deletedFiles?.length??0} · 受影响章节 ${e.report?.affectedStages?.length??0}</div>
-    </div>`).join('') : '<div class="empty"><h3>还没有演化记录</h3><p>在「演化」页跑一次 resync 后，这里会出现时间线。</p></div>';
+/* ----------------------------------------------------------------- home */
+const STEP_COLORS = ['var(--ice)', 'var(--gold)', 'var(--jade)', 'var(--red)', 'var(--plum)'];
+const CIRCLED = ['①', '②', '③', '④', '⑤'];
+
+function flowStrip() {
+  const s = t('home.steps');
+  const start = t('home.startCard');
+  const end = t('home.endCard');
+  let h = '<div class="flow">';
+  h += '<div class="bookend"><b>' + esc(start.t) + '</b><small>' + esc(start.s) + '</small></div>';
+  for (let i = 0; i < s.length; i++) {
+    h += '<span class="arrow">→</span>';
+    h += '<div class="step" style="--sc:' + STEP_COLORS[i % STEP_COLORS.length] + '">' +
+      '<span class="no">' + CIRCLED[i] + '</span><b>' + esc(s[i].t) + '</b>' +
+      '<small>' + esc(s[i].s) + '</small></div>';
+  }
+  h += '<span class="arrow">→</span>';
+  h += '<div class="bookend"><b>' + esc(end.t) + '</b><small>' + esc(end.s) + '</small></div>';
+  return h + '</div>';
 }
 
-// ---- actions ----
-async function addRepo() {
+async function renderHome(c, tok) {
+  const zh = state.lang === 'zh';
+  const feats = t('home.feats');
+  let h = '<div class="hero"><h2>' + t('home.title') + '</h2><p>' + esc(t('home.sub')) + '</p>' +
+    '<div class="row"><button class="primary" data-act="add-open">' + esc(t('nav.add')) + '</button>' +
+    '<button data-act="view" data-view="guide">' + esc(t('nav.guide')) + '</button></div></div>';
+
+  h += '<div class="sechead"><h3>' + esc(t('home.flow')) + '</h3><span class="c">Hard Code → ① → ⑤ → Evolved Harness</span></div>';
+  h += flowStrip();
+
+  h += '<div class="grid g3" style="margin-top:10px">' + feats.map((f) =>
+    '<div class="card feat"><span class="k">' + esc(f.k) + '</span><h3>' + esc(f.t) + '</h3>' +
+    '<ul>' + f.items.map((i) => '<li>' + esc(i) + '</li>').join('') + '</ul>' +
+    '<button class="cta" data-act="cta" data-tab="' + esc(f.tab) + '">' + esc(f.cta) + ' →</button></div>').join('') + '</div>';
+
+  h += '<div class="grid g2" style="margin-top:22px;align-items:start">' +
+    '<div class="card pad0"><div class="sechead" style="margin:0;padding:15px 19px 8px">' +
+    '<h3>' + esc(t('home.recentRepos')) + '</h3><span class="c">' + state.repos.length + '</span>' +
+    '<span class="sp"></span></div><div class="list" id="homeRepos" style="padding:0 19px 14px"></div></div>' +
+    '<div class="card pad0"><div class="sechead" style="margin:0;padding:15px 19px 8px">' +
+    '<h3>' + esc(t('home.recentEvos')) + '</h3><span class="sp"></span>' +
+    '<button class="sm ghost" data-act="view" data-view="ghistory">' + esc(t('common.viewAll')) + ' →</button></div>' +
+    '<div class="list" id="homeEvos" style="padding:0 19px 14px"><div class="loading"><span class="spin"></span> ' +
+    esc(t('common.loading')) + '</div></div></div></div>';
+  c.innerHTML = h;
+
+  // Recent repositories (already loaded)
+  const rl = $('homeRepos');
+  if (state.reposError) {
+    rl.innerHTML = '<div class="errbox" style="margin:10px 0">' + esc(t('common.failed')) + ' — ' + esc(state.reposError) + '</div>';
+  } else if (!state.repos.length) {
+    rl.innerHTML = '<div class="zero">' + esc(t('home.noRepos')) + '</div>' +
+      '<div class="row"><button class="primary" data-act="add-open">' + esc(t('home.addFirst')) + '</button></div>';
+  } else {
+    rl.innerHTML = state.repos.slice(0, 6).map((r) => {
+      const s = statusBits(r);
+      return '<div class="li"><div class="g"><div class="t1">' + esc(r.name) +
+        ' <span class="pill ' + (r.hasHandbook ? 'jade' : r.hasGraph ? 'gold' : '') + '">' + esc(s.txt) + '</span></div>' +
+        '<div class="t2">' + esc(r.sourceRoot) + '</div></div>' +
+        '<div class="rt"><span class="pill">' + (r.chapters || 0) + (zh ? ' 章' : ' ch') + '</span>' +
+        '<button class="sm" data-act="cta-repo" data-name="' + esc(r.name) + '" data-tab="overview">' +
+        esc(t('common.open')) + '</button></div></div>';
+    }).join('');
+  }
+
+  // Recent evolutions
   try {
-    $('fErr').textContent='';
-    await api('/api/repos', { method:'POST', body: JSON.stringify({
-      name: $('fName').value.trim(), sourceRoot: $('fSource').value.trim(),
-      workDir: $('fWork').value.trim() || undefined }) });
-    dlgAdd.close(); await refresh();
-    selectRepo($('fName').value.trim());
-  } catch (e) { $('fErr').textContent = e.message; }
+    const hist = await api('/api/history');
+    if (stale(tok)) return;
+    state.evoCount = hist.length;
+    renderChrome();
+    const el = $('homeEvos');
+    if (!el) return;
+    el.innerHTML = hist.length ? hist.slice(0, 6).map((e) => {
+      const rep = (e.report || {});
+      const pill = rep.skipped ? '<span class="pill">' + esc(t('hist.skipped')) + '</span>'
+        : rep.narrated ? '<span class="pill jade">' + esc(t('hist.narrated')) + '</span>'
+        : '<span class="pill ice">' + esc(t('hist.structural')) + '</span>';
+      return '<div class="li"><div class="g"><div class="t1">' + esc(e.description || t('common.none')) + '</div>' +
+        '<div class="t2">' + esc(e.repo || '') + ' · ' + esc(relTime(stampIso(e))) + '</div></div>' +
+        '<div class="rt">' + pill + '<button class="sm" data-act="cta-repo" data-name="' + esc(e.repo || '') +
+        '" data-tab="history">' + esc(t('common.open')) + '</button></div></div>';
+    }).join('') : '<div class="zero">' + esc(t('home.noEvos')) + '</div>';
+  } catch (e) {
+    if (stale(tok)) return;
+    const el = $('homeEvos');
+    if (el) el.innerHTML = '<div class="errbox" style="margin:10px 0">' + esc(t('common.failed')) + ' — ' + esc(errMsg(e)) + '</div>';
+  }
 }
 
-async function startAnalyze(){ try { runJob(await api(`/api/repos/${current.name}/analyze`, {method:'POST', body:'{}'}), '静态分析'); } catch(e){ showError('静态分析', e.message); } }
-async function startGenerate(){
-  dlgGen.close();
-  try {
-    runJob(await api(`/api/repos/${current.name}/generate`, {method:'POST', body: JSON.stringify({
-      narrateLang: $('gLang').value, detail: $('gDetail').value, synthMode: $('gSynth').value })}), '生成手册');
-  } catch(e){ showError('生成手册', e.message); }
+/* ---------------------------------------------------------------- guide */
+function renderGuide(c) {
+  const g = t('guide');
+  let h = '<div class="guide"><div class="hero" style="padding-bottom:16px"><h2>' + esc(g.title) +
+    '</h2><p class="lead" style="margin-top:10px">' + esc(g.lead) + '</p></div>';
+  for (const s of g.secs) {
+    h += '<div class="gsec"><h3><span class="n">' + esc(s.n) + '</span>' + esc(s.h) + '</h3>';
+    if (s.p) h += '<p>' + esc(s.p) + '</p>';
+    if (s.li) h += '<ul>' + s.li.map((x) => '<li>' + x + '</li>').join('') + '</ul>';
+    if (s.kv) h += '<dl class="kv">' + s.kv.map((p) => '<dt>' + esc(p[0]) + '</dt><dd>' + p[1] + '</dd>').join('') + '</dl>';
+    if (s.note) h += '<div class="note">' + s.note + '</div>';
+    h += '</div>';
+  }
+  h += '<div class="row" style="margin-top:30px"><button class="primary" data-act="view" data-view="home">' +
+    esc(t('nav.home')) + ' →</button></div></div>';
+  c.innerHTML = h;
 }
-async function startPlan(){
-  const request = $('planReq').value.trim(); if(!request) return;
+
+/* ------------------------------------------------------ global history */
+function evoCard(e, withRepo) {
+  const rep = e.report || {};
+  const zh = state.lang === 'zh';
+  if (e.error) {
+    return '<div class="evo"><div class="top"><span class="d">' + esc(t('hist.unreadable')) +
+      '</span><span class="pill red">' + esc(e.error) + '</span></div><div class="m">' + esc(e.id || '') + '</div></div>';
+  }
+  const pill = rep.skipped ? '<span class="pill">' + esc(t('hist.skipped')) + '</span>'
+    : rep.narrated ? '<span class="pill jade">' + esc(t('hist.narrated')) + '</span>'
+    : '<span class="pill ice">' + esc(t('hist.structural')) + '</span>';
+  const stages = Array.isArray(rep.affectedStages) ? rep.affectedStages : [];
+  const n = (a) => (Array.isArray(a) ? a.length : 0);
+  return '<div class="evo"><div class="top">' +
+    (withRepo ? '<span class="pill gold">' + esc(e.repo || '') + '</span>' : '') +
+    '<span class="d">' + esc(e.description || t('common.none')) + '</span>' + pill + '</div>' +
+    '<div class="m">' + esc(stampIso(e)) + ' · ' + esc(relTime(stampIso(e))) + '</div>' +
+    '<div class="r"><span>' + esc(t('hist.changed')) + ' <b>' + n(rep.changedFiles) + '</b></span>' +
+    '<span>' + esc(t('hist.added')) + ' <b>' + n(rep.addedFiles) + '</b></span>' +
+    '<span>' + esc(t('hist.deleted')) + ' <b>' + n(rep.deletedFiles) + '</b></span>' +
+    '<span>' + esc(t('hist.stages')) + ' <b>' + stages.length + '</b></span>' +
+    (rep.cardsRegenerated ? '<span>' + esc(t('hist.cards')) + ' <b>' + rep.cardsRegenerated + '</b></span>' : '') +
+    '</div>' +
+    (stages.length ? '<div class="st">' + stages.slice(0, 8).map((s) =>
+      '<span class="pill">' + esc(s) + '</span>').join('') +
+      (stages.length > 8 ? '<span class="pill">+' + (stages.length - 8) + '</span>' : '') + '</div>' : '') +
+    '</div>';
+}
+
+function groupedEvos(list, withRepo) {
+  const days = [];
+  const map = new Map();
+  for (const e of list) {
+    const d = dayOf(e);
+    if (!map.has(d)) { map.set(d, []); days.push(d); }
+    map.get(d).push(e);
+  }
+  return days.map((d) => '<div class="day">' + esc(d) + ' <span class="pill">' + map.get(d).length + '</span></div>' +
+    map.get(d).map((e) => evoCard(e, withRepo)).join('')).join('');
+}
+
+async function renderGlobalHistory(c, tok) {
+  c.innerHTML = '<div class="hero" style="padding-bottom:14px"><h2>' + esc(t('hist.gtitle')) + '</h2>' +
+    '<p>' + esc(t('hist.sub')) + '</p></div>' +
+    '<div id="ghBody"><div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div></div>';
   try {
-  runJob(await api(`/api/repos/${current.name}/plan`, {method:'POST', body: JSON.stringify({request})}), '变更定位', async (job)=>{
-    const full = await api(`/api/jobs/${job.id}`);
-    if (full.status==='succeeded' && full.result?.plan) {
-      $('planOut').innerHTML = `<div class="card"><span class="k">PLAN 输出（${full.result.turns} 轮）</span><div class="plan">${escapeHtml(full.result.plan)}</div></div>`;
+    const list = await api('/api/history');
+    if (stale(tok)) return;
+    state.evoCount = list.length;
+    renderChrome();
+    $('ghBody').innerHTML = list.length ? groupedEvos(list, true)
+      : '<div class="empty"><h3>' + esc(t('hist.empty')) + '</h3><p>' + esc(t('hist.emptyD')) + '</p></div>';
+  } catch (e) {
+    if (stale(tok)) return;
+    $('ghBody').innerHTML = '<div class="errbox">' + esc(t('common.failed')) + ' — ' + esc(errMsg(e)) + '</div>';
+  }
+}
+
+/* ------------------------------------------------------------- overview */
+async function renderOverview(c, tok, repo) {
+  const zh = state.lang === 'zh';
+  const st = repo.hasHandbook ? 'ready' : repo.hasGraph ? 'half' : 'empty';
+  let h = '<div class="grid g4">' +
+    '<div class="card"><span class="k">' + esc(t('ov.status')) + '</span><div class="num">' +
+      esc(t('ov.' + st)) + '</div><p>' + esc(t('ov.' + st + 'D')) + '</p></div>' +
+    '<div class="card"><span class="k">' + esc(t('ov.chapters')) + '</span><div class="num">' +
+      (repo.chapters || 0) + '<i>' + esc(t('ov.chap')) + '</i></div><p>' + esc(t('ov.strategy')) + ': <code>' +
+      esc(repo.strategy || t('common.none')) + '</code></p></div>' +
+    '<div class="card" id="ovCov"><span class="k">' + esc(t('ov.coverage')) + '</span>' +
+      '<div class="num">—</div><p class="hint">' + esc(t('common.loading')) + '</p></div>' +
+    '<div class="card"><span class="k">' + esc(t('ov.actions')) + '</span>' +
+      '<div class="row" style="margin-top:4px"><button data-act="analyze">' + esc(t('ov.analyze')) + '</button>' +
+      '<button class="primary" data-act="gen-open">' + esc(repo.hasHandbook ? t('ov.regen') : t('ov.gen')) + '</button></div>' +
+      '<p class="hint">' + esc(t('ov.actHint')) + '</p></div></div>';
+  h += '<div id="ovBody"><div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div></div>';
+  c.innerHTML = h;
+
+  let ov = null;
+  try {
+    ov = await api('/api/repos/' + enc(repo.name) + '/overview');
+  } catch (e) {
+    if (stale(tok)) return;
+    $('ovBody').innerHTML = '<div class="empty"><h3>' + esc(t('ov.noStages')) + '</h3><p>' + esc(t('ov.notGen')) +
+      '</p><p class="hint" style="margin-top:10px">' + esc(errMsg(e)) + '</p>' +
+      '<div class="row"><button data-act="analyze">' + esc(t('ov.analyze')) + '</button>' +
+      '<button class="primary" data-act="gen-open">' + esc(t('ov.gen')) + '</button></div></div>';
+    const cov = $('ovCov');
+    if (cov) cov.innerHTML = '<span class="k">' + esc(t('ov.coverage')) + '</span><div class="num">—</div>' +
+      '<p class="hint">' + esc(t('ov.emptyD')) + '</p>';
+    return;
+  }
+  if (stale(tok)) return;
+  state.stages = ov.stages || [];
+
+  const cv = ov.coverage || {};
+  const cov = $('ovCov');
+  if (cov) {
+    const pct = cv.nFiles ? Math.round((cv.nAssigned / cv.nFiles) * 100) : 0;
+    cov.innerHTML = '<span class="k">' + esc(t('ov.coverage')) + '</span><div class="num">' + pct +
+      '<i>%' + esc(t('ov.assigned')) + '</i></div><p>' + esc(fmt(t('ov.ofFiles'), cv.nFiles || 0)) +
+      (Array.isArray(cv.unassigned) && cv.unassigned.length ? ' · ' + cv.unassigned.length + (zh ? ' 个未归档' : ' unassigned') : '') + '</p>';
+  }
+
+  let b = '';
+  if (ov.systemOverview) {
+    b += '<div class="card" style="margin-top:16px"><span class="k">' + esc(t('ov.sysOv')) + '</span>' +
+      '<p style="font-size:13.5px;line-height:1.85">' + esc(ov.systemOverview) + '</p></div>';
+  }
+  b += '<div class="sechead"><h3>' + esc(t('ov.stages')) + '</h3><span class="c">' + (ov.stages || []).length + '</span></div>';
+  b += (ov.stages || []).map((s) =>
+    '<div class="stage"><span class="ti">' + esc(s.title) +
+      (s.crosscut ? ' <span class="pill gold">' + esc(t('ov.crosscut')) + '</span>' : '') + '</span>' +
+    '<span class="meta"><code title="' + esc(s.id) + '">' + esc(s.id) + '</code>' + (s.files || 0) + 'f' +
+      (s.parent ? ' · ↳ ' + esc(s.parent) : '') + '</span>' +
+    '<span class="sum">' + esc(s.summary || s.description || '') + '</span>' +
+    '<span class="act">' +
+      (repo.hasHandbook ? '<button class="sm" data-act="chapter" data-stage="' + esc(s.id) + '">' +
+        esc(t('ov.chapter')) + '</button>' : '') +
+      '<button class="sm" data-act="graph-stage" data-stage="' + esc(s.id) + '">' + esc(t('ov.graph')) + '</button>' +
+    '</span></div>').join('');
+
+  if (Array.isArray(ov.registers) && ov.registers.length) {
+    b += '<div class="card" style="margin-top:16px"><span class="k">' + esc(t('ov.registers')) + '</span><p>' +
+      ov.registers.map((r) => '<code style="color:var(--jade)">' + esc(r.id || r.name || '') + '</code>').join(' · ') +
+      '</p></div>';
+  }
+  b += '<div class="sechead"><h3>' + esc(t('ov.hotFiles')) + '</h3><span class="c" id="hotCount"></span></div>' +
+    '<p class="hint" style="margin-bottom:10px">' + esc(t('ov.hotHint')) + '</p>' +
+    '<div class="files" id="hotFiles"><span class="loading"><span class="spin"></span></span></div>';
+  $('ovBody').innerHTML = b;
+
+  try {
+    const g = await api('/api/repos/' + enc(repo.name) + '/graph?limit=40');
+    if (stale(tok)) return;
+    const el = $('hotFiles');
+    if (!el) return;
+    const nodes = (g.nodes || []).slice().sort((a, b2) => b2.degree - a.degree).slice(0, 30);
+    $('hotCount').textContent = nodes.length + ' / ' + (g.totalFiles || 0);
+    el.innerHTML = nodes.length ? nodes.map((n) =>
+      '<button class="filechip" data-act="open-source" data-file="' + esc(n.file) + '">' + esc(n.file) +
+      '<i>' + n.degree + '</i></button>').join('') : '<span class="zero">' + esc(t('graph.noNodes')) + '</span>';
+  } catch (e) {
+    if (stale(tok)) return;
+    const el = $('hotFiles');
+    if (el) el.innerHTML = '<span class="zero">' + esc(t('graph.empty')) + '</span>';
+  }
+}
+
+/* --------------------------------------------------------------- browse */
+function renderBrowse(c, repo) {
+  if (!repo.hasHandbook) {
+    c.innerHTML = '<div class="empty"><h3>' + esc(t('ov.noStages')) + '</h3><p>' + esc(t('ov.notGen')) + '</p>' +
+      '<div class="row"><button class="primary" data-act="gen-open">' + esc(t('ov.gen')) + '</button></div></div>';
+    return;
+  }
+  c.className = 'content flush';
+  const url = '/api/repos/' + enc(repo.name) + '/handbook/' + state.browsePath;
+  c.innerHTML = '<iframe src="' + esc(url) + '" title="handbook"></iframe>';
+}
+
+/* ---------------------------------------------------------------- graph */
+const PALETTES = {
+  dark: ['#D8B36A', '#8FB8CE', '#86C7A5', '#E0705C', '#A99BD8', '#E2B7A0', '#7FBFB6', '#C9A6D4', '#B9C77E', '#D89A9A', '#9FB4D8', '#CBB98A'],
+  light: ['#8E6A26', '#286078', '#256546', '#A03720', '#5D479A', '#8A5330', '#1F6560', '#71377A', '#556018', '#973F52', '#3A4E85', '#6E5A20'],
+};
+function stageColor(id) {
+  const pal = PALETTES[state.theme] || PALETTES.dark;
+  let h = 2166136261;
+  const s = String(id || 'unassigned');
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; }
+  return pal[h % pal.length];
+}
+
+/**
+ * Deterministic grouped-elliptical layout — no physics, no libraries, stable
+ * across reloads. Nodes are bucketed by stage, stages sorted, each stage laid
+ * out as a contiguous arc with a gap between neighbouring stages.
+ */
+function layoutGraph(nodes, W, H) {
+  const cx = W / 2, cy = H / 2;
+  const labels = nodes.length <= 70;
+  // Labels stick out radially, so reserve room for the longest basename at the
+  // poles (vertical) as well as at the sides (horizontal).
+  let chars = 0;
+  for (const n of nodes) chars = Math.max(chars, Math.min(24, n.file.split('/').pop().length));
+  const pad = labels ? 18 + chars * 5.3 : 22;
+  const ry = Math.max(90, H / 2 - Math.min(H * 0.26, pad));
+  const rx = Math.max(120, Math.min(W / 2 - Math.min(W * 0.3, pad + 10), ry * 1.75));
+  const byStage = new Map();
+  for (const n of nodes) {
+    if (!byStage.has(n.stage)) byStage.set(n.stage, []);
+    byStage.get(n.stage).push(n);
+  }
+  const stages = [...byStage.keys()].sort();
+  const gap = nodes.length > 80 ? 0.6 : 1.4;
+  const total = nodes.length + stages.length * gap || 1;
+  const out = [];
+  let i = 0;
+  for (const st of stages) {
+    const arr = byStage.get(st).slice().sort((a, b) => a.file.localeCompare(b.file));
+    i += gap / 2;
+    for (const n of arr) {
+      const ang = (i / total) * Math.PI * 2 - Math.PI / 2;
+      const r = Math.max(3.2, Math.min(15, 3.2 + Math.sqrt(n.degree) * 1.85));
+      out.push({
+        ...n, ang, r,
+        x: cx + rx * Math.cos(ang), y: cy + ry * Math.sin(ang),
+        lx: cx + (rx + r + 7) * Math.cos(ang), ly: cy + (ry + r + 7) * Math.sin(ang),
+      });
+      i += 1;
     }
-  });
-  } catch(e){ showError('变更定位', e.message); }
-}
-async function startResync(noLlm){
-  try {
-    runJob(await api(`/api/repos/${current.name}/resync`, {method:'POST', body: JSON.stringify({
-      description: $('resyncDesc').value.trim(), noLlm })}), noLlm?'结构重同步':'增量重同步');
-  } catch(e){ showError(noLlm?'结构重同步':'增量重同步', e.message); }
+    i += gap / 2;
+  }
+  return { placed: out, cx, cy, rx, ry, stages, labels };
 }
 
-// ---- job drawer + SSE ----
+function graphSvg(data, W, H) {
+  const { placed, cx, cy, labels: showLabels } = layoutGraph(data.nodes || [], W, H);
+  const idx = new Map(placed.map((n, i) => [n.file, i]));
+  let links = '';
+  (data.links || []).forEach((l) => {
+    const a = idx.get(l.from), b = idx.get(l.to);
+    if (a === undefined || b === undefined) return;
+    const p = placed[a], q = placed[b];
+    const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+    const k = 0.36;                                  // pull the curve toward the centre
+    const qx = cx + (mx - cx) * k, qy = cy + (my - cy) * k;
+    links += '<path class="link" data-a="' + a + '" data-b="' + b + '" d="M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) +
+      ' Q' + qx.toFixed(1) + ' ' + qy.toFixed(1) + ' ' + q.x.toFixed(1) + ' ' + q.y.toFixed(1) + '" stroke="' +
+      stageColor(p.stage) + '" stroke-width="' + (0.55 + Math.min(4.5, l.weight * 0.3)).toFixed(2) + '"/>';
+  });
+  let nodes = '';
+  placed.forEach((n, i) => {
+    // Radial label: sit just outside the dot, rotated along the radius, and
+    // flipped 180° on the left half so the glyphs stay upright.
+    const deg = (n.ang * 180) / Math.PI;
+    const flip = deg > 90 || deg < -90;
+    const label = showLabels
+      ? '<text transform="translate(' + n.lx.toFixed(1) + ' ' + n.ly.toFixed(1) + ') rotate(' +
+        deg.toFixed(2) + ')' + (flip ? ' rotate(180)' : '') + '" dy="0.32em"' +
+        (flip ? ' text-anchor="end"' : '') + '>' + esc(n.file.split('/').pop()) + '</text>'
+      : '';
+    nodes += '<g class="node" data-i="' + i + '" data-file="' + esc(n.file) + '" data-stage="' + esc(n.stage) +
+      '" data-degree="' + n.degree + '" data-fns="' + (n.functions || 0) + '">' +
+      '<circle cx="' + n.x.toFixed(1) + '" cy="' + n.y.toFixed(1) + '" r="' + n.r.toFixed(1) + '" fill="' +
+      stageColor(n.stage) + '" tabindex="0" role="button" aria-label="' + esc(n.file + ' — ' + n.stage) + '"/>' +
+      label + '</g>';
+  });
+  return '<svg class="gsvg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" ' +
+    'role="img" aria-label="impact graph">' +
+    '<g class="links">' + links + '</g><g class="nodes">' + nodes + '</g></svg>';
+}
+
+function graphLegend(data) {
+  const counts = new Map();
+  for (const n of data.nodes || []) counts.set(n.stage, (counts.get(n.stage) || 0) + 1);
+  const items = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return '<div class="legend">' + items.map(([s, n]) =>
+    '<button class="lchip' + (state.graph.stage === s ? ' cur' : '') + '" data-act="graph-stage" data-stage="' + esc(s) + '">' +
+    '<span class="dot" style="background:' + stageColor(s) + '"></span>' + esc(s) + ' <i style="font-style:normal;color:var(--faint)">' + n + '</i></button>').join('') + '</div>';
+}
+
+async function renderGraph(c, tok, repo) {
+  const stagesOpts = (state.stages || []).map((s) =>
+    '<option value="' + esc(s.id) + '"' + (state.graph.stage === s.id ? ' selected' : '') + '>' +
+    esc(s.id) + ' — ' + esc(s.title) + '</option>').join('');
+  const limits = [30, 60, 120, 200].map((n) =>
+    '<option value="' + n + '"' + (state.graph.limit === n ? ' selected' : '') + '>' + n + '</option>').join('');
+  c.innerHTML = '<div class="gbar">' +
+    '<label for="gStage">' + esc(t('common.stage')) + '</label>' +
+    '<select id="gStage" data-change="graph-stage"><option value=""' + (state.graph.stage ? '' : ' selected') + '>' +
+      esc(t('graph.stageAll')) + '</option>' + stagesOpts + '</select>' +
+    '<label for="gLimit">' + esc(t('graph.limit')) + '</label>' +
+    '<select id="gLimit" data-change="graph-limit" style="min-width:80px">' + limits + '</select>' +
+    '<button class="sm" data-act="graph-reload">' + esc(t('graph.reload')) + '</button>' +
+    '<span class="gstat" id="gStat"></span></div>' +
+    '<div id="gBody"><div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div></div>';
+
+  // The stage picker needs /overview; fetch it lazily once.
+  if (!state.stages) {
+    api('/api/repos/' + enc(repo.name) + '/overview').then((ov) => {
+      if (stale(tok) || !ov || !ov.stages) return;
+      state.stages = ov.stages;
+      const sel = $('gStage');
+      if (!sel) return;
+      sel.insertAdjacentHTML('beforeend', ov.stages.map((s) =>
+        '<option value="' + esc(s.id) + '"' + (state.graph.stage === s.id ? ' selected' : '') + '>' +
+        esc(s.id) + ' — ' + esc(s.title) + '</option>').join(''));
+    }).catch(() => { /* stage filter is a nicety; the graph works without it */ });
+  }
+
+  let data = state.graph.data;
+  if (!data) {
+    try {
+      const q = '?limit=' + state.graph.limit + (state.graph.stage ? '&stage=' + enc(state.graph.stage) : '');
+      data = await api('/api/repos/' + enc(repo.name) + '/graph' + q);
+      if (stale(tok)) return;
+      state.graph.data = data;
+    } catch (e) {
+      if (stale(tok)) return;
+      $('gBody').innerHTML = '<div class="empty"><h3>' + esc(t('graph.empty')) + '</h3>' +
+        '<p class="hint">' + esc(errMsg(e)) + '</p><div class="row">' +
+        '<button data-act="analyze">' + esc(t('ov.analyze')) + '</button></div></div>';
+      return;
+    }
+  }
+  const stat = $('gStat');
+  if (stat) stat.textContent = fmt(t('graph.stat'), (data.nodes || []).length, (data.links || []).length, data.totalFiles || 0);
+  if (!(data.nodes || []).length) {
+    $('gBody').innerHTML = '<div class="empty"><h3>' + esc(t('graph.noNodes')) + '</h3></div>';
+    return;
+  }
+  // Measure first, then draw at 1:1 pixel scale — labels stay crisp and the
+  // ellipse uses whatever room the viewport actually gives us.
+  $('gBody').innerHTML = '<div class="gwrap" id="gWrap"><div class="gtip" id="gTip"></div></div>' +
+    graphLegend(data) + '<p class="hint">' + esc(t('graph.hint')) + '</p>';
+  const wrap = $('gWrap');
+  const W = Math.max(520, Math.round(wrap.clientWidth));
+  const H = Math.max(380, Math.round(wrap.clientHeight));
+  wrap.insertAdjacentHTML('afterbegin', graphSvg(data, W, H));
+  bindGraph(wrap, data);
+}
+
+function bindGraph(wrap, data) {
+  const svg = wrap.querySelector('svg');
+  const tip = wrap.querySelector('.gtip');
+  const nodes = [...svg.querySelectorAll('.node')];
+  const links = [...svg.querySelectorAll('.link')];
+  const nbrs = nodes.map(() => new Set());
+  links.forEach((l) => {
+    const a = Number(l.dataset.a), b = Number(l.dataset.b);
+    if (nbrs[a]) nbrs[a].add(b);
+    if (nbrs[b]) nbrs[b].add(a);
+  });
+
+  function clear() {
+    svg.classList.remove('dim');
+    nodes.forEach((n) => n.classList.remove('on', 'seed'));
+    links.forEach((l) => l.classList.remove('on'));
+    tip.classList.remove('on');
+  }
+  function focusNode(g) {
+    const i = Number(g.dataset.i);
+    svg.classList.add('dim');
+    nodes.forEach((n) => n.classList.remove('on', 'seed'));
+    links.forEach((l) => l.classList.remove('on'));
+    g.classList.add('on', 'seed');
+    (nbrs[i] || new Set()).forEach((j) => { if (nodes[j]) nodes[j].classList.add('on'); });
+    links.forEach((l) => {
+      if (Number(l.dataset.a) === i || Number(l.dataset.b) === i) l.classList.add('on');
+    });
+    const zh = state.lang === 'zh';
+    tip.innerHTML = '<b>' + esc(g.dataset.file) + '</b>' +
+      '<span>' + esc(t('common.stage')) + ': ' + esc(g.dataset.stage) + '</span>' +
+      '<span>' + esc(t('common.degree')) + ': ' + esc(g.dataset.degree) +
+      ' · ' + esc(g.dataset.fns) + (zh ? ' 个函数' : ' fns') + '</span>' +
+      '<span>' + esc((nbrs[i] || []).size ?? 0) + (zh ? ' 个邻居 · 点击看源码' : ' neighbours · click for source') + '</span>';
+    const cr = g.querySelector('circle').getBoundingClientRect();
+    const wr = wrap.getBoundingClientRect();
+    const x = Math.min(Math.max(cr.left - wr.left + cr.width / 2, 90), wr.width - 90);
+    tip.style.left = x + 'px';
+    tip.style.top = (cr.top - wr.top - 4) + 'px';
+    tip.classList.add('on');
+  }
+  svg.addEventListener('mouseover', (e) => {
+    const g = e.target.closest('.node');
+    if (g) focusNode(g);
+  });
+  svg.addEventListener('mouseleave', clear);
+  svg.addEventListener('focusin', (e) => {
+    const g = e.target.closest('.node');
+    if (g) focusNode(g);
+  });
+  svg.addEventListener('focusout', (e) => {
+    if (!svg.contains(e.relatedTarget)) clear();
+  });
+  svg.addEventListener('click', (e) => {
+    const g = e.target.closest('.node');
+    if (g) openSource(g.dataset.file);
+  });
+  svg.addEventListener('keydown', (e) => {
+    const g = e.target.closest('.node');
+    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSource(g.dataset.file); }
+  });
+}
+
+/* --------------------------------------------------------------- source */
+function openSource(file) {
+  state.src = { path: file, data: null, fn: null };
+  state.tab = 'source';
+  state.view = 'repo';
+  render();
+}
+
+async function renderSource(c, tok, repo) {
+  const p = state.src.path;
+  c.innerHTML = '<div class="srcbar"><input class="pathin" id="srcPath" value="' + esc(p) + '" ' +
+    'placeholder="' + esc(t('src.ph')) + '" spellcheck="false" aria-label="path">' +
+    '<button class="primary sm" data-act="src-open">' + esc(t('src.open')) + '</button>' +
+    '<span class="info" id="srcInfo"></span></div><div id="srcBody"></div>';
+  const inp = $('srcPath');
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ACT['src-open'](); });
+
+  if (!p) {
+    $('srcBody').innerHTML = '<div class="card"><span class="k">' + esc(t('src.pick')) + '</span>' +
+      '<p>' + esc(t('src.pickHint')) + '</p><div class="files" id="srcHot" style="margin-top:12px">' +
+      '<span class="loading"><span class="spin"></span></span></div></div>';
+    try {
+      const g = await api('/api/repos/' + enc(repo.name) + '/graph?limit=60');
+      if (stale(tok)) return;
+      const el = $('srcHot');
+      if (!el) return;
+      const list = (g.nodes || []).slice().sort((a, b) => b.degree - a.degree).slice(0, 40);
+      el.innerHTML = list.length ? list.map((n) => '<button class="filechip" data-act="open-source" data-file="' +
+        esc(n.file) + '">' + esc(n.file) + '<i>' + n.degree + '</i></button>').join('')
+        : '<span class="zero">' + esc(t('graph.noNodes')) + '</span>';
+    } catch (e) {
+      if (stale(tok)) return;
+      const el = $('srcHot');
+      if (el) el.innerHTML = '<span class="zero">' + esc(t('graph.empty')) + '</span>';
+    }
+    return;
+  }
+
+  let data = state.src.data;
+  if (!data) {
+    $('srcBody').innerHTML = '<div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div>';
+    try {
+      data = await api('/api/repos/' + enc(repo.name) + '/source?path=' + enc(p));
+      if (stale(tok)) return;
+      state.src.data = data;
+    } catch (e) {
+      if (stale(tok)) return;
+      $('srcBody').innerHTML = '<div class="errbox">' + esc(t('src.notFound')) + ' — ' + esc(errMsg(e)) + '</div>';
+      return;
+    }
+  }
+  const lines = String(data.content).split('\n');
+  const fns = data.functions || [];
+  $('srcInfo').textContent = fmt(t('src.lines'), lines.length, fns.length);
+  const code = lines.map((l, i) => '<div class="cl" data-line="' + (i + 1) + '"><span class="cn">' + (i + 1) +
+    '</span><span class="cc">' + (esc(l) || ' ') + '</span></div>').join('');
+  const index = fns.length ? fns.map((f, i) =>
+    '<button class="fnbtn' + (state.src.fn === i ? ' cur' : '') + '" data-act="jumpfn" data-i="' + i +
+    '" data-start="' + f.lineStart + '" data-end="' + f.lineEnd + '">' +
+    '<b>' + esc(f.qualname) + '</b><i>L' + f.lineStart + '–' + f.lineEnd + '</i></button>').join('')
+    : '<div class="zero" style="padding:12px 14px">' + esc(t('src.noFns')) + '</div>';
+  $('srcBody').innerHTML = '<div class="srcgrid"><div class="code" id="codePane">' + code + '</div>' +
+    '<div class="fnlist"><div class="h">' + esc(t('src.fns')) + ' · ' + fns.length + '</div>' +
+    '<div class="b">' + index + '</div></div></div>';
+  if (state.src.fn !== null && fns[state.src.fn]) jumpFn(fns[state.src.fn].lineStart, fns[state.src.fn].lineEnd);
+}
+
+function jumpFn(start, end) {
+  const pane = $('codePane');
+  if (!pane) return;
+  pane.querySelectorAll('.cl.fnhl').forEach((e) => e.classList.remove('fnhl'));
+  for (let n = start; n <= end; n++) {
+    const row = pane.querySelector('.cl[data-line="' + n + '"]');
+    if (row) row.classList.add('fnhl');
+  }
+  const first = pane.querySelector('.cl[data-line="' + start + '"]');
+  if (first) pane.scrollTop = Math.max(0, first.offsetTop - pane.clientHeight / 3);
+}
+
+/* --------------------------------------------------------------- evolve */
+function outcomesTable(res) {
+  const rows = (res.outcomes || []).map((o) => {
+    const good = o.status === 'applied' || o.status === 'created';
+    return '<tr' + (good ? '' : ' class="bad"') + '><td class="mk ' + (good ? 'ok' : 'no') + '">' +
+      (good ? '✓' : '✗') + '</td><td>' + esc(o.index) + '</td><td class="f">' + esc(o.file) + '</td>' +
+      '<td class="m">' + esc(o.where || t('common.none')) + '</td>' +
+      '<td class="m">' + esc(o.status) + '</td>' +
+      '<td class="m">' + esc(o.detail || '') + '</td>' +
+      '<td class="m">' + (o.line ? 'L' + esc(o.line) : '') + '</td></tr>';
+  }).join('');
+  return '<table class="tbl"><thead><tr><th></th><th>#</th><th>file</th><th>where</th><th>status</th>' +
+    '<th>detail</th><th>line</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+/** The server throws on a failed apply, so recover outcomes from the log. */
+function outcomesFromLog(log) {
+  const out = [];
+  for (const line of log || []) {
+    const m = String(line).match(/^([✓✗])\s+EDIT\s+(\d+)\s+(\S+)\s+—\s+([a-z-]+)(?::\s*(.*))?$/);
+    if (m) out.push({ index: Number(m[2]), file: m[3], where: '', status: m[4], detail: m[5] || '' });
+  }
+  return out;
+}
+
+function patchPanel() {
+  const p = state.patch;
+  let h = '';
+  if (p) {
+    const cls = p.ok ? 'jade' : 'red';
+    const head = p.dryRun
+      ? (p.ok ? fmt(t('ev.dryOk'), (p.outcomes || []).length) : t('ev.dryBad'))
+      : (p.ok ? fmt(t('ev.applyOk'), (p.changedFiles || []).length, p.backupDir || '—') : t('ev.applyBad'));
+    h += '<div class="sechead" style="margin:16px 0 4px"><h3>' + esc(t('ev.outcomes')) + '</h3>' +
+      '<span class="pill ' + cls + '">' + esc(p.dryRun ? 'dry-run' : 'apply') + '</span>' +
+      (p.fromLog ? '<span class="c">' + esc(t('ev.fromLog')) + '</span>' : '') + '<span class="sp"></span></div>';
+    h += '<p style="font-size:12.5px;color:var(--' + (p.ok ? 'jade' : 'red') + ')">' + esc(head) + '</p>';
+    h += outcomesTable(p);
+    if (!p.dryRun && p.ok) {
+      h += '<div class="row" style="margin-top:12px"><button class="danger" data-act="rollback">' +
+        esc(t('ev.rollback')) + '</button><span class="hint">' + esc(t('ev.afterApply')) + '</span></div>';
+    }
+  }
+  const b = state.backups;
+  h += '<div class="sechead" style="margin:20px 0 6px"><h3>' + esc(t('ev.backups')) + '</h3>' +
+    '<span class="c">' + (b ? b.length : '') + '</span><span class="sp"></span>' +
+    '<button class="sm ghost" data-act="patches-refresh">↻</button></div>';
+  if (!b) h += '<div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div>';
+  else if (!b.length) h += '<div class="zero">' + esc(t('ev.noBackups')) + '</div>';
+  else h += '<div class="list">' + b.map((stamp) => '<div class="li"><div class="g"><div class="t1 mono">' +
+    esc(stamp) + '</div><div class="t2">' + esc(relTime(stampIso({ id: stamp }))) + '</div></div>' +
+    '<div class="rt"><button class="sm danger" data-act="rollback" data-backup="' + esc(stamp) + '">' +
+    esc(t('ev.rollback')) + '</button></div></div>').join('') + '</div>';
+  return h;
+}
+
+async function renderEvolve(c, tok, repo) {
+  c.innerHTML =
+    '<div class="grid g2" style="align-items:start">' +
+      '<div class="card"><span class="k g">' + esc(t('ev.planK')) + '</span><p>' + esc(t('ev.planD')) + '</p>' +
+      '<textarea id="planReq" rows="3" style="margin-top:10px" placeholder="' + esc(t('ev.planPh')) + '"></textarea>' +
+      '<div class="row end" style="margin-top:10px"><button class="primary" data-act="plan-run">' +
+      esc(t('ev.planRun')) + '</button></div></div>' +
+      '<div class="card"><span class="k">' + esc(t('ev.resyncK')) + '</span><p>' + esc(t('ev.resyncD')) + '</p>' +
+      '<textarea id="resyncDesc" rows="3" style="margin-top:10px" placeholder="' + esc(t('ev.resyncPh')) + '"></textarea>' +
+      '<div class="row end" style="margin-top:10px"><button data-act="resync" data-nollm="1">' +
+      esc(t('ev.resyncNo')) + '</button><button class="primary" data-act="resync">' + esc(t('ev.resyncGo')) +
+      '</button></div></div>' +
+    '</div>' +
+    '<div class="card" style="margin-top:16px"><span class="k">' + esc(t('ev.patchK')) + '</span>' +
+      '<p>' + esc(t('ev.patchD')) + '</p>' +
+      '<div id="planMeta"></div>' +
+      '<textarea class="plan" id="patchPlan" spellcheck="false" style="margin-top:10px" placeholder="' +
+      esc(t('ev.patchPh')) + '"></textarea>' +
+      '<div class="row" style="margin-top:10px"><button data-act="patch-dry">' + esc(t('ev.dry')) + '</button>' +
+      '<button class="primary" data-act="patch-apply">' + esc(t('ev.apply')) + '</button></div>' +
+      '<div id="patchOut">' + patchPanel() + '</div></div>';
+  $('patchPlan').value = state.plan || '';
+  if (state.planMeta) $('planMeta').innerHTML = '<div class="row" style="margin-top:8px">' + state.planMeta + '</div>';
+  if (!state.backups) loadBackups(tok);
+}
+
+async function loadBackups(tok) {
+  const repo = current();
+  if (!repo) return;
+  try {
+    state.backups = await api('/api/repos/' + enc(repo.name) + '/patches');
+  } catch (e) {
+    state.backups = [];
+    state.backupsError = errMsg(e);
+  }
+  if (stale(tok) || state.tab !== 'evolve') return;
+  const el = $('patchOut');
+  if (el) el.innerHTML = patchPanel();
+}
+
+/* ----------------------------------------------------------- repo history */
+async function renderRepoHistory(c, tok, repo) {
+  c.innerHTML = '<div class="sechead" style="margin-top:0"><h3>' + esc(t('hist.title')) + '</h3>' +
+    '<span class="c">' + esc(repo.name) + '</span><span class="sp"></span>' +
+    '<button class="sm ghost" data-act="view" data-view="ghistory">' + esc(t('common.viewAll')) + ' →</button></div>' +
+    '<div id="rhBody"><div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div></div>';
+  try {
+    const list = await api('/api/repos/' + enc(repo.name) + '/history');
+    if (stale(tok)) return;
+    $('rhBody').innerHTML = list.length ? groupedEvos(list, false)
+      : '<div class="empty"><h3>' + esc(t('hist.empty')) + '</h3><p>' + esc(t('hist.emptyD')) + '</p></div>';
+  } catch (e) {
+    if (stale(tok)) return;
+    $('rhBody').innerHTML = '<div class="errbox">' + esc(t('common.failed')) + ' — ' + esc(errMsg(e)) + '</div>';
+  }
+}
+
+/* ------------------------------------------------------- job drawer/SSE */
+let evtSource = null;
+
+function setJobStatus(status) {
+  const el = $('jobStatus');
+  el.className = 'st' + (status === 'succeeded' ? ' ok' : status === 'failed' ? ' bad' : '');
+  el.textContent = t('job.' + status) || String(status).toUpperCase();
+}
+
 function runJob(job, title, onDone) {
   $('drawer').classList.add('show');
   $('jobTitle').textContent = title;
-  $('jobStatus').textContent = 'running';
+  setJobStatus('running');
   $('jobLog').textContent = '';
-  if (evtSource) evtSource.close();
-  evtSource = new EventSource(`/api/jobs/${job.id}/stream`);
-  evtSource.onmessage = (e) => {
-    $('jobLog').textContent += JSON.parse(e.data) + '\n';
-    $('jobLog').scrollTop = $('jobLog').scrollHeight;
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  let finished = false;
+  const finish = async () => {
+    if (finished) return;
+    finished = true;
+    if (evtSource) { evtSource.close(); evtSource = null; }
+    let full = null;
+    try { full = await api('/api/jobs/' + enc(job.id)); } catch (e) { appendLog('✖ ' + errMsg(e)); }
+    setJobStatus(full ? full.status : 'failed');
+    await loadRepos();
+    renderChrome();
+    if (onDone) { try { await onDone(full); } catch (e) { appendLog('✖ ' + errMsg(e)); } }
+    else await render();
   };
-  evtSource.addEventListener('done', async () => {
-    evtSource.close();
-    const full = await api(`/api/jobs/${job.id}`).catch(()=>null);
-    $('jobStatus').textContent = full ? full.status : 'done';
-    await refresh(true);
-    if (onDone && full) onDone(full);
-  });
+  try {
+    evtSource = new EventSource('/api/jobs/' + enc(job.id) + '/stream');
+  } catch (e) {
+    appendLog('✖ ' + errMsg(e));
+    void finish();
+    return;
+  }
+  evtSource.onmessage = (e) => {
+    let line = e.data;
+    try { line = JSON.parse(e.data); } catch { /* raw line */ }
+    appendLog(line);
+  };
+  evtSource.addEventListener('done', () => { void finish(); });
+  evtSource.onerror = () => {
+    if (finished) return;
+    appendLog(state.lang === 'zh' ? '⚠ 日志流断开，正在拉取任务状态…' : '⚠ log stream dropped, fetching job status…');
+    void finish();
+  };
 }
-function hideDrawer(){ $('drawer').classList.remove('show'); if(evtSource) evtSource.close(); }
-function showError(title, message){
+
+function appendLog(line) {
+  const el = $('jobLog');
+  el.textContent += String(line) + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+function showError(title, message) {
   $('drawer').classList.add('show');
   $('jobTitle').textContent = title;
-  $('jobStatus').textContent = 'failed';
-  $('jobLog').textContent = '✖ ' + message;
+  setJobStatus('failed');
+  $('jobLog').textContent = '✖ ' + message + '\n';
 }
 
-function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+/* -------------------------------------------------------------- actions */
+const ACT = {
+  'view': (el) => go(el.dataset.view),
+  'side-open': () => document.body.classList.add('side'),
+  'side-close': () => document.body.classList.remove('side'),
+  'lang': () => {
+    state.lang = state.lang === 'zh' ? 'en' : 'zh';
+    localStorage.setItem('hb.lang', state.lang);
+    syncDialogs();
+    render();
+  },
+  'theme': () => {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('hb.theme', state.theme);
+    render();                                  // graph colours are theme-dependent
+  },
+  'repo': (el) => openRepo(el.dataset.name, 'overview'),
+  'cta-repo': (el) => openRepo(el.dataset.name, el.dataset.tab || 'overview'),
+  'tab': (el) => { state.tab = el.dataset.tab; render(); },
+  'cta': (el) => {
+    if (!state.repos.length) return ACT['add-open']();
+    openRepo(state.repo || state.repos[0].name, el.dataset.tab);
+  },
+  'repo-del': async (el) => {
+    const name = el.dataset.name;
+    if (!window.confirm(fmt(t('common.confirmDelete'), name))) return;
+    try {
+      await api('/api/repos/' + enc(name), { method: 'DELETE' });
+      if (state.repo === name) { state.repo = null; state.view = 'home'; }
+      await loadRepos();
+      await render();
+    } catch (e) { showError(t('common.delete') + ' ' + name, errMsg(e)); }
+  },
+  'add-open': () => { $('fErr').textContent = ''; $('dlgAdd').showModal(); },
+  'add-cancel': () => $('dlgAdd').close(),
+  'add-submit': async () => {
+    const name = $('fName').value.trim();
+    const sourceRoot = $('fSource').value.trim();
+    const workDir = $('fWork').value.trim();
+    if (!name || !sourceRoot) { $('fErr').textContent = t('dlg.need'); return; }
+    try {
+      $('fErr').textContent = '';
+      await api('/api/repos', {
+        method: 'POST',
+        body: JSON.stringify({ name, sourceRoot, workDir: workDir || undefined }),
+      });
+      $('dlgAdd').close();
+      await loadRepos();
+      openRepo(name, 'overview');
+    } catch (e) { $('fErr').textContent = errMsg(e); }
+  },
+  'gen-open': () => $('dlgGen').showModal(),
+  'gen-cancel': () => $('dlgGen').close(),
+  'gen-submit': async () => {
+    $('dlgGen').close();
+    const repo = current();
+    if (!repo) return;
+    const body = {
+      narrateLang: $('gLang').value, detail: $('gDetail').value, synthMode: $('gSynth').value,
+    };
+    const title = $('gTitle').value.trim();
+    if (title) body.title = title;
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/generate', { method: 'POST', body: JSON.stringify(body) });
+      runJob(job, t('dlg.gen'));
+    } catch (e) { showError(t('dlg.gen'), errMsg(e)); }
+  },
+  'analyze': async () => {
+    const repo = current();
+    if (!repo) return;
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/analyze', { method: 'POST', body: '{}' });
+      runJob(job, t('ov.analyze'), async () => {
+        state.graph.data = null; state.stages = null;
+        await render();
+      });
+    } catch (e) { showError(t('ov.analyze'), errMsg(e)); }
+  },
+  'chapter': (el) => {
+    state.browsePath = 'html/' + el.dataset.stage + '.html';
+    state.tab = 'browse';
+    render();
+  },
+  'graph-stage': (el) => {
+    state.graph = { stage: el.dataset.stage || '', limit: state.graph.limit, data: null };
+    state.tab = 'graph';
+    render();
+  },
+  'graph-reload': () => { state.graph.data = null; render(); },
+  'open-source': (el) => openSource(el.dataset.file),
+  'src-open': () => {
+    const v = $('srcPath').value.trim().replace(/^\.?\//, '');
+    if (!v) return;
+    state.src = { path: v, data: null, fn: null };
+    render();
+  },
+  'jumpfn': (el) => {
+    state.src.fn = Number(el.dataset.i);
+    document.querySelectorAll('.fnbtn.cur').forEach((b) => b.classList.remove('cur'));
+    el.classList.add('cur');
+    jumpFn(Number(el.dataset.start), Number(el.dataset.end));
+  },
+  'plan-run': async () => {
+    const repo = current();
+    const req = $('planReq').value.trim();
+    if (!repo) return;
+    if (!req) { showError(t('ev.planRun'), t('ev.needReq')); return; }
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/plan', {
+        method: 'POST', body: JSON.stringify({ request: req }),
+      });
+      runJob(job, t('ev.planRun'), async (full) => {
+        if (full && full.status === 'succeeded' && full.result && full.result.plan) {
+          state.plan = full.result.plan;
+          const r = full.result;
+          state.planMeta = '<span class="pill gold">' + esc(fmt(t('ev.planTurns'), r.turns || 0)) + '</span>' +
+            '<span class="pill ice">' + esc(fmt(t('ev.planDecl'), Array.isArray(r.declarations) ? r.declarations.length : 0)) + '</span>';
+          state.patch = null;
+        }
+        await render();
+      });
+    } catch (e) { showError(t('ev.planRun'), errMsg(e)); }
+  },
+  'patch-dry': () => runPatch(true),
+  'patch-apply': () => runPatch(false),
+  'patches-refresh': () => { state.backups = null; render(); },
+  'rollback': async (el) => {
+    const repo = current();
+    if (!repo) return;
+    const body = el.dataset.backup ? { backup: el.dataset.backup } : {};
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/rollback', {
+        method: 'POST', body: JSON.stringify(body),
+      });
+      runJob(job, t('ev.rollback'), async () => {
+        state.patch = null; state.backups = null;
+        await render();
+      });
+    } catch (e) { showError(t('ev.rollback'), errMsg(e)); }
+  },
+  'resync': async (el) => {
+    const repo = current();
+    if (!repo) return;
+    const noLlm = el.dataset.nollm === '1';
+    const title = noLlm ? t('ev.resyncNo') : t('ev.resyncGo');
+    const desc = ($('resyncDesc') && $('resyncDesc').value.trim()) || '';
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/resync', {
+        method: 'POST', body: JSON.stringify({ description: desc, noLlm }),
+      });
+      runJob(job, title, async () => { state.evoCount = null; await render(); });
+    } catch (e) { showError(title, errMsg(e)); }
+  },
+  'drawer-hide': () => {
+    $('drawer').classList.remove('show');
+    if (evtSource) { evtSource.close(); evtSource = null; }
+  },
+};
 
-refresh();
+async function runPatch(dryRun) {
+  const repo = current();
+  if (!repo) return;
+  const plan = $('patchPlan').value;
+  state.plan = plan;
+  const title = dryRun ? t('ev.dry') : t('ev.apply');
+  if (!plan.trim()) { showError(title, t('ev.needPlan')); return; }
+  try {
+    const job = await api('/api/repos/' + enc(repo.name) + '/apply', {
+      method: 'POST', body: JSON.stringify({ plan, dryRun }),
+    });
+    runJob(job, title, async (full) => {
+      if (full && full.status === 'succeeded' && full.result) {
+        state.patch = { ...full.result, fromLog: false };
+      } else if (full) {
+        // A rejected plan throws server-side; the per-edit marks live in the log.
+        state.patch = { dryRun, ok: false, outcomes: outcomesFromLog(full.log), changedFiles: [], fromLog: true };
+      }
+      state.backups = null;
+      await render();
+    });
+  } catch (e) { showError(title, errMsg(e)); }
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const fn = ACT[el.dataset.act];
+  if (!fn) return;
+  e.preventDefault();
+  try { fn(el, e); } catch (err) { showError('UI', errMsg(err)); }
+});
+document.addEventListener('change', (e) => {
+  const el = e.target.closest('[data-change]');
+  if (!el) return;
+  if (el.dataset.change === 'graph-stage') {
+    state.graph = { stage: el.value, limit: state.graph.limit, data: null };
+    render();
+  } else if (el.dataset.change === 'graph-limit') {
+    state.graph = { stage: state.graph.stage, limit: Number(el.value) || 60, data: null };
+    render();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('side')) document.body.classList.remove('side');
+});
+// The graph is laid out in device pixels, so a resize needs a fresh layout.
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  if (state.view !== 'repo' || state.tab !== 'graph') return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { void render(); }, 200);
+});
+
+/* ------------------------------------------------------------- dialogs */
+function syncDialogs() {
+  $('addTitle').textContent = t('dlg.add');
+  $('lbName').textContent = t('dlg.name');
+  $('lbSource').textContent = t('dlg.source');
+  $('lbWork').textContent = t('dlg.work');
+  $('fWork').placeholder = t('dlg.workPh');
+  $('addCancel').textContent = t('common.cancel');
+  $('addSubmit').textContent = t('dlg.addGo');
+  $('genTitle').textContent = t('dlg.gen');
+  $('lbLang').textContent = t('dlg.lang');
+  $('lbDetail').textContent = t('dlg.detail');
+  $('lbSynth').textContent = t('dlg.synth');
+  $('lbGTitle').textContent = t('dlg.title2');
+  $('genHint').textContent = t('dlg.genHint');
+  $('genCancel').textContent = t('common.cancel');
+  $('genSubmit').textContent = t('dlg.genGo');
+  const keep = (sel, opts) => {
+    const el = $(sel);
+    const cur = el.value;
+    el.innerHTML = opts.map((o) => '<option value="' + o[0] + '">' + esc(o[1]) + '</option>').join('');
+    if (cur) el.value = cur;
+  };
+  keep('gDetail', [['brief', t('dlg.detailBrief')], ['deep', t('dlg.detailDeep')]]);
+  keep('gSynth', [['oneshot', t('dlg.synthOne')], ['doctor', t('dlg.synthDoc')]]);
+}
+
+/* ----------------------------------------------------------------- boot */
+(async function boot() {
+  document.documentElement.dataset.theme = state.theme;
+  syncDialogs();
+  await loadRepos();
+  await render();
+  if (state.reposError) showError('GET /api/repos', state.reposError);
+})();
 </script>
 </body>
 </html>
