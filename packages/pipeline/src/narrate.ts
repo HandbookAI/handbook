@@ -299,7 +299,14 @@ export async function extractRegisters(
     : undefined;
   if (cachePath && !refresh && fileExists(cachePath)) {
     const cached = readJsonFile(cachePath);
-    if (Array.isArray(cached)) return cached as RegisterEntry[];
+    // An EMPTY cached result is a remembered failure, not an answer: a network
+    // drop mid-extraction once wrote `[]` here, and every later run then
+    // returned zero registers instantly without logging a thing. Only a
+    // non-empty result is worth trusting.
+    if (Array.isArray(cached) && cached.length > 0) {
+      logger.info(`[registers] ${cached.length} register(s) from cache`);
+      return cached as RegisterEntry[];
+    }
   }
 
   const found = new Map<string, RegisterEntry>();
@@ -409,7 +416,10 @@ export async function extractRegisters(
   }
 
   const registers = [...found.values()];
-  if (cachePath) {
+  if (registers.length === 0) {
+    // Say it out loud. Silence here reads as "this codebase has no state".
+    logger.warn('[registers] no registers were extracted — the rounds returned nothing usable');
+  } else if (cachePath) {
     ensureDir(options.cacheDir as string);
     writeJsonFile(cachePath, registers);
   }
