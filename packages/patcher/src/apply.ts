@@ -132,60 +132,67 @@ function realpathOr(path: string): string {
  * Cross-process exclusive lock for the verify+write window: two `handbook apply`
  * runs on one tree would otherwise interleave and silently lose an edit.
  */
-function withTreeLock<T>(lockRoot: string, logger: Logger, work: () => T): T {
-  const lockDir = join(lockRoot, 'apply.lock');
-  const ownerPath = join(lockDir, 'owner.json');
+function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
+  // The lock identifies the TREE, never the backup location: the studio and the
+  // CLI use different backup roots on the same repo and must still exclude each
+  // other. `wx` creates the file and its owner record in ONE atomic step, so a
+  // waiter can never observe a claimed-but-unlabelled lock.
+  const lockDir = join(realpathOr(resolve(sourceRoot)), '.handbook-patches');
+  const lockPath = join(lockDir, 'apply.lock');
   try {
-    mkdirSync(lockRoot, { recursive: true });
+    mkdirSync(lockDir, { recursive: true });
   } catch (error) {
-    throw new Error(`cannot create the patch backup directory ${lockRoot}: ${(error as Error).message}`);
+    throw new Error(`cannot create ${lockDir}: ${(error as Error).message}`);
   }
 
-  const acquire = (): boolean => {
+  const claim = (): boolean => {
     try {
-      mkdirSync(lockDir); // atomic: EEXIST means someone else holds it
-      writeFileSync(ownerPath, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`, 'utf8');
+      writeFileSync(lockPath, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`, {
+        flag: 'wx', // exclusive create: atomic claim + owner record
+      });
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw new Error(`cannot take the patch lock in ${lockRoot}: ${(error as Error).message}`);
+        throw new Error(`cannot take the patch lock at ${lockPath}: ${(error as Error).message}`);
       }
       return false;
     }
   };
 
-  if (!acquire()) {
-    // Never busy-wait: applyPlan is synchronous, so spinning would freeze the
-    // caller's event loop (in the studio, the whole HTTP server). Reclaim only a
-    // lock whose owning process is provably gone, otherwise fail fast.
-    let owner: { pid?: number } = {};
+  /** Is the recorded owner still running? Unknown counts as ALIVE (fail closed). */
+  const ownerAlive = (): boolean => {
+    let pid: number | undefined;
     try {
-      owner = JSON.parse(readFileSync(ownerPath, 'utf8')) as { pid?: number };
+      const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown };
+      if (typeof owner.pid === 'number') pid = owner.pid;
     } catch {
-      owner = {};
+      return true; // unreadable or half-written → assume someone owns it
     }
-    const ownerAlive =
-      typeof owner.pid === 'number' &&
-      (() => {
-        try {
-          process.kill(owner.pid as number, 0); // signal 0 = liveness probe
-          return true;
-        } catch {
-          return false;
-        }
-      })();
-    if (ownerAlive) {
-      throw new Error(`another patch run (pid ${String(owner.pid)}) is writing to this tree — retry when it finishes`);
+    if (pid === undefined || pid === process.pid) return true;
+    try {
+      process.kill(pid, 0); // signal 0 = liveness probe
+      return true;
+    } catch (error) {
+      // EPERM means the process EXISTS but belongs to another user.
+      return (error as NodeJS.ErrnoException).code === 'EPERM';
     }
+  };
+
+  if (!claim()) {
+    if (ownerAlive()) {
+      throw new Error('another patch run is writing to this tree — retry when it finishes');
+    }
+    // Reclaim a provably dead lock. The exclusive create below is the referee:
+    // if a competitor reclaims first, we lose and fail fast rather than share.
     logger.warn('[patch] reclaiming a stale patch lock (its owner is gone)');
-    rmSync(lockDir, { recursive: true, force: true });
-    if (!acquire()) throw new Error('could not take the patch lock after reclaiming a stale one');
+    rmSync(lockPath, { force: true });
+    if (!claim()) throw new Error('another patch run took the lock while it was being reclaimed');
   }
 
   try {
     return work();
   } finally {
-    rmSync(lockDir, { recursive: true, force: true });
+    rmSync(lockPath, { force: true });
   }
 }
 
@@ -262,8 +269,7 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
   const logger = options.logger ?? silentLogger;
   // dry-run never writes, so it needs no lock.
   if (options.dryRun) return applyPlanInner(options, logger);
-  const lockRoot = resolve(options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches'));
-  return withTreeLock(lockRoot, logger, () => applyPlanInner(options, logger));
+  return withTreeLock(options.sourceRoot, logger, () => applyPlanInner(options, logger));
 }
 
 function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
@@ -282,6 +288,24 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     ok = false;
   };
 
+  /** A rename needs a writable PARENT; the file's own mode is irrelevant. */
+  const parentWritable = (absolutePath: string): boolean => {
+    let probe = dirname(absolutePath);
+    for (;;) {
+      if (existsSync(probe)) {
+        try {
+          accessSync(probe, constants.W_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      const parent = dirname(probe);
+      if (parent === probe) return false;
+      probe = parent;
+    }
+  };
+
   for (const edit of edits) {
     const absolutePath = safeResolve(options.sourceRoot, edit.file);
     if (!absolutePath) {
@@ -295,6 +319,11 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     const blocked = blockingAncestor(options.sourceRoot, edit.file);
     if (blocked) {
       fail(edit, 'not-a-file', `"${blocked}" is a file, so it cannot contain this path`);
+      continue;
+    }
+    // Checked for creates and edits alike, and in dry-run too.
+    if (!parentWritable(absolutePath)) {
+      fail(edit, 'unsafe-path', 'the containing directory is not writable');
       continue;
     }
 
@@ -385,14 +414,6 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     }
     if (hits > 1) {
       fail(edit, 'ambiguous', `the \`old\` text appears ${hits} times — needs more context to be unique`);
-      continue;
-    }
-
-    // Permission is part of "would this apply?", so dry-run checks it too.
-    try {
-      accessSync(existsSync(absolutePath) ? absolutePath : dirname(absolutePath), constants.W_OK);
-    } catch {
-      fail(edit, 'unsafe-path', 'no write permission for this path');
       continue;
     }
 
@@ -592,7 +613,7 @@ function readManifest(backupDir: string): Manifest {
 export function rollback(backupDir: string, options: RollbackOptions = {}): RollbackResult {
   const logger = options.logger ?? silentLogger;
   const manifest = readManifest(backupDir);
-  return withTreeLock(dirname(resolve(backupDir)), logger, () => rollbackInner(backupDir, manifest, options, logger));
+  return withTreeLock(manifest.sourceRoot, logger, () => rollbackInner(backupDir, manifest, options, logger));
 }
 
 function rollbackInner(
@@ -618,7 +639,11 @@ function rollbackInner(
     const currentHash = existsSync(target) ? sha256Hex(readFileSync(target)) : undefined;
 
     if (!options.force && entry.sha256After && currentHash && currentHash !== entry.sha256After) {
-      skipped.push({ file: entry.file, reason: 'changed after the patch — pass force to overwrite' });
+      const reason =
+        entry.sha256Before && currentHash === entry.sha256Before
+          ? 'already back at its pre-patch content — nothing to restore'
+          : 'changed after the patch — pass force to overwrite';
+      skipped.push({ file: entry.file, reason });
       continue;
     }
     if (entry.existed) {

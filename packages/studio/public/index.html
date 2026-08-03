@@ -909,7 +909,8 @@ function openRepo(name, tab) {
     state.graph = { stage: '', limit: 60, data: null };
     state.stages = null;
     state.src = { path: '', data: null, fn: null };
-    state.plan = ''; state.patch = null; state.backups = null;
+    state.plan = ''; state.planMeta = ''; state.patch = null;
+    state.backups = null; state.backupsError = null;
     state.browsePath = 'html/overview.html';
   }
   state.repo = name;
@@ -1540,7 +1541,8 @@ function patchPanel() {
   h += '<div class="sechead" style="margin:20px 0 6px"><h3>' + esc(t('ev.backups')) + '</h3>' +
     '<span class="c">' + (b ? b.length : '') + '</span><span class="sp"></span>' +
     '<button class="sm ghost" data-act="patches-refresh">↻</button></div>';
-  if (!b) h += '<div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div>';
+  if (state.backupsError) h += '<div class="errbox">GET /patches — ' + esc(state.backupsError) + '</div>';
+  else if (!b) h += '<div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div>';
   else if (!b.length) h += '<div class="zero">' + esc(t('ev.noBackups')) + '</div>';
   else h += '<div class="list">' + b.map((stamp) => '<div class="li"><div class="g"><div class="t1 mono">' +
     esc(stamp) + '</div><div class="t2">' + esc(relTime(stampIso({ id: stamp }))) + '</div></div>' +
@@ -1580,6 +1582,7 @@ async function loadBackups(tok) {
   if (!repo) return;
   try {
     state.backups = await api('/api/repos/' + enc(repo.name) + '/patches');
+    state.backupsError = null;
   } catch (e) {
     state.backups = [];
     state.backupsError = errMsg(e);
