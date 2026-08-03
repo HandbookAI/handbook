@@ -159,6 +159,64 @@ function fileBlock(
   return lines.join('\n');
 }
 
+/**
+ * Pull the card entries out of a reply, tolerating the shapes models actually
+ * emit. Only `{"purposes":[…]}` is asked for, but a model that answers with a
+ * bare array — or names the array `files`/`cards`/`results` — has still done the
+ * work, and rejecting that silently is how 90 files end up with empty cards.
+ */
+/**
+ * Resolve a loosely-named path against the batch: `./a/b.ts`, a bare basename,
+ * or a path prefixed with the repo name all name the same file unambiguously.
+ * Ambiguous basenames (two `index.ts`) resolve to nothing.
+ */
+function matchLoosely(named: string, valid: ReadonlySet<string>): string | undefined {
+  const cleaned = named.trim().replace(/^\.\/+/, '').replace(/^`+|`+$/g, '');
+  if (valid.has(cleaned)) return cleaned;
+  const suffixHits = [...valid].filter((f) => f === cleaned || f.endsWith(`/${cleaned}`));
+  if (suffixHits.length === 1) return suffixHits[0];
+  const base = cleaned.split('/').pop() ?? cleaned;
+  const baseHits = [...valid].filter((f) => (f.split('/').pop() ?? f) === base);
+  return baseHits.length === 1 ? baseHits[0] : undefined;
+}
+
+/** A short, log-safe description of what the reply's JSON actually looked like. */
+function describeReplyKeys(json: unknown): string {
+  if (json === undefined || json === null) return 'no JSON block in the reply';
+  if (Array.isArray(json)) return `top-level array of ${json.length}`;
+  if (typeof json !== 'object') return `top-level ${typeof json}`;
+  return `keys: ${Object.keys(json as object).slice(0, 8).join(', ') || '(none)'}`;
+}
+
+export function extractCardEntries(json: unknown): RawEntry[] {
+  const asEntries = (value: unknown): RawEntry[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+    return value.filter((v): v is RawEntry => typeof v === 'object' && v !== null);
+  };
+  const direct = asEntries(json);
+  if (direct) return direct;
+  if (typeof json !== 'object' || json === null) return [];
+  const record = json as Record<string, unknown>;
+  for (const key of ['purposes', 'files', 'cards', 'results', 'entries', 'data']) {
+    const hit = asEntries(record[key]);
+    if (hit) return hit;
+  }
+  // A single un-wrapped card: {"file": "...", "purpose": "..."}.
+  if (typeof record.file === 'string') return [record as RawEntry];
+  // …or one with no `file` at all, which is the natural answer when the prompt
+  // carried a single file. The caller supplies the path in that case.
+  const cardish = ['purpose', 'description', 'role', 'lifecycle', 'functions'];
+  if (cardish.some((key) => key in record)) return [record as RawEntry];
+  // Keyed by path: {"a/b.ts": {"purpose": "..."}, …}.
+  const keyed = Object.entries(record).filter(
+    ([, v]) => typeof v === 'object' && v !== null && !Array.isArray(v),
+  );
+  if (keyed.length > 0 && keyed.every(([k]) => k.includes('/') || k.includes('.'))) {
+    return keyed.map(([file, v]) => ({ ...(v as RawEntry), file }));
+  }
+  return [];
+}
+
 interface RawEntry {
   file?: unknown;
   purpose?: unknown;
@@ -173,8 +231,17 @@ interface RawEntry {
 export function mergeFunctionNotes(graphFns: FunctionNote[], llmFns: unknown): FunctionNote[] {
   const byQualname = new Map<string, Record<string, unknown>>();
   const byName = new Map<string, Record<string, unknown>>();
-  if (Array.isArray(llmFns)) {
-    for (const raw of llmFns) {
+  // Models answer either with a list of `{qualname, …}` objects or with a map
+  // keyed by the function name. Both are the same information.
+  const list = Array.isArray(llmFns)
+    ? llmFns
+    : typeof llmFns === 'object' && llmFns !== null
+      ? Object.entries(llmFns as Record<string, unknown>)
+          .filter(([, v]) => typeof v === 'object' && v !== null)
+          .map(([qualname, v]) => ({ qualname, ...(v as Record<string, unknown>) }))
+      : undefined;
+  if (Array.isArray(list)) {
+    for (const raw of list) {
       if (typeof raw !== 'object' || raw === null) continue;
       const entry = raw as Record<string, unknown>;
       const qual = typeof entry.qualname === 'string' ? entry.qualname : undefined;
@@ -280,12 +347,29 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     const result: Record<string, FileCard> = {};
     try {
       const response = await client.complete(prompt, { temperature: 0 });
-      const parsed = response.json as { purposes?: unknown } | undefined;
-      const entries = Array.isArray(parsed?.purposes) ? (parsed.purposes as RawEntry[]) : [];
+      const entries = extractCardEntries(response.json);
       const valid = new Set(batch.map((d) => d.file));
+      const soleFile = batch.length === 1 ? batch[0]?.file : undefined;
       for (const entry of entries) {
-        if (typeof entry.file !== 'string' || !valid.has(entry.file)) continue;
-        result[entry.file] = entryToCard(entry, entry.file, detail, inventory[entry.file]);
+        // An entry may omit `file`, or name it loosely (basename, leading "./").
+        const named = typeof entry.file === 'string' ? entry.file : undefined;
+        const file =
+          named && valid.has(named)
+            ? named
+            : (named && matchLoosely(named, valid)) ?? (entries.length === 1 ? soleFile : undefined);
+        if (!file) continue;
+        result[file] = entryToCard(entry, file, detail, inventory[file]);
+      }
+      if (Object.keys(result).length === 0) {
+        // The call SUCCEEDED but nothing usable came back — a shape mismatch or
+        // a refusal. Never let that look the same as "the model said nothing":
+        // report what arrived and keep the reply for inspection.
+        const excerpt = response.text.trim().slice(0, 200).replace(/\s+/g, ' ');
+        const keys = describeReplyKeys(response.json);
+        logger.warn(
+          `[cards] batch of ${batch.length} returned no usable entries (${keys}) — reply: ${JSON.stringify(excerpt)}`,
+        );
+        work.saveRejectedReply(batch[0]?.file ?? 'batch', response.text);
       }
     } catch (error) {
       logger.warn(`[cards] batch of ${batch.length} failed: ${String(error)}`);
@@ -412,5 +496,15 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   };
   work.saveCardCoverage(coverage);
   if (missing.length > 0) logger.warn(`[cards] ${missing.length} files backfilled with empty cards`);
+  // Degrading SOME files to empty cards is honest partial coverage. Degrading
+  // EVERY file is a broken LLM configuration wearing a success costume: the
+  // handbook that follows would be pure scaffolding, and the narration phase
+  // would burn the same failing calls again. Stop and say so.
+  if (files.length > 0 && coverage.nDescribed === 0) {
+    throw new Error(
+      `[cards] all ${files.length} files failed to be described — the model returned nothing usable. ` +
+        `Check OPENAI_MODEL/OPENAI_BASE_URL and the warnings above; reasoning models need a larger OPENAI_MAX_TOKENS.`,
+    );
+  }
   return { cards, coverage };
 }

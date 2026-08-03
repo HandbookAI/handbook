@@ -81,3 +81,82 @@ describe('extractAssistantText', () => {
     expect(extractAssistantText({})).toBeUndefined();
   });
 });
+
+describe('OpenAiChatClient with a reasoning endpoint', () => {
+  const base = { apiKey: 'test', baseUrl: 'http://x/v1', maxRetries: 3, retryBackoffMs: 1, model: 'glm-5.2' };
+
+  /** Capture the request bodies so budget growth is observable. */
+  function recordingFetch(bodies: Array<Record<string, any>>, handler: (n: number) => unknown): typeof fetch {
+    let calls = 0;
+    return (async (_url: string, init: RequestInit) => {
+      calls += 1;
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify(handler(calls)), { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  it('treats an empty completion as a retryable failure, not an empty answer', async () => {
+    const bodies: Array<Record<string, any>> = [];
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: recordingFetch(bodies, () => ({
+        choices: [{ finish_reason: 'length', message: { role: 'assistant', content: '' } }],
+      })),
+    });
+    await expect(client.complete('describe this file')).rejects.toThrow(/empty content/i);
+    expect(bodies.length).toBe(3); // retried, not silently accepted
+  });
+
+  it('names reasoning as the cause and grows the budget on retry', async () => {
+    const bodies: Array<Record<string, any>> = [];
+    const client = new OpenAiChatClient({
+      config: { ...base, maxTokens: 1000 },
+      fetchImpl: recordingFetch(bodies, (n) =>
+        n < 3
+          ? {
+              choices: [
+                {
+                  finish_reason: 'length',
+                  message: { role: 'assistant', content: '', reasoning_content: 'thinking…' },
+                },
+              ],
+              usage: { completion_tokens_details: { reasoning_tokens: 999 } },
+            }
+          : { choices: [{ message: { content: '{"ok":1}' } }] },
+      ),
+    });
+    const result = await client.complete('describe this file');
+    expect(result.json).toEqual({ ok: 1 });
+    // First attempt uses the configured budget; later attempts get more room
+    // because the endpoint proved it spends the budget on reasoning.
+    expect(bodies[0]?.max_tokens).toBe(1000);
+    expect(bodies[1]?.max_tokens).toBe(2000);
+    expect(bodies[2]?.max_tokens).toBe(3000);
+  });
+
+  it('reports the reasoning hint when every attempt comes back blank', async () => {
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: 'length', message: { content: '', reasoning_content: 'x' } }],
+            usage: { completion_tokens_details: { reasoning_tokens: 4096 } },
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).rejects.toThrow(/spent its budget on reasoning \(4096 reasoning tokens\)/);
+  });
+
+  it('still rejects whitespace-only content', async () => {
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '   \n\t ' } }] }), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).rejects.toThrow(/empty content/i);
+  });
+});
