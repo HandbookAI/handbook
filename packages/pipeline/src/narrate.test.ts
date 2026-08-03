@@ -153,3 +153,44 @@ describe('extractRegisters caching', () => {
     expect(good.calls()).toBe(before); // served from cache
   });
 });
+
+describe('extractRegisters field-name tolerance', () => {
+  const narration = {
+    version: 1,
+    lang: 'zh',
+    systemOverview: 'o',
+    stageSummaries: Object.fromEntries(skeleton.stages.map((s) => [s.id, 'summary'])),
+  } as Narration;
+
+  function client(reply: string) {
+    return {
+      model: 'test',
+      async complete() {
+        return { text: reply, json: extractJsonBlock(reply), elapsedSec: 0 };
+      },
+    };
+  }
+
+  it('reads `semantic` (singular) — the shape a live endpoint actually sent', async () => {
+    const reply = ['```json', '[{"id":"reg-env-config","semantic":"环境配置与运行参数","stages":[]}]', '```'].join('\n');
+    const out = await extractRegisters(client(reply), skeleton, narration, {}, { maxRounds: 1, lang: 'zh' });
+    expect(out).toEqual([{ id: 'reg-env-config', semantics: '环境配置与运行参数', stages: [] }]);
+  });
+
+  it('never drops an entry silently', async () => {
+    const warnings: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (m: string) => {
+        warnings.push(m);
+      },
+      error: () => {},
+      debug: () => {},
+      child: () => logger,
+    };
+    const reply = ['```json', '[{"id":"reg-ok","note":"prose under a key nobody reads"}]', '```'].join('\n');
+    const out = await extractRegisters(client(reply), skeleton, narration, {}, { maxRounds: 1, logger });
+    expect(out).toEqual([]);
+    expect(warnings.join(' ')).toMatch(/dropped 1\/1 entr\(ies\) the model did send/);
+  });
+});

@@ -6,7 +6,7 @@
  * This module is deliberately domain-agnostic: the pipeline supplies the
  * actor prompt, the evidence block, and the proposal schema hint.
  */
-import { mapLimit, type Logger, silentLogger } from '@handbook/core';
+import { describeJsonShape, mapLimit, replyExcerpt, silentLogger, type Logger } from '@handbook/core';
 import type { ChatClient } from './client.js';
 
 export type CriticDecision = 'APPROVE' | 'REVISE' | 'REJECT';
@@ -46,12 +46,23 @@ Return EXACTLY one JSON block:
 {"decision": "APPROVE|REVISE|REJECT", "concerns": ["..."], "suggested_revision": null, "rationale": "..."}
 \`\`\``;
 
-/** Parse a critic response into a {@link Verdict}. Returns undefined on shape drift. */
-export function parseVerdict(json: unknown): Verdict | undefined {
-  if (typeof json !== 'object' || json === null) return undefined;
+/**
+ * Read a critic's verdict.
+ *
+ * A verdict that cannot be read counts as REJECT, so shape tolerance here is
+ * about not rejecting good reviews over a key name: `verdict`/`judgement`/
+ * `status` all mean `decision`. The plain-text fallback (`text`) is deliberately
+ * narrow — a bare decision word, or `decision: APPROVE` — because scanning prose
+ * for "APPROVE" would read "I would not approve this" as approval.
+ */
+export function parseVerdict(json: unknown, text?: string): Verdict | undefined {
+  if (typeof json !== 'object' || json === null) return parseVerdictText(text);
   const v = json as Record<string, unknown>;
-  const decision = typeof v.decision === 'string' ? v.decision.trim().toUpperCase() : '';
-  if (decision !== 'APPROVE' && decision !== 'REVISE' && decision !== 'REJECT') return undefined;
+  const rawDecision = [v.decision, v.verdict, v.judgement, v.judgment, v.status].find(
+    (candidate) => typeof candidate === 'string',
+  );
+  const decision = typeof rawDecision === 'string' ? rawDecision.trim().toUpperCase() : '';
+  if (decision !== 'APPROVE' && decision !== 'REVISE' && decision !== 'REJECT') return parseVerdictText(text);
   const suggested = v.suggested_revision ?? v.suggestedRevision ?? null;
   if (suggested !== null && typeof suggested !== 'object') return undefined;
   const concerns = Array.isArray(v.concerns) ? v.concerns.map(String) : [];
@@ -66,6 +77,22 @@ export function parseVerdict(json: unknown): Verdict | undefined {
     verdict = { ...verdict, decision: 'APPROVE', rationale: `[normalized vacuous REVISE] ${verdict.rationale}` };
   }
   return verdict;
+}
+
+/** A reply that is only a decision word, or `decision: WORD`, and nothing else. */
+function parseVerdictText(text: string | undefined): Verdict | undefined {
+  if (!text) return undefined;
+  // Strip markdown emphasis first: `**Decision:** APPROVE` puts the colon inside
+  // the asterisks, which no single pattern reads cleanly.
+  const plain = text.replace(/\*+/g, '').trim();
+  const match = /^(?:(?:decision|verdict)\s*[:=]\s*)?(APPROVE|REVISE|REJECT)\b[\s.!。]*$/i.exec(plain);
+  if (!match) return undefined;
+  const decision = (match[1] as string).toUpperCase() as Verdict['decision'];
+  // A bare REVISE carries no concerns to act on, which the JSON path normalises
+  // to APPROVE; keep that rule identical here.
+  return decision === 'REVISE'
+    ? { decision: 'APPROVE', concerns: [], suggestedRevision: null, rationale: '[bare REVISE with no concerns]' }
+    : { decision, concerns: [], suggestedRevision: null, rationale: '[decision read from a plain-text reply]' };
 }
 
 export function buildCriticPrompt(args: {
@@ -174,9 +201,15 @@ export async function actorCriticLoop(
           roundNote: roundNotes.get(role),
         });
         const result = await client.complete(prompt, { temperature });
-        const verdict = parseVerdict(result.json);
+        const verdict = parseVerdict(result.json, result.text);
         if (verdict) return { role, verdict };
-        logger.warn(`critic ${role}: unparseable verdict — treating as REJECT`);
+        // Fail-closed is the design, but say what arrived: a critic that always
+        // rejects because of a key name looks identical to a strict critic.
+        logger.warn(
+          `critic ${role}: unparseable verdict (${describeJsonShape(result.json)}) — treating as REJECT; reply: ${replyExcerpt(
+            result.text,
+          )}`,
+        );
       } catch (error) {
         logger.warn(`critic ${role} failed: ${String(error)} — treating as REJECT`);
       }

@@ -29,6 +29,7 @@ import {
   describeJsonShape,
   extractEntryList,
   replyExcerpt,
+  pickString,
 } from '@handbook/core';
 import { readFileSync } from 'node:fs';
 
@@ -251,6 +252,9 @@ export interface RegistersOptions {
  * separator and prose — so ordinary sentences in a reply cannot become
  * registers. Anything looser belongs in the JSON path, not here.
  */
+/** Field names models use for a register's meaning. `semantic` is common. */
+const SEMANTICS_KEYS = ['semantics', 'semantic', 'description', 'desc', 'meaning', 'summary', 'what'] as const;
+
 export function parseRegisterLines(text: string): Array<Record<string, unknown>> {
   const found = new Map<string, Record<string, unknown>>();
   for (const line of text.split(/\r?\n/)) {
@@ -327,6 +331,8 @@ export async function extractRegisters(
             .map((r) => `- ${r.id}: ${r.semantics}`)
             .join('\n')}`;
     let added = 0;
+    /** Entries that arrived but could not be used. Reported, never swallowed. */
+    const dropped: string[] = [];
     try {
       const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, { temperature: 0 });
       // Tolerate the shape drift real endpoints produce (bare array, other
@@ -355,16 +361,16 @@ export async function extractRegisters(
       for (const r of entries) {
         // Coerce near-miss ids (`reg_task_queue`, `Task Queue`) into the
         // canonical form instead of silently dropping the register.
-        const rawId = typeof r.id === 'string' ? r.id : typeof r.name === 'string' ? r.name : '';
+        const rawId = pickString(r, ['id', 'name', 'register', 'key']) ?? '';
         let id = rawId.trim().toLowerCase().replace(/[_\s]+/g, '-');
         if (id && !id.startsWith('reg-')) id = `reg-${id.replace(/^-+/, '')}`;
-        const semantics =
-          typeof r.semantics === 'string'
-            ? r.semantics.trim()
-            : typeof r.description === 'string'
-              ? r.description.trim()
-              : '';
-        if (!/^reg-[a-z0-9-]+$/.test(id) || !semantics) continue;
+        const semantics = pickString(r, SEMANTICS_KEYS) ?? '';
+        if (!/^reg-[a-z0-9-]+$/.test(id) || !semantics) {
+          // A dropped entry the model DID send is the quietest failure there is:
+          // 20 good registers once vanished because the field was `semantic`.
+          dropped.push(`${rawId || '(no id)'} — ${semantics ? 'unusable id' : 'no semantics field'}`);
+          continue;
+        }
         const stages = Array.isArray(r.stages)
           ? r.stages.filter((s): s is string => typeof s === 'string' && validIds.has(s))
           : [];
@@ -379,6 +385,13 @@ export async function extractRegisters(
         }
         found.set(id, { id, semantics, stages });
         added += 1;
+      }
+      if (dropped.length > 0) {
+        logger.warn(
+          `[registers] dropped ${dropped.length}/${entries.length} entr(ies) the model did send — ${dropped
+            .slice(0, 4)
+            .join('; ')}`,
+        );
       }
     } catch (error) {
       logger.warn(`[registers] round ${round} failed: ${String(error)}`);
