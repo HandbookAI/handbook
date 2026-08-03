@@ -64,3 +64,12 @@
 1. 每完成一个包：更新本文件状态 → git commit。
 2. 委派 subagent 时把«精确接口 + 参照文件 + 测试要求»写全，产物直接落 packages/。
 3. 恢复会话时：读本文件 + git log + 设计文档即可续作，无需重读源项目。
+
+
+## 2026-08-03 增量记录
+
+- deck 团队分享页（docs/handbook-deck.html，13 页暗金 keynote 风）+ 白话讲稿（docs/handbook-deck-script.md），经 5 轮对抗
+- renderer 孤儿页 bug 修复（.render-manifest.json 清单法；html/agent 目录直接清扫）
+- **@handbook/studio**（第 10 个包）：本地 Web UI（127.0.0.1）——仓库注册/生成（SSE 日志）/内嵌手册浏览/plan/resync 演化历史；CLI `handbook studio`
+- studio 对抗评审 15 项全修：CSRF 防护、**内容哈希级变更探测**（phase1 graph.metadata.fileHashes，resync 用哈希 diff）、declarations 参与 resync 范围、UTF-8 分块解码、workDir 冲突守卫、部分阶段渲染守卫、失败清理、任务逐出等
+- 全仓 182 测试绿；studio 实例可用：`handbook studio` → http://127.0.0.1:4860
