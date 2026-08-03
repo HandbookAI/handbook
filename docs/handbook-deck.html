@@ -204,7 +204,7 @@
       <h1>每个仓库，<br>自带一本<span class="gold">活的手册</span>。</h1>
     </div>
     <p class="lede" style="font-size:21px">代码在变，文档在追。Handbook 从源码出发，生成<b>人能读懂的系统手册</b>和
-    <b>AI agent 能用的改码地图</b>——代码变更后，一条 resync 命令增量更新，挂进 CI 即随合并自动跟进。</p>
+    <b>AI agent 能用的改码地图</b>——代码变更后，一条 resync 命令增量更新；挂进 CI（需自行加一个 job）即随合并自动跟进。</p>
     <p class="lede" style="font-size:14px;margin-top:34px;font-family:var(--mono);letter-spacing:.06em;color:var(--fg-faint)">
       Python · TypeScript · Go · Rust · Shell　|　任意 OpenAI 兼容端点</p>
     <p class="lede" style="font-size:12.5px;margin-top:10px;font-family:var(--mono);letter-spacing:.06em;color:var(--fg-faint)">
@@ -278,15 +278,15 @@
     <div class="grid g3">
       <div class="card">
         <span class="k">每次现场探索 → 一次沉淀复用</span>
-        <p style="font-size:15px">agent 每接一个任务都从零读库：重复烧 token，能读多少还受上下文窗口限制。Handbook 把整库梳理一次，<b>全队、每个任务复用</b>。</p>
+        <p style="font-size:15px">agent 每接一个任务都要重新定位一遍：grep、读文件、猜错、再来一遍。费的不只是 token——<b>每一轮都会把整段对话重发一次</b>，成本随轮次快速放大。而整库装不进上下文窗口（本仓源码约 16 万 token）。Handbook 是<b>有上限的路由层</b>，一次梳理，全队每个任务复用；它字节稳定，还能吃 prompt 缓存。</p>
       </div>
       <div class="card">
         <span class="k">结论散在对话里 → 可核对的资产</span>
         <p style="font-size:15px">现场探索的结论随对话即焚，事后无法核对。手册的每个事实<b>带行号</b>，讲错了任何人都能指出来、改回来。</p>
       </div>
       <div class="card">
-        <span class="k">文本搜索 → 联动记忆</span>
-        <p style="font-size:15px">「改 parser 必须跟着改镜像 parser」这种跨文件约定，grep 搜不出来。<b>Co-change 字段把部落知识写成清单</b>，agent 和新人都能查。</p>
+        <span class="k">散落的改动点 → 一张清单</span>
+        <p style="font-size:15px">定位块把「这一章碰哪些全局状态、同子组还有哪些文件、新增同类照哪个范本写」列成固定字段，<b>字段为空同样是结论</b>。它按调用图与命名推导，所以标注「编辑前请核实」——<b>它不读 git 历史，纯口头传承的约定抓不到</b>。</p>
       </div>
     </div>
     <p class="lede" style="margin-top:26px">改码前查图，改完回写——Handbook 是 coding agent 的<b>地图与记忆</b>，不是它的对手。</p>
@@ -301,7 +301,7 @@
       <div class="eyebrow">05 · 工作方式</div>
       <h2>生成 → 使用 → 回写，一个<span class="gold">闭环</span></h2>
     </div>
-    <svg class="loop" viewBox="0 0 1020 362" role="img" aria-label="Handbook 闭环流程图">
+    <svg class="loop" viewBox="0 0 1020 362" role="img" aria-label="Handbook 闭环流程图：源码 → 调用图 → 章节叙述 → 手册站点 / SKILL 地图 → 计划与落盘 → resync 前滚">
       <defs>
         <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto">
           <path d="M0 0 L8 4 L0 8 z" fill="#D8B36A"/>
@@ -331,8 +331,9 @@
       <text class="m" x="770" y="278" text-anchor="middle">skill · 给 agent 用</text>
 
       <rect class="node" x="908" y="132" width="100" height="70"/>
-      <text x="958" y="162" text-anchor="middle">精确变更</text>
-      <text class="m" x="958" y="182" text-anchor="middle">plan</text>
+      <text x="958" y="158" text-anchor="middle">精确变更</text>
+      <text class="m" x="958" y="176" text-anchor="middle">plan → apply</text>
+      <text class="m" x="958" y="192" text-anchor="middle">备份可回滚</text>
 
       <path class="edge" d="M156 167 H 214"/>
       <path class="edge" d="M386 167 H 444"/>
@@ -362,25 +363,25 @@
         <div class="hb-side">
           <div class="t">阶段索引</div>
           <a>系统总览</a>
-          <a>CLI 入口</a>
-          <a>环境引导</a>
-          <a>源码解析</a>
-          <a class="cur">语言适配器注册</a>
-          <a>调用图组装</a>
-          <a>卡片生成</a>
-          <a>章节骨架</a>
-          <a>状态寄存器 ▸</a>
+          <a>命令行入口与环境装配</a>
+          <a>核心数据模型与中间表示定义</a>
+          <a class="cur">分析器编排与语法加载</a>
+          <a>多语言适配与结构化提取</a>
+          <a>代码图谱组装与落盘</a>
+          <a>流水线第一阶段：骨架生成</a>
+          <a>文件说明书生成</a>
+          <a>状态流动 ▸</a>
         </div>
         <div class="hb-main">
-          <h4>语言适配器注册</h4>
-          <div class="meta">adapter-registration · 4 files · 生成于调用图之上，每个事实可回溯行号</div>
-          <p class="prose">这个阶段处在系统启动期，专门负责给系统配备多语言翻译能力。语言适配器就像是系统里专门懂某门编程语言的翻译员……就像酒店前台排好各国语言接待员的名册，等真正拿到代码时，系统只要查一下名册，就能立刻派对应的翻译员去解析。<span style="color:var(--fg-faint)">（真实生成文本，未经人工润色）</span></p>
+          <h4>分析器编排与语法加载</h4>
+          <div class="meta">analyzer_orchestration · 4 个文件 · 生成于调用图之上，每个事实可回溯行号</div>
+          <p class="prose">这个阶段处在系统启动期，负责给代码分析器装填「语法字典」。它先通过 languages.ts 加载 tree-sitter 的 WebAssembly 语法文件——这是一种能在浏览器或 Node 里直接跑的语法规则包，让程序不用本地编译就能认得各种编程语言。……适配器就像插头转换器，把不同语言的解析能力统一成同一个接口。<span style="color:var(--fg-faint)">（真实生成文本，未经人工润色）</span></p>
           <div class="hb-fn"><code>registerBuiltinAdapters()</code>　<code style="color:var(--fg-faint)">register.ts:11</code>
-            <small>开机时把五种语言的解析器一次性注册进名册，幂等，可反复调用。</small></div>
-          <div class="hb-fn"><code>adapterForFile(relPath)</code>　<code style="color:var(--fg-faint)">adapter.ts:88</code>
-            <small>按扩展名找到负责的翻译员；最长后缀匹配获胜。</small></div>
+            <small>把五种内置语言适配器注册到全局注册表，只执行一次。</small></div>
+          <div class="hb-fn"><code>adapterForFile(relPath)</code>　<code style="color:var(--fg-faint)">adapter.ts:89</code>
+            <small>根据文件路径后缀，找出哪个适配器能处理它，最长后缀优先。</small></div>
           <div>
-            <span class="hb-reg">reg-parser-cache</span><span class="hb-reg">reg-concurrency-semaphore</span>
+            <span class="hb-reg">reg-language-adapter-registry</span><span class="hb-reg">reg-ir-call-graph</span>
           </div>
         </div>
       </div>
@@ -405,26 +406,27 @@
       <div class="card">
         <span class="k">SKILL 地图 · 每章一个定位块</span>
         <div class="term" style="font-size:12px;margin-top:4px">
-<div><span class="y"># task-execution · 任务执行</span></div>
-<div><span class="p">Duty:</span> 队列驱动的任务消费与执行</div>
-<div><span class="p">Entry concepts:</span> <span class="b">queue / worker</span></div>
-<div><span class="p">State:</span> <span class="g">reg-task-queue</span></div>
-<div><span class="p">Co-change:</span> 改 parser 必查 <span class="r">镜像 parser + 模板</span></div>
-<div><span class="p">Core files:</span> queue.py · worker.py</div>
+<div><span class="y"># call_graph_assembly · 代码图谱组装与落盘</span></div>
+<div><span class="p">职责：</span>把零散的函数与调用关系拼成一张图并落盘…</div>
+<div><span class="p">入口概念：</span><span class="b">graph / inventory</span></div>
+<div><span class="p">状态：</span><span class="g">reg-workdir-state</span></div>
+<div><span class="p">范本：</span>analyzer/src/graph.ts (11 个函数)</div>
+<div><span class="p">相关（同子组，编辑前请核实）：</span><span class="r">图谱组装与落盘 / 项目导航包提炼</span></div>
+<div><span class="p">核心文件：</span>analyzer/src/graph.ts · pipeline/src/inventory.ts</div>
         </div>
-        <p style="margin-top:14px">改动前先查地图：哪些章节在影响范围内、哪些全局状态会被波及、<b>改 A 时历史上总要跟着改的 B</b>。字段为空同样是结论：这一章没有需要担心的全局状态。</p>
+        <p style="margin-top:14px">改动前先查地图：哪些章节在影响范围内、哪些全局状态会被波及、新增同类该照哪个文件写。<b>字段为空同样是结论</b>：这一章没有需要担心的全局状态。上图是本仓真实生成的定位块，未编造。</p>
       </div>
       <div class="card">
         <span class="k">PLAN · 逐字精确的编辑计划</span>
         <div class="term" style="font-size:12px;margin-top:4px">
-<div><span class="y">### EDIT 1</span> — engine.py · Engine.spin</div>
+<div><span class="y">### EDIT 1</span> — app/worker.py · Worker.execute</div>
 <div><span class="c">```old</span>　精确到字节的现有代码…</div>
 <div><span class="c">```new</span>　最小替换…</div>
 <div><span class="c">```json</span></div>
-<div>{"will_modify": ["Engine.spin"],</div>
+<div>{"will_modify": ["Worker.execute"],</div>
 <div>&nbsp;"will_add": [], "will_remove": []}</div>
         </div>
-        <p style="margin-top:14px">planner 是只读 agent：用手册路由 → 读真实源码确认 → 输出 old/new 文本块 + <b>机器可读的变更声明</b>。old 块逐字节匹配，对不上就拒绝执行——<b>宁可失败，不改错地方</b>；resync 再拿声明更新手册。</p>
+        <p style="margin-top:14px">planner 是只读 agent：用手册路由 → 读真实源码确认 → 输出 old/new 文本块 + <b>机器可读的变更声明</b>。old 块由执行器（<code>handbook apply</code>）逐字节匹配：找不到、或找到两处都算<b>拒绝</b>，全成或全不成，写盘前先备份、可还原到改前的确切字节——<b>宁可失败，不改错地方</b>；改完 resync 再拿声明更新手册。</p>
       </div>
     </div>
   </div>
@@ -448,18 +450,17 @@
         <span class="k">02 · 结构靠评审出来</span>
         <h3>三个角色互相拆台</h3>
         <p>章节结构由「骨架医生」循环打磨：提案 → <b>工程师 / 架构师 / 读者</b>三个评审并行审核 → 机械校验后才落地。评审输出损坏或格式非法时，一律按「不通过」处理——<b>出错的评审员，不能成为放行的理由</b>。</p>
-        <div class="converge" aria-label="doctor 收敛：未归位文件 19 → 1 → 0">
-          <div class="colwrap"><div class="bar" style="height:64px"></div><div class="n">19</div><div class="lab">R1</div></div>
-          <div class="colwrap"><div class="bar" style="height:12px"></div><div class="n">1</div><div class="lab">R2</div></div>
+        <div class="converge" aria-label="doctor 收敛：未归位文件 25 → 0 → 0">
+          <div class="colwrap"><div class="bar" style="height:64px"></div><div class="n">25</div><div class="lab">R1</div></div>
+          <div class="colwrap"><div class="bar ok" style="height:4px"></div><div class="n">0</div><div class="lab">R2</div></div>
           <div class="colwrap"><div class="bar ok" style="height:4px"></div><div class="n">0</div><div class="lab">R3</div></div>
-          <div class="colwrap"><div class="bar ok" style="height:4px"></div><div class="n">0</div><div class="lab">R4-5</div></div>
         </div>
-        <p style="font-size:12px;margin-top:8px;color:var(--fg-faint)">↑ 真实记录：78 个文件中最初 19 个无家可归，三轮归零</p>
+        <p style="font-size:12px;margin-top:8px;color:var(--fg-faint)">↑ 真实记录（本仓 93 文件）：第 1 轮 25 个无家可归 → 第 2 轮采纳 2 处改动后归零 → 第 3 轮无改动，确认收敛</p>
       </div>
       <div class="card">
         <span class="k">03 · 降级而不是崩溃</span>
         <h3>每一步都有备胎</h3>
-        <p>读文件失败：整批 → 单文件 → 按函数分块，三级降级；叙述失败退回确定性文本；全部产物内容哈希缓存 + 断点续跑。<b>一次模型抖动，毁不掉一次构建</b>；失败会被记录在覆盖率报告里，不会虚报。</p>
+        <p>模型调用失败时逐级缩小请求：整批 → 单文件 → 按函数分块，三级降级；叙述失败退回确定性文本；阶段 3 的叙述与寄存器按内容哈希缓存，卡片支持 <code>--resume</code> 断点续跑。<b>一次模型抖动，毁不掉一次构建</b>；失败会被记录在覆盖率报告里，不会虚报。</p>
       </div>
     </div>
   </div>
@@ -474,15 +475,15 @@
       <h2>不是 demo，是<span class="gold">按产品标准做的</span></h2>
     </div>
     <div class="stats">
-      <div class="stat"><b>78<i>→21</i></b><span>吃自己狗粮：78 个源文件，生成 21 章全中文手册</span></div>
-      <div class="stat"><b>9</b><span>个包硬隔离：LLM 代码碰不到确定性事实层——模型抖动伤不到锚点</span></div>
-      <div class="stat"><b>167</b><span>项离线测试兜底：工具升级不心惊，坏了也是我们先知道</span></div>
-      <div class="stat"><b>3<i>轮</i></b><span>对抗式评审，33 项问题全部修复并补回归；记录在 docs/internal/review/ 可查</span></div>
+      <div class="stat"><b>93<i>→20</i></b><span>吃自己狗粮：93 个源文件，生成 20 章全中文手册</span></div>
+      <div class="stat"><b>11</b><span>个包硬隔离：LLM 代码碰不到确定性事实层——模型抖动伤不到锚点</span></div>
+      <div class="stat"><b>302</b><span>项离线测试兜底：工具升级不心惊，坏了也是我们先知道</span></div>
+      <div class="stat"><b>9<i>轮</i></b><span>对抗式评审，133 项问题全部修复并补回归；记录在 docs/internal/review/ 可查</span></div>
       <div class="stat"><b>5</b><span>种语言开箱即用，安装零编译——clone 下来就能跑</span></div>
     </div>
     <div class="card" style="margin-top:18px">
       <span class="k">它给自己写的系统总览 · 真实生成，未润色</span>
-      <p style="font-size:15.5px;line-height:2">「这个系统是一个代码库手册自动生成器——它读入源码，输出人能读、AI 也能用的文档。……进入主循环后，调度器像车间主任依次分发任务：每个文件拿到一张『用途卡片』并归入对应阶段；骨架合成排出章节顺序，叙述生成用大白话写出概述，<b>Doctor 审查以演员-评论家循环反复打磨质量</b>。代码若有改动，增量重同步只刷新受影响部分。」</p>
+      <p style="font-size:15.5px;line-height:2">「本系统是一个代码库手册生成与维护工具，能自动扫描源码、调用大模型，把杂乱的代码库变成人能读懂的系统手册，还能辅助规划代码修改。它像一座全自动文档工厂：从代码进厂到手册出厂，全程流水线作业。……接着，系统不依赖大模型，纯靠图谱切出章节骨架；随后初始化大模型客户端，逐个文件生成大白话说明书，并通过<b>演员-评论家多轮审查把关质量</b>。……若代码有变，增量重同步只更新受影响页面。」</p>
     </div>
   </div>
   <div class="folio"><b>09</b> / 13</div>
@@ -500,11 +501,18 @@
 <div><span class="g">handbook analyze</span>  --source ~/code/myproj --work work/myproj      <span class="c"># 静态分析，免费，先看识别结果</span></div>
 <div><span class="g">handbook generate</span> --source ~/code/myproj --work work/myproj --narrate-lang zh</div>
 <div><span class="g">handbook render</span>   --work work/myproj --html --agent-site         <span class="c"># 手册站点 + agent 地图</span></div>
-<div style="margin-top:8px"><span class="c"># 代码变更之后：</span></div>
+<div style="margin-top:8px"><span class="c"># 让 agent 出计划、核对后再落盘（可先 --dry-run 空跑）：</span>
+<div><span class="y">handbook apply</span> --source ~/code/myproj --plan plan.md --dry-run
+<span class="c"># 逐字节核对；改错宁可失败</span></div>
+<div><span class="y">handbook rollback</span> --backup ~/code/myproj/.handbook-patches/&lt;时间戳&gt;
+<span class="c"># 还原到改前字节</span></div>
+<div><span class="y">handbook studio</span>
+<span class="c"># 不想敲命令：本机 Web 界面，127.0.0.1</span></div>
+<span class="c"># 代码变更之后：</span></div>
 <div><span class="r">handbook resync</span>   --case case1 --work work/myproj                <span class="c"># 只更新受影响章节，缓存命中不花钱</span></div>
     </div>
     <div class="grid g3" style="margin-top:18px">
-      <div class="card"><span class="k">花多少</span><h3>成本三闸门</h3><p>brief 先试水再上 deep 精读；叙述按内容哈希缓存；<b>--resume</b> 断点续跑。实测锚点：本仓 78 文件 brief 全量约<b>数十次模型调用</b>；接内网端点时费用趋近于零。</p></div>
+      <div class="card"><span class="k">花多少</span><h3>成本三闸门</h3><p>brief 先试水再上 deep 精读；叙述按内容哈希缓存；<b>--resume</b> 断点续跑。实测锚点：本仓 93 文件、deep 全量，卡片阶段<b>每文件一次调用</b>（93 次 / 1 分 48 秒），归档 7 秒、章节组织 18 次调用 9 秒；brief 会更省，卡片按批合并。接内网端点时费用趋近于零。</p></div>
       <div class="card"><span class="k">代码去哪了</span><h3>数据不出你的边界</h3><p>源码只发往 .env 里配置的那<b>一个端点</b>——接内网 vLLM / 网关时代码全程不出内网，无遥测上报；CI 和演示走内置 mock，<b>零外发、零 token</b>。</p></div>
       <div class="card"><span class="k">什么仓库</span><h3>大小通吃</h3><p>大库自动分章（file 策略）；小而关键的库可手写章节骨架、<b>逐函数</b>精修（member 策略）。混合语言自动探测。</p></div>
     </div>
@@ -531,7 +539,7 @@
       </div>
       <div class="card">
         <span class="k">Q3 · 工具谁维护？</span>
-        <p style="font-size:15px">由 ______（分享人现场认领）负责，问题进 #handbook 群；167 项离线测试兜底。产物是纯静态文件，<b>随时可停用，不绑架任何仓库</b>。</p>
+        <p style="font-size:15px">由 ______（分享人现场认领）负责，问题进 #handbook 群；302 项离线测试兜底。产物是纯静态文件，<b>随时可停用，不绑架任何仓库</b>。</p>
       </div>
     </div>
   </div>
@@ -553,7 +561,7 @@
       <span class="k">边界 · 我们不装</span>
       <ul>
         <li>叙述质量取决于所接的模型——弱模型出弱散文，但行号和调用关系等事实层不受影响</li>
-        <li>目前深度解析五种语言（Python / TS / Go / Rust / Shell）；Java、C++ 等需新增 adapter（一门一个文件，130～560 行，照抄现成模式）</li>
+        <li>目前深度解析五种语言（Python / TS / Go / Rust / Shell）；Java、C++ 等需新增 adapter（一门一个文件，132～563 行，照抄现成模式）</li>
         <li>首次全量生成是主要成本；deep 模式在大仓库上应先用 brief 试算规模</li>
       </ul>
     </div>
