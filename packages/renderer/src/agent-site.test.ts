@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { renderAgentSite } from './agent-site.js';
+import { renderAgentSite, strongTwins } from './agent-site.js';
 import { makeFixtureModel } from './fixture.test-helper.js';
 
 const model = makeFixtureModel();
@@ -108,5 +108,44 @@ describe('renderAgentSite', () => {
     expect(howTo).toContain('locator index');
     expect(howTo).toContain('the code is the only source of truth');
     expect(howTo).toContain('An empty field is information');
+  });
+});
+
+describe('strongTwins — every shipped language\'s test-naming convention', () => {
+  /** The bug this covers: TS/JS name tests `x.test.ts`, and only `x_test.*` was
+   *  matched, so the whole Strong co-change field rendered nowhere on a
+   *  TypeScript repo — including this one. */
+  const cases: Array<[string, string, string]> = [
+    ['TS/JS .test.', 'src/client.ts', 'src/client.test.ts'],
+    ['TS/JS .spec.', 'src/client.ts', 'src/client.spec.ts'],
+    ['TS/JS .tests.', 'src/client.ts', 'src/client.tests.ts'],
+    ['Go/Python _test', 'src/client.go', 'src/client_test.go'],
+    ['Python _tests', 'src/client.py', 'src/client_tests.py'],
+    ['Python test_', 'src/client.py', 'src/test_client.py'],
+    ['spec-style _spec', 'src/client.rb', 'src/client_spec.rb'],
+    ['Shell _test', 'bin/deploy.sh', 'bin/deploy_test.sh'],
+  ];
+
+  it.each(cases)('pairs %s', (_label, src, twin) => {
+    expect(strongTwins(src, [src, twin, 'src/unrelated.ts'])).toEqual([twin]);
+  });
+
+  it('finds twins in a sibling __tests__/ directory', () => {
+    const files = ['src/client.ts', 'src/__tests__/client.test.ts'];
+    expect(strongTwins('src/client.ts', files)).toEqual(['src/__tests__/client.test.ts']);
+  });
+
+  it('handles a top-level file', () => {
+    expect(strongTwins('main.ts', ['main.ts', 'main.test.ts'])).toEqual(['main.test.ts']);
+  });
+
+  it('does not pair across directories or on a partial name match', () => {
+    expect(strongTwins('src/a/client.ts', ['src/a/client.ts', 'src/b/client.test.ts'])).toEqual([]);
+    expect(strongTwins('src/client.ts', ['src/client.ts', 'src/clientele.test.ts'])).toEqual([]);
+    expect(strongTwins('src/client.ts', ['src/client.ts', 'src/client.helper.ts'])).toEqual([]);
+  });
+
+  it('is not its own twin, and a test file claims nothing', () => {
+    expect(strongTwins('src/client.test.ts', ['src/client.test.ts', 'src/client.ts'])).toEqual([]);
   });
 });
