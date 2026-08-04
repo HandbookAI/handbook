@@ -6,6 +6,8 @@
  */
 import { capList, leafName } from '@handbook/core';
 import type { FileCard, FunctionNote, NarrateLang } from '@handbook/core';
+import { sourceFileUrl } from './shared.js';
+import type { SourceLinkOptions } from './shared.js';
 
 /** Names shown per call-relation list before collapsing to `(+K more)`. */
 export const REL_NAMES_CAP = 10;
@@ -97,11 +99,22 @@ function renderFunctionMd(fn: FunctionNote, lang: NarrateLang): string {
 
 /**
  * Full markdown card for one file, starting at H3: badges, description
- * (falling back to purpose), then per-function details.
+ * (falling back to purpose), then per-function details. When
+ * `options.sourceBaseUrl` is set, the heading path links to the source file;
+ * otherwise the output is byte-identical to the option-less call.
  */
-export function renderFileCardMd(rel: string, card: FileCard, lang: NarrateLang): string {
+export function renderFileCardMd(
+  rel: string,
+  card: FileCard,
+  lang: NarrateLang,
+  options: SourceLinkOptions = {},
+): string {
   const L = LABELS[lang];
-  const parts: string[] = [`### \`${rel}\``];
+  const heading =
+    options.sourceBaseUrl !== undefined
+      ? `### [\`${rel}\`](${sourceFileUrl(options.sourceBaseUrl, rel)})`
+      : `### \`${rel}\``;
+  const parts: string[] = [heading];
 
   const lifecycle = card.lifecycle.trim();
   const badges =

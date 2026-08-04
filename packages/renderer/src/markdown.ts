@@ -11,12 +11,14 @@ import { basename, join } from 'node:path';
 import { ensureDir, writeFileAtomic } from '@handbook/core';
 import type { HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
 import { renderFileCardMd } from './file-card.js';
-import { HandbookView } from './shared.js';
+import { HandbookView, stageMapMermaid } from './shared.js';
+import type { SourceLinkOptions } from './shared.js';
 
 interface MdLabels {
   subStages: string;
   filesInStage: string;
   systemOverview: string;
+  stageMap: string;
   seeAlso: string;
   seeAlsoRegister: string;
   seeAlsoIndex: string;
@@ -37,6 +39,7 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     subStages: 'Sub-stages',
     filesInStage: 'Files in this stage',
     systemOverview: '## 🗺️ System Overview',
+    stageMap: '## 🧭 Stage Map',
     seeAlso: 'See also',
     seeAlsoRegister: '- [State-flow registers](register.md) — global state that flows across stages.',
     seeAlsoIndex: '- [Stage index](index.md) — every stage and what it does.',
@@ -56,6 +59,7 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     subStages: '子阶段',
     filesInStage: '本阶段的文件',
     systemOverview: '## 🗺️ 系统总览',
+    stageMap: '## 🧭 阶段地图',
     seeAlso: '另见',
     seeAlsoRegister: '- [状态流动登记表](register.md) — 跨阶段流动的全局状态。',
     seeAlsoIndex: '- [阶段索引](index.md) — 每个阶段及其职责。',
@@ -103,7 +107,12 @@ function renderStageRegisters(registers: readonly RegisterEntry[], lang: Narrate
   return `${LABELS[lang].stageRegisterMarker}\n\n${bullets.join('\n')}\n`;
 }
 
-function stagePageMd(view: HandbookView, sid: string, lang: NarrateLang): string {
+function stagePageMd(
+  view: HandbookView,
+  sid: string,
+  lang: NarrateLang,
+  options: SourceLinkOptions,
+): string {
   const L = LABELS[lang];
   const { tree } = view;
   const crosscut = tree.isCrosscut(sid) ? L.crosscutBadge : '';
@@ -124,9 +133,9 @@ function stagePageMd(view: HandbookView, sid: string, lang: NarrateLang): string
     for (const group of groups) {
       section.push(`### ${group.title}`);
       if (group.summary.trim().length > 0) section.push(group.summary.trim());
-      for (const file of group.files) section.push(renderFileCardMd(file, view.card(file), lang));
+      for (const file of group.files) section.push(renderFileCardMd(file, view.card(file), lang, options));
     }
-    for (const file of leftovers) section.push(renderFileCardMd(file, view.card(file), lang));
+    for (const file of leftovers) section.push(renderFileCardMd(file, view.card(file), lang, options));
     parts.push(section.join('\n\n'));
   }
 
@@ -135,7 +144,10 @@ function stagePageMd(view: HandbookView, sid: string, lang: NarrateLang): string
 
 function overviewMd(view: HandbookView, lang: NarrateLang): string {
   const L = LABELS[lang];
-  const parts = [`# ${view.model.title}`, L.systemOverview, view.model.narration.systemOverview.trim(), '---', `## ${L.seeAlso}`];
+  const parts = [`# ${view.model.title}`, L.systemOverview, view.model.narration.systemOverview.trim()];
+  const mermaid = stageMapMermaid(view.tree);
+  if (mermaid.length > 0) parts.push(L.stageMap, mermaid);
+  parts.push('---', `## ${L.seeAlso}`);
   const links: string[] = [];
   if (view.model.registers.length > 0) links.push(L.seeAlsoRegister);
   links.push(L.seeAlsoIndex);
@@ -163,10 +175,13 @@ function indexMd(view: HandbookView, lang: NarrateLang): string {
 /**
  * Render the full markdown handbook into `outDir`.
  * Returns the number of stage pages and every file written (absolute paths).
+ * `options.sourceBaseUrl` (opt-in) turns every file-card path into a link to
+ * the source file; without it the output contains no external URLs.
  */
 export function renderMarkdownHandbook(
   model: HandbookModel,
   outDir: string,
+  options: SourceLinkOptions = {},
 ): { nStagePages: number; files: string[] } {
   const view = new HandbookView(model);
   const lang = model.lang;
@@ -183,7 +198,7 @@ export function renderMarkdownHandbook(
   };
 
   const contentStages = view.contentStages();
-  for (const sid of contentStages) write(`${sid}.md`, stagePageMd(view, sid, lang));
+  for (const sid of contentStages) write(`${sid}.md`, stagePageMd(view, sid, lang, options));
 
   write('overview.md', overviewMd(view, lang));
   if (model.registers.length > 0) {

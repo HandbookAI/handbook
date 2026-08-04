@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeFixtureModel } from './fixture.test-helper.js';
+import { ENGINE, makeFixtureModel } from './fixture.test-helper.js';
 import { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
 
 const model = makeFixtureModel();
@@ -87,6 +87,58 @@ describe('renderMarkdownHandbook', () => {
 
   it('does not annotate stages no register touches', () => {
     expect(read('stage-1.1.md')).not.toContain(stageSectionMarker('en'));
+  });
+});
+
+describe('renderMarkdownHandbook — mermaid stage map', () => {
+  it('embeds a flowchart of the stage tree in overview.md', () => {
+    const overview = read('overview.md');
+    expect(overview).toContain('## 🧭 Stage Map');
+    expect(overview).toContain('```mermaid');
+    expect(overview).toContain('flowchart TD');
+    expect(overview).toContain('stage-1["Ingestion Pipeline"]');
+    expect(overview).toContain('stage-1_1["Ingestion Parser"]');
+    expect(overview).toContain('stage-1 --> stage-1_1');
+    expect(overview).toContain('crosscut-1["Test Harness"]:::crosscut');
+    expect(overview).toContain('classDef crosscut');
+    expect(overview).not.toContain('stage-1.1["');
+  });
+
+  it('omits the diagram for a single-stage skeleton', () => {
+    const solo = structuredClone(model);
+    solo.skeleton.stages = solo.skeleton.stages
+      .filter((s) => s.id === 'stage-2')
+      .map((s) => ({ ...s, parent: null, children: [] }));
+    solo.assignment.buckets = { 'stage-2': [ENGINE] };
+    solo.registers = [];
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-md-solo-'));
+    try {
+      renderMarkdownHandbook(solo, out);
+      expect(readFileSync(join(out, 'overview.md'), 'utf8')).not.toContain('```mermaid');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('renderMarkdownHandbook — source links (opt-in)', () => {
+  it('links each file card path to the source base URL (trailing slash stripped)', () => {
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-md-src-'));
+    try {
+      renderMarkdownHandbook(model, out, { sourceBaseUrl: 'https://example.com/repo/' });
+      const page = readFileSync(join(out, 'stage-1.md'), 'utf8');
+      expect(page).toContain(
+        '### [`src/ingest/loader.ts`](https://example.com/repo/src/ingest/loader.ts)',
+      );
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the default output link-free', () => {
+    const page = read('stage-1.md');
+    expect(page).toContain('### `src/ingest/loader.ts`');
+    expect(page).not.toMatch(/https?:\/\//);
   });
 });
 

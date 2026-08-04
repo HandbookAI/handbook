@@ -66,6 +66,22 @@ describe('renderFileCardMd (en)', () => {
   });
 });
 
+describe('renderFileCardMd — source links (opt-in)', () => {
+  it('turns the heading path into a link when sourceBaseUrl is set', () => {
+    const md = renderFileCardMd(LOADER, loader, 'en', { sourceBaseUrl: 'https://example.com/repo/' });
+    expect(md.startsWith('### [`src/ingest/loader.ts`](https://example.com/repo/src/ingest/loader.ts)')).toBe(true);
+  });
+
+  it('URL-encodes path segments but keeps the separators', () => {
+    const md = renderFileCardMd('src/a b/c#d.ts', loader, 'en', { sourceBaseUrl: 'https://example.com/x' });
+    expect(md.startsWith('### [`src/a b/c#d.ts`](https://example.com/x/src/a%20b/c%23d.ts)')).toBe(true);
+  });
+
+  it('stays byte-identical when the option is absent or empty', () => {
+    expect(renderFileCardMd(LOADER, loader, 'en', {})).toBe(renderFileCardMd(LOADER, loader, 'en'));
+  });
+});
+
 describe('renderFileCardMd (zh)', () => {
   const md = renderFileCardMd(LOADER, loader, 'zh');
 
