@@ -31,9 +31,18 @@ that turns a handbook-guided plan into real code changes without ever guessing.
 | target is a symlink, a directory, or not valid UTF-8 | `unsafe-path` / `not-a-file` / `undecodable` |
 | any edit fails verification | **nothing is written**; the successful ones report `skipped` |
 | an `fs` error during the write | already-renamed files are restored from the backup taken moments before, then the error is rethrown |
+| target file exceeds 8 MiB, or its bytes do not round-trip UTF-8 | `undecodable` — never patched |
+| target's parent directory is not writable | `permission` — caught in the verify pass, before anything lands |
+| the plan's fencing is malformed (untagged block, unclosed fence, `new` before `old`, duplicate/descending numbers) | the parse is refused with a per-EDIT problem; no edit from that plan runs |
+| another `apply` holds this tree's lock | the run **throws** (`another patch run is writing to this tree (pid … on … , started …)`); a lock whose recorded owner is a dead local pid is reclaimed, a foreign-host or unreadable owner counts as alive — delete `.handbook-patches/apply.lock` manually if its owner is provably gone |
 
 Multiple edits to one file compose in plan order against the accumulating content, so a
 plan may touch the same file several times as long as each anchor is unique when reached.
+
+**Throws vs returns:** `applyPlan` returns an `ApplyResult` for anything expressible as a
+per-edit outcome. It **throws** for environment-level failures: the tree lock is held, the
+lock/backup dir cannot be prepared, or an `fs` error interrupts the write phase after its
+restore pass. Callers automating apply should catch and surface those, not parse them.
 
 ## Public API
 

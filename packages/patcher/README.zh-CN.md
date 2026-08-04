@@ -27,9 +27,17 @@
 | 目标是软链接 / 目录 / 非合法 UTF-8 | `unsafe-path` / `not-a-file` / `undecodable` |
 | 任一编辑核对失败 | **一个字节都不写**；已通过的那些报 `skipped` |
 | 写入过程中发生 `fs` 错误 | 已 rename 的文件用刚才的备份还原，然后把错误重新抛出 |
+| 目标文件超过 8 MiB，或字节无法 UTF-8 往返 | `undecodable` —— 绝不打补丁 |
+| 目标的父目录不可写 | `permission` —— 在核对阶段就拦下，落盘前不会发生任何事 |
+| 计划围栏格式坏了（无标签块、未闭合围栏、`new` 在 `old` 之前、编号重复/降序） | 解析按 EDIT 逐条拒绝并报 problem；这份计划的任何编辑都不会执行 |
+| 另一个 `apply` 持有这棵树的锁 | 本次运行**抛错**（`another patch run is writing to this tree (pid … on … , started …)`）；记录的 owner 是本机已死 pid 则回收锁，异机或不可读的 owner 一律视为存活——确认对方进程已消失后可手动删除 `.handbook-patches/apply.lock` |
 
 同一个文件的多个编辑按计划顺序在**累积内容**上叠加，
 所以一份计划可以多次触碰同一文件，只要每个锚点在**轮到它时**是唯一的。
+
+**抛错 vs 返回值：** 凡能表达为逐编辑 outcome 的情况，`applyPlan` 都返回 `ApplyResult`；
+环境级失败才**抛错**——锁被占用、锁/备份目录无法准备、写入阶段的 `fs` 错误（还原后重抛）。
+自动化调用方应 catch 并原样上报这些错误，而不是去解析它们。
 
 ## 公开 API
 

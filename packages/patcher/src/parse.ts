@@ -119,7 +119,9 @@ function splitSections(plan: string): { sections: RawSection[]; problems: string
     }
     current?.lines.push(line);
   }
-  if (open) problems.push('plan ends inside an unclosed fenced block');
+  // An unclosed fence inside a section is reported once, with its EDIT label,
+  // by captureFences — only a fence opened before any heading needs this.
+  if (open && !current) problems.push('plan ends inside an unclosed fenced block');
   return { sections, problems };
 }
 
@@ -290,6 +292,12 @@ export function parsePlan(plan: string): ParsedPlan {
       problems.push(
         `${label} (${file}): needs exactly one \`\`\`old and one \`\`\`new block (found ${oldBlocks.length} old, ${newBlocks.length} new)`,
       );
+      continue;
+    }
+    const firstOld = blocks.findIndex((b) => b.kind === 'old');
+    const firstNew = blocks.findIndex((b) => b.kind === 'new');
+    if (firstNew < firstOld) {
+      problems.push(`${label} (${file}): the \`new\` block appears before \`old\` — write the anchor first, then the replacement`);
       continue;
     }
     if (unexpected.length > 0) {
