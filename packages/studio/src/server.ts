@@ -262,25 +262,86 @@ function readOptional<T>(read: () => T): T | null {
   }
 }
 
+/** Everything the generate dialog / CLI can say, already validated. */
+interface GenerateParams {
+  phase: string;
+  strategy?: 'file' | 'member';
+  skeletonPath?: string;
+  lang: string;
+  narrateLang: 'en' | 'zh';
+  detail: 'brief' | 'deep';
+  synthMode: 'oneshot' | 'doctor';
+  maxDoctorRounds: number;
+  readWorkers: number;
+  resume: boolean;
+  refresh: boolean;
+  title?: string;
+}
+
+/** Mirror the CLI's fail-loud toInt: absent → default, garbage → a 400, never a NaN'd loop. */
+function toInt(value: unknown, field: string, min: number, fallback: number): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new Error(`"${field}" must be a number >= ${min}, got "${String(value)}"`);
+  }
+  return Math.trunc(parsed);
+}
+
+/**
+ * Validate a generate request BEFORE the job starts: bad input is the
+ * caller's bug and deserves a 400, not a job that fails ten seconds later.
+ * Defaults mirror the CLI (`--read-workers 12`, `--max-doctor-rounds 6`).
+ */
+function parseGenerateParams(body: Record<string, unknown>): GenerateParams {
+  return {
+    phase: typeof body.phase === 'string' && body.phase.trim() ? body.phase.trim() : 'all',
+    // Unspecified strategy stays undefined so the work dir's recorded one wins,
+    // exactly like the CLI — a hard 'file' default would cross strategies.
+    strategy: body.strategy === 'member' ? 'member' : body.strategy === 'file' ? 'file' : undefined,
+    skeletonPath:
+      typeof body.skeleton === 'string' && body.skeleton.trim() ? resolve(body.skeleton.trim()) : undefined,
+    lang: typeof body.lang === 'string' && body.lang.trim() ? body.lang.trim() : 'auto',
+    narrateLang: body.narrateLang === 'zh' ? 'zh' : 'en',
+    detail: body.detail === 'deep' ? 'deep' : 'brief',
+    synthMode: body.synthMode === 'doctor' ? 'doctor' : 'oneshot',
+    maxDoctorRounds: toInt(body.maxDoctorRounds, 'maxDoctorRounds', 1, 6),
+    readWorkers: toInt(body.readWorkers, 'readWorkers', 1, 12),
+    resume: body.resume === true,
+    refresh: body.refresh === true,
+    title: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : undefined,
+  };
+}
+
 async function runGenerate(
   ctx: Ctx,
   repo: RepoEntry,
-  body: Record<string, unknown>,
+  params: GenerateParams,
   logger: Logger,
+  signal: AbortSignal,
 ): Promise<unknown> {
-  const phase = typeof body.phase === 'string' ? body.phase : 'all';
-  const needsLlm = phase !== '1';
+  const needsLlm = params.phase !== '1';
   const stats = await generateHandbook({
     sourceRoot: repo.sourceRoot,
     workDir: repo.workDir,
     client: needsLlm ? ctx.clientFactory(logger) : undefined,
-    phase,
-    detail: body.detail === 'deep' ? 'deep' : 'brief',
-    narrateLang: body.narrateLang === 'zh' ? 'zh' : 'en',
-    synthMode: body.synthMode === 'doctor' ? 'doctor' : 'oneshot',
-    resume: body.resume === true,
+    phase: params.phase,
+    strategy: params.strategy,
+    skeletonPath: params.skeletonPath,
+    lang: params.lang,
+    narrateLang: params.narrateLang,
+    detail: params.detail,
+    synthMode: params.synthMode,
+    maxDoctorRounds: params.maxDoctorRounds,
+    readWorkers: params.readWorkers,
+    resume: params.resume,
+    refresh: params.refresh,
     logger,
+    signal,
   });
+  // Cooperative checkpoint: a cancel that arrived while the pipeline was busy
+  // stops the run here rather than spending a render on a result nobody wants.
+  signal.throwIfAborted();
   const work = new WorkDir(repo.workDir);
   if (!fileExists(work.narrationPath)) {
     logger.info('narration not present — partial phase run, skipping render');
@@ -288,7 +349,7 @@ async function runGenerate(
   }
   logger.info('rendering handbook…');
   const outDir = join(repo.workDir, 'handbook');
-  const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : (repo.title ?? `${repo.name} Handbook`);
+  const title = params.title ?? repo.title ?? `${repo.name} Handbook`;
   ctx.store.setTitle(repo.name, title);
   const model = loadHandbookModel(repo.workDir, title);
   const md = renderMarkdownHandbook(model, outDir);
@@ -302,7 +363,13 @@ async function runAnalyzeOnly(repo: RepoEntry, logger: Logger): Promise<unknown>
   return runPhase1({ sourceRoot: repo.sourceRoot, workDir: repo.workDir, logger });
 }
 
-async function runPlan(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
+async function runPlan(
+  ctx: Ctx,
+  repo: RepoEntry,
+  body: Record<string, unknown>,
+  logger: Logger,
+  signal: AbortSignal,
+): Promise<unknown> {
   const request = typeof body.request === 'string' ? body.request.trim() : '';
   if (!request) throw new Error('missing "request"');
   const handbookDir = join(repo.workDir, 'handbook');
@@ -313,6 +380,8 @@ async function runPlan(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>,
     request,
     logger,
   });
+  // Cooperative checkpoint: a cancelled planning run must not come back green.
+  signal.throwIfAborted();
   // A run that gave up must not come back green. The planner's own log said
   // "rejected (3/3)" while the drawer showed SUCCEEDED.
   if (result.aborted) {
@@ -458,7 +527,13 @@ async function summariseChange(
   return fromFiles();
 }
 
-async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
+async function runResync(
+  ctx: Ctx,
+  repo: RepoEntry,
+  body: Record<string, unknown>,
+  logger: Logger,
+  signal: AbortSignal,
+): Promise<unknown> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const caseDir = join(evolutionsDir(repo), stamp);
   ensureDir(caseDir);
@@ -468,15 +543,19 @@ async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown
   let report;
   try {
     report = await resyncHandbook({
-    caseDir,
-    editedRoot: repo.sourceRoot,
-    planText,
-    workDir: repo.workDir,
-    client,
-    noLlm,
-    lang: body.narrateLang === 'zh' ? 'zh' : body.narrateLang === 'en' ? 'en' : undefined,
-    logger,
+      caseDir,
+      editedRoot: repo.sourceRoot,
+      planText,
+      workDir: repo.workDir,
+      client,
+      noLlm,
+      lang: body.narrateLang === 'zh' ? 'zh' : body.narrateLang === 'en' ? 'en' : undefined,
+      logger,
+      signal,
     });
+    // Cooperative checkpoint, still inside the try: a cancelled resync must
+    // clean up its case dir exactly like a failed one — no phantom history.
+    signal.throwIfAborted();
   } catch (error) {
     // A failed resync must not leave a phantom history entry behind.
     rmSync(caseDir, { recursive: true, force: true });
@@ -581,16 +660,19 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       const body = await readBody(req);
       const kind = sub.slice(1) as 'generate' | 'analyze' | 'plan' | 'resync' | 'apply' | 'rollback';
       const jobKind: JobKind = kind === 'analyze' ? 'generate' : (kind as JobKind);
-      const job = ctx.jobs.start(repo.name, jobKind, (logger) => {
+      // Validate BEFORE the job exists: a garbage readWorkers must be a 400 on
+      // this request, not a failed job discovered in the drawer later.
+      const genParams = kind === 'generate' ? parseGenerateParams(body) : undefined;
+      const job = ctx.jobs.start(repo.name, jobKind, (logger, signal) => {
         switch (kind) {
           case 'analyze':
             return runAnalyzeOnly(repo, logger);
           case 'generate':
-            return runGenerate(ctx, repo, body, logger);
+            return runGenerate(ctx, repo, genParams as GenerateParams, logger, signal);
           case 'plan':
-            return runPlan(ctx, repo, body, logger);
+            return runPlan(ctx, repo, body, logger, signal);
           case 'resync':
-            return runResync(ctx, repo, body, logger);
+            return runResync(ctx, repo, body, logger, signal);
           case 'apply':
             return runApply(repo, body, logger);
           case 'rollback':
@@ -672,6 +754,24 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     // to find a job that is still running and reattach its log drawer.
     const repoFilter = url.searchParams.get('repo');
     json(res, 200, { jobs: ctx.jobs.list(repoFilter ?? undefined).map(jobSummary) });
+    return;
+  }
+
+  const cancelMatch = path.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+  if (cancelMatch && method === 'POST') {
+    const job = ctx.jobs.get(cancelMatch[1] ?? '');
+    if (!job) {
+      json(res, 404, { error: 'unknown job' });
+      return;
+    }
+    if (job.status !== 'running') {
+      json(res, 409, { error: `job already finished: ${job.status}` });
+      return;
+    }
+    // 202, not 200: cancellation is cooperative — the run stops at its next
+    // checkpoint, and the job's own status transition is what confirms it.
+    ctx.jobs.cancel(job.id);
+    json(res, 202, { ok: true });
     return;
   }
 

@@ -24,7 +24,7 @@
 | `GET /` | 仪表盘界面 |
 | `GET/POST /api/repos`、`GET/DELETE /api/repos/:name` | 登记表 + 状态（章节数、策略、演化次数） |
 | `POST /api/repos/:name/analyze` | 阶段 1 静态分析作业（免费，不用 LLM） |
-| `POST /api/repos/:name/generate` | 完整管线 + 渲染作业（`{narrateLang, detail, synthMode, resume, title, phase}`） |
+| `POST /api/repos/:name/generate` | 完整管线 + 渲染作业——接受 CLI 的全部生成选项（见下表） |
 | `POST /api/repos/:name/plan` | 规划器作业（`{request}` → 计划 + declarations） |
 | `POST /api/repos/:name/resync` | 对**活的源码树**做前滚作业（`{description, noLlm, narrateLang}`）并重渲染 |
 | `GET /api/repos/:name/overview` | 阶段 / 摘要 / 寄存器 / 覆盖率 JSON（含**已描述覆盖率**） |
@@ -38,6 +38,31 @@
 | `GET /api/repos/:name/handbook/*` | 渲染好的手册静态托管（防路径穿越） |
 | `GET /api/jobs?repo=` | `{jobs: [...]}` —— 近期作业摘要（id/repo/kind/status/startedAt，不含原始日志），最新在前 |
 | `GET /api/jobs/:id`、`GET /api/jobs/:id/stream` | 作业状态 / SSE 日志流 |
+| `POST /api/jobs/:id/cancel` | 请求取消：运行中 → `202 {ok:true}`；已结束 → `409`；未知 → `404` |
+
+### 生成选项
+
+`POST /api/repos/:name/generate` 接受 CLI 的全部选项；默认值与 CLI 一致。
+
+| 字段 | 含义 |
+|---|---|
+| `narrateLang`（`en`\|`zh`）、`detail`（`brief`\|`deep`）、`synthMode`（`oneshot`\|`doctor`）、`title` | 最常用的四项，对话框顶部直接给出 |
+| `phase` | `all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3` 或逗号列表（默认 `all`） |
+| `strategy` | `file` \| `member`；不传 = 沿用 work 目录已记录的策略 |
+| `skeleton` | 手写 `skeleton.yaml` 的路径——`member` 策略必填 |
+| `lang` | 源码语言：`auto \| python \| typescript \| go \| rust \| shell` |
+| `resume`、`refresh` | 布尔：跳过已完成卡片 / 忽略阶段 3 缓存 |
+| `readWorkers`（默认 12）、`maxDoctorRounds`（默认 6，仅 doctor 模式） | 数值在服务端校验：传垃圾值当场 `400`，绝不让 NaN 混进作业 |
+
+### 取消作业
+
+取消是**协作式**的：`POST /api/jobs/:id/cancel` 会触发该作业的
+`AbortSignal` 并立刻回 `202`，但运行**要到下一个检查点才真正停下**
+（管线阶段之间、渲染之前——随着底层包逐步识别这个信号，也会停在阶段中途）。
+这样停下的作业以 **`cancelled`** 结束——**这是一种结果，不是一种错误**：
+界面用中性的冰蓝色渲染它，`error` 字段保持为空，日志以
+`[job] cancelled by user` 收尾。已取消的作业与成功/失败的作业一样释放
+仓库互斥锁、不再阻塞删除仓库。日志抽屉在作业运行期间提供「取消」按钮。
 
 ## 视图
 
