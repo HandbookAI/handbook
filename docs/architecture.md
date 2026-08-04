@@ -155,11 +155,12 @@ The pipeline has one orchestrator and two granularities:
   The plan ends with EDIT blocks (byte-exact old→new) plus a declarations JSON
   (`will_modify` / `will_add` / `will_remove`) that resync consumes.
 - **resync** rolls the derived layer forward from a case directory (`edited/` tree +
-  optional `plan.md` declarations + optional diff): re-analyze, fingerprint-diff the two
-  graphs (the diff can only *widen* the changed set, never narrow it), regenerate cards
-  for changed/added files, reconcile assignment, deterministically re-order affected
-  stages, re-narrate through the cache. `--no-llm` refreshes the structural facts and
-  marks prose stale instead of rewriting it.
+  optional `plan.md` declarations + optional diff): re-analyze, content-hash-diff the two
+  graphs (structural fingerprints as the fallback; declarations/diff can only *widen* the
+  changed set, never narrow it), regenerate cards at the handbook's own depth, reconcile
+  assignment, mechanically prune/append affected stages' organization, re-narrate through
+  the cache. `--no-llm` refreshes the structural facts and marks prose stale instead of
+  rewriting it.
 
 ## 8. Testing strategy
 

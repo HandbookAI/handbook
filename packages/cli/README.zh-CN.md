@@ -71,7 +71,8 @@ handbook rollback --backup ./project/.handbook-patches/2026-08-03T…
 handbook rollback --backup … --force       # 覆盖「补丁之后又被改过」的保护
 
 # 9. resync —— 代码改了之后把手册前滚
-handbook resync --case ./case --work ./work --detail deep
+#    （不传 --detail 则沿用手册原本的粒度；<work>/handbook 下已渲染的产物自动刷新，--no-render 跳过）
+handbook resync --case ./case --work ./work
 handbook resync --case ./case --work ./work --no-llm   # 只刷新结构
 
 # 10. studio —— 本地 Web 界面（仅 127.0.0.1）

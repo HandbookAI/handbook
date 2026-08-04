@@ -72,7 +72,18 @@ handbook plan     --source /path/to/repo --handbook skills/myrepo/references \
 handbook apply    --source /path/to/repo --plan plan.md --dry-run    # 7. 先校验计划（不写盘）
 handbook apply    --source /path/to/repo --plan plan.md              #    真正应用（自动备份）
 handbook rollback --backup <上一步打印的备份目录>                      #    需要时一键回滚
-handbook resync   --case cases/upload-retry --work work/myrepo       # 8. 变更落地后前滚手册
+# 8. 变更落地后前滚手册。resync 的 case 目录需要你自己组装——
+#    改动后的树 + 计划说了什么（后两项可选）：
+#      cases/upload-retry/
+#        edited/       变更后的仓库副本         （必需）
+#        plan.md       第 6 步产出的计划        （可选——收窄判定）
+#        change.diff   本次变更的 unified diff  （可选——扩大范围）
+mkdir -p cases/upload-retry
+cp -R /path/to/repo cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync   --case cases/upload-retry --work work/myrepo
+#    work/myrepo/handbook 下已渲染的产物会自动刷新（--no-render 跳过）；
+#    卡片深浅自动沿用手册原本的粒度。
 ```
 
 `generate` 关键参数：`--strategy file|member`（file=自动骨架、文件为叶子；member=你手写
@@ -159,7 +170,7 @@ pnpm mock-llm         # 单独起内置 mock LLM 服务（端口 8099）
 
 ```bash
 pnpm build          # tsc -b（composite 引用，增量构建）
-pnpm test           # 构建 + vitest（314 个测试，全部离线）
+pnpm test           # 构建 + vitest（361 个测试，全部离线）
 pnpm check          # 构建 + lint（零警告）+ 全部测试，提交前跑这个
 pnpm lint           # eslint
 pnpm format         # prettier

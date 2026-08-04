@@ -87,8 +87,18 @@ handbook apply --source /path/to/repo --plan plan.md --dry-run
 handbook apply --source /path/to/repo --plan plan.md
 #    …changed your mind? handbook rollback --backup <dir printed above>
 
-# 8. After the change lands, roll the handbook forward:
+# 8. After the change lands, roll the handbook forward. A resync case is a
+#    directory you assemble — the tree as it stands now, plus what the plan said:
+#      cases/upload-retry/
+#        edited/       copy of the repo after the change   (required)
+#        plan.md       the plan from step 6                (optional — sharpens scope)
+#        change.diff   unified diff of the change          (optional — widens scope)
+mkdir -p cases/upload-retry
+cp -R /path/to/repo cases/upload-retry/edited
+cp plan.md cases/upload-retry/
 handbook resync --case cases/upload-retry --work work/myrepo
+#    Already-rendered outputs under work/myrepo/handbook refresh automatically
+#    (--no-render to skip); card depth follows the existing handbook.
 ```
 
 Prefer clicking over typing? `handbook studio` opens a local web UI at http://127.0.0.1:4860 — repository registry, generation with live logs, the handbook browser, an impact graph, a source viewer, and the full plan → dry-run → apply → rollback → resync loop.
@@ -181,7 +191,7 @@ pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
 
 ```bash
 pnpm build          # tsc -b (composite project references)
-pnpm test           # build + vitest (314 tests, all offline)
+pnpm test           # build + vitest (361 tests, all offline)
 pnpm check          # build + lint (zero warnings) + tests — run before committing
 pnpm lint           # eslint
 pnpm format         # prettier
