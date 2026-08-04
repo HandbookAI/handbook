@@ -95,6 +95,13 @@ function repoStatus(repo: RepoEntry, jobs?: JobRunner): Record<string, unknown> 
     hasGraph: fileExists(work.graphPath),
     hasNarration: fileExists(work.narrationPath),
     hasHandbook: fileExists(join(handbookDir, 'html', 'overview.html')),
+    // Every generate renders three outputs (multi-page site, single page, agent
+    // locator index) — report each one, so the UI only offers links that exist.
+    outputs: {
+      html: fileExists(join(handbookDir, 'html', 'overview.html')),
+      single: fileExists(join(handbookDir, 'handbook.html')),
+      agent: fileExists(join(handbookDir, 'agent', 'how_to_use.md')),
+    },
     strategy: work.loadStrategy(),
     chapters,
     title,
@@ -658,6 +665,14 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       serveStatic(res, join(repo.workDir, 'handbook'), rel);
       return;
     }
+  }
+
+  if (path === '/api/jobs' && method === 'GET') {
+    // Summaries only (no raw logs): this is what a freshly reloaded page uses
+    // to find a job that is still running and reattach its log drawer.
+    const repoFilter = url.searchParams.get('repo');
+    json(res, 200, { jobs: ctx.jobs.list(repoFilter ?? undefined).map(jobSummary) });
+    return;
   }
 
   const jobMatch = path.match(/^\/api\/jobs\/([^/]+)(\/stream)?$/);
