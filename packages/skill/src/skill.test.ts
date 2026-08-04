@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +16,27 @@ function writeRenderedHandbook(dir: string): void {
   writeFileSync(join(dir, 'register.md'), '# Demo — State Flow\n\n| State register | Semantics | Stages touched |\n|---|---|---|\n');
   writeFileSync(join(dir, 'stage-1.md'), '# Boot `stage-1`\n\nBoot page.\n');
   writeFileSync(join(dir, 'stage-2.md'), '# Run `stage-2`\n\nRun page.\n');
+}
+
+function writeAgentSite(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'how_to_use.md'), '# How to use this index\n\nSearch, then pick by duty line.\n');
+  writeFileSync(join(dir, 'disambiguation.md'), '# Disambiguation\n\n- `boot` → stage-1 vs stage-2\n');
+  writeFileSync(join(dir, 'index.md'), '# Agent locator index\n');
+  writeFileSync(join(dir, 'stage-1.md'), 'agent copy of stage-1\n');
+}
+
+/** Byte-exact output of `buildSkill({ name: 'demo', project: 'Demo' })` before agentDir/lang existed. */
+const LEGACY_SKILL_MD =
+  '---\nname: demo-handbook\ndescription: Navigate the Demo codebase by behavior and source location. Use when planning, implementing, debugging, or reviewing Demo work that is unfamiliar, spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated to Demo or isolated edits where the exact file is already known and no cross-cutting impact is plausible.\n---\n\n# Demo Handbook — how to use it\n\nThis handbook is a **location index** for the Demo codebase, not a code description.\nUse it to decide WHICH files, functions and state a change must touch — then read the real source.\n\n1. Read `references/overview.md` for the system\'s shape.\n2. Route through `references/index.md` — the stage index maps every subsystem to its files.\n3. Open only the relevant `references/stages/<id>.md` pages.\n4. Check `references/registers.md` for cross-cutting state — invaluable for fan-out changes.\n5. `read_file` the actual source at every cited path before proposing or making changes.\n\nIf `references/coverage.json` exists, treat its content hashes as freshness signals: a stale\nhash means the page may lag the code. Do NOT treat handbook prose as ground truth for code\ntext — always confirm against the real source before emitting a verbatim edit.\n';
+
+/** Byte-exact synthetic registers fallback before lang existed. */
+const LEGACY_REGISTERS_FALLBACK =
+  '# State registers\n\n_No cross-stage state registers were identified for this codebase._\n';
+
+function frontmatter(text: string): string {
+  const match = text.match(/^---\n[\s\S]*?\n---\n/);
+  return match ? match[0] : '';
 }
 
 const assignment: Assignment = {
@@ -95,5 +116,132 @@ describe('buildSkill + validateSkill', () => {
   it('rejects a directory that is not a rendered handbook', () => {
     const empty = mkdtempSync(join(tmpdir(), 'hb-empty-'));
     expect(() => buildSkill({ handbookDir: empty, outDir: join(empty, 'out'), name: 'x' })).toThrow(/index\.md/);
+  });
+});
+
+describe('buildSkill without agentDir/lang (legacy contract)', () => {
+  it('emits byte-identical output when the new options are omitted', () => {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-legacy-'));
+    writeRenderedHandbook(hb);
+    rmSync(join(hb, 'register.md'));
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo' });
+    expect(readFileSync(join(out, 'SKILL.md'), 'utf8')).toBe(LEGACY_SKILL_MD);
+    expect(readFileSync(join(out, 'references', 'registers.md'), 'utf8')).toBe(LEGACY_REGISTERS_FALLBACK);
+    expect(fileExists(join(out, 'references', 'agent'))).toBe(false);
+  });
+
+  it('ignores agentDir when the locator pages are absent', () => {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-noagent-'));
+    writeRenderedHandbook(hb);
+    const bareAgent = join(hb, 'agent-empty');
+    mkdirSync(bareAgent);
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo', agentDir: bareAgent });
+    expect(readFileSync(join(out, 'SKILL.md'), 'utf8')).toBe(LEGACY_SKILL_MD);
+    expect(fileExists(join(out, 'references', 'agent'))).toBe(false);
+  });
+});
+
+describe('buildSkill with agentDir', () => {
+  let hb: string;
+  let out: string;
+
+  beforeAll(() => {
+    hb = mkdtempSync(join(tmpdir(), 'hb-agent-'));
+    writeRenderedHandbook(hb);
+    writeAgentSite(join(hb, 'agent'));
+    out = join(hb, 'out');
+  });
+
+  it('copies the locator pages into references/agent/ and keeps stage discovery untouched', () => {
+    const result = buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo', agentDir: join(hb, 'agent') });
+    expect(result.nStagePages).toBe(2);
+    expect(readFileSync(join(out, 'references', 'agent', 'how_to_use.md'), 'utf8')).toContain('duty line');
+    expect(readFileSync(join(out, 'references', 'agent', 'disambiguation.md'), 'utf8')).toContain('Disambiguation');
+    // Only the two locator pages ship — never the agent site's index/stage copies.
+    expect(fileExists(join(out, 'references', 'agent', 'index.md'))).toBe(false);
+    expect(fileExists(join(out, 'references', 'agent', 'stage-1.md'))).toBe(false);
+    expect(fileExists(join(out, 'references', 'stages', 'how_to_use.md'))).toBe(false);
+    expect(result.references).toContain('agent/how_to_use.md');
+    expect(result.references).toContain('agent/disambiguation.md');
+  });
+
+  it('extends the routing protocol with an agent-locator step', () => {
+    const skill = readFileSync(join(out, 'SKILL.md'), 'utf8');
+    expect(skill).toContain('references/agent/disambiguation.md');
+    expect(skill).toContain('references/agent/how_to_use.md');
+    // Reading the real source stays the final numbered step.
+    const agentStep = skill.indexOf('references/agent/disambiguation.md');
+    const sourceStep = skill.indexOf('`read_file` the actual source');
+    expect(agentStep).toBeGreaterThan(-1);
+    expect(sourceStep).toBeGreaterThan(agentStep);
+    expect(frontmatter(skill)).toBe(frontmatter(LEGACY_SKILL_MD));
+  });
+
+  it('validates clean, including the agent pages', () => {
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes('agent'))).toEqual([]);
+  });
+});
+
+describe('buildSkill lang: zh', () => {
+  let hb: string;
+  let out: string;
+
+  beforeAll(() => {
+    hb = mkdtempSync(join(tmpdir(), 'hb-zh-'));
+    writeRenderedHandbook(hb);
+    rmSync(join(hb, 'register.md'));
+    writeAgentSite(join(hb, 'agent'));
+    out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo', agentDir: join(hb, 'agent'), lang: 'zh' });
+  });
+
+  it('localizes the body but keeps the English frontmatter byte-for-byte', () => {
+    const skill = readFileSync(join(out, 'SKILL.md'), 'utf8');
+    expect(frontmatter(skill)).toBe(frontmatter(LEGACY_SKILL_MD));
+    expect(skill).toContain('位置索引');
+    expect(skill).toContain('references/index.md');
+    expect(skill).toContain('references/agent/disambiguation.md');
+    expect(skill).toContain('真实源码');
+  });
+
+  it('localizes the synthetic no-registers fallback', () => {
+    const registers = readFileSync(join(out, 'references', 'registers.md'), 'utf8');
+    expect(registers).toContain('状态寄存器');
+  });
+
+  it('passes validation with a Chinese body', () => {
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+  });
+});
+
+describe('validateSkill references/agent/ coverage', () => {
+  function buildWithAgent(): string {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-vagent-'));
+    writeRenderedHandbook(hb);
+    writeAgentSite(join(hb, 'agent'));
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', agentDir: join(hb, 'agent') });
+    return out;
+  }
+
+  it('warns (not errors) when only one locator page is present', () => {
+    const out = buildWithAgent();
+    rmSync(join(out, 'references', 'agent', 'disambiguation.md'));
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.join('\n')).toMatch(/agent\/.*disambiguation\.md/);
+  });
+
+  it('errors when a locator page is empty', () => {
+    const out = buildWithAgent();
+    writeFileSync(join(out, 'references', 'agent', 'how_to_use.md'), '');
+    const result = validateSkill({ skillDir: out });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/agent\/how_to_use\.md.*empty/);
   });
 });
