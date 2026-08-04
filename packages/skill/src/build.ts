@@ -76,8 +76,18 @@ interface SkillCopy {
   /** Unnumbered routing steps; `agent` is spliced in before `source` when the locator pages ship. */
   steps: { overview: string; index: string; stages: string; registers: string; agent: string; source: string };
   coverage: string;
+  /** The corrections protocol: how a consuming agent reports handbook↔source contradictions. */
+  corrections: string;
   noRegisters: string;
 }
+
+/**
+ * The one-line JSON example shown verbatim in every SKILL.md body (both
+ * languages): agents copy its shape, so it must match `corrections.jsonl`'s
+ * contract exactly — `file` required, the rest optional.
+ */
+const CORRECTION_EXAMPLE =
+  '{"file": "src/engine.py", "page": "references/stages/stage-2.md", "claim": "spin() is defined in src/main.py", "actual": "spin() is defined in src/engine.py", "notedAt": "2026-08-04T12:00:00Z"}';
 
 const SKILL_COPY: Record<NarrateLang, SkillCopy> = {
   en: {
@@ -97,6 +107,21 @@ Use it to decide WHICH files, functions and state a change must touch — then r
     coverage: `If \`references/coverage.json\` exists, treat its content hashes as freshness signals: a stale
 hash means the page may lag the code. Do NOT treat handbook prose as ground truth for code
 text — always confirm against the real source before emitting a verbatim edit.`,
+    corrections: `## Corrections
+
+When a handbook claim contradicts the real source ("the handbook says X is in file A; it is
+actually in B"), report it: append ONE line of JSON to \`corrections.jsonl\` at the skill root
+(next to this SKILL.md — never under \`references/\`, which planners mount read-only). Create
+the file on first write. One object per line:
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` is the repo-relative source path (required); \`page\` is the references/ page that
+carried the claim; \`claim\`/\`actual\` state the contradiction; \`notedAt\` is an ISO timestamp —
+all optional. Never edit anything under \`references/\` yourself: a later resync consumes
+\`corrections.jsonl\` and refreshes exactly the named files. Keep working from the real source.`,
     noRegisters: '# State registers\n\n_No cross-stage state registers were identified for this codebase._\n',
   },
   zh: {
@@ -116,6 +141,20 @@ text — always confirm against the real source before emitting a verbatim edit.
     coverage: `如果 \`references/coverage.json\` 存在，把其中的内容哈希当作新鲜度信号：哈希过期意味着
 页面可能落后于代码。不要把手册散文当作代码文本的事实依据 —— 在输出逐字修改之前，
 务必对照真实源码确认。`,
+    corrections: `## 更正记录（Corrections）
+
+当手册的断言与真实源码矛盾时（「手册说 X 在文件 A，实际在 B」），请上报：向 skill 根目录的
+\`corrections.jsonl\`（与本 SKILL.md 同级 —— 绝不写进 \`references/\`，那棵树是只读挂载的）
+追加一行 JSON，文件不存在就先创建。每行一个对象：
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` 是仓库相对的源码路径（必填）；\`page\` 是承载该断言的 references/ 页面；
+\`claim\`/\`actual\` 陈述矛盾本身；\`notedAt\` 是 ISO 时间戳 —— 除 \`file\` 外均可选。
+绝不要自己改动 \`references/\` 下的任何内容：之后的 resync 会消费 \`corrections.jsonl\`，
+只刷新被点名的文件。在此期间继续以真实源码为准。`,
     noRegisters: '# 状态寄存器\n\n_本代码库未识别出跨阶段的状态寄存器。_\n',
   },
 };
@@ -139,6 +178,8 @@ ${copy.header(project)}
 ${protocol}
 
 ${copy.coverage}
+
+${copy.corrections}
 `;
 }
 
@@ -157,10 +198,16 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
   const agentSite = options.agentDir;
   const agentDir =
     agentSite && AGENT_LOCATOR_PAGES.every((p) => fileExists(join(agentSite, p))) ? agentSite : undefined;
+  // corrections.jsonl is AGENT-owned feedback (see the SKILL.md protocol):
+  // the builder never creates it, and a rebuild into the same outDir must not
+  // wipe records that have not been resynced yet — stash it across the clean.
+  const correctionsPath = join(outDir, 'corrections.jsonl');
+  const pendingCorrections = fileExists(correctionsPath) ? readFileSync(correctionsPath, 'utf8') : undefined;
   rmSync(outDir, { recursive: true, force: true });
   const referencesDir = join(outDir, 'references');
   const stagesDir = join(referencesDir, 'stages');
   ensureDir(stagesDir);
+  if (pendingCorrections !== undefined) writeFileAtomic(correctionsPath, pendingCorrections);
 
   writeFileAtomic(join(outDir, 'SKILL.md'), skillMd(options.name, project, lang, agentDir !== undefined));
 

@@ -18,7 +18,7 @@ Rolls a handbook's derived layer forward after a real code change, without re-ru
 
 All in `resync.ts`:
 - `resyncHandbook(options: ResyncOptions): Promise<ResyncReport>` — the whole flow; updates the work directory in place and writes `<case>/resync-report.json`.
-  - `ResyncOptions` — `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, logger? }`; `client` is required unless `noLlm` is true; `detail` (`'brief' | 'deep'`) defaults to whatever the existing cards were built with; `editedRoot`/`planText` let a caller (e.g. studio's live-tree flow) supply the edited tree and plan directly instead of via case files.
+  - `ResyncOptions` — `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, correctionsPath?, signal?, logger? }`; `client` is required unless `noLlm` is true; `detail` (`'brief' | 'deep'`) defaults to whatever the existing cards were built with; `editedRoot`/`planText` let a caller (e.g. studio's live-tree flow) supply the edited tree and plan directly instead of via case files.
   - `ResyncReport` — `{ skipped, changedFiles, addedFiles, deletedFiles, affectedStages, cardsRegenerated, narrated }`.
 - `loadCase(caseDir): ResyncCase | undefined` — read the case directory; `undefined` means an empty diff (nothing to resync).
   - `ResyncCase` — `{ editedRoot, planText?, declarations?, diffText? }`.
@@ -26,6 +26,20 @@ All in `resync.ts`:
 - `filesFromDiff(diffText): string[]` — file paths from unified-diff `+++/---` headers (`/dev/null` skipped).
 - `diffGraphs(before, after): GraphDelta` — per-file content hashes (structural-fingerprint fallback) → `{ changed, added, deleted }`.
 - `detectCardDetail(cards): 'brief' | 'deep'` — the depth a handbook was built with (deep cards carry function notes / descriptions).
+- `loadCorrections(path)` / `correctionFiles(corrections)` / `archiveCorrections(path, stamp)` (`corrections.ts`) — the agent correction channel: tolerant JSONL load (bad lines land in `problems` with line numbers), the unique source files named, and archiving a consumed file as `corrections.<stamp>.applied.jsonl`.
+
+### Cancellation and corrections
+
+`signal` is cooperative: it is checked between the numbered steps and passed into every LLM
+pass, so an aborted resync rejects with an `AbortError` at the next checkpoint rather than
+mid-write. The work-dir lock is still released, and already-saved cards stay on disk.
+
+`correctionsPath` points at a `corrections.jsonl` written by handbook-consuming agents (see
+`@handbook/skill` for the protocol). Every named file that exists in the analyzed set WIDENS
+the refresh set — a claim contradicted by the source is a reason to redescribe that file even
+when its bytes never changed — and files outside the set are reported in
+`report.corrections.problems` rather than silently dropped. The file is archived only after a
+run completes, so an aborted or failed resync leaves the corrections pending for the next one.
 
 ## Usage
 
