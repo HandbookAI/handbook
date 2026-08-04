@@ -8,12 +8,15 @@ import {
   MissingArtifactError,
   silentLogger,
   withDirLock,
+  writeJsonFile,
   type HandbookModel,
   type Logger,
   type NarrateLang,
   type Skeleton,
 } from '@handbook/core';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { z } from 'zod';
 import { runPhase1, type Phase1Stats } from './phase1.js';
 import { generateCards, type CardDetail } from './cards.js';
 import { normalizeSkeleton, synthesizeSkeleton } from './skeleton.js';
@@ -81,12 +84,55 @@ export interface GenerateStats {
   nRegisters?: number;
 }
 
+/**
+ * Provenance record for a work directory: which model, phases and stats
+ * produced the artifacts sitting next to it. Describes the LAST successful
+ * run — a failed run leaves the previous manifest untouched.
+ */
+export const runManifestSchema = z.object({
+  version: z.literal(1),
+  /** Model identifier of the client used, or null for an LLM-less run. */
+  model: z.string().nullable(),
+  phases: z.array(z.enum(['1', '2a', '2b', '2c', '3'])),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  /** Whatever the client's optional usage() reported, or null if it has none. */
+  usage: z.record(z.string(), z.unknown()).nullable(),
+  stats: z.record(z.string(), z.unknown()),
+});
+
+export type RunManifest = z.infer<typeof runManifestSchema>;
+
+export function runManifestPath(workDir: string): string {
+  return join(workDir, 'run-manifest.json');
+}
+
+/** ChatClient deliberately does not declare usage(); discover it by shape. */
+function readClientUsage(client: ChatClient | undefined): Record<string, unknown> | null {
+  const usage = (client as { usage?: unknown } | undefined)?.usage;
+  if (typeof usage !== 'function') return null;
+  const reported: unknown = usage.call(client);
+  return typeof reported === 'object' && reported !== null ? (reported as Record<string, unknown>) : null;
+}
+
 export async function generateHandbook(options: GenerateOptions): Promise<GenerateStats> {
   // One run per work dir at a time — a concurrent CLI/studio run on the same
   // artifacts would interleave writes (re-entrant, so runPhase1 nests fine).
-  return withDirLock(options.workDir, 'handbook', options.logger ?? silentLogger, () =>
-    generateLocked(options),
-  );
+  return withDirLock(options.workDir, 'handbook', options.logger ?? silentLogger, async () => {
+    const startedAt = new Date().toISOString();
+    const stats = await generateLocked(options);
+    const manifest: RunManifest = {
+      version: 1,
+      model: options.client?.model ?? null,
+      phases: stats.phasesRun,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      usage: readClientUsage(options.client),
+      stats: stats as unknown as Record<string, unknown>,
+    };
+    writeJsonFile(runManifestPath(options.workDir), manifest);
+    return stats;
+  });
 }
 
 async function generateLocked(options: GenerateOptions): Promise<GenerateStats> {

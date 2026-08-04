@@ -92,6 +92,56 @@ describe('OpenAiChatClient', () => {
     expect(result.text).toContain('hello');
   });
 
+  it('accumulates token usage across calls', async () => {
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: fakeFetch(() => ({
+        status: 200,
+        body: { ...okBody, usage: { prompt_tokens: 100, completion_tokens: 25 } },
+      })),
+    });
+    await client.complete('one');
+    await client.complete('two');
+    expect(client.usage()).toMatchObject({ calls: 2, promptTokens: 200, completionTokens: 50 });
+  });
+
+  it('accepts the input_tokens/output_tokens spelling some endpoints use', async () => {
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: fakeFetch(() => ({
+        status: 200,
+        body: { ...okBody, usage: { input_tokens: 40, output_tokens: 7 } },
+      })),
+    });
+    await client.complete('p');
+    expect(client.usage()).toMatchObject({ promptTokens: 40, completionTokens: 7 });
+  });
+
+  it('tolerates responses without a usage block', async () => {
+    const client = new OpenAiChatClient({ config: base, fetchImpl: fakeFetch(() => ({ status: 200, body: okBody })) });
+    await client.complete('p');
+    expect(client.usage()).toMatchObject({ calls: 1, promptTokens: 0, completionTokens: 0 });
+  });
+
+  it('counts tokens spent on replies that were rejected and retried', async () => {
+    // A blank reasoning reply still burned real tokens; the meter must say so.
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: fakeFetch((n) => ({
+        status: 200,
+        body:
+          n === 1
+            ? {
+                choices: [{ finish_reason: 'length', message: { content: '' } }],
+                usage: { prompt_tokens: 10, completion_tokens: 500 },
+              }
+            : { ...okBody, usage: { prompt_tokens: 10, completion_tokens: 20 } },
+      })),
+    });
+    await client.complete('p');
+    expect(client.usage()).toMatchObject({ calls: 1, promptTokens: 20, completionTokens: 520 });
+  });
+
   it('fails fast on permanent 4xx', async () => {
     let attempts = 0;
     const client = new OpenAiChatClient({
