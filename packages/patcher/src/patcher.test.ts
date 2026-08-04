@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parsePlan } from './parse.js';
@@ -639,5 +639,79 @@ describe('patcher — R4 regressions', () => {
     const back = rollback(applied.backupDir as string, { expectedSourceRoot: root });
     expect(back.restored).toEqual([]);
     expect(back.skipped[0]?.reason).toMatch(/already back at its pre-patch content/);
+  });
+});
+
+describe('patcher — R4 reverification (audit A6)', () => {
+  it('F7: refuses a lock held on another host even when the pid is dead locally', () => {
+    const root = repo();
+    mkdirSync(join(root, '.handbook-patches'), { recursive: true });
+    writeFileSync(
+      join(root, '.handbook-patches', 'apply.lock'),
+      JSON.stringify({ pid: 2147483646, host: 'some-other-machine', startedAt: '2000-01-01T00:00:00Z' }),
+    );
+    expect(() =>
+      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+    ).toThrow(/another patch run/);
+  });
+
+  it('F7: the lock-held error names the owner and the manual remedy', () => {
+    const root = repo();
+    mkdirSync(join(root, '.handbook-patches'), { recursive: true });
+    writeFileSync(
+      join(root, '.handbook-patches', 'apply.lock'),
+      JSON.stringify({ pid: process.pid, host: hostname(), startedAt: '2026-08-04T00:00:00Z' }),
+    );
+    expect(() =>
+      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+    ).toThrow(/2026-08-04T00:00:00Z[\s\S]*apply\.lock/);
+  });
+
+  it('F9: a failed apply leaves no empty .handbook-patches directory behind', () => {
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'DOES NOT MATCH ANYTHING', next: 'x' }]),
+    });
+    expect(result.ok).toBe(false);
+    expect(existsSync(join(root, '.handbook-patches'))).toBe(false);
+  });
+
+  it('F9: a successful apply keeps its backups with a .gitignore in the lock dir', () => {
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 9' }]),
+    });
+    expect(result.ok).toBe(true);
+    expect(existsSync(join(root, '.handbook-patches', '.gitignore'))).toBe(true);
+  });
+
+  it('F11: refuses an edit whose `new` block precedes `old`', () => {
+    const p = [
+      '### EDIT 1',
+      '- file: `app/engine.py`',
+      '```new',
+      'self.rpm += 2',
+      '```',
+      '```old',
+      'self.rpm += 1',
+      '```',
+    ].join('\n');
+    const parsed = parsePlan(p);
+    expect(parsed.problems.join(' ')).toMatch(/`new`.*before.*`old`/);
+    expect(parsed.edits).toEqual([]);
+  });
+
+  it('F12: one unclosed fence is reported exactly once', () => {
+    const p = ['### EDIT 1', '- file: `a.py`', '```old', 'x = 1', '```', '```new', 'x = 2'].join('\n');
+    const parsed = parsePlan(p);
+    const fenceProblems = parsed.problems.filter((msg) => /unclosed|never closed/.test(msg));
+    expect(fenceProblems).toHaveLength(1);
+  });
+
+  it('F12: an unclosed fence before any EDIT heading is still reported', () => {
+    const parsed = parsePlan('```json\n{"x": 1}\n');
+    expect(parsed.problems.some((msg) => /unclosed/.test(msg))).toBe(true);
   });
 });

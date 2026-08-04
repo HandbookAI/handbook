@@ -27,10 +27,12 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { hostname } from 'node:os';
 import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
 import { sha256Hex, silentLogger, toPosix, writeJsonFile, type Logger } from '@handbook/core';
 import { parsePlan, type EditBlock } from './parse.js';
@@ -141,15 +143,20 @@ function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
   const lockPath = join(lockDir, 'apply.lock');
   try {
     mkdirSync(lockDir, { recursive: true });
+    // Keep the lock dir out of the repo's history and out of the analyzer's way.
+    const ignore = join(lockDir, '.gitignore');
+    if (!existsSync(ignore)) writeFileSync(ignore, '*\n', 'utf8');
   } catch (error) {
-    throw new Error(`cannot create ${lockDir}: ${(error as Error).message}`);
+    throw new Error(`cannot prepare ${lockDir}: ${(error as Error).message}`);
   }
 
   const claim = (): boolean => {
     try {
-      writeFileSync(lockPath, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`, {
-        flag: 'wx', // exclusive create: atomic claim + owner record
-      });
+      writeFileSync(
+        lockPath,
+        `${JSON.stringify({ pid: process.pid, host: hostname(), startedAt: new Date().toISOString() })}\n`,
+        { flag: 'wx' }, // exclusive create: atomic claim + owner record
+      );
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
@@ -159,18 +166,28 @@ function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
     }
   };
 
-  /** Is the recorded owner still running? Unknown counts as ALIVE (fail closed). */
-  const ownerAlive = (): boolean => {
-    let pid: number | undefined;
+  const readOwner = (): { pid?: number; host?: string; startedAt?: string } | undefined => {
     try {
-      const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown };
-      if (typeof owner.pid === 'number') pid = owner.pid;
+      const raw = JSON.parse(readFileSync(lockPath, 'utf8')) as Record<string, unknown>;
+      return {
+        pid: typeof raw.pid === 'number' ? raw.pid : undefined,
+        host: typeof raw.host === 'string' ? raw.host : undefined,
+        startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : undefined,
+      };
     } catch {
-      return true; // unreadable or half-written → assume someone owns it
+      return undefined; // unreadable or half-written
     }
-    if (pid === undefined || pid === process.pid) return true;
+  };
+
+  /** Is the recorded owner still running? Unknown counts as ALIVE (fail closed). */
+  const ownerAlive = (owner: ReturnType<typeof readOwner>): boolean => {
+    if (!owner || owner.pid === undefined) return true; // fail closed
+    // A pid table is per-machine: a lock claimed on another host (NFS/SMB
+    // checkout) can never be probed locally, so it always counts as alive.
+    if (owner.host !== undefined && owner.host !== hostname()) return true;
+    if (owner.pid === process.pid) return true;
     try {
-      process.kill(pid, 0); // signal 0 = liveness probe
+      process.kill(owner.pid, 0); // signal 0 = liveness probe
       return true;
     } catch (error) {
       // EPERM means the process EXISTS but belongs to another user.
@@ -179,8 +196,15 @@ function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
   };
 
   if (!claim()) {
-    if (ownerAlive()) {
-      throw new Error('another patch run is writing to this tree — retry when it finishes');
+    const owner = readOwner();
+    if (ownerAlive(owner)) {
+      const who =
+        owner?.pid !== undefined
+          ? ` (pid ${owner.pid}${owner.host ? ` on ${owner.host}` : ''}${owner.startedAt ? `, started ${owner.startedAt}` : ''})`
+          : '';
+      throw new Error(
+        `another patch run is writing to this tree${who} — retry when it finishes, or delete ${lockPath} if that process is gone`,
+      );
     }
     // Reclaim a provably dead lock. The exclusive create below is the referee:
     // if a competitor reclaims first, we lose and fail fast rather than share.
@@ -193,6 +217,17 @@ function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
     return work();
   } finally {
     rmSync(lockPath, { force: true });
+    try {
+      // Leave no empty litter behind: a dir holding only our .gitignore has no
+      // backups in it. A concurrent claim re-creates (and keeps) the dir.
+      const leftover = readdirSync(lockDir);
+      if (leftover.length === 0 || (leftover.length === 1 && leftover[0] === '.gitignore')) {
+        rmSync(join(lockDir, '.gitignore'), { force: true });
+        rmdirSync(lockDir);
+      }
+    } catch {
+      // best-effort tidy-up only
+    }
   }
 }
 
