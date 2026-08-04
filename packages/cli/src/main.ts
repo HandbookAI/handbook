@@ -18,9 +18,16 @@ import { resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { applyEnvFile } from './env-file.js';
 import { createLogger, type LogLevel } from '@handbook/core';
-import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
+import { CachedChatClient, OpenAiChatClient, type ChatClient } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
-import { renderAgentSite, renderHtmlSite, renderMarkdownHandbook, renderSinglePageHtml } from '@handbook/renderer';
+import {
+  renderAgentSite,
+  renderHtmlSite,
+  renderLlmsTxt,
+  renderMarkdownHandbook,
+  renderSinglePageHtml,
+  type SourceLinkOptions,
+} from '@handbook/renderer';
 import { buildSkill, validateSkill } from '@handbook/skill';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
@@ -105,18 +112,22 @@ program
   .option('--read-workers <n>', 'concurrent card batches', '12')
   .option('--resume', 'skip files that already have a completed card')
   .option('--refresh', 'ignore phase-3 caches')
+  .option('--llm-cache', 'cache raw LLM replies under <work>/phase3/cache (prompt-hash; disabled by --refresh)')
   .action(async (opts: Record<string, string | boolean>) => {
     const phase = String(opts.phase);
     // Build the client opportunistically: some selections need no LLM at all
     // (phase 1; member-strategy 2c). generateHandbook fails with a clear
     // message if a key is genuinely required but missing.
-    let client;
+    let client: ChatClient | undefined;
     if (phase !== '1') {
       try {
         client = llmClient();
       } catch {
         client = undefined;
       }
+    }
+    if (client && opts.llmCache && !opts.refresh) {
+      client = new CachedChatClient(client, `${resolve(String(opts.work))}/phase3/cache`);
     }
     const stats = await generateHandbook({
       sourceRoot: resolve(String(opts.source)),
@@ -135,7 +146,9 @@ program
       refresh: Boolean(opts.refresh),
       logger: logger(),
     });
-    printJson(stats);
+    // Surface what the run cost right where it finished (also in run-manifest.json).
+    const usage = (client as { usage?: () => unknown } | undefined)?.usage?.();
+    printJson(usage ? { ...stats, usage } : stats);
   });
 
 program
@@ -147,20 +160,28 @@ program
   .option('--html', 'also render the multi-page HTML site under <out>/html')
   .option('--html-single', 'also render a single self-contained HTML page')
   .option('--agent-site', 'also render the agent locator index under <out>/agent')
+  .option('--llms-txt', 'also write llms.txt + llms-full.txt next to the markdown')
+  .option('--source-base-url <url>', 'link file cards to the source at <url>/<relative path>')
   .action(async (opts: Record<string, string | boolean>) => {
     const workDir = resolve(String(opts.work));
     const outDir = resolve(String(opts.out ?? `${workDir}/handbook`));
     const model = loadHandbookModel(workDir, String(opts.title));
-    const md = renderMarkdownHandbook(model, outDir);
+    const links: SourceLinkOptions | undefined = opts.sourceBaseUrl
+      ? { sourceBaseUrl: String(opts.sourceBaseUrl) }
+      : undefined;
+    const md = renderMarkdownHandbook(model, outDir, links);
     const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
     if (opts.agentSite) {
       result.agent = renderAgentSite(model, `${outDir}/agent`);
     }
     if (opts.html) {
-      result.html = renderHtmlSite(model, `${outDir}/html`);
+      result.html = renderHtmlSite(model, `${outDir}/html`, links);
     }
     if (opts.htmlSingle) {
       result.htmlSingle = renderSinglePageHtml(model, `${outDir}/handbook.html`);
+    }
+    if (opts.llmsTxt) {
+      result.llms = renderLlmsTxt(model, outDir);
     }
     printJson(result);
   });
@@ -174,6 +195,8 @@ program
   .option('--project <name>', 'human project name for prose')
   .option('--work <dir>', 'work dir — adds coverage.json from its assignment')
   .option('--source <dir>', 'source root — adds content hashes to coverage.json')
+  .option('--agent-dir <dir>', 'rendered agent locator site — ships under references/agent/')
+  .option('--lang <l>', 'SKILL.md body language: en | zh (frontmatter stays English for routing)', 'en')
   .action((opts: Record<string, string | undefined>) => {
     let coverage;
     if (opts.work) {
@@ -189,6 +212,8 @@ program
       name: String(opts.name),
       project: opts.project,
       coverage,
+      agentDir: opts.agentDir ? resolve(opts.agentDir) : undefined,
+      lang: opts.lang === 'zh' ? 'zh' : 'en',
     });
     printJson(result);
   });

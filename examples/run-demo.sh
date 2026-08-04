@@ -43,12 +43,13 @@ hb analyze --source "$DEMO" --work "$WORK"
 echo "== 2. generate (phases 2+3) =="
 hb generate --source "$DEMO" --work "$WORK" --phase 2,3 --detail deep --narrate-lang "${NARRATE_LANG:-en}"
 
-echo "== 3. render markdown + HTML site + agent index =="
-hb render --work "$WORK" --title "Demo Task Runner Handbook" --html --html-single --agent-site
+echo "== 3. render markdown + HTML site + agent index + llms.txt =="
+hb render --work "$WORK" --title "Demo Task Runner Handbook" --html --html-single --agent-site --llms-txt
 
-echo "== 4. package as an agent SKILL =="
+echo "== 4. package as an agent SKILL (with the agent locator pages) =="
 hb skill --handbook "$WORK/handbook" --out "$WORK/skill" --name demo-task-runner \
-  --project "Demo Task Runner" --work "$WORK" --source "$DEMO"
+  --project "Demo Task Runner" --work "$WORK" --source "$DEMO" \
+  --agent-dir "$WORK/handbook/agent"
 
 echo "== 5. validate the SKILL =="
 hb validate --skill "$WORK/skill" --source "$DEMO"
