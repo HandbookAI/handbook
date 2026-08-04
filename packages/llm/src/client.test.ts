@@ -156,6 +156,79 @@ describe('OpenAiChatClient', () => {
   });
 });
 
+describe('OpenAiChatClient cooperative cancellation', () => {
+  const base = { apiKey: 'test', baseUrl: 'http://x/v1', maxRetries: 3, retryBackoffMs: 1 };
+
+  it('rejects a pre-aborted signal with an AbortError and makes zero fetch attempts', async () => {
+    let fetches = 0;
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async () => {
+        fetches += 1;
+        return new Response(JSON.stringify(okBody), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const error = await client.complete('p', { signal: controller.signal }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(fetches).toBe(0);
+  });
+
+  it('rejects promptly when aborted during the retry backoff, and stops retrying', async () => {
+    // A huge backoff would hold the test hostage if the sleep ignored the signal.
+    let fetches = 0;
+    const client = new OpenAiChatClient({
+      config: { ...base, retryBackoffMs: 60_000 },
+      fetchImpl: (async () => {
+        fetches += 1;
+        return new Response('{}', { status: 500 });
+      }) as unknown as typeof fetch,
+    });
+    const controller = new AbortController();
+    const pending = client.complete('p', { signal: controller.signal }).catch((e: unknown) => e);
+    setTimeout(() => controller.abort(), 20);
+    const error = await pending;
+    expect((error as Error).name).toBe('AbortError');
+    expect(fetches).toBe(1); // the abort was not retried
+  }, 10_000);
+
+  it('aborts the in-flight HTTP request (signal combined with the timeout) and never retries it', async () => {
+    let fetches = 0;
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async (_u: string, init: RequestInit) => {
+        fetches += 1;
+        // Hang forever; only the request signal can end this call. A plain
+        // AbortSignal.timeout(300s) would not fire when the caller aborts.
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        });
+      }) as unknown as typeof fetch,
+    });
+    const controller = new AbortController();
+    const pending = client.complete('p', { signal: controller.signal }).catch((e: unknown) => e);
+    setTimeout(() => controller.abort(), 10);
+    const error = await pending;
+    expect((error as Error).name).toBe('AbortError');
+    expect(fetches).toBe(1);
+  }, 10_000);
+
+  it('keeps the plain timeout signal when no caller signal is given', async () => {
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: (async (_u: string, init: RequestInit) => {
+        signals.push(init.signal);
+        return new Response(JSON.stringify(okBody), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    await client.complete('p');
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    expect(signals[0]?.aborted).toBe(false);
+  });
+});
+
 describe('extractAssistantText', () => {
   it('walks the fallback shapes', () => {
     expect(extractAssistantText({ response: 'r' })).toBe('r');

@@ -104,6 +104,8 @@ const ORGANIZE_RULES_ZH = `你在把系统手册中一个阶段的文件组织�
 export interface OrganizeOptions {
   workers?: number;
   lang?: NarrateLang;
+  /** Cooperative cancellation: checked per stage and passed into every LLM call. */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -133,6 +135,7 @@ async function organizeOneStage(
   cards: Record<string, FileCard>,
   lang: NarrateLang,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<StageOrganization> {
   const flat = (summary: string): StageOrganization => ({
     title,
@@ -165,7 +168,7 @@ async function organizeOneStage(
 
   let rawGroups: Array<Record<string, unknown>> = [];
   try {
-    const response = await client.complete(prompt, { temperature: 0 });
+    const response = await client.complete(prompt, { temperature: 0, signal });
     rawGroups = extractEntryList(response.json, ['groups', 'sections'], {
       single: { fields: ['title', 'files'] },
     });
@@ -177,6 +180,7 @@ async function organizeOneStage(
       );
     }
   } catch (error) {
+    signal?.throwIfAborted(); // cancellation ends the pass, never degrades to flat
     logger.warn(`[organize] ${stageId} LLM failed: ${String(error)}`);
     return flat('(organize failed; flat call-graph order)');
   }
@@ -222,7 +226,7 @@ export async function organizeStages(
   cards: Record<string, FileCard>,
   options: OrganizeOptions = {},
 ): Promise<Organization> {
-  const { workers = 8, lang = 'en' } = options;
+  const { workers = 8, lang = 'en', signal } = options;
   const logger = options.logger ?? silentLogger;
   const adjacency = fileCallAdjacency(graph);
 
@@ -230,14 +234,27 @@ export async function organizeStages(
   const progress = new Progress(logger, 'organize', work.length);
   const results = new Map<string, StageOrganization>();
   await mapLimit(work, workers, async (stage) => {
+    signal?.throwIfAborted(); // cooperative checkpoint: no new stage after abort
     const bucket = assignment.buckets[stage.id] ?? [];
     const ordered = suggestOrder(bucket, adjacency);
     try {
       results.set(
         stage.id,
-        await organizeOneStage(client, stage.id, stage.title, stage.description, ordered, adjacency, cards, lang, logger),
+        await organizeOneStage(
+          client,
+          stage.id,
+          stage.title,
+          stage.description,
+          ordered,
+          adjacency,
+          cards,
+          lang,
+          logger,
+          signal,
+        ),
       );
     } catch (error) {
+      signal?.throwIfAborted(); // cancellation ends the pass, never degrades
       logger.warn(`[organize] ${stage.id} failed hard: ${String(error)}`);
       results.set(stage.id, {
         title: stage.title,

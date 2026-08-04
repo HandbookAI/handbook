@@ -219,9 +219,10 @@ export async function synthesizeSkeleton(
   cards: Record<string, FileCard>,
   lang: NarrateLang = 'en',
   onRejected?: (reply: string) => void,
+  signal?: AbortSignal,
 ): Promise<Skeleton> {
   const prompt = buildSynthPrompt(nav, dirRollups(cards), lang);
-  const response = await client.complete(prompt, { temperature: 0 });
+  const response = await client.complete(prompt, { temperature: 0, signal });
   const skeleton = normalizeSkeleton(response.json);
   if (skeleton.stages.length === 0) {
     // The stage list is the spine of the whole handbook, so a failure here ends

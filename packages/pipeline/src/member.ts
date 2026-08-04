@@ -62,6 +62,8 @@ export interface ClassifyMembersOptions {
   batchSize?: number;
   maxWorkers?: number;
   cards?: Record<string, FileCard>;
+  /** Cooperative cancellation: checked per batch and passed into every LLM call. */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -108,7 +110,7 @@ export async function classifyMembers(
   skeleton: Skeleton,
   options: ClassifyMembersOptions = {},
 ): Promise<MemberAssignment> {
-  const { batchSize = 40, maxWorkers = 8, cards = {} } = options;
+  const { batchSize = 40, maxWorkers = 8, cards = {}, signal } = options;
   const logger = options.logger ?? silentLogger;
   const members = collectMembers(graph);
   const validIds = new Set(skeleton.stages.map((s) => s.id));
@@ -121,6 +123,7 @@ export async function classifyMembers(
 
   const progress = new Progress(logger, 'members', members.length);
   await mapLimit(batches, maxWorkers, async (batch) => {
+    signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
     const rows = batch.map((m) => {
       const filePurpose = cards[m.file]?.purpose ? `  (file: ${cards[m.file]?.purpose})` : '';
       const rels = [
@@ -133,7 +136,7 @@ export async function classifyMembers(
     });
     const prompt = [CLASSIFY_RULES, menuBlock, `## Members to assign (${batch.length})`, ...rows].join('\n\n');
     try {
-      const response = await client.complete(prompt, { temperature: 0 });
+      const response = await client.complete(prompt, { temperature: 0, signal });
       const entries = extractEntryList(response.json, ['assignments', 'members'], {
         single: { fields: ['member', 'stage'] },
       });
@@ -160,6 +163,7 @@ export async function classifyMembers(
         );
       }
     } catch (error) {
+      signal?.throwIfAborted(); // cancellation ends the pass, never degrades
       logger.warn(`[members] batch failed: ${String(error)}`);
     }
     progress.tick(batch.length);

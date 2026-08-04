@@ -53,6 +53,8 @@ export interface CardsOptions {
   /** Restrict the pass to these files (used by resync). Coverage is still computed over all files. */
   onlyFiles?: readonly string[];
   lang?: NarrateLang;
+  /** Cooperative cancellation: checked per batch and passed into every LLM call. */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -304,6 +306,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     chunkChars = 60_000,
     resume = false,
     lang = 'en',
+    signal,
   } = options;
   const logger = options.logger ?? silentLogger;
 
@@ -352,7 +355,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     const prompt = [rules, `## Files to describe (${batch.length})`, ...blocks, 'Return the JSON block only — no commentary.'].join('\n\n');
     const result: Record<string, FileCard> = {};
     try {
-      const response = await client.complete(prompt, { temperature: 0 });
+      const response = await client.complete(prompt, { temperature: 0, signal });
       const entries = extractCardEntries(response.json);
       const valid = new Set(batch.map((d) => d.file));
       const soleFile = batch.length === 1 && entries.length === 1 ? batch[0]?.file : undefined;
@@ -387,6 +390,9 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
         work.saveRejectedReply(batch[0]?.file ?? 'batch', response.text);
       }
     } catch (error) {
+      // A cancellation is not a per-batch failure to degrade around — it must
+      // end the whole pass, so it propagates instead of becoming a warning.
+      signal?.throwIfAborted();
       logger.warn(`[cards] batch of ${batch.length} failed: ${String(error)}`);
     }
     return result;
@@ -428,7 +434,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
       ].join('\n\n');
       try {
         attempted += 1;
-        const response = await client.complete(prompt, { temperature: 0 });
+        const response = await client.complete(prompt, { temperature: 0, signal });
         const entry = extractCardEntries(response.json)[0];
         if (!entry) continue;
         if (!base) {
@@ -438,6 +444,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
         }
         if (Array.isArray(entry.functions)) annotations.push(...entry.functions);
       } catch (error) {
+        signal?.throwIfAborted(); // cancellation ends the pass, never degrades
         logger.warn(`[cards] chunk of ${descriptor.file} failed: ${String(error)}`);
       }
     }
@@ -452,6 +459,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
 
   const progress = new Progress(logger, 'cards', todo.length);
   await mapLimit(batches, maxWorkers, async (batch) => {
+    signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
     let described = await describeBatch(batch);
     // Tier 2: retry dropped files alone.
     const dropped = batch.filter((d) => !described[d.file]);

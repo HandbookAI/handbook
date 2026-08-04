@@ -317,6 +317,8 @@ export interface SynthLoopOptions {
   lang?: NarrateLang;
   assignBatchSize?: number;
   assignWorkers?: number;
+  /** Cooperative cancellation: checked between doctor rounds and threaded into the assignment passes. */
+  signal?: AbortSignal;
   logger?: Logger;
   /** Keep a synthesis reply that produced no usable stages, for inspection. */
   onRejectedReply?: (reply: string) => void;
@@ -329,22 +331,24 @@ export async function synthesizeWithDoctor(
   cards: Record<string, FileCard>,
   options: SynthLoopOptions = {},
 ): Promise<{ skeleton: Skeleton; assignment: Assignment; rounds: number }> {
-  const { maxRounds = 6, lang = 'en' } = options;
+  const { maxRounds = 6, lang = 'en', signal } = options;
   const logger = options.logger ?? silentLogger;
   const assignOptions = {
     batchSize: options.assignBatchSize,
     maxWorkers: options.assignWorkers,
     cards,
+    signal,
     logger,
   };
 
   const nav = buildNavPack(graph);
-  const skeleton = await synthesizeSkeleton(client, nav, cards, lang, options.onRejectedReply);
+  const skeleton = await synthesizeSkeleton(client, nav, cards, lang, options.onRejectedReply, signal);
   let assignment = await assignFiles(client, graph, skeleton, assignOptions);
 
   let noProgressStreak = 0;
   let roundsRun = 0;
   for (let round = 0; round < maxRounds; round += 1) {
+    signal?.throwIfAborted(); // cooperative checkpoint between doctor rounds
     roundsRun = round + 1;
     const before = computeStageStats(skeleton, assignment);
     const overloadedBefore = Object.values(before.perStage).filter((s) => s.overloaded).length;

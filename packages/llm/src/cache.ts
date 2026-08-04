@@ -65,7 +65,13 @@ export class CachedChatClient implements ChatClient {
   }
 
   async complete(prompt: string, options?: ChatOptions): Promise<ChatResult> {
-    const key = sha256Hex(`${this.inner.model}\n${prompt}\n${JSON.stringify(options ?? {})}`);
+    // A signal identifies a RUN, never an answer: it is stripped from the key
+    // (or the same prompt would miss on every new run) but still honored — an
+    // already-cancelled call must not serve a hit — and passed to the inner
+    // client so a miss's real request stays abortable.
+    const { signal, ...keyedOptions } = options ?? {};
+    signal?.throwIfAborted();
+    const key = sha256Hex(`${this.inner.model}\n${prompt}\n${JSON.stringify(keyedOptions)}`);
     const path = join(this.cacheDir, `${key}.json`);
 
     let raw: string | undefined;

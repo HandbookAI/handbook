@@ -38,6 +38,7 @@ import {
   type NarrateLang,
   type Organization,
 } from '@handbook/core';
+import { archiveCorrections, correctionFiles, loadCorrections } from './corrections.js';
 import {
   WorkDir,
   buildInventory,
@@ -222,6 +223,18 @@ export interface ResyncOptions {
   noLlm?: boolean;
   lang?: NarrateLang;
   detail?: 'brief' | 'deep';
+  /**
+   * Path to a `corrections.jsonl` written by handbook-consuming agents. Its
+   * file list WIDENS the refresh set (a claim contradicted by the source is a
+   * reason to redescribe that file even when its bytes never changed), and the
+   * file is archived once the resync completes.
+   */
+  correctionsPath?: string;
+  /**
+   * Cooperative cancellation. Checked between steps and passed into every LLM
+   * pass; an aborted run rejects with the signal's reason (`name === 'AbortError'`).
+   */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -233,6 +246,8 @@ export interface ResyncReport {
   affectedStages: string[];
   cardsRegenerated: number;
   narrated: boolean;
+  /** Corrections folded into this run, and where the consumed file was archived. */
+  corrections?: { applied: number; files: string[]; problems: string[]; archivedTo?: string };
 }
 
 export async function resyncHandbook(options: ResyncOptions): Promise<ResyncReport> {
@@ -251,6 +266,8 @@ export async function resyncHandbook(options: ResyncOptions): Promise<ResyncRepo
 
 async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport> {
   const logger = options.logger ?? silentLogger;
+  const signal = options.signal;
+  signal?.throwIfAborted();
   const work = new WorkDir(options.workDir);
   const noLlm = options.noLlm ?? false;
   if (!noLlm && !options.client) throw new Error('resync needs an LLM client (or pass noLlm: true)');
@@ -291,6 +308,7 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
     lang: before.metadata.language === 'multi' ? 'auto' : before.metadata.language,
     logger,
   });
+  signal?.throwIfAborted();
   const staging = new WorkDir(stagingRoot);
   const after = staging.loadGraph();
   const delta = diffGraphs(before, after);
@@ -326,6 +344,28 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
       }
     }
     delta.changed.sort();
+  }
+  // Agent-reported corrections widen too: a handbook claim contradicted by the
+  // source is a reason to redescribe that file even when its bytes never moved.
+  let correctionsToArchive: string | undefined;
+  if (options.correctionsPath) {
+    const { corrections, problems } = loadCorrections(options.correctionsPath);
+    const scanned = new Set(after.metadata.scannedFiles);
+    const files = correctionFiles(corrections);
+    const applied: string[] = [];
+    for (const file of files) {
+      if (!scanned.has(file)) {
+        problems.push(`${file}: not in the analyzed file set — correction ignored`);
+        continue;
+      }
+      applied.push(file);
+      if (!delta.added.includes(file) && !delta.changed.includes(file)) delta.changed.push(file);
+    }
+    delta.changed.sort();
+    for (const problem of problems) logger.warn(`[resync] corrections: ${problem}`);
+    report.corrections = { applied: applied.length, files: applied, problems };
+    if (corrections.length > 0) correctionsToArchive = options.correctionsPath;
+    logger.info(`[resync] corrections: ${applied.length} file(s) widened the refresh set`);
   }
   report.changedFiles = delta.changed;
   report.addedFiles = delta.added;
@@ -367,12 +407,15 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
         onlyFiles: refreshTargets,
         detail,
         batchSize: 1,
+        signal,
         lang: options.lang ?? 'en',
         logger,
       });
       report.cardsRegenerated = refreshTargets.filter((f) => !result.coverage.missing.includes(f)).length;
     }
   }
+
+  signal?.throwIfAborted();
 
   // 4. Assignment: drop deleted files, re-assign added ones, reconcile buckets.
   const skeleton = work.loadSkeleton();
@@ -418,7 +461,7 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
         coverage: { nMembers: liveIds.size, nAssigned: liveIds.size - unassigned.length, unassigned: unassigned.sort() },
       };
     } else {
-      members = await classifyMembers(options.client as ChatClient, after, skeleton, { cards: cardsNow, logger });
+      members = await classifyMembers(options.client as ChatClient, after, skeleton, { cards: cardsNow, signal, logger });
     }
     saveMemberAssignment(work, members);
     const derived = deriveFileArtifacts(after, skeleton, members, cardsNow);
@@ -445,6 +488,8 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
     if (touched.has(file) && entry.stage !== 'unassigned') affectedStages.add(entry.stage);
   }
   report.affectedStages = [...affectedStages].sort();
+
+  signal?.throwIfAborted();
 
   // 5. Organization: member strategy already re-derived it; file strategy
   // rebuilds affected stages deterministically (call order).
@@ -523,17 +568,20 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
   work.saveOrganization(organization);
   }
 
+  signal?.throwIfAborted();
+
   // 6. Narration + registers (content-hash cache keeps unchanged stages free).
   if (!noLlm) {
     const narration = await narrate(
       options.client as ChatClient,
       { skeleton, assignment, organization, cards },
-      { lang: options.lang ?? work.loadNarration().lang, cacheDir: work.cacheDir, logger },
+      { lang: options.lang ?? work.loadNarration().lang, cacheDir: work.cacheDir, signal, logger },
     );
     work.saveNarration(narration);
     const registers = await extractRegisters(options.client as ChatClient, skeleton, narration, cards, {
       cacheDir: work.cacheDir,
       lang: narration.lang,
+      signal,
       logger,
     });
     work.saveRegisters({ version: 1, registers });
@@ -543,6 +591,13 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
   // 7. Promote the staged phase-1 artifacts LAST — only a fully-completed
   // resync moves the delta baseline forward.
   cpSync(staging.phase1Dir, work.phase1Dir, { recursive: true });
+
+  // 8. Consumed corrections are archived LAST: an aborted or failed resync
+  // leaves them pending so the next run still folds them in.
+  if (correctionsToArchive && report.corrections) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    report.corrections.archivedTo = archiveCorrections(correctionsToArchive, stamp);
+  }
 
   writeJsonFile(join(options.caseDir, 'resync-report.json'), report);
   return report;

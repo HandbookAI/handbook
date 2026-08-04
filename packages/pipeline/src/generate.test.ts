@@ -229,6 +229,69 @@ describe('run manifest', () => {
   });
 });
 
+describe('generateHandbook cooperative cancellation', () => {
+  it('rejects a pre-aborted run with an AbortError and writes no run manifest', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src-abort1-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'hb-work-abort1-'));
+    writeFixtureRepo(sourceRoot);
+    const client = mockClient();
+    const controller = new AbortController();
+    controller.abort();
+    const error = await generateHandbook({
+      sourceRoot,
+      workDir,
+      client,
+      phase: 'all',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(existsSync(join(workDir, 'run-manifest.json'))).toBe(false);
+    expect(client.calls).toHaveLength(0); // no LLM call was ever issued
+  });
+
+  it('mid-run abort rejects, keeps already-written cards, writes no manifest, and releases the lock', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src-abort2-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'hb-work-abort2-'));
+    writeFixtureRepo(sourceRoot);
+    // The first cards batch flips the controller from INSIDE the mock — the
+    // abort lands while the run is mid-phase, before the second batch starts.
+    const controller = new AbortController();
+    const abortingClient = new MockChatClient([
+      {
+        match: 'Files to describe',
+        respond: (prompt) => {
+          const files = [...prompt.matchAll(/### FILE: (\S+)/g)].map((m) => m[1]);
+          controller.abort();
+          return {
+            purposes: files.map((file) => ({ file, purpose: `Handles ${file}.`, role: 'other', lifecycle: 'none' })),
+          };
+        },
+      },
+    ]);
+    const error = await generateHandbook({
+      sourceRoot,
+      workDir,
+      client: abortingClient,
+      phase: 'all',
+      readBatchSize: 1,
+      readWorkers: 1, // sequential batches: batch 1 answers (and aborts), batch 2 must never start
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(abortingClient.calls).toHaveLength(1);
+
+    // Partial artifacts stay on disk (same contract as a crash)…
+    const cards = new WorkDir(workDir).loadCards();
+    expect(Object.keys(cards)).toHaveLength(1);
+    // …but the manifest describes only SUCCESSFUL runs, so there is none.
+    expect(existsSync(join(workDir, 'run-manifest.json'))).toBe(false);
+
+    // The work-dir lock was released: a follow-up run succeeds.
+    await generateHandbook({ sourceRoot, workDir, client: mockClient(), phase: 'all' });
+    expect(existsSync(join(workDir, 'run-manifest.json'))).toBe(true);
+  });
+});
+
 describe('generateHandbook (member strategy, mock LLM)', () => {
   it('classifies members against a user skeleton and derives file artifacts', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src2-'));

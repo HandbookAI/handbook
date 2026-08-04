@@ -136,6 +136,48 @@ describe('CachedChatClient', () => {
     expect(state.calls).toBe(2);
   });
 
+  it('excludes the signal from the cache key: a signal-less repeat is a hit', async () => {
+    const { client, state } = countingClient(() => 'keyed');
+    const dir = tempCacheDir();
+    const controller = new AbortController();
+    await new CachedChatClient(client, dir).complete('p', { temperature: 0.2, signal: controller.signal });
+    // The entry landed under the exact signal-less key…
+    const key = sha256Hex(`test-model\np\n${JSON.stringify({ temperature: 0.2 })}`);
+    expect(JSON.parse(readFileSync(join(dir, `${key}.json`), 'utf8'))).toEqual({ version: 1, text: 'keyed' });
+    // …so the same call without a signal (or with a different one) hits the cache.
+    const cached = new CachedChatClient(client, dir);
+    await cached.complete('p', { temperature: 0.2 });
+    await cached.complete('p', { temperature: 0.2, signal: new AbortController().signal });
+    expect(cached.hits).toBe(2);
+    expect(state.calls).toBe(1);
+  });
+
+  it('passes the signal through to the inner client on a miss', async () => {
+    const seen: Array<AbortSignal | undefined> = [];
+    const inner: ChatClient = {
+      model: 'm',
+      async complete(_prompt, options): Promise<ChatResult> {
+        seen.push(options?.signal);
+        return { text: 'x', json: undefined, elapsedSec: 0 };
+      },
+    };
+    const controller = new AbortController();
+    await new CachedChatClient(inner, tempCacheDir()).complete('p', { signal: controller.signal });
+    expect(seen[0]).toBe(controller.signal);
+  });
+
+  it('rejects a pre-aborted signal with an AbortError even on a would-be hit', async () => {
+    const { client, state } = countingClient(() => 'warm');
+    const dir = tempCacheDir();
+    const cached = new CachedChatClient(client, dir);
+    await cached.complete('p'); // warm the cache
+    const controller = new AbortController();
+    controller.abort();
+    const error = await cached.complete('p', { signal: controller.signal }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(state.calls).toBe(1); // the inner client was never re-asked
+  });
+
   it('passes through usage() when the inner client has one', async () => {
     const withUsage = Object.assign(countingClient(() => 'x').client, {
       usage: () => ({ calls: 7 }),
