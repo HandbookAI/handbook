@@ -19,6 +19,7 @@
     "@handbook/analyzer": "workspace:*",
     "@handbook/core": "workspace:*",
     "@handbook/llm": "workspace:*",
-    "@handbook/pipeline": "workspace:*"
+    "@handbook/pipeline": "workspace:*",
+    "zod": "^4.0.0"
   }
 }

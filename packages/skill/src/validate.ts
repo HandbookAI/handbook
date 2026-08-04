@@ -155,5 +155,37 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     warnings.push('references/coverage.json is absent — no drift detection possible');
   }
 
+  // --- corrections feedback channel ---
+  // Agents append correction records to corrections.jsonl at the SKILL ROOT
+  // (references/ is mounted read-only). Absent file: silence — nothing was
+  // reported. Present: parse tolerantly line by line; a line that is not a
+  // JSON object with a non-empty `file` string is a record resync could never
+  // apply, so it errors with its line number. Valid records are pending work:
+  // surface them as a warning until a resync folds them in and archives the file.
+  const correctionsPath = join(skillDir, 'corrections.jsonl');
+  if (fileExists(correctionsPath)) {
+    let pending = 0;
+    const lines = readFileSync(correctionsPath, 'utf8').split(/\r?\n/);
+    for (const [index, line] of lines.entries()) {
+      if (line.trim() === '') continue;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        errors.push(`corrections.jsonl line ${index + 1} is not valid JSON`);
+        continue;
+      }
+      const file = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { file?: unknown }).file : undefined;
+      if (typeof file !== 'string' || file.length === 0) {
+        errors.push(`corrections.jsonl line ${index + 1} has no non-empty "file" string`);
+        continue;
+      }
+      pending += 1;
+    }
+    if (pending > 0) {
+      warnings.push(`${pending} unprocessed correction(s) — resync with --corrections to fold them in`);
+    }
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }

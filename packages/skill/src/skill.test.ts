@@ -26,9 +26,13 @@ function writeAgentSite(dir: string): void {
   writeFileSync(join(dir, 'stage-1.md'), 'agent copy of stage-1\n');
 }
 
-/** Byte-exact output of `buildSkill({ name: 'demo', project: 'Demo' })` before agentDir/lang existed. */
+/**
+ * Byte-exact output of `buildSkill({ name: 'demo', project: 'Demo' })` with
+ * agentDir/lang omitted. Deliberately updated when the SKILL.md protocol
+ * grows (e.g. the Corrections section) — it exists to catch UNINTENDED drift.
+ */
 const LEGACY_SKILL_MD =
-  '---\nname: demo-handbook\ndescription: Navigate the Demo codebase by behavior and source location. Use when planning, implementing, debugging, or reviewing Demo work that is unfamiliar, spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated to Demo or isolated edits where the exact file is already known and no cross-cutting impact is plausible.\n---\n\n# Demo Handbook — how to use it\n\nThis handbook is a **location index** for the Demo codebase, not a code description.\nUse it to decide WHICH files, functions and state a change must touch — then read the real source.\n\n1. Read `references/overview.md` for the system\'s shape.\n2. Route through `references/index.md` — the stage index maps every subsystem to its files.\n3. Open only the relevant `references/stages/<id>.md` pages.\n4. Check `references/registers.md` for cross-cutting state — invaluable for fan-out changes.\n5. `read_file` the actual source at every cited path before proposing or making changes.\n\nIf `references/coverage.json` exists, treat its content hashes as freshness signals: a stale\nhash means the page may lag the code. Do NOT treat handbook prose as ground truth for code\ntext — always confirm against the real source before emitting a verbatim edit.\n';
+  '---\nname: demo-handbook\ndescription: Navigate the Demo codebase by behavior and source location. Use when planning, implementing, debugging, or reviewing Demo work that is unfamiliar, spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated to Demo or isolated edits where the exact file is already known and no cross-cutting impact is plausible.\n---\n\n# Demo Handbook — how to use it\n\nThis handbook is a **location index** for the Demo codebase, not a code description.\nUse it to decide WHICH files, functions and state a change must touch — then read the real source.\n\n1. Read `references/overview.md` for the system\'s shape.\n2. Route through `references/index.md` — the stage index maps every subsystem to its files.\n3. Open only the relevant `references/stages/<id>.md` pages.\n4. Check `references/registers.md` for cross-cutting state — invaluable for fan-out changes.\n5. `read_file` the actual source at every cited path before proposing or making changes.\n\nIf `references/coverage.json` exists, treat its content hashes as freshness signals: a stale\nhash means the page may lag the code. Do NOT treat handbook prose as ground truth for code\ntext — always confirm against the real source before emitting a verbatim edit.\n\n## Corrections\n\nWhen a handbook claim contradicts the real source ("the handbook says X is in file A; it is\nactually in B"), report it: append ONE line of JSON to `corrections.jsonl` at the skill root\n(next to this SKILL.md — never under `references/`, which planners mount read-only). Create\nthe file on first write. One object per line:\n\n```json\n{"file": "src/engine.py", "page": "references/stages/stage-2.md", "claim": "spin() is defined in src/main.py", "actual": "spin() is defined in src/engine.py", "notedAt": "2026-08-04T12:00:00Z"}\n```\n\n`file` is the repo-relative source path (required); `page` is the references/ page that\ncarried the claim; `claim`/`actual` state the contradiction; `notedAt` is an ISO timestamp —\nall optional. Never edit anything under `references/` yourself: a later resync consumes\n`corrections.jsonl` and refreshes exactly the named files. Keep working from the real source.\n';
 
 /** Byte-exact synthetic registers fallback before lang existed. */
 const LEGACY_REGISTERS_FALLBACK =
@@ -208,6 +212,13 @@ describe('buildSkill lang: zh', () => {
     expect(skill).toContain('真实源码');
   });
 
+  it('carries the corrections protocol in the Chinese body', () => {
+    const skill = readFileSync(join(out, 'SKILL.md'), 'utf8');
+    expect(skill).toContain('更正记录');
+    expect(skill).toContain('corrections.jsonl');
+    expect(skill).toContain('{"file": "src/engine.py", "page": "references/stages/stage-2.md"');
+  });
+
   it('localizes the synthetic no-registers fallback', () => {
     const registers = readFileSync(join(out, 'references', 'registers.md'), 'utf8');
     expect(registers).toContain('状态寄存器');
@@ -216,6 +227,64 @@ describe('buildSkill lang: zh', () => {
   it('passes validation with a Chinese body', () => {
     const result = validateSkill({ skillDir: out });
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe('corrections channel', () => {
+  function buildOnce(): { hb: string; out: string } {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-corr-'));
+    writeRenderedHandbook(hb);
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo' });
+    return { hb, out };
+  }
+
+  it('never creates corrections.jsonl at build time — the agent creates it on first write', () => {
+    const { out } = buildOnce();
+    expect(fileExists(join(out, 'corrections.jsonl'))).toBe(false);
+  });
+
+  it('preserves an existing corrections.jsonl across a rebuild into the same outDir', () => {
+    const { hb, out } = buildOnce();
+    const pending = '{"file": "src/a.py", "claim": "wrong", "actual": "right"}\n';
+    writeFileSync(join(out, 'corrections.jsonl'), pending);
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo' });
+    expect(readFileSync(join(out, 'corrections.jsonl'), 'utf8')).toBe(pending);
+    // The rest of the package is still rebuilt from scratch.
+    expect(readFileSync(join(out, 'SKILL.md'), 'utf8')).toBe(LEGACY_SKILL_MD);
+  });
+
+  it('validates silently when corrections.jsonl is absent', () => {
+    const { out } = buildOnce();
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes('correction'))).toEqual([]);
+  });
+
+  it('warns with the count of valid pending corrections', () => {
+    const { out } = buildOnce();
+    writeFileSync(
+      join(out, 'corrections.jsonl'),
+      '{"file": "src/a.py"}\n\n{"file": "src/b.py", "notedAt": "2026-08-04T12:00:00Z"}\n',
+    );
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toContain('2 unprocessed correction(s) — resync with --corrections to fold them in');
+  });
+
+  it('errors on malformed lines, naming the line number', () => {
+    const { out } = buildOnce();
+    writeFileSync(
+      join(out, 'corrections.jsonl'),
+      '{"file": "src/a.py"}\nnot json\n{"page": "references/index.md"}\n{"file": ""}\n',
+    );
+    const result = validateSkill({ skillDir: out });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/corrections\.jsonl line 2.*JSON/);
+    expect(result.errors.join('\n')).toMatch(/corrections\.jsonl line 3/);
+    expect(result.errors.join('\n')).toMatch(/corrections\.jsonl line 4/);
+    // The one valid record still counts as pending work.
+    expect(result.warnings).toContain('1 unprocessed correction(s) — resync with --corrections to fold them in');
   });
 });
 

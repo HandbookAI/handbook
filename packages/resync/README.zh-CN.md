@@ -26,7 +26,7 @@
 全部在 `resync.ts`：
 - `resyncHandbook(options: ResyncOptions): Promise<ResyncReport>` ——
   整个流程；就地更新 work 目录并写出 `<case>/resync-report.json`。
-  - `ResyncOptions` —— `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, logger? }`；
+  - `ResyncOptions` —— `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, correctionsPath?, signal?, logger? }`；
     除非 `noLlm` 为真，否则 `client` 必填；`detail`（`'brief' | 'deep'`）默认探测现有卡片的粒度；
     `editedRoot`/`planText` 允许调用方（如 studio 的实时树流程）直接提供改动后的树和计划，绕过 case 文件。
   - `ResyncReport` —— `{ skipped, changedFiles, addedFiles, deletedFiles, affectedStages,
@@ -38,6 +38,19 @@
 - `filesFromDiff(diffText): string[]` —— 从 unified diff 的 `+++/---` 头里取文件路径（跳过 `/dev/null`）。
 - `diffGraphs(before, after): GraphDelta` —— 逐文件内容哈希（结构指纹兜底）→ `{ changed, added, deleted }`。
 - `detectCardDetail(cards): 'brief' | 'deep'` —— 手册构建时的粒度（deep 卡片带函数笔记/走读描述）。
+- `loadCorrections(path)` / `correctionFiles(corrections)` / `archiveCorrections(path, stamp)`
+  （`corrections.ts`）—— agent 纠错通道：容错 JSONL 读取（坏行带行号进 `problems`）、
+  取出被点名的源文件、把已消费的文件归档为 `corrections.<stamp>.applied.jsonl`。
+
+### 取消与纠错
+
+`signal` 是**协作式**取消：在各编号步骤之间以及每个 LLM 环节里检查，所以被取消的 resync
+会在下一个检查点抛 `AbortError`，而不是写到一半被砍。work 目录锁照常释放，已保存的卡片留在盘上。
+
+`correctionsPath` 指向由「读手册的 agent」写出的 `corrections.jsonl`（协议见 `@handbook/skill`）。
+其中每个存在于已分析文件集里的文件都会**扩大**刷新范围——手册的说法被源码否证，就是重写这个
+文件描述的理由，哪怕它的字节从未变过；不在集合里的文件会进 `report.corrections.problems`，
+绝不静默丢弃。归档只在整轮跑完后进行，所以被取消或失败的 resync 会把纠错留给下一次。
 
 ## 用法
 

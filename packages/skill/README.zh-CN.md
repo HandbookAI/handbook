@@ -17,14 +17,18 @@
   `disambiguation.md` 会进入 `references/agent/`，路由规程中也会多出一步消歧指引。
 - 可选本地化 `SKILL.md` 正文与合成的兜底散文（`lang: 'zh'`）；frontmatter 永远保持英文（见设计说明）。
 - 可选产出 `references/coverage.json`：文件 → 阶段的映射，附每个文件的 SHA-256 内容哈希，用于漂移检测。
-- 校验一个 skill 目录：结构、frontmatter 契约、索引与阶段页的链接一致性、覆盖率哈希的新鲜度。
+- 教会消费方 agent **更正协议**：`SKILL.md` 正文（中英文皆有）指导 agent 在发现手册与源码矛盾时，
+  向 skill 根目录的 `corrections.jsonl` 追加 JSON 行上报 —— 而绝不自己改动 `references/`。
+- 校验一个 skill 目录：结构、frontmatter 契约、索引与阶段页的链接一致性、覆盖率哈希的新鲜度、
+  以及待处理/损坏的更正记录。
 - **不**嵌入源码——skill 是一份**位置索引**，永远把 agent 指回真实文件。
 - **不**调用任何 LLM；构建与校验都是确定性的。
 
 ## 公开 API
 
 **构建**（`build.ts`）
-- `buildSkill(options: BuildSkillOptions): BuildSkillResult` —— 组装 skill 包（输出目录会被从零重建）。
+- `buildSkill(options: BuildSkillOptions): BuildSkillResult` —— 组装 skill 包（输出目录会被从零重建；
+  唯一的例外是输出根目录里已存在的 `corrections.jsonl` —— 它会被逐字节保留，且构建器永远不会主动创建它）。
   - `BuildSkillOptions` —— `{ handbookDir, outDir, name, project?, coverage?: { assignment, sourceRoot? }, agentDir?, lang? }`；
     `name` 是 slug（skill 名字最终是 `<slug>-handbook`），`project` 是散文里用的人类可读名称。
     - `agentDir?: string` —— 渲染好的 agent 定位站点。当其中同时存在 `how_to_use.md` 和
@@ -47,7 +51,10 @@ name 是小写连字符 slug；description 同时写明「Use when …」与「D
 `overview.md` / `index.md` / `registers.md` 与 `stages/` 存在；
 每个阶段页都被 `index.md` 链接到；若 `references/agent/` 存在，
 其中的定位页必须非空（否则报错），成对缺一页只给警告——没有该目录的 skill 照常通过校验；
-`coverage.json` 没有重复路径，且（在给了 `sourceRoot` 时）没有过期哈希或已删除文件。
+`coverage.json` 没有重复路径，且（在给了 `sourceRoot` 时）没有过期哈希或已删除文件；
+若 skill 根目录存在 `corrections.jsonl`，每个非空行都必须是带非空 `file` 字符串的 JSON 对象
+（违反者按行号报错），N 条有效记录会给出警告
+`"N unprocessed correction(s) — resync with --corrections to fold them in"` —— 文件不存在时保持沉默。
 
 ## 用法
 
@@ -89,6 +96,15 @@ if (!check.ok) console.error(check.errors);
   agent 站点自己的 `index.md` 和阶段页副本绝不会被二次打包。
 - **刻意零代码嵌入**：校验要求 `SKILL.md` 正文把 agent 引向真实源码，
   这样代码库演进时这个 skill 依然是诚实的——它从不假装自己是代码的副本。
+- **更正通道把消费方 agent 变成质量传感器**。当 agent 发现手册与真实源码矛盾
+  （「手册说 X 在文件 A，实际在 B」）时，它向 `corrections.jsonl` 追加一行 JSON：
+  `{"file": "<仓库相对源码路径>", "page": "<references/… 页面>", "claim": "<手册怎么说>", "actual": "<源码是什么>", "notedAt": "<ISO 时间戳>"}`
+  —— 只有 `file` 必填。这个文件放在 **skill 根目录**，刻意不放进 `references/`：
+  planner 以只读方式挂载 `references/`，根目录是消费方 agent 唯一可写的位置。
+  生命周期：agent 追加（首次写入时创建文件）→ `validateSkill` 对未处理记录发出警告
+  → resync 消费这些记录、只刷新被点名的文件 → 整批就地归档为
+  `corrections.<stamp>.applied.jsonl`，记录绝不会被二次折入。
+  `buildSkill` 永远不会创建该文件，重建时也绝不覆盖已存在的那份。
 
 ## 依赖
 
