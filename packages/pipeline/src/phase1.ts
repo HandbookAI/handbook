@@ -43,7 +43,7 @@ export async function runPhase1(options: Phase1Options): Promise<Phase1Stats> {
   const analyses: ModuleAnalysis[] = [];
 
   if (lang === 'auto') {
-    const byLanguage = discoverAll(options.sourceRoot);
+    const byLanguage = discoverAll(options.sourceRoot, logger);
     const languages = Object.keys(byLanguage);
     if (languages.length === 0) {
       throw new Error(`no analyzable files found under ${options.sourceRoot}`);

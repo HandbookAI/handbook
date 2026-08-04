@@ -122,6 +122,42 @@ describe('GoAdapter', () => {
   });
 });
 
+describe('GoAdapter — cross-package calls through imports', () => {
+  let analysis: ModuleAnalysis;
+  const adapter = new GoAdapter();
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-go-xpkg-'));
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(root, 'util'), { recursive: true });
+    mkdirSync(join(root, 'internal', 'util'), { recursive: true });
+    writeFileSync(
+      join(root, 'main.go'),
+      'package main\n\nimport (\n\t"fmt"\n\t"example.com/demo/util"\n\tiu "example.com/demo/internal/util"\n)\n\nfunc doIt() {\n\tutil.Upper("x")\n\tiu.Trim("y")\n\tfmt.Println("hi")\n}\n',
+    );
+    writeFileSync(join(root, 'util', 'strings.go'), 'package util\n\nfunc Upper(s string) string { return s }\n');
+    writeFileSync(join(root, 'internal', 'util', 'trim.go'), 'package util\n\nfunc Trim(s string) string { return s }\n');
+    analysis = await adapter.analyze(['main.go', 'util/strings.go', 'internal/util/trim.go'], root);
+  });
+
+  const edge = (caller: string, callee: string) =>
+    analysis.edges.find((e) => e.callerId === caller && e.calleeId === callee);
+
+  it('resolves pkg.F() to a scanned package matched by import-path suffix', () => {
+    const e = edge('main.doIt', 'util.strings.Upper');
+    expect(e?.callType).toBe('internal_func');
+  });
+
+  it('prefers the longest scanned-directory match for nested packages', () => {
+    const e = edge('main.doIt', 'internal.util.trim.Trim');
+    expect(e?.callType).toBe('internal_func');
+  });
+
+  it('keeps stdlib and unscanned imports at boundary', () => {
+    expect(edge('main.doIt', 'boundary:fmt.Println')?.callType).toBe('boundary');
+  });
+});
+
 describe('GoAdapter — sibling-file package calls (round-1 review)', () => {
   it('resolves a bare call to a free function defined in another file of the same package', async () => {
     const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');

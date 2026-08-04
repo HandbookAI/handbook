@@ -109,7 +109,10 @@ export function buildNavPack(graph: CodeGraph, options: NavPackOptions = {}): Na
   for (const edge of graph.edges) {
     if (!edge.calleeId.startsWith('boundary:')) continue;
     const qual = edge.calleeId.slice('boundary:'.length);
-    const moduleName = qual.split(/[.:]/, 1)[0] ?? qual;
+    // `./x.js::Engine.run` → `./x.js`; `node:fs.readFileSync` → `node:fs`;
+    // `Wheel.turn` → `Wheel`. Never an empty key (relative specifiers start with a dot).
+    const sep = qual.indexOf('::');
+    const moduleName = sep >= 0 ? qual.slice(0, sep) : (qual.split('.', 1)[0] ?? qual) || qual;
     const entry = external.get(moduleName) ?? { nCallsInto: 0, sample: new Set<string>() };
     entry.nCallsInto += 1;
     if (entry.sample.size < 5) entry.sample.add(qual);

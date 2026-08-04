@@ -390,9 +390,14 @@ function resolveCall(
         }
         return { calleeId: `boundary:${paramType}.${method}`, callType: 'boundary' };
       }
-      // B4. `pkg.F(...)` through an import
+      // B4. `pkg.F(...)` through an import — a scanned package whose directory
+      // suffix-matches the import path is internal; everything else is boundary.
       const imported = scan.imports.get(operand.text);
       if (imported) {
+        const owner = scannedPackageFunction(imported, method, indexes);
+        if (owner) {
+          return { calleeId: `${owner}.${method}`, callType: 'internal_func' };
+        }
         return { calleeId: `boundary:${imported}.${method}`, callType: 'boundary' };
       }
       return unresolved(`${operand.text}.${method}`);
@@ -404,4 +409,27 @@ function resolveCall(
 
 function unresolved(hint: string): Resolved {
   return { calleeId: `unresolved:${truncate(hint, 80)}`, callType: 'unresolved' };
+}
+
+/**
+ * Owning moduleId when `importPath` ends with a scanned package directory that
+ * defines `fn`. Longest directory match wins (`internal/util` over `util`).
+ */
+function scannedPackageFunction(
+  importPath: string,
+  fn: string,
+  indexes: CrossModuleIndexes,
+): string | undefined {
+  let bestDir = '';
+  let owner: string | undefined;
+  for (const [dir, fns] of indexes.packageFunctions) {
+    if (dir === '.' || dir.length <= bestDir.length) continue;
+    if (importPath !== dir && !importPath.endsWith(`/${dir}`)) continue;
+    const moduleId = fns.get(fn);
+    if (moduleId) {
+      bestDir = dir;
+      owner = moduleId;
+    }
+  }
+  return owner;
 }

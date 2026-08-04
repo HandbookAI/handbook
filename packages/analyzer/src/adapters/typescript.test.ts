@@ -22,6 +22,7 @@ const APP_TS = `
 import { Engine } from './engine.js';
 import * as fs from 'node:fs';
 import { shout } from './helpers.js';
+import * as h from './helpers.js';
 
 export class App {
   private engine: Engine;
@@ -50,6 +51,7 @@ export class App {
 export function main(): void {
   const app = new App(null, new Engine());
   app.greet('hi');
+  h.shout('ns');
   mystery();
 }
 
@@ -137,10 +139,20 @@ describe('TypeScriptAdapter', () => {
     expect(edge('app.main', 'engine.Engine.constructor')?.callType).toBe('internal_constructor');
   });
 
-  it('routes namespace and named imports to boundary', () => {
+  it('routes imports of unscanned modules to boundary', () => {
     expect(edge('app.App.run', 'boundary:node:fs.readFileSync')?.callType).toBe('boundary');
-    expect(edge('app.App.greet', 'boundary:./helpers.js::shout')?.callType).toBe('boundary');
+    // widget.tsx lives in ui/, so its './helpers.js' points at ui/helpers — not scanned.
     expect(edge('ui.widget.Widget', 'boundary:./helpers.js::shout')?.callType).toBe('boundary');
+  });
+
+  it('resolves named imports of scanned free functions to internal_func', () => {
+    const e = edge('app.App.greet', 'helpers.shout');
+    expect(e?.callType).toBe('internal_func');
+  });
+
+  it('resolves namespace-import calls into scanned modules to internal_func', () => {
+    const e = edge('app.main', 'helpers.shout');
+    expect(e?.callType).toBe('internal_func');
   });
 
   it('marks unknown calls unresolved', () => {
