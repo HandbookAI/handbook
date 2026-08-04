@@ -71,14 +71,16 @@ export class TypeScriptAdapter implements LanguageAdapter {
       scans.push(scanModule(tree.rootNode, file));
     }
 
-    // Cross-module index (first definition wins on collisions).
+    // Cross-module indexes (first definition wins on collisions).
     const classToModule = new Map<string, string>();
+    const moduleFunctions = new Map<string, Set<string>>();
     for (const scan of scans) {
+      moduleFunctions.set(scan.moduleId, scan.topLevelFunctions);
       for (const cls of scan.classes.keys()) {
         if (!classToModule.has(cls)) classToModule.set(cls, scan.moduleId);
       }
     }
-    const indexes: CrossModuleIndexes = { classToModule };
+    const indexes: CrossModuleIndexes = { classToModule, moduleFunctions };
 
     const functions = scans.flatMap((s) => s.functions);
     const edges = scans.flatMap((s) => extractCalls(s, indexes));
@@ -88,6 +90,28 @@ export class TypeScriptAdapter implements LanguageAdapter {
 
 interface CrossModuleIndexes {
   classToModule: Map<string, string>;
+  /** moduleId → top-level function names (resolves imports of scanned free functions). */
+  moduleFunctions: Map<string, Set<string>>;
+}
+
+/**
+ * `./helpers.js` imported from `src/app.ts` → `src.helpers`.
+ * Undefined for non-relative specifiers and paths escaping the source root.
+ */
+function resolveRelativeModule(importerFile: string, specifier: string): string | undefined {
+  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return undefined;
+  const stack = importerFile.split('/').slice(0, -1);
+  const stripped = specifier.replace(/\.(jsx|js|mjs|cjs|tsx|ts)$/, '');
+  for (const part of stripped.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      if (stack.length === 0) return undefined;
+      stack.pop();
+    } else {
+      stack.push(part);
+    }
+  }
+  return stack.length > 0 ? stack.join('.') : undefined;
 }
 
 export function moduleIdForFile(file: string): string {
@@ -417,6 +441,13 @@ function resolveCall(
         const bare = leafName(imported);
         const typeModule = indexes.classToModule.get(bare);
         if (typeModule) return { calleeId: `${typeModule}.${bare}.${prop}`, callType: 'internal_func' };
+        if (!imported.includes('::')) {
+          // namespace import of a scanned sibling module
+          const scannedModule = resolveRelativeModule(scan.file, imported);
+          if (scannedModule && indexes.moduleFunctions.get(scannedModule)?.has(prop)) {
+            return { calleeId: `${scannedModule}.${prop}`, callType: 'internal_func' };
+          }
+        }
         return { calleeId: `boundary:${imported}.${prop}`, callType: 'boundary' };
       }
       return unresolved(`${base}.${prop}`);
@@ -433,7 +464,13 @@ function resolveBareName(name: string, scan: ModuleScan, indexes: CrossModuleInd
   }
   const imported = scan.imports.get(name);
   if (imported) {
+    const sep = imported.indexOf('::');
+    const source = sep >= 0 ? imported.slice(0, sep) : imported;
     const leaf = leafName(imported);
+    const scannedModule = resolveRelativeModule(scan.file, source);
+    if (scannedModule && indexes.moduleFunctions.get(scannedModule)?.has(leaf)) {
+      return { calleeId: `${scannedModule}.${leaf}`, callType: 'internal_func' };
+    }
     const typeModule = indexes.classToModule.get(leaf);
     if (typeModule) {
       return { calleeId: `${typeModule}.${leaf}.constructor`, callType: 'internal_constructor' };

@@ -102,7 +102,10 @@ export function adapterForFile(relPath: string): LanguageAdapter | undefined {
 }
 
 /** Discover files for every registered language (only languages with ≥1 file). */
-export function discoverAll(sourceRoot: string): Record<string, string[]> {
+export function discoverAll(
+  sourceRoot: string,
+  logger?: { warn(message: string): void },
+): Record<string, string[]> {
   const result: Record<string, string[]> = {};
   const claimed = new Set<string>();
   for (const name of availableLanguages()) {
@@ -114,8 +117,11 @@ export function discoverAll(sourceRoot: string): Record<string, string[]> {
         result[name] = files;
         for (const f of files) claimed.add(f);
       }
-    } catch {
-      // a broken adapter must not break multi-language discovery
+    } catch (err) {
+      // a broken adapter must not break multi-language discovery — but say so
+      logger?.warn(
+        `[scan] ${name} adapter failed during discovery: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
   return result;
