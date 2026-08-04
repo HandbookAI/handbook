@@ -13,6 +13,7 @@ import {
   fileExists,
   readJsonFile,
   silentLogger,
+  truncate,
   writeJsonFile,
   type Logger,
 } from '@handbook/core';
@@ -345,12 +346,87 @@ async function runRollback(repo: RepoEntry, body: Record<string, unknown>, logge
   return { backup: requested, ...result };
 }
 
+/** Where an evolution's description came from — the UI must not blur these. */
+type DescriptionSource = 'user' | 'auto' | 'files' | 'none';
+
+/**
+ * Label a resync the author did not describe.
+ *
+ * It states which CAPABILITIES the change touched, never why: this path has no
+ * diff, only the changed paths and those files' handbook purposes, so intent is
+ * not something it could know. Falls back to a deterministic file list when there
+ * is no client (structure-only resync) or the call fails — a missing label must
+ * never cost the run.
+ */
+async function summariseChange(
+  repo: RepoEntry,
+  report: { changedFiles: string[]; addedFiles: string[]; deletedFiles: string[]; affectedStages: string[] },
+  client: ChatClient | undefined,
+  body: Record<string, unknown>,
+  logger: Logger,
+): Promise<{ text: string; source: DescriptionSource } | undefined> {
+  const touched = [...report.changedFiles, ...report.addedFiles];
+  const removed = report.deletedFiles;
+  const zh = body.narrateLang !== 'en';
+  // Nothing changed is itself a fact worth writing down: a timeline entry reading
+  // "no file changes" tells the reader something, "(no description)" does not.
+  if (touched.length === 0 && removed.length === 0) {
+    return { text: zh ? '无文件变更' : 'no file changes', source: 'files' };
+  }
+
+  /** Deterministic, free, always available. */
+  const fromFiles = (): { text: string; source: DescriptionSource } => {
+    const all = [...touched, ...removed];
+    const head = all[0] ?? '';
+    const rest = all.length - 1;
+    return {
+      text: zh
+        ? `${head}${rest > 0 ? ` 等 ${all.length} 个文件` : ''}`
+        : `${head}${rest > 0 ? ` and ${rest} more file(s)` : ''}`,
+      source: 'files',
+    };
+  };
+  if (!client) return fromFiles();
+
+  try {
+    const cards = new WorkDir(repo.workDir).loadCards();
+    const lines = touched.slice(0, 12).map((file) => {
+      const purpose = cards[file]?.purpose?.trim();
+      return `- ${file}${purpose ? `：${truncate(purpose, 120)}` : ''}`;
+    });
+    for (const file of removed.slice(0, 6)) lines.push(`- ${file}（已删除）`);
+    const prompt = zh
+      ? [
+          '下面是一次代码改动涉及的文件，以及每个文件在手册里的用途。',
+          '请用一句不超过 40 字的中文，概括这次改动**涉及哪些能力/模块**。',
+          '只描述涉及范围，不要猜测改动的目的或原因，不要加任何前后缀、引号或标点结尾。',
+          '',
+          ...lines,
+        ].join('\n')
+      : [
+          'Below are the files a code change touched, with each file’s purpose from the handbook.',
+          'In one sentence under 20 words, name which capabilities/modules the change touched.',
+          'Describe scope only — never guess the intent or reason. No prefix, quotes, or trailing period.',
+          '',
+          ...lines,
+        ].join('\n');
+    const reply = await client.complete(prompt, { temperature: 0, maxTokens: 200 });
+    const text = reply.text.trim().split(/\r?\n/)[0]?.replace(/^["'「『]|["'」』。.]+$/g, '').trim() ?? '';
+    if (text.length >= 4 && text.length <= 120) return { text, source: 'auto' };
+    logger.warn(`[resync] auto-summary unusable (${text.length} chars) — falling back to the file list`);
+  } catch (error) {
+    logger.warn(`[resync] auto-summary failed: ${String(error)} — falling back to the file list`);
+  }
+  return fromFiles();
+}
+
 async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>, logger: Logger): Promise<unknown> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const caseDir = join(evolutionsDir(repo), stamp);
   ensureDir(caseDir);
   const planText = typeof body.description === 'string' ? body.description : undefined;
   const noLlm = body.noLlm === true;
+  const client = noLlm ? undefined : ctx.clientFactory(logger);
   let report;
   try {
     report = await resyncHandbook({
@@ -358,7 +434,7 @@ async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown
     editedRoot: repo.sourceRoot,
     planText,
     workDir: repo.workDir,
-    client: noLlm ? undefined : ctx.clientFactory(logger),
+    client,
     noLlm,
     lang: body.narrateLang === 'zh' ? 'zh' : body.narrateLang === 'en' ? 'en' : undefined,
     logger,
@@ -375,10 +451,17 @@ async function runResync(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown
   renderAgentSite(model, join(outDir, 'agent'));
   renderHtmlSite(model, join(outDir, 'html'));
   renderSinglePageHtml(model, join(outDir, 'handbook.html'));
+  // A resync with no description used to leave a bare dash in the timeline while
+  // the facts needed to label it sat in the report. Fill it in — but never let the
+  // reader mistake a machine summary for the author's own intent, and never let a
+  // cosmetic summary fail the resync that already succeeded.
+  const typed = (planText ?? '').trim();
+  const auto = typed ? undefined : await summariseChange(repo, report, client, body, logger);
   const evolution = {
     id: stamp,
     at: new Date().toISOString(),
-    description: planText ?? '(no description)',
+    description: typed || auto?.text || '(no description)',
+    descriptionSource: typed ? ('user' as const) : (auto?.source ?? ('none' as const)),
     report,
   };
   writeJsonFile(join(caseDir, 'evolution.json'), evolution);

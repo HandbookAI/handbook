@@ -185,6 +185,45 @@ describe('studio server (integration, mock LLM)', () => {
     expect(history[0].description).toBe('add report helper');
   });
 
+  it('labels a resync the author did not describe, and marks where the label came from', async () => {
+    // Empty description used to leave a bare dash in the timeline while the facts
+    // needed to label it sat in the report.
+    writeFileSync(join(sourceRoot, 'app', 'extra.py'), 'def extra():\n    return 1\n');
+    const job = await api('/api/repos/demo/resync', {
+      method: 'POST',
+      body: JSON.stringify({ description: '   ', noLlm: true }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status).toBe('succeeded');
+    const evo = done.result;
+    expect(evo.description).not.toBe('');
+    expect(evo.description).not.toBe('(no description)');
+    // structure-only resync has no client, so the label is the deterministic one
+    expect(evo.descriptionSource).toBe('files');
+    expect(evo.description).toContain('.py');
+  });
+
+  it('labels a resync that found nothing to do', async () => {
+    const job = await api('/api/repos/demo/resync', {
+      method: 'POST',
+      body: JSON.stringify({ description: '', noLlm: true }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.result.description).toBe('无文件变更');
+    expect(done.result.descriptionSource).toBe('files');
+  });
+
+  it("keeps the author's own description untouched and marks it as theirs", async () => {
+    const job = await api('/api/repos/demo/resync', {
+      method: 'POST',
+      body: JSON.stringify({ description: '手写的说明', noLlm: true }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.result.description).toBe('手写的说明');
+    expect(done.result.descriptionSource).toBe('user');
+  });
+
+
   it('streams job logs over SSE', async () => {
     const job = await api('/api/repos/demo/analyze', { method: 'POST', body: '{}' });
     const res = await fetch(`${base}/api/jobs/${job.id}/stream`);
