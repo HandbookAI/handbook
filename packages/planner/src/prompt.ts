@@ -99,4 +99,12 @@ You work in turns. On EVERY turn respond with EXACTLY one JSON action block and 
 \`\`\`json
 {"tool": "finish", "plan": "<the COMPLETE plan: summary + EDIT blocks + declarations json>"}
 \`\`\`
-The tool result arrives in the next turn. Think step by step but output ONLY the action block.`;
+The tool result arrives in the next turn, written by the harness under a
+"## Tool result" heading.
+
+**NEVER write a "## Tool result" section yourself, and never invent file contents.**
+Only the harness produces tool results. If you write one, you are guessing at code
+you have not read, and the whole plan built on it is worthless — the reply will be
+rejected and you will be asked again.
+
+One action block per turn. Nothing before it, nothing after it.`;

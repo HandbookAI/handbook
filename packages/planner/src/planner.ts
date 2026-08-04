@@ -71,6 +71,11 @@ export function parseDeclarations(plan: string): Declarations | undefined {
   }
 }
 
+/** The harness's own result heading — a model writing it is fabricating. */
+const FABRICATED_RESULT_RE = /^#{1,3}\s*Tool result\b/im;
+/** How many fabricating replies to correct before giving up on the run. */
+const MAX_FABRICATIONS = 3;
+
 export async function runPlanner(options: PlannerOptions): Promise<PlannerResult> {
   const logger = options.logger ?? silentLogger;
   const maxTurns = options.maxTurns ?? 30;
@@ -88,6 +93,8 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     `## Change request\n${options.request}\n\n${handbookNote}`,
   ];
   const trace: string[] = [];
+  /** Replies that invented tool results; a few are recoverable, a stream is not. */
+  let fabricated = 0;
 
   const runTool = (action: Action): string => {
     const path = action.path ?? '.';
@@ -113,6 +120,34 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
       : transcript.join('\n\n---\n\n');
     const response = await options.client.complete(prompt, { temperature: 0 });
     const action = (response.json ?? undefined) as Action | undefined;
+
+    // A reply that writes the harness's own "## Tool result" heading has invented
+    // file contents and is reasoning on top of them. Observed for real: one reply
+    // contained 13 fabricated results and a plan built from a line that does not
+    // exist in the file. Never accept it — not even the plan at the end of it,
+    // because that plan was derived from fiction. Push back and ask again.
+    if (FABRICATED_RESULT_RE.test(response.text)) {
+      fabricated += 1;
+      logger.warn(
+        `[planner] turn ${turn}/${maxTurns}: reply invented tool results — rejected (${fabricated}/${MAX_FABRICATIONS})`,
+      );
+      if (fabricated >= MAX_FABRICATIONS) {
+        return {
+          plan:
+            '(planner aborted: the model kept inventing tool results instead of reading the code. ' +
+            'Nothing here is trustworthy — rerun, or point the planner at a stronger endpoint.)',
+          turns: turn,
+          trace,
+        };
+      }
+      transcript.push(
+        'Your reply contained a "## Tool result" section. You do not write those — I do, and only for ' +
+          'tools I actually ran. You were inventing file contents. Reply with EXACTLY one action block ' +
+          'and nothing else.',
+      );
+      continue;
+    }
+
     const looksLikePlan = response.text.includes('### EDIT');
 
     // A prose reply containing EDIT blocks IS the plan — even if some fenced
@@ -128,14 +163,25 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     }
 
     if (action.tool === 'finish') {
-      const plan = (action.plan ?? '').trim() || response.text.trim();
-      logger.info(`[planner] finished after ${turn} turns`);
+      // Falling back to the raw reply here is how a 15 KB blob of invented
+      // transcript once became "the plan". Only fall back when the reply at least
+      // carries edit blocks; otherwise say plainly that nothing usable came back.
+      const declared = (action.plan ?? '').trim();
+      const plan = declared || (looksLikePlan ? response.text.trim() : '(planner finished without producing a plan)');
+      const nEdits = (plan.match(/^ {0,3}###\s+EDIT\s+\d+\s*$/gm) ?? []).length;
+      logger.info(
+        `[planner] finished after ${turn} turns — ${nEdits} edit block(s)` +
+          (nEdits === 0 ? ' (the planner concluded no code change is needed)' : ''),
+      );
       return { plan, declarations: parseDeclarations(plan), turns: turn, trace };
     }
 
     const result = runTool(action);
     trace.push(`${action.tool}(${truncate(action.pattern ?? action.path ?? '', 80)})`);
-    logger.debug(`[planner] turn ${turn}: ${trace.at(-1)}`);
+    // The tool calls ARE the progress: someone watching a 30-turn agent loop needs
+    // to see which files it opened and what it searched for, otherwise the whole
+    // run looks like a single silent pause. `-q` still silences it.
+    logger.info(`[planner] turn ${turn}/${maxTurns}: ${trace.at(-1)}`);
     transcript.push(
       `\`\`\`json\n${JSON.stringify(action)}\n\`\`\``,
       `## Tool result (${action.tool})\n${truncate(result, MAX_RESULT_CHARS)}`,

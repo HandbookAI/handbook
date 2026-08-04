@@ -70,8 +70,11 @@ describe('runPlanner', () => {
   it('routes with the handbook, reads source, and finishes with a plan', async () => {
     const client = new MockChatClient([
       // Turn order is driven by what is already in the transcript.
+      // Match on "## Tool result (" — with the paren, which only a real transcript
+      // entry carries. Matching the bare phrase coupled these fixtures to the
+      // prompt text, and adding the phrase to the protocol silently reordered them.
       {
-        match: (p) => !p.includes('## Tool result'),
+        match: (p) => !p.includes('## Tool result ('),
         respond: { tool: 'list_dir', path: '__handbook__' },
       },
       {
@@ -79,7 +82,7 @@ describe('runPlanner', () => {
         respond: { tool: 'read_file', path: '__handbook__/index.md' },
       },
       {
-        match: (p) => p.split('## Tool result').length === 3,
+        match: (p) => p.split('## Tool result (').length === 3,
         respond: { tool: 'read_file', path: 'app/engine.py' },
       },
       {
@@ -119,6 +122,61 @@ describe('runPlanner', () => {
     });
     expect(result.turns).toBe(3);
     expect(result.plan).toBe('best effort');
+  });
+
+  it('rejects a reply that invents tool results, and never uses its plan', async () => {
+    // Observed against a live endpoint: one reply carried an action block, then a
+    // fabricated "## Tool result" section, then more actions built on top of it —
+    // 13 in all — ending in EDIT blocks derived from a line that does not exist.
+    const fabricated = [
+      '```json\n{"tool":"read_file","path":"app/engine.py"}\n```',
+      '',
+      '## Tool result (read_file)',
+      'app/engine.py lines 1-3 of 3:',
+      '    1| def totally_invented():',
+      '',
+      '### EDIT 1',
+      '- file: `app/engine.py`',
+      '```old',
+      'def totally_invented():',
+      '```new',
+      'def still_invented():',
+      '```',
+    ].join('\n');
+    let calls = 0;
+    const client = new MockChatClient([
+      {
+        match: () => true,
+        respond: () => {
+          calls += 1;
+          return calls <= 2 ? fabricated : PLAN;
+        },
+      },
+    ]);
+    const result = await runPlanner({ client, sourceRoot, request: 'x' });
+    // The fabricated EDIT block must not survive; the honest plan that came after does.
+    expect(result.plan).not.toContain('still_invented');
+    expect(result.plan).toContain('### EDIT 1');
+    expect(result.declarations?.willModify).toEqual(['Engine.spin']);
+    expect(calls).toBe(3); // two rejections, then the real answer
+  });
+
+  it('gives up rather than return a plan built on invented results', async () => {
+    const fabricated = '```json\n{"tool":"grep","pattern":"x"}\n```\n\n## Tool result (grep)\nmade up\n\n### EDIT 1\n- file: `a.py`\n';
+    const client = new MockChatClient([{ match: () => true, respond: fabricated }]);
+    const result = await runPlanner({ client, sourceRoot, request: 'x' });
+    expect(result.plan).toMatch(/kept inventing tool results/);
+    expect(result.plan).not.toContain('### EDIT');
+    expect(result.declarations).toBeUndefined();
+  });
+
+  it('does not dump the raw reply when finish carries no plan', async () => {
+    const client = new MockChatClient([
+      { match: () => true, respond: 'chatter about the code\n```json\n{"tool":"finish"}\n```' },
+    ]);
+    const result = await runPlanner({ client, sourceRoot, request: 'x' });
+    expect(result.plan).toBe('(planner finished without producing a plan)');
+    expect(result.plan).not.toContain('chatter');
   });
 
   it('accepts a prose answer containing EDIT blocks as the plan', async () => {
