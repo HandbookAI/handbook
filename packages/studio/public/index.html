@@ -110,9 +110,17 @@
   .tabs button.cur{background:var(--card2);color:var(--gold-hi);font-weight:600}
   .hright{display:flex;gap:6px;flex:none}
   .hright button{padding:5px 10px;font:11.5px var(--mono);letter-spacing:.06em}
+  .jobchip{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 55%,transparent)}
+  .jobchip[hidden]{display:none}
+  .jobchip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);
+    margin-right:6px;vertical-align:1px;animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.25}}
   .burger{display:none;padding:5px 10px}
   .content{flex:1;overflow:auto;padding:22px 24px 40px;position:relative}
-  .content.flush{padding:12px}
+  .content.flush{padding:12px;display:flex;flex-direction:column;gap:10px}
+  .content.flush iframe{flex:1;height:auto;min-height:0}
+  .viewbar{display:flex;gap:6px;flex-wrap:wrap;flex:none}
+  .viewbar button.cur{border-color:var(--gold);color:var(--gold-hi)}
   .content.nopad{padding:0}
 
   /* --------------------------------------------------------- primitives */
@@ -386,6 +394,7 @@
     <div class="hleft" id="hleft"></div>
     <nav class="tabs" id="tabs"></nav>
     <div class="hright">
+      <button class="jobchip" data-act="job-chip" id="jobChip" hidden></button>
       <button data-act="lang" id="langBtn" title="language"></button>
       <button data-act="theme" id="themeBtn" title="theme"></button>
     </div>
@@ -445,7 +454,7 @@ const DICT = {
     nav: { home: '首页', guide: '使用说明', ghistory: '演化历史', repos: 'REPOSITORIES', add: '＋ 添加仓库',
            noRepos: '还没有仓库 — 点下面的按钮加一个' },
     tabs: { overview: '总览', browse: '浏览手册', graph: '影响图', source: '源码', evolve: '演化', history: '历史' },
-    common: { dismiss: '知道了', loading: '加载中…', retry: '重试', open: '打开', close: '关闭', cancel: '取消', copy: '复制',
+    common: { dismiss: '知道了', loading: '加载中…', open: '打开', cancel: '取消',
               viewAll: '查看全部', files: '文件', stage: '阶段', degree: '调用度', none: '—',
       autoDesc: '自动概括', filesDesc: '按文件名', noDesc: '（未填写说明）',
               failed: '加载失败', delete: '删除', confirmDelete: '删除仓库 “{0}”？只从 Studio 注册表移除，源码与 work 目录都不会被删。' },
@@ -526,8 +535,9 @@ const DICT = {
       chapter: '章节', graph: '影响图', crosscut: '横切',
       noStages: '还没有阶段数据', notGen: '这个仓库还没生成手册。先「免费分析」看看规模，再「生成手册」。'
     },
+    browse: { site: '章节站点', single: '单页版', agent: 'Agent 索引' },
     graph: {
-      title: '影响图', stageAll: '全部阶段', limit: '节点上限',
+      stageAll: '全部阶段', limit: '节点上限',
       stat: '{0} 节点 · {1} 条边 · 仓库共 {2} 文件',
       hint: '圆点 = 文件，半径按调用度；连线 = 跨文件调用，粗细按调用次数。悬停高亮邻居，点击进源码视图。',
       empty: '还没有调用图 — 先在「总览」跑一次「免费分析」。',
@@ -535,7 +545,7 @@ const DICT = {
       reload: '重新加载'
     },
     src: {
-      title: '源码', open: '打开', ph: '相对源码根的路径，例如 core/src/model.ts',
+      open: '打开', ph: '相对源码根的路径，例如 core/src/model.ts',
       fns: 'FUNCTIONS', noFns: '调用图里没有这个文件的函数锚点',
       lines: '{0} 行 · {1} 个函数', pick: '选一个文件开始',
       pickHint: '从影响图点节点，或在上面输入相对路径。下面是调用度最高的文件：',
@@ -575,7 +585,8 @@ const DICT = {
       empty: '还没有演化记录', emptyD: '在某个仓库的「演化」页跑一次重同步后，这里会出现按天分组的时间线。',
       unreadable: '这条记录读不出来'
     },
-    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: '收起（后台继续）' },
+    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: '收起（后台继续）',
+           chip: '任务进行中' },
     dlg: {
       add: '添加仓库', name: '名称（唯一，URL 安全）', source: '源码目录（绝对路径）',
       work: 'work 目录（可留空，自动创建）', workPh: '留空 = Studio 托管', addGo: '添加',
@@ -592,7 +603,7 @@ const DICT = {
     nav: { home: 'Home', guide: 'Instructions', ghistory: 'Evolution history', repos: 'REPOSITORIES',
            add: '＋ Add repository', noRepos: 'No repositories yet — add one below' },
     tabs: { overview: 'Overview', browse: 'Handbook', graph: 'Impact graph', source: 'Source', evolve: 'Evolve', history: 'History' },
-    common: { dismiss: 'Dismiss', loading: 'loading…', retry: 'Retry', open: 'Open', close: 'Close', cancel: 'Cancel', copy: 'Copy',
+    common: { dismiss: 'Dismiss', loading: 'loading…', open: 'Open', cancel: 'Cancel',
               viewAll: 'View all', files: 'files', stage: 'stage', degree: 'degree', none: '—',
       autoDesc: 'auto summary', filesDesc: 'by filename', noDesc: '(no description)',
               failed: 'Failed to load', delete: 'Remove',
@@ -674,8 +685,9 @@ const DICT = {
       chapter: 'Chapter', graph: 'Graph', crosscut: 'crosscut',
       noStages: 'No stage data yet', notGen: 'No handbook for this repo yet. Run the free analysis first, then generate.'
     },
+    browse: { site: 'Chapter site', single: 'Single page', agent: 'Agent index' },
     graph: {
-      title: 'Impact graph', stageAll: 'All stages', limit: 'Node cap',
+      stageAll: 'All stages', limit: 'Node cap',
       stat: '{0} nodes · {1} links · {2} files in repo',
       hint: 'Dots are files, radius by call degree; curves are cross-file calls, width by call count. Hover highlights neighbours, click opens the source.',
       empty: 'No call graph yet — run “Free analysis” from the Overview tab.',
@@ -683,7 +695,7 @@ const DICT = {
       reload: 'Reload'
     },
     src: {
-      title: 'Source', open: 'Open', ph: 'Path relative to the source root, e.g. core/src/model.ts',
+      open: 'Open', ph: 'Path relative to the source root, e.g. core/src/model.ts',
       fns: 'FUNCTIONS', noFns: 'The call graph has no function anchors for this file',
       lines: '{0} lines · {1} functions', pick: 'Pick a file to start',
       pickHint: 'Click a node in the impact graph, or type a relative path above. Highest-degree files:',
@@ -723,7 +735,8 @@ const DICT = {
       empty: 'No evolutions yet', emptyD: 'Run a resync from any repo\'s Evolve tab and a day-grouped timeline appears here.',
       unreadable: 'This record could not be read'
     },
-    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: 'Hide (keeps running)' },
+    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: 'Hide (keeps running)',
+           chip: 'Job running' },
     dlg: {
       add: 'Add repository', name: 'Name (unique, URL-safe)', source: 'Source directory (absolute path)',
       work: 'Work directory (optional)', workPh: 'empty = managed by Studio', addGo: 'Add',
@@ -758,7 +771,7 @@ const state = {
   plan: '',
   patch: null,             // { dryRun, ok, outcomes, changedFiles, backupDir, fromLog }
   backups: null,
-  job: null,
+  job: null,               // newest RUNNING job for this view {id, repo, kind, status, startedAt}
 };
 
 function t(key) {
@@ -863,6 +876,7 @@ function renderChrome() {
   $('langBtn').setAttribute('aria-label', state.lang === 'zh' ? 'switch to English' : '切换到中文');
   $('addBtn').textContent = t('nav.add');
   $('drawerHide').textContent = t('job.hide');
+  renderJobChip();
   $('reposT').innerHTML = esc(t('nav.repos')) + '<span>' + state.repos.length + '</span>';
 
   $('mainnav').innerHTML = NAV.map((n) => {
@@ -923,9 +937,38 @@ async function loadRepos() {
   }
 }
 
+/** A reloaded page has no memory of the job it started — /api/jobs is how it
+ *  finds a run that is still going and offers the drawer back (the chip). */
+async function loadJobs() {
+  try {
+    const out = await api('/api/jobs' + (state.view === 'repo' && state.repo ? '?repo=' + enc(state.repo) : ''));
+    state.job = ((out && out.jobs) || []).find((j) => j.status === 'running') || null;
+  } catch {
+    state.job = null;              // the chip is a convenience — a failed poll must not break the page
+  }
+  renderJobChip();
+}
+
+/** Header chip: visible only while a job relevant to this view is running. */
+function renderJobChip() {
+  const chip = $('jobChip');
+  if (!chip) return;
+  const j = state.job;
+  // Inside a repo the chip only speaks for THAT repo; elsewhere any run counts.
+  if (!j || (state.view === 'repo' && state.repo !== j.repo)) { chip.hidden = true; return; }
+  chip.innerHTML = '<span class="dot"></span>' + esc(t('job.chip')) + ' · ' + esc(j.kind) +
+    (state.view === 'repo' ? '' : ' · ' + esc(j.repo));
+  chip.title = t('ev.reattach');
+  chip.hidden = false;
+}
+
 async function render() {
   const tok = nextToken();
   renderChrome();
+  // Refresh the running-job chip without blocking the paint: home cares about
+  // any repo's job, a repo view only about its own (loadJobs scopes the query
+  // and redraws the chip itself when the answer lands).
+  if (state.view === 'home' || state.view === 'repo') void loadJobs();
   const c = $('content');
   c.className = 'content';
   if (state.view === 'home') return renderHome(c, tok);
@@ -1251,8 +1294,23 @@ function renderBrowse(c, repo) {
     return;
   }
   c.className = 'content flush';
+  // Every generate renders three outputs, but only the chapter site used to be
+  // reachable — the single page and the agent locator index sat orphaned on
+  // disk. Offer each output that actually exists (repo.outputs is server truth).
+  const out = repo.outputs || {};
+  const cur = state.browsePath;
+  const views = [
+    { path: 'html/overview.html', label: t('browse.site'), on: cur.indexOf('html/') === 0, exists: out.html !== false },
+    { path: 'handbook.html', label: t('browse.single'), on: cur === 'handbook.html', exists: !!out.single },
+    { path: 'agent/how_to_use.md', label: t('browse.agent'), on: cur.indexOf('agent/') === 0, exists: !!out.agent },
+  ].filter((v) => v.exists);
+  const bar = views.length > 1
+    ? '<div class="viewbar">' + views.map((v) =>
+        '<button class="sm' + (v.on ? ' cur' : '') + '" data-act="browse-view" data-path="' + esc(v.path) + '">' +
+        esc(v.label) + '</button>').join('') + '</div>'
+    : '';
   const url = '/api/repos/' + enc(repo.name) + '/handbook/' + state.browsePath;
-  c.innerHTML = '<iframe src="' + esc(url) + '" title="handbook"></iframe>';
+  c.innerHTML = bar + '<iframe src="' + esc(url) + '" title="handbook"></iframe>';
 }
 
 /* ---------------------------------------------------------------- graph */
@@ -1741,6 +1799,7 @@ function runJob(job, title, onDone) {
     let full = null;
     try { full = await api('/api/jobs/' + enc(job.id)); } catch (e) { appendLog('✖ ' + errMsg(e)); }
     setJobStatus(full ? full.status : 'failed');
+    if (state.job && state.job.id === job.id) state.job = null;   // the chip must not outlive the run
     await loadRepos();
     renderChrome();
     if (onDone) { try { await onDone(full); } catch (e) { appendLog('✖ ' + errMsg(e)); } }
@@ -1862,6 +1921,11 @@ const ACT = {
     state.tab = 'browse';
     render();
   },
+  'browse-view': (el) => {
+    state.browsePath = el.dataset.path;
+    state.tab = 'browse';
+    render();
+  },
   'graph-stage': (el) => {
     state.graph = { stage: el.dataset.stage || '', limit: state.graph.limit, data: null };
     state.tab = 'graph';
@@ -1949,6 +2013,22 @@ const ACT = {
   },
   'reattach': (el) => {
     runJob({ id: el.dataset.id }, el.dataset.kind || t('job.title'), async () => { await render(); });
+  },
+  'job-chip': async () => {
+    const j = state.job;
+    if (!j) return;
+    try {
+      // The job may have finished (or been evicted) since the chip was drawn —
+      // reopening a drawer on a corpse helps nobody; refresh the status instead.
+      const full = await api('/api/jobs/' + enc(j.id));
+      if (full && full.status === 'running') {
+        runJob({ id: j.id }, j.kind + ' · ' + j.repo, async () => { await render(); });
+        return;
+      }
+    } catch { /* 404: evicted — fall through to the refresh */ }
+    state.job = null;
+    await loadRepos();
+    await render();
   },
   'drawer-hide': () => {
     $('drawer').classList.remove('show');

@@ -42,6 +42,7 @@ the machine only via the LLM endpoint the pipeline itself is configured to use.
 | `GET /api/repos/:name/patches` | backup stamps, newest first |
 | `GET /api/history` | evolutions across every repo, newest first |
 | `GET /api/repos/:name/handbook/*` | static serving of the rendered handbook (traversal-safe) |
+| `GET /api/jobs?repo=` | `{jobs: [...]}` — recent job summaries (id/repo/kind/status/startedAt, no raw log), newest first |
 | `GET /api/jobs/:id`, `GET /api/jobs/:id/stream` | job status / SSE log stream |
 
 ## Views
@@ -51,7 +52,7 @@ the machine only via the LLM endpoint the pipeline itself is configured to use.
 | Home | the product's shape: the Request → Handbook → Plan → Patch → Sync loop, plus recent repositories and evolutions |
 | Instructions | in-app guide: the five-step loop, what each button does, cost and data-boundary facts |
 | Overview | status, chapter index with summaries, coverage, state registers |
-| Browse handbook | the rendered HTML handbook, embedded |
+| Browse handbook | the rendered handbook, embedded — a switcher offers every output that exists: chapter site, single-page `handbook.html`, and the agent locator index (`agent/how_to_use.md`) |
 | Impact graph | file-level call relations as SVG — degree-sized nodes, stage colours, stage filter, click through to source |
 | Source | the real file with line numbers and a function index that jumps and highlights |
 | Evolve | plan → dry-run → apply (per-edit table) → rollback → resync, with the backup list |
@@ -90,6 +91,11 @@ const server = await startStudio({
   escapes — the API never serves arbitrary filesystem paths.
 - Job logs are capped (last 2000 lines) and streamed with replay-then-follow SEE
   semantics so a late-opened drawer still shows the full recent log.
+- Reloading the page mid-run does not orphan the job: the UI polls `GET /api/jobs`
+  on boot and view changes, shows a "Job running" chip in the top bar while one is
+  live, and clicking it reattaches the log drawer to the job's SSE stream (replay
+  fills in the missed lines). If the job finished in the meantime, the chip click
+  refreshes the repo status instead.
 
 ## Dependencies
 

@@ -122,8 +122,14 @@ describe('studio server (integration, mock LLM)', () => {
     const repo = await api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'demo', sourceRoot }) });
     expect(repo.name).toBe('demo');
     expect(repo.hasGraph).toBe(false);
+    // No render has happened, so none of the three outputs can exist yet.
+    expect(repo.outputs).toEqual({ html: false, single: false, agent: false });
     const list = await api('/api/repos');
     expect(list).toHaveLength(1);
+  });
+
+  it('lists no jobs before any has run', async () => {
+    expect(await api('/api/jobs')).toEqual({ jobs: [] });
   });
 
   it('rejects duplicate names and bad paths', async () => {
@@ -149,6 +155,9 @@ describe('studio server (integration, mock LLM)', () => {
     const status = (await api('/api/repos')).find((r: any) => r.name === 'demo');
     expect(status.hasHandbook).toBe(true);
     expect(status.chapters).toBe(2);
+    // Every generate renders all three outputs; the status must say so, or the
+    // UI has no way to offer the single-page and agent views.
+    expect(status.outputs).toEqual({ html: true, single: true, agent: true });
 
     // The client was built with the job's logger, and what it logs is in the
     // job log — a silent client is how a failing run reads as a quiet one.
@@ -158,6 +167,33 @@ describe('studio server (integration, mock LLM)', () => {
     // Described coverage is reported alongside assignment coverage.
     expect(overview.cardCoverage).toMatchObject({ nFiles: expect.any(Number), nDescribed: expect.any(Number) });
     expect(overview.cardCoverage.nDescribed).toBe(overview.cardCoverage.nFiles);
+  });
+
+  it('lists jobs with a stable summary shape, newest first', async () => {
+    // The generate job above must be in the list, and a freshly started job
+    // must appear immediately — that is what page-reload reattach hangs on.
+    const started = await api('/api/repos/demo/analyze', { method: 'POST', body: '{}' });
+    const out = await api('/api/jobs');
+    expect(out.jobs.map((j: any) => j.id)).toContain(started.id);
+    expect(out.jobs.some((j: any) => j.kind === 'generate' && j.status === 'succeeded')).toBe(true);
+    for (const j of out.jobs) {
+      expect(j).toMatchObject({
+        id: expect.any(String),
+        repo: 'demo',
+        kind: expect.any(String),
+        status: expect.stringMatching(/^(running|succeeded|failed)$/),
+        startedAt: expect.any(String),
+      });
+      // Summaries, not transcripts: the raw log stays behind /api/jobs/:id.
+      expect(j.log).toBeUndefined();
+      expect(typeof j.logLines).toBe('number');
+    }
+    const stamps = out.jobs.map((j: any) => j.startedAt as string);
+    expect([...stamps].sort().reverse()).toEqual(stamps);
+    // Optional repo filter mirrors JobRunner.list(repo).
+    expect((await api('/api/jobs?repo=demo')).jobs).toHaveLength(out.jobs.length);
+    expect((await api('/api/jobs?repo=nope')).jobs).toEqual([]);
+    await waitJob(started.id); // leave no running job behind for later tests
   });
 
   it('blocks path traversal on the static handbook route', async () => {
