@@ -555,9 +555,10 @@ const DICT = {
       dryOk: 'dry-run 通过：{0} 处编辑都能落地，未写盘。',
       dryBad: 'dry-run 未通过 —— 没有写任何文件。',
       noChanges: '这份计划没有任何编辑块，而且明确声明不改任何文件 —— 规划器的结论是「不需要改动」。这不是错误。',
+      busy: '该仓库有作业在跑', reattach: '查看正在跑的作业', hideOnly: '收起（作业继续在后台跑）',
       applyOk: '已写入 {0} 个文件。备份：{1}',
       applyBad: '应用失败 —— 没有写任何文件（或已回退）。',
-      afterApply: '代码变了，手册还没有。跑一次「增量重同步」让手册追上。',
+      afterApply: '先跑你自己的编译和测试 —— 逐字节匹配保证「改对了位置」，不保证「改对了逻辑」。确认没问题再跑「增量重同步」让手册追上。',
       outcomes: '逐条结果', fromLog: '（从任务日志还原，缺少 where 字段）',
       backups: '备份历史', noBackups: '还没有备份 —— 应用过补丁后这里会出现时间戳。',
       resyncK: 'RESYNC · 代码已改，手册跟上',
@@ -574,7 +575,7 @@ const DICT = {
       empty: '还没有演化记录', emptyD: '在某个仓库的「演化」页跑一次重同步后，这里会出现按天分组的时间线。',
       unreadable: '这条记录读不出来'
     },
-    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: '收起' },
+    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: '收起（后台继续）' },
     dlg: {
       add: '添加仓库', name: '名称（唯一，URL 安全）', source: '源码目录（绝对路径）',
       work: 'work 目录（可留空，自动创建）', workPh: '留空 = Studio 托管', addGo: '添加',
@@ -702,6 +703,7 @@ const DICT = {
       dryOk: 'Dry-run passed: all {0} edits would land. Nothing written.',
       dryBad: 'Dry-run failed — nothing was written.',
       noChanges: 'This plan has no edit blocks and declares no file changes — the planner concluded no change is needed. Not an error.',
+      busy: 'a job is already running for this repo', reattach: 'show the running job', hideOnly: 'Hide (the job keeps running)',
       applyOk: 'Wrote {0} file(s). Backup: {1}',
       applyBad: 'Apply failed — nothing was written (or it was reverted).',
       afterApply: 'The code moved; the handbook did not. Run an incremental resync to catch it up.',
@@ -721,7 +723,7 @@ const DICT = {
       empty: 'No evolutions yet', emptyD: 'Run a resync from any repo\'s Evolve tab and a day-grouped timeline appears here.',
       unreadable: 'This record could not be read'
     },
-    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: 'Hide' },
+    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: 'Hide (keeps running)' },
     dlg: {
       add: 'Add repository', name: 'Name (unique, URL-safe)', source: 'Source directory (absolute path)',
       work: 'Work directory (optional)', workPh: 'empty = managed by Studio', addGo: 'Add',
@@ -929,8 +931,20 @@ async function render() {
   if (state.view === 'home') return renderHome(c, tok);
   if (state.view === 'guide') return renderGuide(c);
   if (state.view === 'ghistory') return renderGlobalHistory(c, tok);
-  const repo = current();
+  let repo = current();
   if (!repo) { state.view = 'home'; return render(); }
+  // Refresh the registry before drawing a repo view: `runningJob` is what tells the
+  // Evolve tab to disable its start buttons and offer a way back to a job whose
+  // drawer was collapsed, and a page-load-time snapshot goes stale immediately.
+  if (state.tab === 'evolve' || state.tab === 'overview') {
+    try {
+      await loadRepos();
+      if (stale(tok)) return;
+      repo = current() ?? repo;
+    } catch {
+      // a stale badge is better than a blank view
+    }
+  }
   if (state.tab === 'overview') return renderOverview(c, tok, repo);
   if (state.tab === 'browse') return renderBrowse(c, repo);
   if (state.tab === 'graph') return renderGraph(c, tok, repo);
@@ -1631,12 +1645,13 @@ async function renderEvolve(c, tok, repo) {
     '<div class="grid g2" style="align-items:start">' +
       '<div class="card"><span class="k g">' + esc(t('ev.planK')) + '</span><p>' + esc(t('ev.planD')) + '</p>' +
       '<textarea id="planReq" rows="3" style="margin-top:10px" placeholder="' + esc(t('ev.planPh')) + '"></textarea>' +
-      '<div class="row end" style="margin-top:10px"><button class="primary" data-act="plan-run">' +
+      busyBar() +
+      '<div class="row end" style="margin-top:10px"><button class="primary" data-act="plan-run"' + busyAttr() + '>' +
       esc(t('ev.planRun')) + '</button></div></div>' +
       '<div class="card"><span class="k">' + esc(t('ev.resyncK')) + '</span><p>' + esc(t('ev.resyncD')) + '</p>' +
       '<textarea id="resyncDesc" rows="3" style="margin-top:10px" placeholder="' + esc(t('ev.resyncPh')) + '"></textarea>' +
-      '<div class="row end" style="margin-top:10px"><button data-act="resync" data-nollm="1">' +
-      esc(t('ev.resyncNo')) + '</button><button class="primary" data-act="resync">' + esc(t('ev.resyncGo')) +
+      '<div class="row end" style="margin-top:10px"><button data-act="resync" data-nollm="1"' + busyAttr() + '>' +
+      esc(t('ev.resyncNo')) + '</button><button class="primary" data-act="resync"' + busyAttr() + '>' + esc(t('ev.resyncGo')) +
       '</button></div></div>' +
     '</div>' +
     '<div class="card" style="margin-top:16px"><span class="k">' + esc(t('ev.patchK')) + '</span>' +
@@ -1644,7 +1659,7 @@ async function renderEvolve(c, tok, repo) {
       '<div id="planMeta"></div>' +
       '<textarea class="plan" id="patchPlan" spellcheck="false" style="margin-top:10px" placeholder="' +
       esc(t('ev.patchPh')) + '"></textarea>' +
-      '<div class="row" style="margin-top:10px"><button data-act="patch-dry">' + esc(t('ev.dry')) + '</button>' +
+      '<div class="row" style="margin-top:10px"><button data-act="patch-dry"' + busyAttr() + '>' + esc(t('ev.dry')) + '</button>' +
       '<button class="primary" data-act="patch-apply">' + esc(t('ev.apply')) + '</button></div>' +
       '<div id="patchOut">' + patchPanel() + '</div></div>';
   $('patchPlan').value = state.plan || '';
@@ -1691,6 +1706,25 @@ function setJobStatus(status) {
   const el = $('jobStatus');
   el.className = 'st' + (status === 'succeeded' ? ' ok' : status === 'failed' ? ' bad' : '');
   el.textContent = t('job.' + status) || String(status).toUpperCase();
+}
+
+/** A repo can only run one job at a time — reflect that instead of letting the
+ *  click fail with a bare "already has a running job", and keep a way back to a
+ *  job whose drawer was collapsed. */
+function runningJob() {
+  const r = current();
+  return (r && r.runningJob) || null;
+}
+function busyAttr() {
+  return runningJob() ? ' disabled title="' + esc(t('ev.busy')) + '"' : '';
+}
+function busyBar() {
+  const j = runningJob();
+  if (!j) return '';
+  return '<div class="warnbox" style="margin:0 0 10px"><b>' + esc(t('ev.busy')) + '</b> · ' +
+    esc(j.kind) + ' · ' + esc(relTime(j.startedAt)) +
+    ' <button class="sm" data-act="reattach" data-id="' + esc(j.id) + '" data-kind="' + esc(j.kind) + '">' +
+    esc(t('ev.reattach')) + '</button></div>';
 }
 
 function runJob(job, title, onDone) {
@@ -1912,6 +1946,9 @@ const ACT = {
       });
       runJob(job, title, async () => { state.evoCount = null; await render(); });
     } catch (e) { showError(title, errMsg(e)); }
+  },
+  'reattach': (el) => {
+    runJob({ id: el.dataset.id }, el.dataset.kind || t('job.title'), async () => { await render(); });
   },
   'drawer-hide': () => {
     $('drawer').classList.remove('show');
