@@ -447,6 +447,7 @@ const DICT = {
     tabs: { overview: '总览', browse: '浏览手册', graph: '影响图', source: '源码', evolve: '演化', history: '历史' },
     common: { dismiss: '知道了', loading: '加载中…', retry: '重试', open: '打开', close: '关闭', cancel: '取消', copy: '复制',
               viewAll: '查看全部', files: '文件', stage: '阶段', degree: '调用度', none: '—',
+      autoDesc: '自动概括', filesDesc: '按文件名', noDesc: '（未填写说明）',
               failed: '加载失败', delete: '删除', confirmDelete: '删除仓库 “{0}”？只从 Studio 注册表移除，源码与 work 目录都不会被删。' },
     home: {
       title: '把一个仓库，变成一本<em>活的手册</em>',
@@ -591,6 +592,7 @@ const DICT = {
     tabs: { overview: 'Overview', browse: 'Handbook', graph: 'Impact graph', source: 'Source', evolve: 'Evolve', history: 'History' },
     common: { dismiss: 'Dismiss', loading: 'loading…', retry: 'Retry', open: 'Open', close: 'Close', cancel: 'Cancel', copy: 'Copy',
               viewAll: 'View all', files: 'files', stage: 'stage', degree: 'degree', none: '—',
+      autoDesc: 'auto summary', filesDesc: 'by filename', noDesc: '(no description)',
               failed: 'Failed to load', delete: 'Remove',
               confirmDelete: 'Remove repository "{0}"? This only drops it from the Studio registry — source and work dir are untouched.' },
     home: {
@@ -807,6 +809,36 @@ function stampIso(e) {
   const m = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/);
   return m ? m[1] + 'T' + m[2] + ':' + m[3] + ':' + m[4] + '.' + m[5] + 'Z' : raw;
 }
+/**
+ * Render an evolution's description with WHERE IT CAME FROM attached.
+ *
+ * A machine summary that looks identical to the author's own words is worse than
+ * a dash: months later nobody can tell which sentence was a judgement and which
+ * was a guess. So an auto/filename description is dimmed and tagged.
+ */
+function descHtml(e) {
+  let src = e.descriptionSource || (e.description ? 'user' : 'none');
+  let text = e.description || '';
+  // Records written before descriptions were labelled carry none. Do not rewrite
+  // stored history to fix that — derive the label at read time from the files the
+  // report already lists, so an old entry still says something.
+  if (!text) {
+    const rep = e.report || {};
+    const all = [].concat(rep.changedFiles || [], rep.addedFiles || [], rep.deletedFiles || []);
+    if (all.length) {
+      text = state.lang === 'zh'
+        ? all[0] + (all.length > 1 ? ' 等 ' + all.length + ' 个文件' : '')
+        : all[0] + (all.length > 1 ? ' and ' + (all.length - 1) + ' more' : '');
+      src = 'files';
+    } else {
+      text = t('common.noDesc');
+    }
+  }
+  if (src === 'user') return '<span class="d">' + esc(text) + '</span>';
+  const label = src === 'auto' ? t('common.autoDesc') : src === 'files' ? t('common.filesDesc') : '';
+  return '<span class="d" style="color:var(--fg-dim);font-style:italic">' + esc(text) + '</span>' +
+    (label ? '<span class="pill" style="opacity:.75">' + esc(label) + '</span>' : '');
+}
 const dayOf = (e) => String(stampIso(e)).slice(0, 10) || '—';
 
 /* ------------------------------------------------------------- chrome */
@@ -1008,7 +1040,7 @@ async function renderHome(c, tok) {
       const pill = rep.skipped ? '<span class="pill">' + esc(t('hist.skipped')) + '</span>'
         : rep.narrated ? '<span class="pill jade">' + esc(t('hist.narrated')) + '</span>'
         : '<span class="pill ice">' + esc(t('hist.structural')) + '</span>';
-      return '<div class="li"><div class="g"><div class="t1">' + esc(e.description || t('common.none')) + '</div>' +
+      return '<div class="li"><div class="g"><div class="t1">' + descHtml(e) + '</div>' +
         '<div class="t2">' + esc(e.repo || '') + ' · ' + esc(relTime(stampIso(e))) + '</div></div>' +
         '<div class="rt">' + pill + '<button class="sm" data-act="cta-repo" data-name="' + esc(e.repo || '') +
         '" data-tab="history">' + esc(t('common.open')) + '</button></div></div>';
@@ -1053,7 +1085,7 @@ function evoCard(e, withRepo) {
   const n = (a) => (Array.isArray(a) ? a.length : 0);
   return '<div class="evo"><div class="top">' +
     (withRepo ? '<span class="pill gold">' + esc(e.repo || '') + '</span>' : '') +
-    '<span class="d">' + esc(e.description || t('common.none')) + '</span>' + pill + '</div>' +
+    descHtml(e) + pill + '</div>' +
     '<div class="m">' + esc(stampIso(e)) + ' · ' + esc(relTime(stampIso(e))) + '</div>' +
     '<div class="r"><span>' + esc(t('hist.changed')) + ' <b>' + n(rep.changedFiles) + '</b></span>' +
     '<span>' + esc(t('hist.added')) + ' <b>' + n(rep.addedFiles) + '</b></span>' +
