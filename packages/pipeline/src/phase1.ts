@@ -11,7 +11,7 @@ import {
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ModuleAnalysis } from '@handbook/core';
-import { ensureDir, sha256Hex, silentLogger, type Logger } from '@handbook/core';
+import { ensureDir, sha256Hex, silentLogger, withDirLock, type Logger } from '@handbook/core';
 import { WorkDir } from './workdir.js';
 
 export interface Phase1Options {
@@ -33,6 +33,13 @@ export interface Phase1Stats {
 }
 
 export async function runPhase1(options: Phase1Options): Promise<Phase1Stats> {
+  // Re-entrant: generateHandbook already holds this lock when it calls us.
+  return withDirLock(options.workDir, 'handbook', options.logger ?? silentLogger, () =>
+    runPhase1Locked(options),
+  );
+}
+
+async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
   registerBuiltinAdapters();
   const logger = options.logger ?? silentLogger;
   const lang = options.lang ?? 'auto';

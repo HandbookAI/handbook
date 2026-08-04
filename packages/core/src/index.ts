@@ -11,3 +11,4 @@ export * from './util/json-extract.js';
 export * from './util/reply-shape.js';
 export * from './util/progress.js';
 export * from './util/env-file.js';
+export * from './util/lock.js';

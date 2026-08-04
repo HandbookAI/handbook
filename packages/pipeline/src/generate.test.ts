@@ -160,6 +160,19 @@ describe('generateHandbook (file strategy, mock LLM)', () => {
     const summaryCalls = client.calls.filter((c) => c.prompt.includes('writing the OVERVIEW'));
     expect(summaryCalls).toHaveLength(0);
   });
+
+  it('refuses to run while another process holds the work-dir lock', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'hb-gen-lock-src-'));
+    writeFixtureRepo(src);
+    const lockedWork = mkdtempSync(join(tmpdir(), 'hb-gen-lock-work-'));
+    writeFileSync(
+      join(lockedWork, '.lock'),
+      JSON.stringify({ pid: 2147483646, host: 'some-other-machine', startedAt: '2000-01-01T00:00:00Z' }),
+    );
+    await expect(
+      generateHandbook({ sourceRoot: src, workDir: lockedWork, client: mockClient(), phase: '1' }),
+    ).rejects.toThrow(/another handbook run/);
+  });
 });
 
 describe('generateHandbook (member strategy, mock LLM)', () => {

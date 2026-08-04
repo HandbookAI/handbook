@@ -30,6 +30,7 @@ import {
   fileExists,
   isInternalNode,
   silentLogger,
+  withDirLock,
   writeJsonFile,
   type CodeGraph,
   type FileCard,
@@ -235,13 +236,17 @@ export interface ResyncReport {
 }
 
 export async function resyncHandbook(options: ResyncOptions): Promise<ResyncReport> {
-  const stagingRoot = join(options.caseDir, '.resync-phase1');
-  try {
-    return await resyncHandbookInner(options);
-  } finally {
-    // The staging area must never outlive the call — success or failure.
-    rmSync(stagingRoot, { recursive: true, force: true });
-  }
+  // One run per work dir at a time — same lock as generateHandbook, so a
+  // resync can never interleave with a concurrent generate on these artifacts.
+  return withDirLock(options.workDir, 'handbook', options.logger ?? silentLogger, async () => {
+    const stagingRoot = join(options.caseDir, '.resync-phase1');
+    try {
+      return await resyncHandbookInner(options);
+    } finally {
+      // The staging area must never outlive the call — success or failure.
+      rmSync(stagingRoot, { recursive: true, force: true });
+    }
+  });
 }
 
 async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport> {
