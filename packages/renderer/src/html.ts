@@ -14,7 +14,8 @@ import type { MarkdownIt as Markdown } from 'markdown-it';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { FileCard, FunctionNote, HandbookModel, NarrateLang } from '@handbook/core';
 import { callFactsLine } from './file-card.js';
-import { HandbookView } from './shared.js';
+import { HandbookView, sourceFileUrl } from './shared.js';
+import type { SourceLinkOptions } from './shared.js';
 
 interface HtmlLabels {
   systemOverview: string;
@@ -241,7 +242,13 @@ function functionDetails(fn: FunctionNote, lang: NarrateLang): string {
   return `<details class="fn"><summary><code>${esc(fn.qualname)}</code> <span class="meta">${esc(L.lines(fn.lineRange[0], fn.lineRange[1]))}</span></summary><div class="fnfields">${fields.join('')}</div></details>`;
 }
 
-function fileDetails(md: Markdown, rel: string, card: FileCard, lang: NarrateLang): string {
+function fileDetails(
+  md: Markdown,
+  rel: string,
+  card: FileCard,
+  lang: NarrateLang,
+  sourceBaseUrl?: string,
+): string {
   const L = LABELS[lang];
   const lifecycle = card.lifecycle.trim();
   const lifecycleBadge = lifecycle.length > 0 && lifecycle !== 'none' ? ` <span class="badge">${esc(lifecycle)}</span>` : '';
@@ -251,7 +258,11 @@ function fileDetails(md: Markdown, rel: string, card: FileCard, lang: NarrateLan
     functions.length > 0
       ? `<h4>${esc(L.functions)}</h4>${functions.map((fn) => functionDetails(fn, lang)).join('')}`
       : '';
-  return `<details><summary><code>${esc(rel)}</code> <span class="badge">${esc(card.role)}</span>${lifecycleBadge}</summary>${md.render(prose)}${fnBlock}</details>`;
+  const path =
+    sourceBaseUrl !== undefined
+      ? `<a href="${esc(sourceFileUrl(sourceBaseUrl, rel))}"><code>${esc(rel)}</code></a>`
+      : `<code>${esc(rel)}</code>`;
+  return `<details><summary>${path} <span class="badge">${esc(card.role)}</span>${lifecycleBadge}</summary>${md.render(prose)}${fnBlock}</details>`;
 }
 
 /** The stage body shared by the multi-page stage page and the single-page section. */
@@ -261,6 +272,7 @@ function stageBody(
   sid: string,
   lang: NarrateLang,
   childHref: (child: string) => string,
+  sourceBaseUrl?: string,
 ): string {
   const L = LABELS[lang];
   const parts: string[] = [md.render(view.summary(sid))];
@@ -275,9 +287,9 @@ function stageBody(
     for (const group of groups) {
       parts.push(`<h3>${esc(group.title)}</h3>`);
       if (group.summary.trim().length > 0) parts.push(md.render(group.summary.trim()));
-      for (const file of group.files) parts.push(fileDetails(md, file, view.card(file), lang));
+      for (const file of group.files) parts.push(fileDetails(md, file, view.card(file), lang, sourceBaseUrl));
     }
-    for (const file of leftovers) parts.push(fileDetails(md, file, view.card(file), lang));
+    for (const file of leftovers) parts.push(fileDetails(md, file, view.card(file), lang, sourceBaseUrl));
   }
   const regs = view.directRegisters(sid);
   if (regs.length > 0) {
@@ -304,8 +316,16 @@ function registerTableHtml(view: HandbookView, lang: NarrateLang, stageHref: (si
   return `<table><thead><tr><th>${esc(h1)}</th><th>${esc(h2)}</th><th>${esc(h3)}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 
-/** Render the multi-page HTML site into `outDir`. */
-export function renderHtmlSite(model: HandbookModel, outDir: string): { nPages: number } {
+/**
+ * Render the multi-page HTML site into `outDir`.
+ * `options.sourceBaseUrl` (opt-in) links every file-card path to its source
+ * file; without it the site references no external URL.
+ */
+export function renderHtmlSite(
+  model: HandbookModel,
+  outDir: string,
+  options: SourceLinkOptions = {},
+): { nPages: number } {
   const view = new HandbookView(model);
   const lang = model.lang;
   const L = LABELS[lang];
@@ -359,7 +379,7 @@ export function renderHtmlSite(model: HandbookModel, outDir: string): { nPages: 
     const body = [
       `<h1>${esc(view.tree.title(sid))}${badge}</h1>`,
       `<p class="meta"><code>${esc(sid)}</code> · ${esc(L.files(view.subtreeFileCount(sid)))}</p>`,
-      stageBody(view, md, sid, lang, (child) => `${child}.html`),
+      stageBody(view, md, sid, lang, (child) => `${child}.html`, options.sourceBaseUrl),
     ].join('\n');
     write(`${sid}.html`, page(view, lang, `${view.tree.title(sid)} — ${model.title}`, sid, sid, body));
   }

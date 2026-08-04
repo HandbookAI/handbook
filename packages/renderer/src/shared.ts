@@ -118,6 +118,57 @@ export class HandbookView {
   }
 }
 
+/** Options accepted by renderers that can hyperlink file-card paths to sources. */
+export interface SourceLinkOptions {
+  /**
+   * Base URL each file card's repo-relative path is joined onto (e.g. a
+   * forge blob URL). When absent, file paths render as plain text and the
+   * output stays free of external URLs.
+   */
+  sourceBaseUrl?: string;
+}
+
+/**
+ * Join a source base URL and a repo-relative path: trailing `/` stripped from
+ * the base, path segments URL-encoded, `/` separators kept.
+ */
+export function sourceFileUrl(baseUrl: string, rel: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return `${base}/${rel.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/**
+ * Fenced `flowchart TD` mermaid diagram of the stage tree (parent→child edges,
+ * titles as labels, crosscut stages styled). Stage ids may contain dots, which
+ * mermaid node ids cannot — dots map to `_` (collisions get `_` suffixes).
+ * Returns '' when the skeleton has fewer than two stages: a one-node diagram
+ * carries no information.
+ */
+export function stageMapMermaid(tree: StageTree): string {
+  if (tree.order.length < 2) return '';
+  const ids = new Map<string, string>();
+  const taken = new Set<string>();
+  for (const sid of tree.order) {
+    let mid = sid.replace(/\./g, '_');
+    while (taken.has(mid)) mid = `${mid}_`;
+    taken.add(mid);
+    ids.set(sid, mid);
+  }
+  const lines: string[] = ['flowchart TD'];
+  let hasCrosscut = false;
+  for (const sid of tree.order) {
+    const label = tree.title(sid).replace(/"/g, '#quot;');
+    const crosscut = tree.isCrosscut(sid);
+    hasCrosscut = hasCrosscut || crosscut;
+    lines.push(`  ${ids.get(sid)}["${label}"]${crosscut ? ':::crosscut' : ''}`);
+  }
+  for (const sid of tree.order) {
+    for (const child of tree.children(sid)) lines.push(`  ${ids.get(sid)} --> ${ids.get(child)}`);
+  }
+  if (hasCrosscut) lines.push('  classDef crosscut stroke-dasharray: 5 5;');
+  return ['```mermaid', ...lines, '```'].join('\n');
+}
+
 /** POSIX basename without its final extension. */
 export function fileStem(rel: string): string {
   const base = rel.split('/').pop() ?? rel;

@@ -88,6 +88,32 @@ describe('renderHtmlSite', () => {
   });
 });
 
+describe('renderHtmlSite — source links (opt-in)', () => {
+  it('links file paths to the source base URL', () => {
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-html-src-'));
+    try {
+      renderHtmlSite(model, out, { sourceBaseUrl: 'https://example.com/repo/' });
+      const page = readFileSync(join(out, 'stage-1.html'), 'utf8');
+      expect(page).toContain(
+        '<a href="https://example.com/repo/src/ingest/loader.ts"><code>src/ingest/loader.ts</code></a>',
+      );
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it('HTML-escapes the href', () => {
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-html-esc-'));
+    try {
+      renderHtmlSite(model, out, { sourceBaseUrl: 'https://example.com/r?a=1&b=2' });
+      const page = readFileSync(join(out, 'stage-1.html'), 'utf8');
+      expect(page).toContain('<a href="https://example.com/r?a=1&amp;b=2/src/ingest/loader.ts">');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('renderSinglePageHtml', () => {
   it('reports the written size', () => {
     expect(single.bytes).toBeGreaterThan(0);
