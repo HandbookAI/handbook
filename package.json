@@ -15,7 +15,25 @@
     "test:watch": "vitest",
     "lint": "eslint packages/*/src",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"docs/**/*.md\" \"*.md\"",
-    "format:check": "prettier --check \"packages/*/src/**/*.ts\""
+    "format:check": "prettier --check \"packages/*/src/**/*.ts\"",
+    "check": "tsc -b && eslint packages/*/src --max-warnings 0 && vitest run",
+
+    "handbook": "tsc -b && node packages/cli/dist/main.js",
+    "studio": "tsc -b && node packages/cli/dist/main.js studio",
+    "analyze": "tsc -b && node packages/cli/dist/main.js analyze",
+    "generate": "tsc -b && node packages/cli/dist/main.js generate",
+    "render": "tsc -b && node packages/cli/dist/main.js render",
+    "skill": "tsc -b && node packages/cli/dist/main.js skill",
+    "validate": "tsc -b && node packages/cli/dist/main.js validate",
+    "plan": "tsc -b && node packages/cli/dist/main.js plan",
+    "apply": "tsc -b && node packages/cli/dist/main.js apply",
+    "rollback": "tsc -b && node packages/cli/dist/main.js rollback",
+    "resync": "tsc -b && node packages/cli/dist/main.js resync",
+
+    "demo": "bash examples/run-demo.sh",
+    "demo:self": "bash examples/run-self.sh",
+    "demo:self:real": "bash examples/run-self.sh --real",
+    "mock-llm": "node examples/mock-llm-server.mjs 8099"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

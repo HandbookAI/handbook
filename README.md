@@ -139,11 +139,50 @@ boundary, so the analyzer, renderer and skill packages are reusable with no LLM 
 - [examples/](examples/) — offline end-to-end demo (mock LLM server included)
 - Per-package READMEs under [packages/](packages/)
 
+## Command cheatsheet (no global CLI install needed)
+
+Every script runs an incremental build first (`tsc -b`, ~0.4 s when up to date), so
+you never run a stale `dist`. Flags are forwarded straight through — no `--` needed:
+
+```bash
+pnpm studio                          # local web UI → http://127.0.0.1:4860
+pnpm studio --port 5000              # flags pass straight through
+
+pnpm analyze  --source ~/code/proj --work work/proj      # static call graph, free
+pnpm generate --source ~/code/proj --work work/proj --narrate-lang en
+pnpm render   --work work/proj --html --agent-site
+pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
+pnpm validate --skill skills/proj --source ~/code/proj
+
+pnpm plan     --source ~/code/proj --request "Add a --json flag to export" --out plan.md
+pnpm apply    --source ~/code/proj --plan plan.md --dry-run
+pnpm apply    --source ~/code/proj --plan plan.md
+pnpm rollback --backup ~/code/proj/.handbook-patches/<stamp>
+pnpm resync   --case case1 --work work/proj
+
+pnpm handbook <subcommand>           # generic entry point, same as the binary
+pnpm handbook --help                 # list every subcommand
+```
+
+Offline demos and the mock endpoint:
+
+```bash
+pnpm demo             # examples/run-demo.sh — fully offline, zero tokens
+pnpm demo:self        # this repo as its own input (mock)
+pnpm demo:self:real   # same, against the real endpoint from .env
+pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
+```
+
+> LLM-backed commands (`generate` past phase 1, `plan`, `resync` without `--no-llm`,
+> and Studio's jobs) auto-load `./.env` from the **current directory**, with shell
+> variables winning — so run them from the repo root.
+
 ## Development
 
 ```bash
 pnpm build          # tsc -b (composite project references)
-pnpm test           # build + vitest (150+ tests, all offline)
+pnpm test           # build + vitest (314 tests, all offline)
+pnpm check          # build + lint (zero warnings) + tests — run before committing
 pnpm lint           # eslint
 pnpm format         # prettier
 ```

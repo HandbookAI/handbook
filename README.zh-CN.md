@@ -118,11 +118,49 @@ handbook resync   --case cases/upload-retry --work work/myrepo       # 8. 变更
 - [examples/](examples/) — 离线端到端演示（内置 mock LLM 服务器）
 - 各包中文 README 见 [packages/](packages/)（每个包都有 `README.zh-CN.md`，英文版为 `README.md`）
 
+## 命令速查（不必全局安装 CLI）
+
+每条脚本都会先跑一次增量构建（`tsc -b`，最新时约 0.4 秒），所以**永远不会跑到过期的 dist**。
+参数直接往后加，不需要写 `--`：
+
+```bash
+pnpm studio                          # 本机 Web 界面 → http://127.0.0.1:4860
+pnpm studio --port 5000              # 参数直接透传
+
+pnpm analyze  --source ~/code/proj --work work/proj      # 静态调用图，免费
+pnpm generate --source ~/code/proj --work work/proj --narrate-lang zh
+pnpm render   --work work/proj --html --agent-site
+pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
+pnpm validate --skill skills/proj --source ~/code/proj
+
+pnpm plan     --source ~/code/proj --request "给 export 加 --json 参数" --out plan.md
+pnpm apply    --source ~/code/proj --plan plan.md --dry-run
+pnpm apply    --source ~/code/proj --plan plan.md
+pnpm rollback --backup ~/code/proj/.handbook-patches/<时间戳>
+pnpm resync   --case case1 --work work/proj
+
+pnpm handbook <任意子命令>            # 通用入口，等价于 handbook 命令本体
+pnpm handbook --help                 # 看全部子命令
+```
+
+离线演示与 mock 端点：
+
+```bash
+pnpm demo             # examples/run-demo.sh —— 全离线、零 token、端到端
+pnpm demo:self        # 用本仓库自己当输入（mock）
+pnpm demo:self:real   # 同上，但接 .env 里的真实端点
+pnpm mock-llm         # 单独起内置 mock LLM 服务（端口 8099）
+```
+
+> 需要 LLM 的命令（`generate` 除阶段 1、`plan`、未加 `--no-llm` 的 `resync`、Studio 里的作业）
+> 会自动加载**当前目录**的 `./.env`，shell 里已有的变量优先——所以请在仓库根目录执行。
+
 ## 开发
 
 ```bash
 pnpm build          # tsc -b（composite 引用，增量构建）
-pnpm test           # 构建 + vitest（150+ 测试，全部离线）
+pnpm test           # 构建 + vitest（314 个测试，全部离线）
+pnpm check          # 构建 + lint（零警告）+ 全部测试，提交前跑这个
 pnpm lint           # eslint
 pnpm format         # prettier
 ```
