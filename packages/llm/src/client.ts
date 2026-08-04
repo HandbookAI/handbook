@@ -143,6 +143,10 @@ export interface LlmUsageStats {
   calls: number;
   failures: number;
   totalElapsedSec: number;
+  /** Prompt/input tokens billed, summed over every response the endpoint returned. */
+  promptTokens: number;
+  /** Completion/output tokens billed, summed over every response the endpoint returned. */
+  completionTokens: number;
 }
 
 export class OpenAiChatClient implements ChatClient {
@@ -158,7 +162,13 @@ export class OpenAiChatClient implements ChatClient {
   private readonly logger: Logger;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
-  private readonly stats: LlmUsageStats = { calls: 0, failures: 0, totalElapsedSec: 0 };
+  private readonly stats: LlmUsageStats = {
+    calls: 0,
+    failures: 0,
+    totalElapsedSec: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+  };
 
   constructor(options: OpenAiChatClientOptions = {}) {
     const env = resolveLlmEnv();
@@ -265,6 +275,12 @@ export class OpenAiChatClient implements ChatClient {
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
+    const usage = (payload.usage ?? {}) as Record<string, any>;
+    // Token spend is metered HERE, on every response the endpoint produced —
+    // a blank or truncated reply that gets rejected and retried still burned
+    // real tokens, and the meter must reflect cost, not just accepted answers.
+    this.stats.promptTokens += countTokens(usage.prompt_tokens ?? usage.input_tokens);
+    this.stats.completionTokens += countTokens(usage.completion_tokens ?? usage.output_tokens);
     const choice = ((payload.choices as Array<Record<string, any>> | undefined) ?? [])[0] ?? {};
     const message = (choice.message ?? {}) as Record<string, unknown>;
     const reasoned = typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0;
@@ -292,7 +308,6 @@ export class OpenAiChatClient implements ChatClient {
     if (text.trim() === '') {
       // Empty content is a FAILURE, not an empty answer: accepting it silently
       // is how a whole run ends up with blank cards.
-      const usage = (payload.usage ?? {}) as Record<string, any>;
       const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
       if (reasoned) call.grow = true;
       const hint = reasoned
@@ -304,6 +319,11 @@ export class OpenAiChatClient implements ChatClient {
     }
     return text;
   }
+}
+
+/** Numeric token count from a usage field; anything else counts as zero. */
+function countTokens(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 /** Pull the assistant text out of the common OpenAI-compatible response shapes. */

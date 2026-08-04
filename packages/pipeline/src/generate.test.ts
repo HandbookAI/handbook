@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MockChatClient, type MockRule } from '@handbook/llm';
-import { expandPhases, generateHandbook, loadHandbookModel } from './generate.js';
+import { expandPhases, generateHandbook, loadHandbookModel, runManifestSchema } from './generate.js';
 import { WorkDir } from './workdir.js';
 
 /** A tiny two-module python project. */
@@ -154,6 +154,18 @@ describe('generateHandbook (file strategy, mock LLM)', () => {
     expect(Object.keys(model.cards)).toHaveLength(2);
   });
 
+  it('writes a run manifest recording model, phases, timing and stats', () => {
+    const raw = JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8'));
+    const manifest = runManifestSchema.parse(raw);
+    expect(manifest.model).toBe('mock');
+    expect(manifest.phases).toEqual(['1', '2a', '2b', '2c', '3']);
+    expect(manifest.usage).toBeNull(); // MockChatClient reports no usage
+    expect(manifest.stats).toMatchObject({ nCards: 2, nStages: 2, nRegisters: 1 });
+    expect(Date.parse(manifest.startedAt)).not.toBeNaN();
+    expect(Date.parse(manifest.finishedAt)).not.toBeNaN();
+    expect(Date.parse(manifest.finishedAt)).toBeGreaterThanOrEqual(Date.parse(manifest.startedAt));
+  });
+
   it('phase 3 rerun hits the narration cache (no new LLM calls for summaries)', async () => {
     const client = mockClient();
     await generateHandbook({ sourceRoot, workDir, client, phase: '3', narrateLang: 'en' });
@@ -172,6 +184,48 @@ describe('generateHandbook (file strategy, mock LLM)', () => {
     await expect(
       generateHandbook({ sourceRoot: src, workDir: lockedWork, client: mockClient(), phase: '1' }),
     ).rejects.toThrow(/another handbook run/);
+  });
+});
+
+describe('run manifest', () => {
+  it('records usage from a client that reports it, refreshed on every run', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src-manifest-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'hb-work-manifest-'));
+    writeFixtureRepo(sourceRoot);
+    // Phase 1 needs no LLM, but a supplied client must still be identified in
+    // the manifest — usage() is optional on ChatClient, discovered by shape.
+    const client = Object.assign(mockClient(), {
+      usage: () => ({ calls: 3, promptTokens: 120, completionTokens: 45 }),
+    });
+    await generateHandbook({ sourceRoot, workDir, client, phase: '1' });
+    const first = runManifestSchema.parse(JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')));
+    expect(first.model).toBe('mock');
+    expect(first.phases).toEqual(['1']);
+    expect(first.usage).toEqual({ calls: 3, promptTokens: 120, completionTokens: 45 });
+
+    // A later run replaces the manifest: it describes the LAST successful run.
+    await generateHandbook({ sourceRoot, workDir, client: mockClient(), phase: '1' });
+    const second = runManifestSchema.parse(JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')));
+    expect(second.usage).toBeNull();
+  });
+
+  it('records null model and usage for a clientless phase-1 run', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src-manifest2-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'hb-work-manifest2-'));
+    writeFixtureRepo(sourceRoot);
+    await generateHandbook({ sourceRoot, workDir, phase: '1' });
+    const manifest = runManifestSchema.parse(JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')));
+    expect(manifest.model).toBeNull();
+    expect(manifest.usage).toBeNull();
+  });
+
+  it('does not write a manifest for a failed run', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src-manifest3-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'hb-work-manifest3-'));
+    writeFixtureRepo(sourceRoot);
+    // Phase 2a without a client fails the prerequisite check.
+    await expect(generateHandbook({ sourceRoot, workDir, phase: '2a' })).rejects.toThrow(/LLM client/);
+    expect(existsSync(join(workDir, 'run-manifest.json'))).toBe(false);
   });
 });
 
