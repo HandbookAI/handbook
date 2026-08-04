@@ -25,6 +25,7 @@ import { buildSkill, validateSkill } from '@handbook/skill';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { WorkDir } from '@handbook/pipeline';
+import { refreshRenderedHandbook } from './render-refresh.js';
 
 const program = new Command();
 
@@ -246,20 +247,27 @@ program
   .requiredOption('--case <dir>', 'case directory')
   .requiredOption('--work <dir>', 'work directory holding the handbook artifacts')
   .option('--no-llm', 'structural refresh only (no LLM; prose marked stale)')
-  .option('--detail <d>', 'card depth for regenerated cards: brief | deep', 'deep')
+  .option('--detail <d>', 'card depth for regenerated cards: brief | deep (default: match the existing handbook)')
   .option('--narrate-lang <l>', 'prose language: en | zh')
+  .option('--no-render', 'skip refreshing already-rendered outputs under <work>/handbook')
+  .option('--title <title>', 'handbook title for refreshed outputs', process.env.HANDBOOK_TITLE ?? 'System Handbook')
   .action(async (opts: Record<string, string | boolean | undefined>) => {
     const noLlm = opts.llm === false; // commander maps --no-llm to llm:false
+    const workDir = resolve(String(opts.work));
     const report = await resyncHandbook({
       caseDir: resolve(String(opts.case)),
-      workDir: resolve(String(opts.work)),
+      workDir,
       client: noLlm ? undefined : llmClient(),
       noLlm,
-      detail: opts.detail === 'brief' ? 'brief' : 'deep',
+      detail: opts.detail === 'brief' ? 'brief' : opts.detail === 'deep' ? 'deep' : undefined,
       lang: opts.narrateLang === 'zh' ? 'zh' : opts.narrateLang === 'en' ? 'en' : undefined,
       logger: logger(),
     });
-    printJson(report);
+    const rendered =
+      opts.render === false || report.skipped
+        ? []
+        : refreshRenderedHandbook(workDir, String(opts.title), logger());
+    printJson({ ...report, rendered });
   });
 
 program

@@ -32,6 +32,7 @@ import {
   silentLogger,
   writeJsonFile,
   type CodeGraph,
+  type FileCard,
   type Logger,
   type NarrateLang,
   type Organization,
@@ -122,44 +123,73 @@ export interface GraphDelta {
 /**
  * Changed/added/deleted file sets. Uses per-file CONTENT hashes when both
  * graphs carry them (catches in-place body edits that keep line numbers and
- * signatures identical); structural fingerprints remain as the fallback for
- * graphs written before hashes existed.
+ * signatures identical). Structural fingerprints remain as the fallback —
+ * for whole graphs written before hashes existed, and per file for entries
+ * that were unreadable during either analysis (a missing hash is NOT a new
+ * or changed file; membership comes from scannedFiles).
  */
 export function diffGraphs(before: CodeGraph, after: CodeGraph): GraphDelta {
   const beforeHashes = before.metadata.fileHashes;
   const afterHashes = after.metadata.fileHashes;
-  if (beforeHashes && afterHashes) {
-    const changed: string[] = [];
-    const added: string[] = [];
-    for (const file of after.metadata.scannedFiles) {
-      if (!(file in beforeHashes)) added.push(file);
-      else if (beforeHashes[file] !== afterHashes[file]) changed.push(file);
+  if (!beforeHashes || !afterHashes) return diffGraphsStructural(before, after);
+
+  let fps: { before: Map<string, string>; after: Map<string, string> } | undefined;
+  const structurallyChanged = (file: string): boolean => {
+    fps ??= { before: fingerprintByFile(before), after: fingerprintByFile(after) };
+    return fps.before.get(file) !== fps.after.get(file);
+  };
+  const beforeSet = new Set(before.metadata.scannedFiles);
+  const changed: string[] = [];
+  const added: string[] = [];
+  for (const file of after.metadata.scannedFiles) {
+    if (!beforeSet.has(file)) {
+      added.push(file);
+      continue;
     }
-    const afterSet = new Set(after.metadata.scannedFiles);
-    const deleted = before.metadata.scannedFiles.filter((f) => !afterSet.has(f));
-    return { changed: changed.sort(), added: added.sort(), deleted: deleted.sort() };
+    const beforeHash = beforeHashes[file];
+    const afterHash = afterHashes[file];
+    const isChanged =
+      beforeHash !== undefined && afterHash !== undefined
+        ? beforeHash !== afterHash
+        : structurallyChanged(file);
+    if (isChanged) changed.push(file);
   }
-  return diffGraphsStructural(before, after);
+  const afterSet = new Set(after.metadata.scannedFiles);
+  const deleted = before.metadata.scannedFiles.filter((f) => !afterSet.has(f));
+  return { changed: changed.sort(), added: added.sort(), deleted: deleted.sort() };
 }
 
-/** Legacy fallback: line/signature fingerprints (blind to body-only edits). */
+/** Line/signature fingerprint per file (blind to body-only edits). */
+function fingerprintByFile(graph: CodeGraph): Map<string, string> {
+  const byFile = new Map<string, string[]>();
+  for (const node of Object.values(graph.nodes)) {
+    if (!isInternalNode(node) || node.synthetic) continue;
+    (byFile.get(node.file) ?? byFile.set(node.file, []).get(node.file))?.push(
+      `${node.qualname}@${node.lineStart}-${node.lineEnd}:${node.signature}`,
+    );
+  }
+  const result = new Map<string, string>();
+  for (const file of graph.metadata.scannedFiles) {
+    result.set(file, (byFile.get(file) ?? []).sort().join('|'));
+  }
+  return result;
+}
+
+/**
+ * The depth a handbook was built with: deep cards carry per-function notes
+ * and a description; brief cards never do.
+ */
+export function detectCardDetail(cards: Record<string, FileCard>): 'brief' | 'deep' {
+  const isDeep = Object.values(cards).some(
+    (card) => (card.functions?.length ?? 0) > 0 || Boolean(card.description),
+  );
+  return isDeep ? 'deep' : 'brief';
+}
+
+/** Legacy fallback for graphs without content hashes. */
 function diffGraphsStructural(before: CodeGraph, after: CodeGraph): GraphDelta {
-  const fingerprint = (graph: CodeGraph): Map<string, string> => {
-    const byFile = new Map<string, string[]>();
-    for (const node of Object.values(graph.nodes)) {
-      if (!isInternalNode(node) || node.synthetic) continue;
-      (byFile.get(node.file) ?? byFile.set(node.file, []).get(node.file))?.push(
-        `${node.qualname}@${node.lineStart}-${node.lineEnd}:${node.signature}`,
-      );
-    }
-    const result = new Map<string, string>();
-    for (const file of graph.metadata.scannedFiles) {
-      result.set(file, (byFile.get(file) ?? []).sort().join('|'));
-    }
-    return result;
-  };
-  const beforeFp = fingerprint(before);
-  const afterFp = fingerprint(after);
+  const beforeFp = fingerprintByFile(before);
+  const afterFp = fingerprintByFile(after);
   const changed: string[] = [];
   const added: string[] = [];
   const deleted: string[] = [];
@@ -299,7 +329,10 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
     `[resync] delta: ${delta.changed.length} changed, ${delta.added.length} added, ${delta.deleted.length} deleted`,
   );
 
-  // 3. Refresh cards for changed+added files.
+  // 3. Refresh cards for changed+added files, at the depth the handbook was
+  // built with unless the caller overrides it — a brief handbook must not
+  // silently upgrade to deep (and re-read every file) on its first resync.
+  const detail = options.detail ?? detectCardDetail(work.loadCards());
   const refreshTargets = [...delta.changed, ...delta.added];
   if (refreshTargets.length > 0) {
     if (noLlm) {
@@ -327,7 +360,7 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
         sourceRoot: resyncCase.editedRoot,
         work,
         onlyFiles: refreshTargets,
-        detail: options.detail ?? 'deep',
+        detail,
         batchSize: 1,
         lang: options.lang ?? 'en',
         logger,
@@ -416,30 +449,43 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
   if (memberOrganization) {
     work.saveOrganization(memberOrganization);
   } else {
+  const fileEntry = (file: string) => ({
+    file,
+    purpose: cards[file]?.purpose ?? '',
+    role: cards[file]?.role ?? 'other',
+    nFunctions: cards[file]?.functions?.length ?? 0,
+  });
   for (const sid of Object.keys(organization.stages)) {
     const bucket = assignment.buckets[sid] ?? [];
     const entry = organization.stages[sid];
     if (!entry) continue;
     const known = new Set(entry.orderedFiles);
     const bucketSet = new Set(bucket);
-    const dirty = affectedStages.has(sid) || bucket.some((f) => !known.has(f)) || entry.orderedFiles.some((f) => !bucketSet.has(f));
-    if (!dirty) continue;
-    const ordered = suggestOrder(bucket, adjacency);
+    const gained = bucket.filter((f) => !known.has(f));
+    const lostAny = entry.orderedFiles.some((f) => !bucketSet.has(f));
+    if (!affectedStages.has(sid) && gained.length === 0 && !lostAny) continue;
+    // Minimal mechanical edit: prune files that left the bucket, refresh the
+    // per-file facts from the current cards, and append newcomers in one
+    // deterministic group — the LLM's surviving grouping is never discarded.
+    const groups = entry.groups
+      .map((group) => ({
+        ...group,
+        files: group.files.filter((f) => bucketSet.has(f.file)).map((f) => fileEntry(f.file)),
+      }))
+      .filter((group) => group.files.length > 0);
+    const grouped = new Set(groups.flatMap((g) => g.files.map((f) => f.file)));
+    const newcomers = suggestOrder(bucket.filter((f) => !grouped.has(f)), adjacency);
+    if (newcomers.length > 0) {
+      groups.push({
+        title: '(resynced)',
+        summary: 'Files added by a code change (deterministic call order).',
+        files: newcomers.map(fileEntry),
+      });
+    }
     organization.stages[sid] = {
       title: entry.title,
-      groups: [
-        {
-          title: '(resynced)',
-          summary: 'Reordered after a code change (deterministic call order).',
-          files: ordered.map((file) => ({
-            file,
-            purpose: cards[file]?.purpose ?? '',
-            role: cards[file]?.role ?? 'other',
-            nFunctions: cards[file]?.functions?.length ?? 0,
-          })),
-        },
-      ],
-      orderedFiles: ordered,
+      groups,
+      orderedFiles: [...entry.orderedFiles.filter((f) => bucketSet.has(f)), ...newcomers],
     };
   }
   // Stages that appeared in the assignment but never organized (new stages) get entries too.

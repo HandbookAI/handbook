@@ -2,9 +2,17 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { CodeGraph, FileCard } from '@handbook/core';
 import { MockChatClient, type MockRule } from '@handbook/llm';
 import { WorkDir, generateHandbook } from '@handbook/pipeline';
-import { filesFromDiff, loadCase, parsePlanDeclarations, resyncHandbook } from './resync.js';
+import {
+  detectCardDetail,
+  diffGraphs,
+  filesFromDiff,
+  loadCase,
+  parsePlanDeclarations,
+  resyncHandbook,
+} from './resync.js';
 
 function writeRepo(root: string): void {
   mkdirSync(join(root, 'app'), { recursive: true });
@@ -64,6 +72,113 @@ function pipelineMock(): MockChatClient {
   ];
   return new MockChatClient(rules);
 }
+
+function graphOf(
+  files: Array<{ file: string; hash?: string; fns?: Array<{ name: string; lineStart: number }> }>,
+): CodeGraph {
+  const nodes: CodeGraph['nodes'] = {};
+  for (const f of files) {
+    for (const fn of f.fns ?? [{ name: 'f', lineStart: 1 }]) {
+      const qual = `${f.file.replace(/\.py$/, '').split('/').join('.')}.${fn.name}`;
+      nodes[qual] = {
+        kind: 'internal',
+        id: qual,
+        name: fn.name,
+        qualname: qual,
+        file: f.file,
+        lineStart: fn.lineStart,
+        lineEnd: fn.lineStart + 2,
+        signature: `${fn.name}()`,
+        isAsync: false,
+        isMethod: false,
+        className: null,
+        decorators: [],
+        synthetic: false,
+        selfAttrsRead: [],
+        selfAttrsWritten: [],
+        paramTypes: {},
+        nCallees: 0,
+        nCallers: 0,
+      };
+    }
+  }
+  const fileHashes: Record<string, string> = {};
+  for (const f of files) {
+    if (f.hash !== undefined) fileHashes[f.file] = f.hash;
+  }
+  return {
+    version: 1,
+    metadata: {
+      generatedAt: 't',
+      language: 'python',
+      sourceRoot: '/tmp/x',
+      scannedFiles: files.map((f) => f.file),
+      fileHashes,
+      nInternalFunctions: Object.keys(nodes).length,
+      nBoundaryNodes: 0,
+      nEdges: 0,
+      policy: 'test',
+    },
+    nodes,
+    edges: [],
+    selfAttrs: {},
+  };
+}
+
+describe('diffGraphs — per-file hash fallback (audit A3)', () => {
+  it('does not flag a file that lacks a hash on both sides when its structure is unchanged', () => {
+    const before = graphOf([{ file: 'a.py', hash: 'h1' }, { file: 'weird.py' }]);
+    const after = graphOf([{ file: 'a.py', hash: 'h1' }, { file: 'weird.py' }]);
+    const delta = diffGraphs(before, after);
+    expect(delta.added).toEqual([]);
+    expect(delta.changed).toEqual([]);
+    expect(delta.deleted).toEqual([]);
+  });
+
+  it('falls back to structural fingerprints when a hash is missing on either side', () => {
+    const before = graphOf([
+      { file: 'a.py', hash: 'h1' },
+      { file: 'weird.py', fns: [{ name: 'f', lineStart: 1 }] },
+    ]);
+    const after = graphOf([
+      { file: 'a.py', hash: 'h1' },
+      { file: 'weird.py', fns: [{ name: 'f', lineStart: 9 }] },
+    ]);
+    const delta = diffGraphs(before, after);
+    expect(delta.changed).toEqual(['weird.py']);
+    expect(delta.added).toEqual([]);
+  });
+
+  it('reports genuinely new scan-set entries as added', () => {
+    const before = graphOf([{ file: 'a.py', hash: 'h1' }]);
+    const after = graphOf([{ file: 'a.py', hash: 'h1' }, { file: 'b.py', hash: 'h2' }]);
+    expect(diffGraphs(before, after).added).toEqual(['b.py']);
+  });
+});
+
+describe('detectCardDetail (audit A5)', () => {
+  const brief = { file: 'a.py', purpose: 'x', role: 'other', lifecycle: 'none' } as unknown as FileCard;
+  const deep = {
+    file: 'b.py',
+    purpose: 'x',
+    role: 'other',
+    lifecycle: 'none',
+    description: 'walkthrough',
+    functions: [{ qualname: 'b.f' }],
+  } as unknown as FileCard;
+
+  it('detects brief from cards that carry no deep artifacts', () => {
+    expect(detectCardDetail({ 'a.py': brief })).toBe('brief');
+  });
+
+  it('detects deep when any card carries function notes or a description', () => {
+    expect(detectCardDetail({ 'a.py': brief, 'b.py': deep })).toBe('deep');
+  });
+
+  it('defaults to brief for an empty card set', () => {
+    expect(detectCardDetail({})).toBe('brief');
+  });
+});
 
 describe('resync helpers', () => {
   it('parses declarations from the last matching json block', () => {
@@ -135,6 +250,39 @@ describe('resyncHandbook', () => {
     expect(graph.metadata.scannedFiles).toContain('app/report.py');
   });
 
+  it('preserves surviving organization groups and appends added files in a new group (audit A4)', () => {
+    const work = new WorkDir(workDir);
+    const org = work.loadOrganization();
+    const stage2 = org.stages['stage-2'];
+    // The pre-existing grouping must survive a resync — only pruned/appended,
+    // never replaced wholesale by a synthetic group.
+    const engineGroup = stage2?.groups.find((g) => g.files.some((f) => f.file === 'app/engine.py'));
+    expect(engineGroup).toBeDefined();
+    expect(engineGroup?.title).not.toBe('(resynced)');
+    const resynced = stage2?.groups.find((g) => g.title === '(resynced)');
+    expect(resynced?.files.map((f) => f.file)).toContain('app/report.py');
+    expect(stage2?.orderedFiles).toContain('app/report.py');
+  });
+
+  it('detects card detail from the existing handbook when not specified (audit A5)', async () => {
+    const source3 = mkdtempSync(join(tmpdir(), 'hb-rs-src3-'));
+    const work3 = mkdtempSync(join(tmpdir(), 'hb-rs-work3-'));
+    const case3 = mkdtempSync(join(tmpdir(), 'hb-rs-case3-'));
+    writeRepo(source3);
+    // Brief-built handbook (pipeline default detail is brief).
+    await generateHandbook({ sourceRoot: source3, workDir: work3, client: pipelineMock(), phase: 'all' });
+    const edited = join(case3, 'edited');
+    cpSync(source3, edited, { recursive: true });
+    writeFileSync(join(edited, 'app', 'engine.py'), 'class Engine:\n    def spin(self):\n        return 7\n');
+
+    const client = pipelineMock();
+    await resyncHandbook({ caseDir: case3, workDir: work3, client });
+    const cardPrompts = client.calls.filter((c) => c.prompt.includes('Files to describe'));
+    expect(cardPrompts.length).toBeGreaterThan(0);
+    // A brief handbook must resync with brief card prompts, not silently upgrade to deep.
+    expect(cardPrompts.some((c) => c.prompt.includes('SOURCE FILES IN FULL'))).toBe(false);
+  });
+
   it('noLlm mode refreshes structure and marks prose stale', async () => {
     const source2 = mkdtempSync(join(tmpdir(), 'hb-rs-src2-'));
     const work2 = mkdtempSync(join(tmpdir(), 'hb-rs-work2-'));
@@ -152,5 +300,9 @@ describe('resyncHandbook', () => {
     const work = new WorkDir(work2);
     expect(work.loadCards()['app/engine.py']?.purpose).toMatch(/stale/);
     expect(work.loadAssignment().fileStage['app/main.py']).toBeUndefined();
+    // A stage emptied by a deletion is pruned, not replaced with a synthetic group (audit A4).
+    const org = work.loadOrganization();
+    expect(org.stages['stage-1']?.groups).toEqual([]);
+    expect(org.stages['stage-1']?.orderedFiles).toEqual([]);
   });
 });
