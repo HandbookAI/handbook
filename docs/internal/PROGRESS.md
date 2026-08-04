@@ -263,3 +263,56 @@ agent 纠错回路、最小质量评测集。
 集成阶段：pnpm check 全绿（361 → **451** 测试），离线 demo 端到端验证（llms.txt 格式、
 mermaid、references/agent/ 打包、validate OK）。仍开放：studio 任务取消、MCP docs server、
 agent 纠错回路、最小评测集、生成对话框暴露全部选项。
+
+## 2026-08-05：取消 / 纠错回路 / 全选项对话框（3 并行块 + 浏览器实测，484 测试绿）
+
+三个并行块 + 串行集成。**本轮的价值一半来自浏览器点击实测**——它抓到一个单测和 HTTP 集成
+测试都测不出来的真 bug。
+
+### 1. 协作式取消（贯穿 llm → pipeline → resync → studio）
+
+`ChatOptions`/`GenerateOptions`/`ResyncOptions` 都接受可选 `signal`。llm 层中断在途 HTTP
+请求且**不重试 abort**；pipeline 在每个批次/worker/阶段边界 `throwIfAborted()`；resync 在
+各编号步骤之间同样检查。被取消的运行在下一个检查点抛 `AbortError`，而不是写到一半被砍：
+已落盘的卡片保留、work 目录锁释放、**不写 run manifest**。`CachedChatClient` 把 signal
+从缓存键里剔除（signal 绝不能改变一个 prompt 的哈希）但透传给内层客户端。
+
+Studio：`JobRunner` 每个作业一个 `AbortController`，`POST /api/jobs/:id/cancel`（运行中
+202、已结束 409）；被请求的 abort 结算为 **`cancelled` 而非 `failed`**，抽屉用中性 ice
+配色——**取消是一种结果，不是错误**。按钮点击后自禁用（再 POST 只会 409），结束后隐藏。
+
+### 2. agent 纠错回路（skill + resync）
+
+手册的主要消费者是 code agent，而此前 agent 发现「手册与源码不符」时无处上报。SKILL.md
+（中英双语）新增 Corrections 协议：往 skill 根目录的 `corrections.jsonl` 追加一行 JSON——
+**故意放在只读 `references/` 挂载之外**——然后继续以源码为准。
+`corrections.ts` 提供容错 JSONL 读取（坏行带行号）、去重文件清单、`.applied` 归档（不覆盖）。
+`resyncHandbook` 的 `correctionsPath` 让这些文件**扩大**刷新集合（说法被源码否证，就是重写
+该文件描述的理由，哪怕字节未变）；不在分析集内的文件进 problems 而非静默丢弃；归档只在整轮
+跑完后进行，所以被取消/失败的 resync 会把纠错留给下一次。validate 会警告「N 条未处理纠错」。
+
+### 3. 生成对话框补齐全部 12 个选项
+
+常用 4 项在前，其余（strategy/skeleton/源语言/phase/resume/refresh/workers/doctor 轮数）
+收进折叠的「高级」区；服务端转发全部参数，数字垃圾值 400 拒绝。
+
+### 4. 浏览器实测挖出的真 bug：mock 只认英文 prompt
+
+用 puppeteer 真实点击 studio 时，中途 reload 后任务总是 `failed` 而非可取消。追下去发现：
+studio 界面默认中文 → `narrateLang=zh` → pipeline 发出**中文**规则文本 → mock 只匹配英文
+锚点 → 落到 planner 兜底 → pipeline 正确地拒绝了 `{tool, plan}` 形状的回复。
+**这意味着 `NARRATE_LANG=zh bash examples/run-demo.sh`（examples/README 明确宣传的用法）
+一直是坏的**，而 484 个单测和 21 个 HTTP 集成测试全都测不到它。
+
+修复：mock 现在识别每个 prompt 的中英两种变体（`### FILE:` 这类结构锚点本就与语言无关）；
+另加 `MOCK_DELAY_MS` 让回复故意变慢，以便手工/脚本演练取消。
+**教训与 round1-3 同构**：这次是「mock 比 pipeline 的真实 prompt 更窄」——测试替身的覆盖面
+比真实调用窄，测试再绿也会漏掉整条语言分支。
+
+### 验证
+
+`pnpm check` 484 测试绿；`bash examples/run-demo.sh` 与 `NARRATE_LANG=zh` 两条都通；
+浏览器实测两套：完整 UI 23/23（生成对话框 12/12 选项、任务重连、三种产出切换、取消全流程），
+专项取消 12/12（API 202/409、结算为 cancelled、互斥释放、按钮显隐与禁用、中性配色）。
+
+仍开放：MCP docs server、最小质量评测集、studio 手册内容编辑。
