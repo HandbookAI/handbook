@@ -56,7 +56,9 @@ handbook rollback --backup ./project/.handbook-patches/2026-08-03T…
 handbook rollback --backup … --force   # override the post-patch-edit guard
 
 # 9. resync — roll the handbook forward after a code change
-handbook resync --case ./case --work ./work --detail deep
+#    (card depth follows the existing handbook unless --detail is given;
+#     already-rendered outputs under <work>/handbook refresh automatically, --no-render to skip)
+handbook resync --case ./case --work ./work
 handbook resync --case ./case --work ./work --no-llm   # structural refresh only
 
 # 10. studio — the local web UI (127.0.0.1 only)

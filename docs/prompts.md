@@ -22,6 +22,7 @@ keeps JSON keys, enum values, ids and file paths in English; only prose values c
 | 14 | register gap pass (`pipeline/narrate.ts`) | 3 rounds 2+ | ONLY the missing registers given the found list; empty array when dry (loop stops after 2 dry rounds) | same schema, new entries only |
 | 15 | planner system prompt (`planner/prompt.ts`) | plan | route with the handbook → read real source → emit byte-exact EDIT blocks + declarations JSON; executor-trusts-blindly rules (uniqueness, no overlap, smallest span) | markdown plan ending in one `{"will_modify","will_add","will_remove"}` block |
 | 16 | planner tool protocol (`planner/prompt.ts`) | plan | one JSON action per turn: `list_dir` / `read_file` / `grep` / `finish` | `{"tool": …}` action block |
+| 17 | resync evolution label (`studio/server.ts`) | studio resync | one ≤40-char sentence naming WHICH capabilities/modules a change touched, from touched-file purposes; guessing intent is forbidden (studio's resync has no diff); falls back to a deterministic file list without a client | plain prose, one line (rendered dimmed + tagged `auto`) |
 
 ## Design rules the prompts share
 
