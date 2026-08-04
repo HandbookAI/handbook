@@ -57,7 +57,9 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
       if (!description.includes('do not use')) errors.push('SKILL.md description must state when NOT to use it ("Do not use …")');
     }
     if (!text.includes('references/index.md')) errors.push('SKILL.md body must reference references/index.md');
-    if (!/actual source|real source/i.test(text)) {
+    // The body may be localized (en/zh) — accept either phrasing. The
+    // frontmatter contract above is language-independent: it stays English.
+    if (!/actual source|real source|真实源码/i.test(text)) {
       errors.push('SKILL.md body must direct agents to read the actual source');
     }
   }
@@ -70,6 +72,26 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
   const stagesDir = join(referencesDir, 'stages');
   if (!fileExists(stagesDir)) {
     errors.push('references/stages/ is missing');
+  }
+
+  // --- agent locator pages (optional subdirectory) ---
+  // Skills without references/agent/ are valid; when the dir exists it should
+  // carry both locator pages, each non-empty. A missing page is a warning —
+  // the skill still routes — but an empty page is a broken reference: error.
+  const agentRefDir = join(referencesDir, 'agent');
+  if (fileExists(agentRefDir)) {
+    const missing: string[] = [];
+    for (const page of ['how_to_use.md', 'disambiguation.md']) {
+      const path = join(agentRefDir, page);
+      if (!fileExists(path)) {
+        missing.push(page);
+        continue;
+      }
+      if (readFileSync(path, 'utf8').trim().length === 0) errors.push(`references/agent/${page} is empty`);
+    }
+    if (missing.length > 0) {
+      warnings.push(`references/agent/ is missing ${missing.join(' and ')} — the locator pair should ship together`);
+    }
   }
 
   // --- index ↔ stage pages (both directions) ---

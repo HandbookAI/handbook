@@ -7,6 +7,7 @@
  *   references/
  *     overview.md  index.md  registers.md
  *     stages/<sid>.md        one page per stage
+ *     agent/                 how_to_use.md + disambiguation.md (optional, from the agent site)
  *     coverage.json          file → stage + content hashes (optional, drift signal)
  * ```
  *
@@ -22,6 +23,7 @@ import {
   writeFileAtomic,
   writeJsonFile,
   type Assignment,
+  type NarrateLang,
 } from '@handbook/core';
 
 export interface BuildSkillOptions {
@@ -34,6 +36,21 @@ export interface BuildSkillOptions {
   project?: string;
   /** When given, coverage.json records file→stage plus source hashes for drift detection. */
   coverage?: { assignment: Assignment; sourceRoot?: string };
+  /**
+   * Rendered agent locator site. When it contains both `how_to_use.md` and
+   * `disambiguation.md`, they ship under `references/agent/` and the SKILL.md
+   * routing protocol gains a disambiguation step. Omitted (or missing pages):
+   * output is byte-identical to a build without this option.
+   */
+  agentDir?: string;
+  /**
+   * Language of the SKILL.md BODY and synthetic fallback prose (default `en`).
+   * The YAML frontmatter (`name` + `description`) stays English regardless:
+   * agent runtimes route skills on the description text, and the validated
+   * "Use when …" / "Do not use …" contract is part of that routing surface —
+   * translating it would silently break skill selection.
+   */
+  lang?: NarrateLang;
 }
 
 export interface BuildSkillResult {
@@ -53,43 +70,109 @@ const NON_STAGE_PAGES = new Set([
   'readme.md',
 ]);
 
-function skillMd(name: string, project: string): string {
+/** SKILL.md body copy plus synthetic fallback prose, per narrate language. */
+interface SkillCopy {
+  header: (project: string) => string;
+  /** Unnumbered routing steps; `agent` is spliced in before `source` when the locator pages ship. */
+  steps: { overview: string; index: string; stages: string; registers: string; agent: string; source: string };
+  coverage: string;
+  noRegisters: string;
+}
+
+const SKILL_COPY: Record<NarrateLang, SkillCopy> = {
+  en: {
+    header: (project) => `# ${project} Handbook — how to use it
+
+This handbook is a **location index** for the ${project} codebase, not a code description.
+Use it to decide WHICH files, functions and state a change must touch — then read the real source.`,
+    steps: {
+      overview: "Read `references/overview.md` for the system's shape.",
+      index: 'Route through `references/index.md` — the stage index maps every subsystem to its files.',
+      stages: 'Open only the relevant `references/stages/<id>.md` pages.',
+      registers: 'Check `references/registers.md` for cross-cutting state — invaluable for fan-out changes.',
+      agent:
+        'When a term is ambiguous or a search hits many stages, check `references/agent/disambiguation.md`; `references/agent/how_to_use.md` documents the agent-side search protocol.',
+      source: '`read_file` the actual source at every cited path before proposing or making changes.',
+    },
+    coverage: `If \`references/coverage.json\` exists, treat its content hashes as freshness signals: a stale
+hash means the page may lag the code. Do NOT treat handbook prose as ground truth for code
+text — always confirm against the real source before emitting a verbatim edit.`,
+    noRegisters: '# State registers\n\n_No cross-stage state registers were identified for this codebase._\n',
+  },
+  zh: {
+    header: (project) => `# ${project} 手册 —— 使用说明
+
+本手册是 ${project} 代码库的**位置索引**，不是代码描述。
+用它来决定一次修改必须触及哪些文件、函数与状态 —— 然后去读真实源码。`,
+    steps: {
+      overview: '先读 `references/overview.md`，了解系统的整体形状。',
+      index: '通过 `references/index.md` 路由 —— 阶段索引把每个子系统映射到它的文件。',
+      stages: '只打开相关的 `references/stages/<id>.md` 页面。',
+      registers: '查 `references/registers.md` 的跨阶段状态 —— 对波及面大的修改尤其关键。',
+      agent:
+        '当一个词含义不明、或搜索命中多个阶段时，查 `references/agent/disambiguation.md`；`references/agent/how_to_use.md` 记录了 agent 侧的完整检索规程。',
+      source: '在提出或做出任何修改之前，`read_file` 每个被引用路径的真实源码。',
+    },
+    coverage: `如果 \`references/coverage.json\` 存在，把其中的内容哈希当作新鲜度信号：哈希过期意味着
+页面可能落后于代码。不要把手册散文当作代码文本的事实依据 —— 在输出逐字修改之前，
+务必对照真实源码确认。`,
+    noRegisters: '# 状态寄存器\n\n_本代码库未识别出跨阶段的状态寄存器。_\n',
+  },
+};
+
+function skillMd(name: string, project: string, lang: NarrateLang, withAgentPages: boolean): string {
+  const copy = SKILL_COPY[lang];
+  const steps = [copy.steps.overview, copy.steps.index, copy.steps.stages, copy.steps.registers];
+  if (withAgentPages) steps.push(copy.steps.agent);
+  steps.push(copy.steps.source);
+  const protocol = steps.map((step, i) => `${i + 1}. ${step}`).join('\n');
+  // The frontmatter is intentionally NOT localized: agent runtimes route on
+  // the description ("Use when …" / "Do not use …" is a validated contract),
+  // so it must stay English even when the body is Chinese.
   return `---
 name: ${name}-handbook
 description: Navigate the ${project} codebase by behavior and source location. Use when planning, implementing, debugging, or reviewing ${project} work that is unfamiliar, spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated to ${project} or isolated edits where the exact file is already known and no cross-cutting impact is plausible.
 ---
 
-# ${project} Handbook — how to use it
+${copy.header(project)}
 
-This handbook is a **location index** for the ${project} codebase, not a code description.
-Use it to decide WHICH files, functions and state a change must touch — then read the real source.
+${protocol}
 
-1. Read \`references/overview.md\` for the system's shape.
-2. Route through \`references/index.md\` — the stage index maps every subsystem to its files.
-3. Open only the relevant \`references/stages/<id>.md\` pages.
-4. Check \`references/registers.md\` for cross-cutting state — invaluable for fan-out changes.
-5. \`read_file\` the actual source at every cited path before proposing or making changes.
-
-If \`references/coverage.json\` exists, treat its content hashes as freshness signals: a stale
-hash means the page may lag the code. Do NOT treat handbook prose as ground truth for code
-text — always confirm against the real source before emitting a verbatim edit.
+${copy.coverage}
 `;
 }
+
+/** The two locator pages of a rendered agent site that ship with the skill. */
+const AGENT_LOCATOR_PAGES = ['how_to_use.md', 'disambiguation.md'] as const;
 
 export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
   const { handbookDir, outDir } = options;
   const project = options.project ?? options.name;
+  const lang = options.lang ?? 'en';
   if (!fileExists(join(handbookDir, 'index.md'))) {
     throw new Error(`${handbookDir} is not a rendered handbook (missing index.md)`);
   }
+  // Agent locator pages ship only as a pair: SKILL.md must never route to a
+  // file that does not exist, and half a locator is what the validator warns on.
+  const agentSite = options.agentDir;
+  const agentDir =
+    agentSite && AGENT_LOCATOR_PAGES.every((p) => fileExists(join(agentSite, p))) ? agentSite : undefined;
   rmSync(outDir, { recursive: true, force: true });
   const referencesDir = join(outDir, 'references');
   const stagesDir = join(referencesDir, 'stages');
   ensureDir(stagesDir);
 
-  writeFileAtomic(join(outDir, 'SKILL.md'), skillMd(options.name, project));
+  writeFileAtomic(join(outDir, 'SKILL.md'), skillMd(options.name, project, lang, agentDir !== undefined));
 
   const references: string[] = [];
+  if (agentDir) {
+    const agentOut = join(referencesDir, 'agent');
+    ensureDir(agentOut);
+    for (const page of AGENT_LOCATOR_PAGES) {
+      copyFileSync(join(agentDir, page), join(agentOut, page));
+      references.push(`agent/${page}`);
+    }
+  }
   const copyMap: Array<[string, string[]]> = [
     ['overview.md', ['overview.md']],
     ['index.md', ['index.md']],
@@ -105,10 +188,7 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
   // A handbook with zero registers renders no register page; the skill still
   // ships one so the reference layout (and the validator contract) is stable.
   if (!references.includes('registers.md')) {
-    writeFileAtomic(
-      join(referencesDir, 'registers.md'),
-      '# State registers\n\n_No cross-stage state registers were identified for this codebase._\n',
-    );
+    writeFileAtomic(join(referencesDir, 'registers.md'), SKILL_COPY[lang].noRegisters);
     references.push('registers.md');
   }
 
