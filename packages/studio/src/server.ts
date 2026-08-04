@@ -21,7 +21,7 @@ import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
 import { isInternalNode } from '@handbook/core';
 import { renderAgentSite, renderHtmlSite, renderMarkdownHandbook, renderSinglePageHtml } from '@handbook/renderer';
-import { runPlanner } from '@handbook/planner';
+import { parseDeclarations, runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { applyPlan, listBackups, rollback } from '@handbook/patcher';
 import { StateStore, type RepoEntry } from './state.js';
@@ -310,6 +310,19 @@ async function runApply(repo: RepoEntry, body: Record<string, unknown>, logger: 
   const plan = typeof body.plan === 'string' ? body.plan : '';
   if (!plan.trim()) throw new Error('missing "plan"');
   const dryRun = body.dryRun === true;
+  // A plan with no edit blocks AND empty declarations is the planner saying "no
+  // code change is needed" — a legitimate conclusion, not a malformed plan. Both
+  // used to surface as the same red failure, which reads as "the tool is broken".
+  const hasEditBlock = /^ {0,3}###\s+EDIT\s+\d+\s*$/m.test(plan);
+  if (!hasEditBlock) {
+    const decl = parseDeclarations(plan);
+    const declaredNothing =
+      decl !== undefined && decl.willModify.length + decl.willAdd.length + decl.willRemove.length === 0;
+    if (declaredNothing) {
+      logger.info('[patch] the plan contains no edit blocks and declares no changes — nothing to apply');
+      return { ok: true, noChanges: true, dryRun, outcomes: [], changedFiles: [], problems: [] };
+    }
+  }
   const result = applyPlan({
     sourceRoot: repo.sourceRoot,
     plan,
