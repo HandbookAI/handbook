@@ -34,9 +34,20 @@ function titleCase(text) {
   return text.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Recognize a prompt by ANY of its language variants. The pipeline ships an
+ * English and a Chinese rule text per prompt (`--narrate-lang zh`), while the
+ * structural markers around them (`### FILE:`, the directory rollup, the stage
+ * menu) are language-independent facts. Matching only the English wording made
+ * every zh run fall through to the planner fallback and die at skeleton synthesis.
+ */
+function isPrompt(prompt, ...markers) {
+  return markers.some((m) => prompt.includes(m));
+}
+
 function respond(prompt) {
   // 2a — file cards (brief or deep)
-  if (prompt.includes('Files to describe') || prompt.includes('processing a CHUNK')) {
+  if (isPrompt(prompt, 'Files to describe', 'processing a CHUNK', '你在逐个阅读源码文件', '你在完整阅读源码文件', '正在处理一个超长文件')) {
     const files = [...prompt.matchAll(/### FILE: (\S+)/g)].map((m) => m[1]);
     const purposes = files.map((file) => {
       const stem = file.split('/').pop();
@@ -62,7 +73,7 @@ function respond(prompt) {
   }
 
   // 2b — skeleton synthesis: one stage per directory group from the rollup.
-  if (prompt.includes('dividing a large codebase into the STAGES')) {
+  if (isPrompt(prompt, 'dividing a large codebase into the STAGES', '你在为一个代码库划分系统手册的')) {
     const dirs = [...prompt.matchAll(/^- (\S+) {2}\(\d+f\)/gm)].map((m) => m[1]);
     const groups = [...new Set(dirs.map(groupOfDir))].slice(0, 20);
     const stages = groups.map((dir, i) => ({
@@ -113,13 +124,13 @@ function respond(prompt) {
   }
 
   // 2c — organization: one group, given order.
-  if (prompt.includes('organizing the files of ONE stage')) {
+  if (isPrompt(prompt, 'organizing the files of ONE stage', '你在把系统手册中一个阶段的文件组织成可读结构')) {
     const files = [...prompt.matchAll(/^- (\S+?)(?: {2}\[|\n)/gm)].map((m) => m[1]);
     return { groups: [{ title: 'Core flow', summary: 'Everything this stage owns, in execution order.', files }] };
   }
 
   // 3 — registers: one generic shared-state register over the first two stages.
-  if (prompt.includes('STATE REGISTERS')) {
+  if (isPrompt(prompt, 'STATE REGISTERS', '找出这个系统的')) {
     const stageIds = [...prompt.matchAll(/^- (\S+) · /gm)].map((m) => m[1]).slice(0, 2);
     return {
       registers:
@@ -128,11 +139,12 @@ function respond(prompt) {
           : [],
     };
   }
-  if (prompt.includes('COMPLETING a list of state registers')) return { registers: [] };
+  if (isPrompt(prompt, 'COMPLETING a list of state registers', '你在补全状态寄存器清单')) return { registers: [] };
+  if (isPrompt(prompt, '为下面每个状态寄存器标注')) return { registers: [] };
 
   // 3 — narration (prose, not JSON)
-  if (prompt.includes('writing the OVERVIEW for one stage')) {
-    const title = prompt.match(/## Stage title: (.+)/)?.[1] ?? 'this stage';
+  if (isPrompt(prompt, 'writing the OVERVIEW for one stage', '现在写其中一个阶段的')) {
+    const title = (prompt.match(/## Stage title: (.+)/) ?? prompt.match(/## 阶段标题[:：] *(.+)/))?.[1] ?? 'this stage';
     return (
       `The ${title} stage is one station on this system's assembly line: work arrives from the previous ` +
       `station, this stage does its one job, and the result moves on. Its files cooperate through the call ` +
@@ -140,7 +152,7 @@ function respond(prompt) {
       `real LLM endpoint for real narration.)`
     );
   }
-  if (prompt.includes('top-level overview of a system handbook')) {
+  if (isPrompt(prompt, 'top-level overview of a system handbook', '你在为普通读者撰写系统手册的顶层总览')) {
     return (
       `This handbook was generated offline against a deterministic mock endpoint, so this overview is ` +
       `placeholder prose: the STRUCTURE around it — stages, file assignment, per-function call facts, ` +
@@ -171,8 +183,20 @@ const server = createServer((req, res) => {
     }
     const answer = respond(prompt);
     const content = typeof answer === 'string' ? answer : '```json\n' + JSON.stringify(answer, null, 2) + '\n```';
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
+    const send = () => {
+      if (res.writableEnded) return;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }));
+    };
+    // MOCK_DELAY_MS makes every reply slow on purpose: it is how the studio's
+    // cancel button and the pipeline's abort checkpoints get exercised by hand.
+    const delayMs = Number(process.env.MOCK_DELAY_MS ?? 0);
+    if (delayMs > 0) {
+      const timer = setTimeout(send, delayMs);
+      res.on('close', () => clearTimeout(timer)); // client aborted — stop pretending
+    } else {
+      send();
+    }
   });
 });
 
