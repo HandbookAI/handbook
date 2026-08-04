@@ -197,3 +197,42 @@
 23 个 Markdown + 23 个 HTML 页 + 441 KB 单页 `handbook.html`。
 剩 2 个文件（`analyzer/.../shell.test.ts`、`planner/src/planner.test.ts`）被服务商 WAF 按内容拦，
 如实降级并在覆盖率点名，不做绕过。全仓 **302 测试绿**。
+
+## 2026-08-04（晚）：全仓对抗式审计 + P0 修复（5 个里程碑，361 测试绿）
+
+三路并行逐文件通读全部 11 包 + 9 份评审文档 + git 史，交叉验证后修复全部 P0 项。
+完整审计报告（含 P1/P2/P3 待办：LLM 缓存/成本报表/run manifest、llms.txt/MCP、CI 等）
+存于 ~/.claude/plans/handbook-linear-ripple.md。
+
+### 修复清单（每项先写失败测试再修）
+
+1. **analyzer（最重）**：TS/Go 跨模块自由函数调用被误判为 boundary——TS 只有类索引，
+   Go 的 `pkg.F()` 一律外部；且 `typescript.test.ts` **显式断言了错误行为**（断言来自实现
+   而非规格——round1-3 教训「解析层比模型窄」的测试版）。修复：TS 加 `moduleFunctions`
+   索引 + 相对路径解析（命名/命名空间导入都解析）；Go 按 import 路径后缀匹配已扫描包
+   （最长目录优先）。另修 navpack 空字符串模块键（`./x.js::f` → `''`）与 `node:fs` 塌缩，
+   `discoverAll` 吞 adapter 崩溃改为告警。
+2. **resync（4 个未被评审发现的缺陷）**：单文件哈希缺失被永久误报 added/changed（成员资格
+   改看 scannedFiles，缺哈希逐文件回退结构指纹）；脏 stage 组织被整体替换为单一 "(resynced)"
+   组、反复 resync 永久扁平化（改为最小机械编辑：剔除/刷新/追加，LLM 分组存活）；
+   `detail` 硬编码 deep（新增 `detectCardDetail`，brief 手册不再静默升级）；CLI resync 不重
+   渲染（新增 `refreshRenderedHandbook`，只刷新已存在的产物，`--no-render` 跳过）。
+3. **patcher**：R4 宣称「全部关闭」实有 4 项开放，逐项补齐——F7 锁 owner 记 host、异机
+   owner 视为存活、报错带 pid/host/startedAt+人工补救；F9 锁目录写 .gitignore、空目录释放
+   时清理（仓里那个 `packages/.handbook-patches` 空目录就是此缺陷的活证据，已删）；
+   F11 `new` 先于 `old` 拒绝；F12 未闭合围栏只报一次；F10 两份 README 补安全契约表缺行
+   + throws-vs-returns 说明。**教训：finding 关闭必须附验证证据，声称关闭 ≠ 关闭。**
+4. **work-dir 锁**：CLI 与 studio 并发 generate/resync 同一 work 目录会交错写。core 新增
+   `withDirLock`（进程内可重入、host-aware、死本机 pid 可回收），generate/phase1/resync
+   三入口取锁。
+5. **文档漂移**：README step 8 引用不存在的 case 目录（现内联组装说明）；314→361 测试数；
+   resync README/architecture.md 的指纹 diff 描述已被内容哈希取代；prompts.md 补第 17 条
+   （studio resync 标签）；删除仍带旧命名的 ARCHITECTURE-DRAFT.md。
+
+### 审计确认的仍开放项（按优先级，见计划文件）
+
+P1：ChatClient 统一 prompt-hash 缓存（2a/2b/2c 目前零缓存）+ usage 累计成本报表
+（`usage()` 现在无消费者）+ run manifest（model/prompt 版本不入产物）+ CI（无 .github/）
++ resync/doctor/navpack 补测试。P2：llms.txt 输出、搜索、graph.dot→mermaid、源码链接、
+配置文件、studio 任务取消/重连、SKILL 打包 agent 站点 + i18n。P3：MCP docs server、
+agent 纠错回路、最小质量评测集。
