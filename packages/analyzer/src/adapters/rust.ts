@@ -161,14 +161,42 @@ function effectiveModule(moduleId: string, prefix: string): string {
 }
 
 function scanInto(scan: ModuleScan, container: Node, file: string, prefix: string): void {
-  let decorators: string[] = [];
-  for (const childOrNull of container.namedChildren) {
-    const child = childOrNull;
-    if (!child) continue;
-    if (child.type === 'attribute_item') {
-      decorators.push(child.text.replace(/^#\[/, '').replace(/\]$/, '').trim());
-      continue;
+  // Iterative pre-order DFS (explicit stack) rather than recursion on `mod`:
+  // inline modules can nest without bound, so a pathologically nested source
+  // (`mod a { mod b { ... } }` thousands deep) would otherwise blow the JS call
+  // stack. Each work item carries its already-resolved decorators, and a
+  // container's children are pushed in reverse so a nested mod's body is fully
+  // processed before the container's later siblings — byte-identical order and
+  // first-definition-wins tie-breaks to the recursion.
+  interface Frame {
+    node: Node;
+    prefix: string;
+    decorators: string[];
+  }
+  const stack: Frame[] = [];
+  const expand = (node: Node, framePrefix: string): void => {
+    const items: Frame[] = [];
+    let decorators: string[] = [];
+    for (const childOrNull of node.namedChildren) {
+      const child = childOrNull;
+      if (!child) continue;
+      if (child.type === 'attribute_item') {
+        decorators.push(child.text.replace(/^#\[/, '').replace(/\]$/, '').trim());
+        continue;
+      }
+      items.push({ node: child, prefix: framePrefix, decorators });
+      decorators = [];
     }
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+      const item = items[i];
+      if (item) stack.push(item);
+    }
+  };
+  expand(container, prefix);
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) continue;
+    const { node: child, prefix: childPrefix, decorators } = frame;
     switch (child.type) {
       case 'use_declaration': {
         const argument = child.childForFieldName('argument');
@@ -179,7 +207,7 @@ function scanInto(scan: ModuleScan, container: Node, file: string, prefix: strin
       case 'union_item': {
         const name = fieldText(child, 'name');
         if (name) {
-          registerType(scan, name, prefix);
+          registerType(scan, name, childPrefix);
           const body = child.childForFieldName('body');
           if (body) collectFieldTypes(scan, body, name);
         }
@@ -187,39 +215,38 @@ function scanInto(scan: ModuleScan, container: Node, file: string, prefix: strin
       }
       case 'enum_item': {
         const name = fieldText(child, 'name');
-        if (name) registerType(scan, name, prefix);
+        if (name) registerType(scan, name, childPrefix);
         break;
       }
       case 'trait_item': {
         const name = fieldText(child, 'name');
         if (name) {
-          registerType(scan, name, prefix);
+          registerType(scan, name, childPrefix);
           const body = child.childForFieldName('body');
           // Default methods (function_items with a body); signatures skipped.
-          if (body) scanImplBody(scan, body, name, file, prefix);
+          if (body) scanImplBody(scan, body, name, file, childPrefix);
         }
         break;
       }
       case 'impl_item': {
         const owner = coreTypeName(child.childForFieldName('type')) || (child.childForFieldName('type')?.text ?? '');
         const body = child.childForFieldName('body');
-        if (owner && body) scanImplBody(scan, body, owner, file, prefix);
+        if (owner && body) scanImplBody(scan, body, owner, file, childPrefix);
         break;
       }
       case 'mod_item': {
         const name = fieldText(child, 'name');
         const body = child.childForFieldName('body');
-        if (name && body) scanInto(scan, body, file, `${prefix}${name}::`);
+        if (name && body) expand(body, `${childPrefix}${name}::`);
         break;
       }
       case 'function_item': {
-        recordFunction(scan, child, null, file, prefix, decorators);
+        recordFunction(scan, child, null, file, childPrefix, decorators);
         break;
       }
       default:
         break;
     }
-    decorators = [];
   }
 }
 
@@ -238,44 +265,58 @@ function scanImplBody(scan: ModuleScan, body: Node, owner: string, file: string,
   }
 }
 
-/** Flatten a `use` argument into `imports[local] = full::path` entries. */
+/**
+ * Flatten a `use` argument into `imports[local] = full::path` entries.
+ *
+ * Iterative (explicit stack) rather than recursive: use-trees nest without
+ * bound (`use a::{b::{c::{ ... }}}`), so a pathological one would otherwise blow
+ * the JS call stack. Items are pushed in reverse for byte-identical pre-order,
+ * left-to-right first-definition-wins behaviour to the recursion.
+ */
 function collectUse(node: Node, base: string, imports: Map<string, string>): void {
-  const prefixed = (path: string): string => (base ? `${base}::${path}` : path);
-  switch (node.type) {
-    case 'identifier':
-    case 'scoped_identifier': {
-      const full = prefixed(node.text);
-      const leaf = full.split('::').pop() ?? full;
-      if (!imports.has(leaf)) imports.set(leaf, full);
-      break;
-    }
-    case 'use_as_clause': {
-      const path = node.childForFieldName('path')?.text ?? '';
-      const alias = fieldText(node, 'alias');
-      if (path && alias && !imports.has(alias)) imports.set(alias, prefixed(path));
-      break;
-    }
-    case 'scoped_use_list': {
-      const path = node.childForFieldName('path')?.text ?? '';
-      const list = node.childForFieldName('list');
-      if (list) collectUse(list, prefixed(path), imports);
-      break;
-    }
-    case 'use_list': {
-      for (const item of node.namedChildren) {
-        if (!item) continue;
-        if (item.type === 'self') {
-          const leaf = base.split('::').pop() ?? base;
-          if (leaf && !imports.has(leaf)) imports.set(leaf, base);
-        } else {
-          collectUse(item, base, imports);
-        }
+  const stack: Array<{ node: Node; base: string }> = [{ node, base }];
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) continue;
+    const { node: current, base: curBase } = frame;
+    const prefixed = (path: string): string => (curBase ? `${curBase}::${path}` : path);
+    switch (current.type) {
+      case 'identifier':
+      case 'scoped_identifier': {
+        const full = prefixed(current.text);
+        const leaf = full.split('::').pop() ?? full;
+        if (!imports.has(leaf)) imports.set(leaf, full);
+        break;
       }
-      break;
+      case 'self': {
+        const leaf = curBase.split('::').pop() ?? curBase;
+        if (leaf && !imports.has(leaf)) imports.set(leaf, curBase);
+        break;
+      }
+      case 'use_as_clause': {
+        const path = current.childForFieldName('path')?.text ?? '';
+        const alias = fieldText(current, 'alias');
+        if (path && alias && !imports.has(alias)) imports.set(alias, prefixed(path));
+        break;
+      }
+      case 'scoped_use_list': {
+        const path = current.childForFieldName('path')?.text ?? '';
+        const list = current.childForFieldName('list');
+        if (list) stack.push({ node: list, base: prefixed(path) });
+        break;
+      }
+      case 'use_list': {
+        const children = current.namedChildren;
+        for (let i = children.length - 1; i >= 0; i -= 1) {
+          const item = children[i];
+          if (item) stack.push({ node: item, base: curBase });
+        }
+        break;
+      }
+      default:
+        // use_wildcard and anything exotic: ignored.
+        break;
     }
-    default:
-      // use_wildcard and anything exotic: ignored.
-      break;
   }
 }
 

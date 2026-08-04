@@ -715,3 +715,169 @@ describe('patcher — R4 reverification (audit A6)', () => {
     expect(parsed.problems.some((msg) => /unclosed/.test(msg))).toBe(true);
   });
 });
+
+describe('patcher — byte-exactness hardening (QA sweep)', () => {
+  it('preserves a leading UTF-8 BOM and the exact tail bytes across an edit', () => {
+    const root = repo();
+    const target = join(root, 'app/bom.js');
+    const before = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('const a = 1\nconst b = 2', 'utf8')]);
+    writeFileSync(target, before); // note: no trailing newline
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/bom.js', old: 'const b = 2', next: 'const b = 3' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(true);
+    const after = readFileSync(target);
+    // BOM intact, no trailing newline introduced, only the matched bytes changed.
+    expect([...after.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(after).toEqual(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('const a = 1\nconst b = 3', 'utf8')]));
+  });
+
+  it('applies a deletion (empty new) byte-exactly', () => {
+    const root = repo();
+    const target = join(root, 'app/del.py');
+    writeFileSync(target, 'a\nDELETE ME\nb\n');
+    const p = ['### EDIT 1', '- file: `app/del.py`', '```old', 'DELETE ME\n', '```', '```new', '```'].join('\n');
+    const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
+    expect(result.ok).toBe(true);
+    expect(result.outcomes[0]?.detail).toMatch(/removed the matched text/);
+    expect(readFileSync(target, 'utf8')).toBe('a\nb\n');
+  });
+
+  it('refuses overlapping edits all-or-nothing, leaving the file untouched', () => {
+    const root = repo();
+    const target = join(root, 'app/ov.py');
+    writeFileSync(target, 'foo bar baz\n');
+    const before = readFileSync(target, 'utf8');
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([
+        { file: 'app/ov.py', old: 'foo bar', next: 'FOO BAR' },
+        { file: 'app/ov.py', old: 'bar baz', next: 'BAR BAZ' }, // its anchor is destroyed by edit 1
+      ]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes.map((o) => o.status)).toEqual(['skipped', 'no-match']);
+    expect(readFileSync(target, 'utf8')).toBe(before);
+  });
+
+  it('round-trips multibyte unicode content without corruption', () => {
+    const root = repo();
+    const target = join(root, 'app/u.py');
+    writeFileSync(target, 'title = "café ☕ 日本語 🎉"\nvalue = 1\n');
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/u.py', old: 'value = 1', next: 'value = "☕ 二"' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(target, 'utf8')).toBe('title = "café ☕ 日本語 🎉"\nvalue = "☕ 二"\n');
+  });
+
+  it('is safe under a double rollback (second call is an honest no-op)', () => {
+    const root = repo();
+    const engine = join(root, 'app/engine.py');
+    const before = readFileSync(engine, 'utf8');
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 7' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    const first = rollback(applied.backupDir as string);
+    expect(first.restored).toEqual(['app/engine.py']);
+    const second = rollback(applied.backupDir as string);
+    expect(second.restored).toEqual([]);
+    expect(second.skipped[0]?.reason).toMatch(/already back at its pre-patch content/);
+    expect(readFileSync(engine, 'utf8')).toBe(before);
+  });
+});
+
+describe('patcher — deep adversarial pass 2', () => {
+  // A2-D1: a self-overlapping anchor has more than one candidate position, so
+  // it is genuinely ambiguous and must be refused — never silently applied at
+  // the first offset (which `aaa` inside `aaaa` used to do → `bbba`).
+  it('refuses a self-overlapping anchor (aaa inside aaaa) as ambiguous', () => {
+    const root = repo();
+    const target = join(root, 'app/run.txt');
+    writeFileSync(target, 'aaaa\n');
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/run.txt', old: 'aaa', next: 'bbb' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.status).toBe('ambiguous');
+    expect(result.outcomes[0]?.detail).toMatch(/appears 2 times/);
+    expect(readFileSync(target, 'utf8')).toBe('aaaa\n');
+  });
+
+  it('refuses a gapped self-overlapping anchor (aba inside ababa)', () => {
+    const root = repo();
+    const target = join(root, 'app/rep.txt');
+    writeFileSync(target, 'ababa\n');
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/rep.txt', old: 'aba', next: 'X' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.status).toBe('ambiguous');
+    expect(readFileSync(target, 'utf8')).toBe('ababa\n');
+  });
+
+  it('still applies a unique anchor that merely shares a prefix (no false ambiguity)', () => {
+    const root = repo();
+    const target = join(root, 'app/uniq.txt');
+    writeFileSync(target, 'aXaaY\n'); // "aa" occurs exactly once, at index 2
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/uniq.txt', old: 'aa', next: 'ZZ' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(target, 'utf8')).toBe('aXZZY\n');
+  });
+
+  // A2-D2: a path carrying a NUL (or any C0 control byte) can never name a real
+  // file and made node's fs throw deep in the write phase. It must be refused
+  // cleanly by the parser, and apply must leave the tree untouched.
+  it('rejects a NUL byte in a file path instead of crashing the write phase', () => {
+    const nulPath = `app/x${String.fromCharCode(0)}.py`;
+    const rawPlan = ['### EDIT 1', `- file: \`${nulPath}\``, '```old', '', '```', '```new', 'boom', '```'].join('\n');
+    const parsed = parsePlan(rawPlan);
+    expect(parsed.edits).toHaveLength(0);
+    expect(parsed.problems.join(' ')).toMatch(/control characters/);
+
+    const root = repo();
+    const before = readFileSync(join(root, 'app/engine.py'), 'utf8');
+    // apply must not throw; it refuses and touches nothing.
+    const result = applyPlan({ sourceRoot: root, plan: rawPlan, backupRoot: join(root, '.patches') });
+    expect(result.ok).toBe(false);
+    expect(result.changedFiles).toEqual([]);
+    expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toBe(before);
+  });
+
+  // A2-D3: rollback must not trust a backup blindly. A corrupted/tampered backup
+  // copy no longer hashes to the pre-patch content the manifest recorded, so
+  // restoring it would write WRONG bytes over the tree.
+  it('refuses to restore from a corrupted backup copy', () => {
+    const root = repo();
+    const engine = join(root, 'app/engine.py');
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 9' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    const patched = readFileSync(engine, 'utf8');
+    // Tamper the backup copy so its bytes no longer match sha256Before.
+    writeFileSync(join(applied.backupDir as string, 'files', 'app', 'engine.py'), 'GARBAGE INJECTED\n');
+    const rb = rollback(applied.backupDir as string, { expectedSourceRoot: root });
+    expect(rb.restored).toEqual([]);
+    expect(rb.skipped[0]?.reason).toMatch(/corrupt/);
+    // The tree is left at the patched content — never overwritten with garbage.
+    expect(readFileSync(engine, 'utf8')).toBe(patched);
+    expect(readFileSync(engine, 'utf8')).not.toContain('GARBAGE');
+  });
+});

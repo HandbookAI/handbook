@@ -175,18 +175,39 @@ function synthesizeConstructor(id: string, defaultExt: string): FunctionNode {
 }
 
 function buildSelfAttrsIndex(functions: readonly FunctionNode[]): SelfAttrsIndex {
-  const index: SelfAttrsIndex = {};
+  // Accumulate into insertion-ordered Sets, then materialize arrays. A Set
+  // dedups defensively (a caller may pass same-id functions) in O(1); the old
+  // `Array.includes` guard was O(n) per push — quadratic for a class with
+  // thousands of methods touching the same attribute. Set iteration preserves
+  // insertion order, so the emitted arrays and JSON key order are unchanged.
+  const acc = new Map<string, Map<string, { readIn: Set<string>; writtenIn: Set<string> }>>();
   for (const fn of functions) {
     if (!fn.className) continue;
+    let byClass = acc.get(fn.className);
+    if (!byClass) {
+      byClass = new Map();
+      acc.set(fn.className, byClass);
+    }
     for (const [attrs, key] of [
       [fn.selfAttrsRead, 'readIn'],
       [fn.selfAttrsWritten, 'writtenIn'],
     ] as const) {
       for (const attr of attrs) {
-        const byClass = (index[fn.className] ??= {});
-        const entry = (byClass[attr] ??= { readIn: [], writtenIn: [] });
-        if (!entry[key].includes(fn.id)) entry[key].push(fn.id);
+        let entry = byClass.get(attr);
+        if (!entry) {
+          entry = { readIn: new Set(), writtenIn: new Set() };
+          byClass.set(attr, entry);
+        }
+        entry[key].add(fn.id);
       }
+    }
+  }
+  const index: SelfAttrsIndex = {};
+  for (const [className, byClass] of acc) {
+    const outClass: SelfAttrsIndex[string] = {};
+    index[className] = outClass;
+    for (const [attr, entry] of byClass) {
+      outClass[attr] = { readIn: [...entry.readIn], writtenIn: [...entry.writtenIn] };
     }
   }
   return index;

@@ -204,6 +204,10 @@ function pathProblem(path: string): string | undefined {
   if (path.startsWith('~')) return 'must not start with "~" (no home expansion)';
   if (path.startsWith('/')) return 'must be repo-relative, not absolute';
   if (path.includes('\\')) return 'must use forward slashes';
+  // NUL and other C0 control bytes are not whitespace, so `\s` misses them.
+  // They can never name a real file and make node's fs throw deep in the write
+  // phase — reject them here so the plan is refused cleanly with a message.
+  if (/[\u0000-\u001f]/.test(path)) return 'must not contain control characters (including NUL)';
   if (/\s/.test(path)) return 'must not contain whitespace (drop annotations like "(line 12)")';
   if (path.includes('`')) return 'must not contain backticks';
   return undefined;

@@ -31,6 +31,16 @@ describe('extractEntryList', () => {
     expect(extractEntryList({ stage: 'x' }, keys)).toEqual([]); // opt-in only
   });
 
+  it('single fallback needs an OWN field, not an inherited prototype member', () => {
+    // `field in record` also matched `toString`/`constructor`/`__proto__`, so any
+    // object could slip through as a single entry. "Carrying" means own property.
+    expect(extractEntryList({ a: 1 }, ['none'], { single: { fields: ['toString'] } })).toEqual([]);
+    expect(extractEntryList({ a: 1 }, ['none'], { single: { fields: ['__proto__'] } })).toEqual([]);
+    expect(
+      extractEntryList(JSON.parse('{"toString":"x"}'), ['none'], { single: { fields: ['toString'] } }),
+    ).toEqual([JSON.parse('{"toString":"x"}')]);
+  });
+
   it('drops non-objects inside the list and never invents entries', () => {
     expect(extractEntryList({ assignments: ['nope', 3, null, { file: 'a.ts' }] }, keys)).toEqual([{ file: 'a.ts' }]);
     expect(extractEntryList('a string', keys)).toEqual([]);

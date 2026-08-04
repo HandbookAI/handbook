@@ -4,7 +4,7 @@
  * available) content-hash freshness against the live source.
  */
 import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, normalize, resolve, sep } from 'node:path';
 import { fileExists, listFilesRecursive, readJsonFile, sha256Hex } from '@handbook/core';
 
 export interface ValidationResult {
@@ -32,19 +32,27 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     errors.push('SKILL.md is missing');
   } else {
     const text = readFileSync(skillPath, 'utf8');
-    const front = text.match(/^---\n([\s\S]*?)\n---\n/);
+    // Tolerate a leading UTF-8 BOM and CRLF endings: a SKILL.md checked out on
+    // Windows (or with git autocrlf) is still valid, and corrections.jsonl below
+    // is already parsed CRLF-tolerantly — the frontmatter must match.
+    const front = text.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n/);
     if (!front || !front[1]) {
       errors.push('SKILL.md has no YAML frontmatter');
     } else {
       const fields = new Map<string, string>();
-      for (const line of front[1].split('\n')) {
+      for (const line of front[1].split(/\r?\n/)) {
         if (!line.trim()) continue;
         const kv = line.match(/^([A-Za-z_-]+):\s*(.*)$/);
         if (!kv) {
           errors.push(`SKILL.md frontmatter line is not "key: value": ${line.trim()}`);
           continue;
         }
-        fields.set(kv[1] as string, kv[2] as string);
+        const key = kv[1] as string;
+        // A Map would silently let a second `name:`/`description:` overwrite the
+        // first, so a frontmatter with duplicate keys is genuinely ambiguous —
+        // flag it instead of quietly accepting whichever line happened to win.
+        if (fields.has(key)) errors.push(`SKILL.md frontmatter has a duplicate "${key}" key`);
+        fields.set(key, kv[2] as string);
       }
       const keys = [...fields.keys()].sort();
       if (keys.join(',') !== 'description,name') {
@@ -120,9 +128,14 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
   if (fileExists(coveragePath)) {
     try {
       const coverage = readJsonFile(coveragePath) as {
-        files?: Array<{ path?: string; stage?: string; sha256?: string }>;
+        files?: unknown;
       };
-      const files = Array.isArray(coverage.files) ? coverage.files : [];
+      // A malformed entry (null, a string, a wrong-typed field) must not derail
+      // drift detection with a misleading "unreadable" — keep only plain objects.
+      const files = (Array.isArray(coverage.files) ? coverage.files : []).filter(
+        (f): f is { path?: unknown; stage?: unknown; sha256?: unknown } =>
+          typeof f === 'object' && f !== null && !Array.isArray(f),
+      );
       const seen = new Set<string>();
       for (const f of files) {
         if (typeof f.path !== 'string') continue;
@@ -130,16 +143,32 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
         seen.add(f.path);
       }
       if (options.sourceRoot) {
+        const rootAbs = resolve(options.sourceRoot);
         const stale: string[] = [];
         const deleted: string[] = [];
+        const unsafe: string[] = [];
         for (const f of files) {
-          if (typeof f.path !== 'string' || !f.sha256) continue;
-          const full = join(options.sourceRoot, f.path);
+          if (typeof f.path !== 'string' || typeof f.sha256 !== 'string' || !f.sha256) continue;
+          // Never let a coverage path escape the source root: `../` (or an
+          // absolute/backslash path) would make us read — and hash — arbitrary
+          // files off-tree, a path-escape read and a DoS on device/huge files.
+          if (f.path.startsWith('/') || f.path.includes('\\')) {
+            unsafe.push(f.path);
+            continue;
+          }
+          const full = resolve(rootAbs, normalize(f.path));
+          if (full !== rootAbs && !full.startsWith(rootAbs + sep)) {
+            unsafe.push(f.path);
+            continue;
+          }
           if (!fileExists(full)) {
             deleted.push(f.path);
             continue;
           }
           if (sha256Hex(readFileSync(full)) !== f.sha256) stale.push(f.path);
+        }
+        if (unsafe.length > 0) {
+          errors.push(`coverage.json lists path(s) that escape the source root: ${unsafe.slice(0, 20).join(', ')}`);
         }
         if (deleted.length > 0) {
           errors.push(`coverage lists deleted files: ${deleted.slice(0, 20).join(', ')}${deleted.length > 20 ? ` … and ${deleted.length - 20} more` : ''}`);

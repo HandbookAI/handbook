@@ -49,6 +49,35 @@ import {
   sha256Hex,
 } from '@handbook/core';
 import { readFileSync, rmSync } from 'node:fs';
+import type { ZodType } from 'zod';
+
+/**
+ * Read + schema-validate a JSON artifact, upgrading a raw parse failure into an
+ * {@link ArtifactValidationError} that names the file. `readValidatedJson`
+ * already raises that for schema mismatches, but a truncated / empty / non-JSON
+ * artifact surfaces a bare `SyntaxError` ("Unexpected end of JSON input") with
+ * no path — unactionable where these loads happen (CLI, studio request
+ * handlers, resync). Every load here promises to fail loudly AND legibly.
+ */
+function readJsonArtifact<T>(path: string, schema: ZodType<T>): T {
+  try {
+    return readValidatedJson(path, schema);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new ArtifactValidationError(path, `not valid JSON — ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+/** Parse YAML, upgrading a raw `YAMLParseError` into a located ArtifactValidationError. */
+function parseYamlArtifact(text: string, path: string): unknown {
+  try {
+    return parseYaml(text);
+  } catch (error) {
+    throw new ArtifactValidationError(path, `not valid YAML — ${(error as Error).message}`);
+  }
+}
 
 export class WorkDir {
   constructor(readonly root: string) {}
@@ -93,7 +122,7 @@ export class WorkDir {
     if (!fileExists(this.graphPath)) {
       throw new MissingArtifactError('phase1/graph.json', 'run phase 1 first');
     }
-    return readValidatedJson(this.graphPath, codeGraphSchema);
+    return readJsonArtifact(this.graphPath, codeGraphSchema);
   }
 
   // ---- cards ----
@@ -117,7 +146,14 @@ export class WorkDir {
         const card = readValidatedJson(join(this.cardsDir, rel), fileCardSchema);
         cards[card.file] = card;
       } catch (error) {
-        if (error instanceof ArtifactValidationError) continue; // legacy/foreign json
+        // A single unreadable file must not abort the whole load. Skip a foreign
+        // or legacy json (schema mismatch → ArtifactValidationError) AND a corrupt
+        // or partially-synced one (invalid JSON → SyntaxError): both are the
+        // "unparseable files are skipped" this method promises. One such file
+        // sitting in the cards dir would otherwise crash resume, phase 2b/2c/3
+        // and every model load, all of which call this. Genuine I/O errors
+        // (permissions, etc.) still surface.
+        if (error instanceof ArtifactValidationError || error instanceof SyntaxError) continue;
         throw error;
       }
     }
@@ -177,7 +213,7 @@ export class WorkDir {
 
   loadCardCoverage(): CardCoverage | undefined {
     const path = join(this.cardsDir, '_coverage.json');
-    return fileExists(path) ? readValidatedJson(path, cardCoverageSchema) : undefined;
+    return fileExists(path) ? readJsonArtifact(path, cardCoverageSchema) : undefined;
   }
 
   // ---- skeleton / assignment / organization ----
@@ -195,7 +231,7 @@ export class WorkDir {
   }
 
   parseSkeletonYaml(text: string, sourcePath: string): Skeleton {
-    const parsed = skeletonSchema.safeParse(parseYaml(text));
+    const parsed = skeletonSchema.safeParse(parseYamlArtifact(text, sourcePath));
     if (!parsed.success) {
       throw new ArtifactValidationError(
         sourcePath,
@@ -213,7 +249,7 @@ export class WorkDir {
     if (!fileExists(this.assignmentPath)) {
       throw new MissingArtifactError('phase2/assignment.json', 'run phase 2 first');
     }
-    return readValidatedJson(this.assignmentPath, assignmentSchema);
+    return readJsonArtifact(this.assignmentPath, assignmentSchema);
   }
 
   saveOrganization(organization: Organization): void {
@@ -224,7 +260,9 @@ export class WorkDir {
     if (!fileExists(this.organizationPath)) {
       throw new MissingArtifactError('phase2/organization.yaml', 'run phase 2 first');
     }
-    const parsed = organizationSchema.safeParse(parseYaml(readFileSync(this.organizationPath, 'utf8')));
+    const parsed = organizationSchema.safeParse(
+      parseYamlArtifact(readFileSync(this.organizationPath, 'utf8'), this.organizationPath),
+    );
     if (!parsed.success) {
       throw new ArtifactValidationError(
         this.organizationPath,
@@ -265,7 +303,7 @@ export class WorkDir {
     if (!fileExists(this.narrationPath)) {
       throw new MissingArtifactError('phase3/narration.json', 'run phase 3 first');
     }
-    return readValidatedJson(this.narrationPath, narrationSchema);
+    return readJsonArtifact(this.narrationPath, narrationSchema);
   }
 
   saveRegisters(registers: Registers): void {
@@ -274,6 +312,6 @@ export class WorkDir {
 
   loadRegisters(): Registers {
     if (!fileExists(this.registersPath)) return { version: 1, registers: [] };
-    return readValidatedJson(this.registersPath, registersSchema);
+    return readJsonArtifact(this.registersPath, registersSchema);
   }
 }

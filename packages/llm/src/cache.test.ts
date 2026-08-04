@@ -178,6 +178,25 @@ describe('CachedChatClient', () => {
     expect(state.calls).toBe(1); // the inner client was never re-asked
   });
 
+  it('returns a paid-for result even when the cache write fails (dir is a file)', async () => {
+    // A cache is an optimization: an unwritable cache directory (here a plain
+    // FILE where a dir is expected → EEXIST on the mkdir inside writeFileAtomic)
+    // must not turn a successful, already-billed inner completion into a reject.
+    const { client, state } = countingClient(() => 'valuable ```json\n{"x":1}\n```');
+    const parent = tempCacheDir();
+    const fileAsCacheDir = join(parent, 'not-a-directory');
+    writeFileSync(fileAsCacheDir, 'i am a file, not a dir');
+    const cached = new CachedChatClient(client, fileAsCacheDir);
+    const result = await cached.complete('p');
+    expect(result.text).toContain('valuable');
+    expect(result.json).toEqual({ x: 1 });
+    expect(state.calls).toBe(1);
+    expect(cached.misses).toBe(1);
+    // And it keeps working on the next call (still a miss, still no crash).
+    await expect(cached.complete('p')).resolves.toMatchObject({ json: { x: 1 } });
+    expect(state.calls).toBe(2);
+  });
+
   it('passes through usage() when the inner client has one', async () => {
     const withUsage = Object.assign(countingClient(() => 'x').client, {
       usage: () => ({ calls: 7 }),

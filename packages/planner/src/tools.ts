@@ -2,7 +2,7 @@
  * The planner's read-only tool belt. The planner NEVER writes: it emits a plan.
  * All paths are resolved inside the sandbox root; escapes are rejected.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, normalize, resolve, sep } from 'node:path';
 import { listFilesRecursive, toPosix, truncate } from '@handbook/core';
 
@@ -13,12 +13,82 @@ export interface ToolResult {
 
 const MAX_READ_CHARS = 60_000;
 const MAX_GREP_HITS = 100;
+/** grep skips files larger than this — a giant file must not be slurped whole. */
+const MAX_GREP_FILE_BYTES = 5_000_000;
+
+/**
+ * Reject regexes whose worst-case match time is exponential in the input
+ * length: an unbounded quantifier applied to a group that itself contains an
+ * unbounded quantifier (`(a+)+`, `(a*)+`, `(.*)*`, `([a-z]+)+`, `(\d+){2,}`, …).
+ * Such a pattern turns one long line into a multi-second — then multi-hour —
+ * hang, so grep refuses it instead of blocking the whole planner. Character
+ * classes and escaped metacharacters are skipped so `[+*]` and `\+` are not
+ * misread as quantifiers. Conservative by design: it may reject a rare benign
+ * pattern, which is a graceful tool error, never a freeze.
+ */
+export function hasNestedUnboundedQuantifier(src: string): boolean {
+  const isUnboundedQuant = (i: number): boolean => {
+    const c = src[i];
+    if (c === '+' || c === '*') return true;
+    if (c === '{') {
+      const close = src.indexOf('}', i);
+      if (close === -1) return false;
+      return /^\d*,\s*$/.test(src.slice(i + 1, close)); // {n,} / {,} — no upper bound
+    }
+    return false;
+  };
+  const groupHasUnbounded: boolean[] = []; // one flag per currently-open group
+  let inClass = false;
+  for (let i = 0; i < src.length; i += 1) {
+    const c = src[i];
+    if (c === '\\') {
+      i += 1; // skip the escaped character
+      continue;
+    }
+    if (inClass) {
+      if (c === ']') inClass = false;
+      continue;
+    }
+    if (c === '[') {
+      inClass = true;
+      continue;
+    }
+    if (c === '(') {
+      groupHasUnbounded.push(false);
+      continue;
+    }
+    if (c === ')') {
+      const inner = groupHasUnbounded.pop() ?? false;
+      const quantified = isUnboundedQuant(i + 1);
+      if (inner && quantified) return true; // (…unbounded…)+  → catastrophic
+      // A repeated group makes its PARENT contain an unbounded quantifier too.
+      if (quantified && groupHasUnbounded.length > 0) groupHasUnbounded[groupHasUnbounded.length - 1] = true;
+      continue;
+    }
+    if (isUnboundedQuant(i) && groupHasUnbounded.length > 0) {
+      groupHasUnbounded[groupHasUnbounded.length - 1] = true;
+    }
+  }
+  return false;
+}
 
 export class ReadOnlyTools {
   private readonly root: string;
+  /** `root` with its own symlinks resolved, so containment compares like with like. */
+  private readonly realRoot: string;
 
   constructor(root: string) {
     this.root = resolve(root);
+    // Resolve symlinks in the root itself (e.g. macOS /var → /private/var) so the
+    // realpath containment check below compares a resolved child against a
+    // resolved root. Fall back to the lexical root if it cannot be resolved.
+    let real: string;
+    try {
+      real = realpathSync(this.root);
+    } catch {
+      real = this.root;
+    }
+    this.realRoot = real;
   }
 
   /** Resolve a relative path inside the sandbox; throws on escape attempts. */
@@ -26,6 +96,16 @@ export class ReadOnlyTools {
     const full = resolve(this.root, normalize(relPath));
     if (full !== this.root && !full.startsWith(this.root + sep)) {
       throw new Error(`path escapes the workspace: ${relPath}`);
+    }
+    // The lexical check above is defeated by symlinks: a link that lives inside
+    // the root can point anywhere. Resolve the real path of whatever exists on
+    // disk and require it to stay inside the (real) root — so a link to
+    // /etc/passwd, or a symlinked directory, is rejected instead of followed.
+    if (existsSync(full)) {
+      const real = realpathSync(full);
+      if (real !== this.realRoot && !real.startsWith(this.realRoot + sep)) {
+        throw new Error(`path escapes the workspace via symlink: ${relPath}`);
+      }
     }
     return full;
   }
@@ -69,6 +149,14 @@ export class ReadOnlyTools {
     } catch (error) {
       return { ok: false, content: `grep failed: invalid pattern — ${String(error)}` };
     }
+    if (hasNestedUnboundedQuantifier(pattern)) {
+      return {
+        ok: false,
+        content:
+          'grep failed: pattern rejected — a nested unbounded quantifier (e.g. `(a+)+`) risks ' +
+          'catastrophic backtracking; rewrite it without repetition inside a repeated group',
+      };
+    }
     try {
       const base = this.resolveInside(dirOrFile);
       const files = statSync(base).isDirectory()
@@ -80,7 +168,11 @@ export class ReadOnlyTools {
       outer: for (const file of files) {
         let text: string;
         try {
-          text = readFileSync(this.resolveInside(file), 'utf8');
+          const resolved = this.resolveInside(file);
+          // Skip a file too large to hold in memory — readFile guards this the
+          // same way; grep must not be the hole that slurps a 1 GB blob whole.
+          if (statSync(resolved).size > MAX_GREP_FILE_BYTES) continue;
+          text = readFileSync(resolved, 'utf8');
         } catch {
           continue;
         }

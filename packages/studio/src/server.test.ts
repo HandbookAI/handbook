@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
@@ -364,6 +364,54 @@ describe('studio server (integration, mock LLM)', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('does not follow a symlink that escapes the source root', async () => {
+    // A link that sits INSIDE the tree but points OUTSIDE it passes a lexical
+    // ../ check — the read must still be refused, or the sandbox leaks any file.
+    const secretDir = mkdtempSync(join(tmpdir(), 'hb-studio-secret-'));
+    writeFileSync(join(secretDir, 'secret.txt'), 'TOP-SECRET-EXFIL');
+    const link = join(sourceRoot, 'app', 'escape.py');
+    symlinkSync(join(secretDir, 'secret.txt'), link);
+    try {
+      const res = await fetch(`${base}/api/repos/demo/source?path=app/escape.py`);
+      expect([400, 404]).toContain(res.status);
+      expect(await res.text()).not.toContain('TOP-SECRET-EXFIL');
+    } finally {
+      rmSync(link, { force: true });
+      rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the default node cap when ?limit is not a number', async () => {
+    // A garbage limit reached impactGraph as NaN and sliced the keep-set to
+    // empty, so the whole graph came back with zero nodes. It must default to 60.
+    const garbage = await api('/api/repos/demo/graph?limit=abc');
+    const base60 = await api('/api/repos/demo/graph');
+    expect(Array.isArray(garbage.nodes)).toBe(true);
+    expect(base60.nodes.length).toBeGreaterThan(0);
+    expect(garbage.nodes.length).toBe(base60.nodes.length);
+  });
+
+  it('returns 409 (not 400) when a second job starts on a busy repo', async () => {
+    llmDelayMs = 200; // hold the first job mid-flight so the second lands on the mutex
+    try {
+      const first = await api('/api/repos/demo/generate', {
+        method: 'POST',
+        body: JSON.stringify({ narrateLang: 'en' }),
+      });
+      const res = await fetch(`${base}/api/repos/demo/analyze`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      // A busy repo is a CONFLICT, mirroring DELETE/cancel — never a 400.
+      expect(res.status).toBe(409);
+      expect(String(((await res.json()) as any).error)).toMatch(/running job/);
+      await waitJob(first.id);
+    } finally {
+      llmDelayMs = 0;
+    }
+  });
+
   it('applies a plan for real, then rolls it back', async () => {
     const engine = join(sourceRoot, 'app', 'engine.py');
     const before = readFileSync(engine, 'utf8');
@@ -486,6 +534,126 @@ describe('studio server (integration, mock LLM)', () => {
     const all = await api('/api/history');
     expect(all.length).toBeGreaterThan(0);
     expect(all[0].repo).toBe('demo');
+  });
+
+  // --- Adversarial pass 2 -------------------------------------------------
+
+  it('rejects a JSON array body with a 400 and starts no job', async () => {
+    // typeof [] === 'object' and [] !== null, so an array used to slip past the
+    // "must be a JSON object" guard: it cast to a Record, `body.plan` read as
+    // undefined, and a doomed (apply) or silently defaulted (generate) job started
+    // on a 202 instead of this malformed request failing loud.
+    const before = (await api('/api/jobs?repo=demo')).jobs.length;
+    for (const sub of ['/apply', '/generate', '/resync']) {
+      const res = await fetch(`${base}/api/repos/demo${sub}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '[1,2,3]',
+      });
+      expect(res.status).toBe(400);
+      expect(String(((await res.json()) as any).error)).toMatch(/JSON object/);
+    }
+    // No job may have been created for any of those, and none may be running.
+    const after = (await api('/api/jobs?repo=demo')).jobs;
+    expect(after.length).toBe(before);
+    expect(after.every((j: any) => j.status !== 'running')).toBe(true);
+  });
+
+  it('answers HEAD on the UI shell like GET (200, no body)', async () => {
+    // A probe (curl -I, an uptime check) that gets a 404 on `/` while GET returns
+    // 200 is a lie about the resource. HEAD must mirror GET for the shell.
+    for (const p of ['/', '/index.html']) {
+      const res = await fetch(`${base}${p}`, { method: 'HEAD' });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toMatch(/text\/html/);
+      expect(await res.text()).toBe(''); // Node strips the body for HEAD
+    }
+  });
+
+  it('returns a friendly 400 (not a raw ZodError dump) for an invalid repo name', async () => {
+    // A name failing the URL-safe pattern used to reach store.add()'s zod
+    // .parse(), whose ZodError.message is a raw JSON array ([{ "code":
+    // "invalid_format", ... }]) — and the handler returned it verbatim into the
+    // "Add repository" dialog.
+    for (const name of ['../evil-repo', '.hidden', 'has space', 'slash/inside', 'bad|pipe']) {
+      const res = await fetch(`${base}/api/repos`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, sourceRoot }),
+      });
+      expect(res.status).toBe(400);
+      const msg = String(((await res.json()) as any).error);
+      expect(msg).not.toContain('[{'); // no raw zod array
+      expect(msg).not.toContain('invalid_format'); // no schema internals
+      expect(msg).not.toContain('regex');
+      expect(msg).toMatch(/URL-safe/);
+    }
+    // The rejection must not have registered anything.
+    expect((await api('/api/repos')).some((r: any) => r.name.includes('evil'))).toBe(false);
+  });
+
+  it('holds the traversal line across an encoding matrix (no out-of-root byte leaks)', async () => {
+    // Plant a secret one level ABOVE the source root, then try to reach it every
+    // way an attacker might spell "../": raw, single- and double-encoded, mixed
+    // separators, null bytes, absolute paths. Every one must refuse and — the real
+    // invariant — never return a byte of the secret.
+    const secretDir = mkdtempSync(join(tmpdir(), 'hb-studio-exfil-'));
+    writeFileSync(join(secretDir, 'secret.txt'), 'OUT-OF-ROOT-SECRET-BYTES');
+    const marker = 'OUT-OF-ROOT-SECRET-BYTES';
+    const rel = `../${secretDir.split('/').pop()}/secret.txt`;
+    const attempts = [
+      rel,
+      encodeURIComponent(rel),
+      rel.replace(/\.\./g, '%2e%2e'),
+      rel.replace(/\.\./g, '%252e%252e'),
+      rel.replace(/\//g, '\\'),
+      `/${join(secretDir, 'secret.txt')}`,
+      `app/../${rel}`,
+      `app/engine.py ${rel}`,
+      `${'../'.repeat(40)}${secretDir.split('/').pop()}/secret.txt`,
+    ];
+    try {
+      for (const path of attempts) {
+        const res = await fetch(`${base}/api/repos/demo/source?path=${encodeURIComponent(path)}`);
+        expect([400, 404, 413]).toContain(res.status);
+        expect(await res.text()).not.toContain(marker);
+        // Same matrix against the static handbook route.
+        const hb = await fetch(`${base}/api/repos/demo/handbook/${path}`);
+        expect(await hb.text()).not.toContain(marker);
+      }
+      // The server is still up and answering after the barrage.
+      expect((await fetch(`${base}/`)).status).toBe(200);
+    } finally {
+      rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it('allows an in-root symlink that realpaths back inside (fix does not over-block)', async () => {
+    // The symlink guard must refuse escapes WITHOUT breaking a link that points
+    // to another file inside the same tree — otherwise the fix breaks real repos.
+    const alias = join(sourceRoot, 'app', 'alias-link.py');
+    symlinkSync(join(sourceRoot, 'app', 'engine.py'), alias);
+    try {
+      const src = await api('/api/repos/demo/source?path=app/alias-link.py');
+      expect(src.content).toContain('class Engine');
+    } finally {
+      rmSync(alias, { force: true });
+    }
+  });
+
+  it('streams a finished job to completion for concurrent subscribers (no hang)', async () => {
+    // Subscribing to an already-finished job, and several clients subscribing to
+    // one job at once, must each replay the log and receive `event: done` — never
+    // hang waiting on a listener that will never fire.
+    const job = await api('/api/repos/demo/analyze', { method: 'POST', body: '{}' });
+    await waitJob(job.id);
+    const streams = await Promise.all(
+      [0, 1, 2].map(() => fetch(`${base}/api/jobs/${job.id}/stream`).then((r) => r.text())),
+    );
+    for (const s of streams) {
+      expect(s).toContain('data:');
+      expect(s).toContain('event: done');
+    }
   });
 
   it('removes a repo', async () => {

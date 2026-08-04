@@ -1068,7 +1068,7 @@ function openRepo(name, tab) {
     state.graph = { stage: '', limit: 60, data: null };
     state.stages = null;
     state.src = { path: '', data: null, fn: null };
-    state.plan = ''; state.planMeta = ''; state.patch = null;
+    state.plan = ''; state.planStats = null; state.patch = null;
     state.backups = null; state.backupsError = null;
     state.browsePath = 'html/overview.html';
   }
@@ -1780,7 +1780,13 @@ async function renderEvolve(c, tok, repo) {
       '<button class="primary" data-act="patch-apply">' + esc(t('ev.apply')) + '</button></div>' +
       '<div id="patchOut">' + patchPanel() + '</div></div>';
   $('patchPlan').value = state.plan || '';
-  if (state.planMeta) $('planMeta').innerHTML = '<div class="row" style="margin-top:8px">' + state.planMeta + '</div>';
+  if (state.planStats) {
+    // Format the badges HERE (not at plan-completion) so a later language switch
+    // re-localizes them through the dictionary instead of showing a frozen string.
+    const badges = '<span class="pill gold">' + esc(fmt(t('ev.planTurns'), state.planStats.turns)) + '</span>' +
+      '<span class="pill ice">' + esc(fmt(t('ev.planDecl'), state.planStats.declarations)) + '</span>';
+    $('planMeta').innerHTML = '<div class="row" style="margin-top:8px">' + badges + '</div>';
+  }
   if (!state.backups) loadBackups(tok);
 }
 
@@ -2071,8 +2077,10 @@ const ACT = {
         if (full && full.status === 'succeeded' && full.result && full.result.plan) {
           state.plan = full.result.plan;
           const r = full.result;
-          state.planMeta = '<span class="pill gold">' + esc(fmt(t('ev.planTurns'), r.turns || 0)) + '</span>' +
-            '<span class="pill ice">' + esc(fmt(t('ev.planDecl'), Array.isArray(r.declarations) ? r.declarations.length : 0)) + '</span>';
+          // Store the raw counts, not baked HTML: the badges are formatted in
+          // renderEvolve so they re-localize when the UI language changes. A baked
+          // string froze whichever language was active when the plan finished.
+          state.planStats = { turns: r.turns || 0, declarations: Array.isArray(r.declarations) ? r.declarations.length : 0 };
           state.patch = null;
         }
         await render();

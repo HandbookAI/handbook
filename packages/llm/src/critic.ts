@@ -173,8 +173,25 @@ export async function actorCriticLoop(
 ): Promise<ActorCriticResult> {
   const roles = options.roles ?? ['engineer'];
   const logger = options.logger ?? silentLogger;
-  const maxReviseRounds = options.maxReviseRounds ?? 1;
+  // A non-finite maxReviseRounds must not decide termination: Infinity would let
+  // an always-REVISE panel loop forever, and NaN would silently mean "0 rounds"
+  // by accident (`round < NaN` is false). Clamp garbage to the documented
+  // default so the revision count is always a finite, non-negative integer.
+  const maxReviseRounds = Number.isFinite(options.maxReviseRounds)
+    ? Math.max(0, Math.trunc(options.maxReviseRounds as number))
+    : 1;
   const temperature = options.temperature ?? 0;
+  // pLimit rejects any concurrency that is not a positive integer, so an
+  // explicit criticConcurrency of NaN, 2.5, or Infinity would crash the whole
+  // loop with a RangeError — the same degenerate-config failure the empty-panel
+  // guard already defends against, but Math.max(1, x) alone lets NaN/Infinity/
+  // fractions straight through (Math.max(1, NaN) is NaN). Sanitize to a positive
+  // integer, falling back to the panel size when the value is non-finite.
+  const rawConcurrency = options.criticConcurrency ?? roles.length;
+  const criticConcurrency = Math.max(
+    1,
+    Math.floor(Number.isFinite(rawConcurrency) ? rawConcurrency : roles.length),
+  );
 
   const callActor = async (prompt: string): Promise<unknown | undefined> => {
     try {
@@ -190,7 +207,12 @@ export async function actorCriticLoop(
     proposal: unknown,
     roundNotes: Map<CriticRole, string>,
   ): Promise<Array<{ role: CriticRole; verdict: Verdict }>> =>
-    mapLimit(roles, options.criticConcurrency ?? roles.length, async (role) => {
+    // An empty panel (roles: []) or an explicit `criticConcurrency: 0` would make
+    // the limit 0, which pLimit rejects with a RangeError — a crash from a
+    // degenerate config. `criticConcurrency` is clamped to a positive integer
+    // above: an empty panel then reviews nothing and the proposal is accepted
+    // vacuously.
+    mapLimit(roles, criticConcurrency, async (role) => {
       try {
         const prompt = buildCriticPrompt({
           role,

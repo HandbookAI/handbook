@@ -114,6 +114,53 @@ describe('renderHtmlSite — source links (opt-in)', () => {
   });
 });
 
+describe('renderHtmlSite — untrusted content is escaped (no script/markup injection)', () => {
+  // Titles, prose, register semantics, group titles, file paths and function
+  // fields are all LLM/codebase text with no schema constraint. None may inject
+  // executable markup into the self-contained site.
+  const BREAK = '"><svg onload=alert(1)></svg>';
+  const SCRIPT = '<script>alert(2)</script>';
+
+  function poisoned(): ReturnType<typeof makeFixtureModel> {
+    const m = makeFixtureModel();
+    m.title = `T ${BREAK}`;
+    m.skeleton.stages[0].title = `S ${SCRIPT}`;
+    m.skeleton.stages[2].title = `Q ${BREAK}`;
+    m.narration.systemOverview = `Overview ${SCRIPT}`;
+    m.narration.stageSummaries['stage-1'] = `Duty ${SCRIPT} here.`;
+    m.registers[0].semantics = `sem ${BREAK}`;
+    m.organization.stages['stage-1'].groups[0].title = `G ${BREAK}`;
+    m.organization.stages['stage-1'].groups[0].summary = `GS ${SCRIPT}`;
+    const loader = m.cards['src/ingest/loader.ts'];
+    loader.description = `Desc ${SCRIPT}`;
+    loader.functions![0].qualname = `q ${BREAK}`;
+    loader.functions![0].signature = `sig ${BREAK}`;
+    loader.functions![0].purpose = `p ${SCRIPT}`;
+    return m;
+  }
+
+  it('never emits a live <script> or attribute breakout in any page', () => {
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-html-xss-'));
+    const single = join(out, 'handbook.html');
+    try {
+      renderHtmlSite(poisoned(), out);
+      renderSinglePageHtml(poisoned(), single);
+      for (const name of readdirSync(out).filter((f) => f.endsWith('.html'))) {
+        const c = readFileSync(join(out, name), 'utf8');
+        // No injected <script>alert(2)> and no attribute breakout survives raw.
+        expect(c, name).not.toContain('<script>alert(2)');
+        expect(c.includes('"><svg onload=alert(1)'), name).toBe(false);
+        expect(c, name).not.toContain('<svg onload=');
+      }
+      // The payload survives, but only in neutralised (escaped) form.
+      const stage1 = readFileSync(join(out, 'stage-1.html'), 'utf8');
+      expect(stage1).toContain('&lt;script&gt;alert(2)&lt;/script&gt;');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('renderSinglePageHtml', () => {
   it('reports the written size', () => {
     expect(single.bytes).toBeGreaterThan(0);

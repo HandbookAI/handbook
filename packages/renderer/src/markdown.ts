@@ -11,7 +11,7 @@ import { basename, join } from 'node:path';
 import { ensureDir, writeFileAtomic } from '@handbook/core';
 import type { HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
 import { renderFileCardMd } from './file-card.js';
-import { HandbookView, stageMapMermaid } from './shared.js';
+import { HandbookView, mdLinkText, stageMapMermaid } from './shared.js';
 import type { SourceLinkOptions } from './shared.js';
 
 interface MdLabels {
@@ -81,6 +81,15 @@ export function stageSectionMarker(lang: NarrateLang): string {
   return LABELS[lang].stageRegisterMarker;
 }
 
+/**
+ * Make a value safe inside a markdown table cell: flatten row-breaking
+ * newlines to spaces and escape `|` so it can't open an extra column. Both
+ * register semantics and stage titles are LLM/free text.
+ */
+function tableCell(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+}
+
 function renderRegisterTable(
   registers: readonly RegisterEntry[],
   titleOf: (sid: string) => string,
@@ -90,11 +99,11 @@ function renderRegisterTable(
   const L = LABELS[lang];
   if (registers.length === 0) return `${L.registerTableHeading}\n\n${L.noRegisters}\n`;
   const rows = registers.map((reg) => {
-    const semantics = reg.semantics.replace(/\|/g, '\\|');
+    const semantics = tableCell(reg.semantics);
     // Only content-bearing stages get pages; anything else renders as plain
     // text so the table never emits a dead link (register ids are LLM output).
     const stages = reg.stages
-      .map((sid) => (hasPage(sid) ? `[${titleOf(sid)}](${sid}.md)` : `\`${sid}\``))
+      .map((sid) => (hasPage(sid) ? `[${tableCell(mdLinkText(titleOf(sid)))}](${sid}.md)` : `\`${sid}\``))
       .join(', ');
     return `| \`${reg.id}\` | ${semantics} | ${stages} |`;
   });
@@ -121,7 +130,7 @@ function stagePageMd(
   const children = view.contentChildren(sid);
   if (children.length > 0) {
     const bullets = children.map(
-      (child) => `- [${tree.title(child)}](${child}.md) \`${child}\` — ${L.files(view.subtreeFileCount(child))}`,
+      (child) => `- [${mdLinkText(tree.title(child))}](${child}.md) \`${child}\` — ${L.files(view.subtreeFileCount(child))}`,
     );
     parts.push(`## ${L.subStages}\n\n${bullets.join('\n')}`);
   }
@@ -163,7 +172,7 @@ function indexMd(view: HandbookView, lang: NarrateLang): string {
     const level = Math.min(view.tree.depth(sid) + 2, 6);
     const crosscut = view.tree.isCrosscut(sid) ? L.crosscutInline : '';
     parts.push(
-      `${'#'.repeat(level)} [${view.tree.title(sid)}](${sid}.md) \`${sid}\`${crosscut} — ${L.files(view.subtreeFileCount(sid))}`,
+      `${'#'.repeat(level)} [${mdLinkText(view.tree.title(sid))}](${sid}.md) \`${sid}\`${crosscut} — ${L.files(view.subtreeFileCount(sid))}`,
     );
     parts.push(view.summary(sid));
     for (const child of view.tree.children(sid)) walk(child);

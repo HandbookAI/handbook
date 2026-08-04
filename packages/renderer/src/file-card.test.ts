@@ -1,3 +1,4 @@
+import MarkdownIt from 'markdown-it';
 import { describe, expect, it } from 'vitest';
 import { fileOneLiner, renderFileCardMd } from './file-card.js';
 import { ENGINE_TEST, LOADER, PARSER, makeFixtureModel } from './fixture.test-helper.js';
@@ -63,6 +64,21 @@ describe('renderFileCardMd (en)', () => {
 
   it('skips Function details when the card has no functions', () => {
     expect(renderFileCardMd(ENGINE_TEST, engineTest, 'en')).not.toContain('#### Function details');
+  });
+
+  it('a ``` line inside a signature cannot break out of the code fence', () => {
+    // A signature is code text: an LLM/analyzer can emit one that itself
+    // contains a ``` line. A fixed 3-backtick fence would close there and the
+    // trailing text would render as live markdown (headings, raw HTML) in the
+    // handbook. The fence must be sized to enclose the whole signature.
+    const poisoned = structuredClone(loader);
+    poisoned.functions![0].signature = 'function f()\n```\n## INJECTED HEADING\n<img src=x onerror=alert(1)>';
+    const out = renderFileCardMd(LOADER, poisoned, 'en');
+    const html = new MarkdownIt({ html: false, linkify: false }).render(out);
+    // The injected heading and tag stay inert inside the code block.
+    expect(html).not.toContain('<h2>INJECTED');
+    expect(html).not.toContain('INJECTED HEADING</h2>');
+    expect(html).toContain('## INJECTED HEADING'); // present, but escaped in <pre><code>
   });
 });
 

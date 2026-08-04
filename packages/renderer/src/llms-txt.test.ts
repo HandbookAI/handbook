@@ -47,6 +47,18 @@ describe('renderLlmsTxt — llms.txt', () => {
     expect(read('llms.txt')).not.toContain('stage-1.1.md');
   });
 
+  it('keeps the handbook link valid when a title has an unbalanced bracket', () => {
+    const dirty = structuredClone(model);
+    dirty.skeleton.stages[0].title = 'Ingest] beta';
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-llms-brk-'));
+    try {
+      renderLlmsTxt(dirty, out);
+      expect(readFileSync(join(out, 'llms.txt'), 'utf8')).toContain('[Ingest\\] beta](stage-1.md)');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
   it('never references an external http(s) URL', () => {
     expect(read('llms.txt')).not.toMatch(/https?:\/\//);
     expect(read('llms-full.txt')).not.toMatch(/https?:\/\//);

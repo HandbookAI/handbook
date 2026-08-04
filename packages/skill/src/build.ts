@@ -14,7 +14,7 @@
  * The skill is self-contained and shareable; it never embeds source code.
  */
 import { copyFileSync, readFileSync, rmSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import {
   ensureDir,
   fileExists,
@@ -192,6 +192,16 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
   const lang = options.lang ?? 'en';
   if (!fileExists(join(handbookDir, 'index.md'))) {
     throw new Error(`${handbookDir} is not a rendered handbook (missing index.md)`);
+  }
+  // The build starts by wiping outDir. If outDir IS the handbook (or the handbook
+  // sits inside it), that clean would destroy the very source we are packaging —
+  // and then silently produce a broken, empty skill. Refuse both up front.
+  const outAbs = resolve(outDir);
+  const handbookAbs = resolve(handbookDir);
+  if (outAbs === handbookAbs || handbookAbs.startsWith(outAbs + sep)) {
+    throw new Error(
+      `outDir must not be the handbook directory or an ancestor of it (outDir=${outAbs}, handbookDir=${handbookAbs}) — packaging would delete the source`,
+    );
   }
   // Agent locator pages ship only as a pair: SKILL.md must never route to a
   // file that does not exist, and half a locator is what the validator warns on.

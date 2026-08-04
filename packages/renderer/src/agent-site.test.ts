@@ -103,6 +103,20 @@ describe('renderAgentSite', () => {
     expect(index).toContain('[how_to_use.md](how_to_use.md)');
   });
 
+  it('keeps the locator index heading link valid with a bracketed title', () => {
+    // A stray `]` in a title used to break the `[sid · title](sid.md)` heading.
+    const dirty = structuredClone(model);
+    dirty.skeleton.stages[0].title = 'Ingest] beta';
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-agent-brk-'));
+    try {
+      renderAgentSite(dirty, out);
+      const index = readFileSync(join(out, 'index.md'), 'utf8');
+      expect(index).toContain('[stage-1 · Ingest\\] beta](stage-1.md)');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
   it('states the fixed protocol in how_to_use.md', () => {
     const howTo = read('how_to_use.md');
     expect(howTo).toContain('locator index');

@@ -256,6 +256,13 @@ function lineOfOffset(text: string, offset: number): number {
   return line;
 }
 
+/**
+ * Count how many distinct positions `needle` can match in `haystack`, counting
+ * OVERLAPPING matches (advance by one, not by needle.length). A self-overlapping
+ * anchor — `aaa` inside `aaaa`, or `aba` inside `ababa` — genuinely has two
+ * candidate positions, so it must read as ambiguous (≥2) and be refused, never
+ * silently applied at the first offset.
+ */
 function countOccurrences(haystack: string, needle: string): number {
   if (needle === '') return 0;
   let count = 0;
@@ -264,7 +271,7 @@ function countOccurrences(haystack: string, needle: string): number {
     const at = haystack.indexOf(needle, from);
     if (at < 0) return count;
     count += 1;
-    from = at + needle.length;
+    from = at + 1;
   }
 }
 
@@ -685,6 +692,13 @@ function rollbackInner(
       const backupPath = join(backupDir, 'files', entry.file);
       if (!existsSync(backupPath)) {
         skipped.push({ file: entry.file, reason: 'backup copy missing' });
+        continue;
+      }
+      // Never trust the backup blindly: if its bytes no longer hash to the
+      // pre-patch content the manifest recorded, the backup was corrupted or
+      // tampered with, and restoring it would write WRONG bytes over the tree.
+      if (entry.sha256Before && sha256Hex(readFileSync(backupPath)) !== entry.sha256Before) {
+        skipped.push({ file: entry.file, reason: 'backup copy is corrupt (content hash mismatch) — refusing to restore' });
         continue;
       }
       mkdirSync(dirname(target), { recursive: true });

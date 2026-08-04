@@ -156,6 +156,55 @@ describe('OpenAiChatClient', () => {
   });
 });
 
+describe('OpenAiChatClient degenerate retry caps (never reject-with-undefined, never hang)', () => {
+  const base = { apiKey: 'test', baseUrl: 'http://x/v1', retryBackoffMs: 1 };
+
+  it('makes the request (not zero attempts) and never rejects with undefined when maxRetries is NaN', async () => {
+    // Math.max(1, Math.trunc(NaN)) === NaN, so the retry loop body was skipped
+    // entirely and `throw lastError` rejected with a bare `undefined` — a call
+    // that never even fired a fetch.
+    let fetches = 0;
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: NaN },
+      fetchImpl: (async () => {
+        fetches += 1;
+        return new Response(JSON.stringify(okBody), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    const result = await client.complete('p');
+    expect(result.text).toContain('hello');
+    expect(fetches).toBe(1);
+  });
+
+  it('a NaN cap over a failing endpoint rejects with the real error, not undefined', async () => {
+    let fetches = 0;
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: NaN },
+      fetchImpl: (async () => {
+        fetches += 1;
+        return new Response('{}', { status: 500 });
+      }) as unknown as typeof fetch,
+    });
+    const error = await client.complete('p').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/500/);
+    expect(fetches).toBe(1); // clamped to a single attempt, not zero, not infinite
+  });
+
+  it('terminates (does not loop forever) when maxRetries is Infinity', async () => {
+    let fetches = 0;
+    const client = new OpenAiChatClient({
+      config: { ...base, maxRetries: Infinity },
+      fetchImpl: (async () => {
+        fetches += 1;
+        return new Response('{}', { status: 500 });
+      }) as unknown as typeof fetch,
+    });
+    await expect(client.complete('p')).rejects.toThrow(/500/);
+    expect(fetches).toBeLessThan(1000); // bounded: Infinity is clamped, not honored
+  }, 10_000);
+});
+
 describe('OpenAiChatClient cooperative cancellation', () => {
   const base = { apiKey: 'test', baseUrl: 'http://x/v1', maxRetries: 3, retryBackoffMs: 1 };
 

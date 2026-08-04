@@ -192,6 +192,34 @@ describe('resync helpers', () => {
     const diff = `--- a/app/engine.py\n+++ b/app/engine.py\n@@ -1 +1 @@\n-x\n+y\n--- /dev/null\n+++ b/app/new.py\n@@ -0,0 +1 @@\n+z\n`;
     expect(filesFromDiff(diff)).toEqual(['app/engine.py', 'app/new.py']);
   });
+
+  it('names a deleted file from its a/ side and skips the /dev/null target', () => {
+    const diff = `--- a/app/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n`;
+    expect(filesFromDiff(diff)).toEqual(['app/gone.py']);
+  });
+
+  it('returns [] for malformed or empty diff text (never throws)', () => {
+    expect(filesFromDiff('this is not a diff at all\nrandom lines\n')).toEqual([]);
+    expect(filesFromDiff('')).toEqual([]);
+  });
+
+  it('drops diff paths that traverse out of the tree (.., absolute, backslash)', () => {
+    // A unified diff can only legitimately name repo-relative paths. A hostile
+    // diff naming `../../etc/passwd` or `/etc/passwd` must never survive into
+    // the refresh set. (resync also guards with scannedFiles; this keeps the
+    // public parser safe by construction for any caller.)
+    const evil =
+      '--- a/../../etc/passwd\n+++ b/../../etc/passwd\n@@ -1 +1 @@\n-x\n+y\n' +
+      '--- a//etc/hosts\n+++ b//etc/hosts\n@@ -1 +1 @@\n-x\n+y\n' +
+      '--- a/..\\..\\secret\n+++ b/..\\..\\secret\n@@ -1 +1 @@\n-x\n+y\n' +
+      '--- a/app/ok.py\n+++ b/app/ok.py\n@@ -1 +1 @@\n-x\n+y\n';
+    const files = filesFromDiff(evil);
+    expect(files).toEqual(['app/ok.py']); // only the safe relative path survives
+    for (const f of files) {
+      expect(f.startsWith('/')).toBe(false);
+      expect(f.split(/[\\/]/).includes('..')).toBe(false);
+    }
+  });
 });
 
 describe('resyncHandbook', () => {
@@ -383,5 +411,57 @@ describe('resyncHandbook', () => {
     const org = work.loadOrganization();
     expect(org.stages['stage-1']?.groups).toEqual([]);
     expect(org.stages['stage-1']?.orderedFiles).toEqual([]);
+  });
+
+  it('is idempotent: a second resync of the same edited tree is a no-op delta', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'hb-rs-idem-src-'));
+    const work6 = mkdtempSync(join(tmpdir(), 'hb-rs-idem-work-'));
+    const case6 = mkdtempSync(join(tmpdir(), 'hb-rs-idem-case-'));
+    writeRepo(src);
+    await generateHandbook({ sourceRoot: src, workDir: work6, client: pipelineMock(), phase: 'all' });
+    const edited = join(case6, 'edited');
+    cpSync(src, edited, { recursive: true });
+    writeFileSync(
+      join(edited, 'app', 'engine.py'),
+      'class Engine:\n    def __init__(self):\n        self.rpm = 0\n\n    def spin(self):\n        self.rpm += 2\n        return self.rpm\n',
+    );
+
+    const first = await resyncHandbook({ caseDir: case6, workDir: work6, client: pipelineMock(), detail: 'brief' });
+    expect(first.changedFiles).toContain('app/engine.py');
+    const orgAfterFirst = JSON.stringify(new WorkDir(work6).loadOrganization());
+
+    // The first resync promoted the new graph as the baseline; re-running against
+    // the unchanged tree must detect nothing and leave the artifacts untouched.
+    const second = await resyncHandbook({ caseDir: case6, workDir: work6, client: pipelineMock(), detail: 'brief' });
+    expect(second.changedFiles).toEqual([]);
+    expect(second.addedFiles).toEqual([]);
+    expect(second.deletedFiles).toEqual([]);
+    expect(JSON.stringify(new WorkDir(work6).loadOrganization())).toBe(orgAfterFirst);
+  });
+
+  it('treats a rename as delete + add and drops the old card', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'hb-rs-ren-src-'));
+    const work7 = mkdtempSync(join(tmpdir(), 'hb-rs-ren-work-'));
+    const case7 = mkdtempSync(join(tmpdir(), 'hb-rs-ren-case-'));
+    writeRepo(src);
+    await generateHandbook({ sourceRoot: src, workDir: work7, client: pipelineMock(), phase: 'all' });
+    const edited = join(case7, 'edited');
+    cpSync(src, edited, { recursive: true });
+    // engine.py → motor.py (identical body), with main.py's import updated.
+    rmSync(join(edited, 'app', 'engine.py'));
+    writeFileSync(
+      join(edited, 'app', 'motor.py'),
+      'class Engine:\n    def __init__(self):\n        self.rpm = 0\n\n    def spin(self):\n        self.rpm += 1\n        return self.rpm\n',
+    );
+    writeFileSync(join(edited, 'app', 'main.py'), 'from app.motor import Engine\n\ndef main():\n    e = Engine()\n    e.spin()\n');
+
+    const report = await resyncHandbook({ caseDir: case7, workDir: work7, client: pipelineMock(), detail: 'brief' });
+    expect(report.deletedFiles).toContain('app/engine.py');
+    expect(report.addedFiles).toContain('app/motor.py');
+    const work = new WorkDir(work7);
+    expect(existsSync(work.cardPath('app/engine.py'))).toBe(false);
+    expect(work.loadCards()['app/motor.py']?.purpose).toContain('Fresh purpose');
+    expect(work.loadAssignment().fileStage['app/engine.py']).toBeUndefined();
+    expect(work.loadAssignment().fileStage['app/motor.py']?.stage).toBe('stage-2');
   });
 });

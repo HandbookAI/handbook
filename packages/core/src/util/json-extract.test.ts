@@ -173,3 +173,56 @@ describe('extractJsonBlock never returns a nested fragment (review R1 F1/F4)', (
     expect(extractJsonBlock(reply)).toBeUndefined();
   });
 });
+
+describe('extractJsonBlock — algorithmic-complexity hardening (adversarial pass 2)', () => {
+  const under = (ms: number, fn: () => void): void => {
+    const t0 = performance.now();
+    fn();
+    expect(performance.now() - t0).toBeLessThan(ms);
+  };
+
+  it('a long run of unbalanced openers scans in ~linear time (was O(n²))', () => {
+    // A code-heavy reply full of `{`/`[` with no matching closers used to make the
+    // per-opener rescan take seconds; the string-aware single pass keeps it bounded.
+    under(200, () => expect(extractJsonBlock('{'.repeat(50000))).toBeUndefined());
+    under(200, () => expect(extractJsonBlock('['.repeat(50000))).toBeUndefined());
+    under(200, () => expect(extractJsonBlock('{"'.repeat(50000))).toBeUndefined());
+  });
+
+  it('still finds the object after a run of false openers', () => {
+    expect(extractJsonBlock('{{{{{ noise {"real": 1}')).toEqual({ real: 1 });
+  });
+
+  it('many opener-like fence lines with no valid closer stay bounded (was O(n²))', () => {
+    let s = '';
+    for (let i = 0; i < 20000; i++) s += '`'.repeat((i % 6) + 3) + 'json\n';
+    under(200, () => extractJsonBlock(s));
+  });
+
+  it('a 1MB+ reply resolves quickly', () => {
+    under(500, () => expect(extractJsonBlock('x'.repeat(1_100_000) + ' {"ok":true}')).toEqual({ ok: true }));
+  });
+});
+
+describe('repairJson — regressions (adversarial pass 2)', () => {
+  it('does not corrupt valid JSON that holds escaped quotes in several strings', () => {
+    // The backtracker used to also read a properly-escaped closing quote as prose
+    // and, via the odd-quote tiebreak, merge two values into one.
+    const json = '{"a":"b\\"c","d":"e\\"f"}';
+    expect(repairJson(json)).toEqual({ a: 'b"c', d: 'e"f' });
+    expect(repairJson(json)).toEqual(JSON.parse(json));
+  });
+
+  it('gives up gracefully (no RangeError) on an enormous broken structure', () => {
+    const wide = `[${Array.from({ length: 20000 }, (_, i) => `{"i":${i}}`).join(',')},{"s":"a "b" c"}]`;
+    const deep = '['.repeat(6000) + '1' + ']'.repeat(6000) + ',]';
+    expect(() => repairJson(wide)).not.toThrow();
+    expect(() => repairJson(deep)).not.toThrow();
+  });
+
+  it('still repairs realistic-width lists below the stack limit', () => {
+    const body = Array.from({ length: 400 }, (_, i) => `{"i":${i}}`).join(',');
+    const out = repairJson(`[${body},]`) as unknown[];
+    expect(out).toHaveLength(400);
+  });
+});

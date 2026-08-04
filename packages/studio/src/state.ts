@@ -8,9 +8,16 @@ import { realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
 import { fileExists, readValidatedJson, writeJsonFile } from '@handbook/core';
 
+/**
+ * URL-safe repo name: alphanumeric start, then letters/digits/`. _ -`. Shared
+ * with the server so it can reject a bad name with a friendly message BEFORE
+ * zod's `.parse()` throws (a ZodError whose `.message` is a raw JSON array).
+ */
+export const REPO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 export const repoEntrySchema = z.object({
   /** URL-safe unique name. */
-  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  name: z.string().regex(REPO_NAME_RE),
   /** Absolute path of the source tree. */
   sourceRoot: z.string(),
   /** Absolute path of the work dir holding handbook artifacts. */

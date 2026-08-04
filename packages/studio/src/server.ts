@@ -5,7 +5,7 @@
  * LLM endpoint used by the pipeline itself).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFileSync, rmSync, statSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync, statSync, readdirSync, existsSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -24,7 +24,7 @@ import { renderAgentSite, renderHtmlSite, renderMarkdownHandbook, renderSinglePa
 import { parseDeclarations, runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { applyPlan, listBackups, rollback } from '@handbook/patcher';
-import { StateStore, type RepoEntry } from './state.js';
+import { REPO_NAME_RE, StateStore, type RepoEntry } from './state.js';
 import { JobRunner, type Job, type JobKind } from './jobs.js';
 
 export interface StudioOptions {
@@ -74,7 +74,13 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   const raw = Buffer.concat(chunks).toString('utf8'); // decode ONCE — multi-byte chars can straddle chunks
   if (!raw.trim()) return {};
   const parsed: unknown = JSON.parse(raw);
-  if (typeof parsed !== 'object' || parsed === null) throw new Error('body must be a JSON object');
+  // typeof [] === 'object' and [] !== null, so a JSON array slips past a bare
+  // object check and gets cast to Record — then `body.plan`/`body.name` read as
+  // undefined and a doomed (or silently defaulted) job starts on a 202 instead of
+  // this request failing loud as a 400. Arrays are not the object the API expects.
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('body must be a JSON object');
+  }
   return parsed as Record<string, unknown>;
 }
 
@@ -227,16 +233,47 @@ function fileFunctions(repo: RepoEntry, relFile: string): Array<Record<string, u
   }
 }
 
-/** Serve a file from inside `root` (path-traversal safe). */
+/**
+ * Resolve `rel` under `root`, refusing anything that escapes the sandbox either
+ * lexically (`../`, absolute paths) OR through a symlink. The lexical test alone
+ * is not enough: a link that sits inside the tree but points outside it
+ * (`…/app/link -> /etc/passwd`) passes the string check, and readFileSync would
+ * happily follow it out. Returns the safe absolute path, or null on escape.
+ */
+function safeResolve(root: string, rel: string): string | null {
+  const rootAbs = resolve(root);
+  const full = resolve(rootAbs, normalize(rel));
+  if (full !== rootAbs && !full.startsWith(rootAbs + sep)) return null;
+  // Follow every symlink in the path and re-check containment. realpath throws
+  // for a path that does not exist yet — that is not an escape (the lexical test
+  // already proved the intended path is inside), so the caller's read can 404.
+  try {
+    const realRoot = realpathSync(rootAbs);
+    const realFull = realpathSync(full);
+    if (realFull !== realRoot && !realFull.startsWith(realRoot + sep)) return null;
+  } catch {
+    return full;
+  }
+  return full;
+}
+
+/** Serve a file from inside `root` (path-traversal AND symlink safe). */
 function serveStatic(res: ServerResponse, root: string, relPath: string): void {
-  const full = resolve(root, normalize(relPath));
-  if (full !== resolve(root) && !full.startsWith(resolve(root) + sep)) {
+  let target = safeResolve(root, relPath);
+  if (!target) {
     json(res, 400, { error: 'path escapes root' });
     return;
   }
-  let target = full;
   try {
-    if (statSync(target).isDirectory()) target = join(target, 'index.html');
+    if (statSync(target).isDirectory()) {
+      // A directory rewrite to index.html must itself stay inside the sandbox.
+      const idx = safeResolve(root, join(target, 'index.html'));
+      if (!idx) {
+        json(res, 400, { error: 'path escapes root' });
+        return;
+      }
+      target = idx;
+    }
     const body = readFileSync(target);
     res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' });
     res.end(body);
@@ -594,7 +631,10 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   const path = url.pathname;
   const method = req.method ?? 'GET';
 
-  if (method === 'GET' && (path === '/' || path === '/index.html')) {
+  // HEAD must mirror GET for the shell: a probe (curl -I, uptime check) that gets
+  // a 404 on `/` while GET returns 200 is a lie about the resource. Node strips the
+  // body from a HEAD response automatically, so we can share the one code path.
+  if ((method === 'GET' || method === 'HEAD') && (path === '/' || path === '/index.html')) {
     const uiPath = fileURLToPath(new URL('../public/index.html', import.meta.url));
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(readFileSync(uiPath));
@@ -612,6 +652,13 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     const rawSource = String(body.sourceRoot ?? '').trim();
     if (!name || !rawSource) {
       json(res, 400, { error: 'name and sourceRoot are required' });
+      return;
+    }
+    // Reject a bad name with a readable message. Left to store.add(), the schema's
+    // .parse() throws a ZodError whose .message is a raw JSON array — which used to
+    // land verbatim in the "Add repository" dialog.
+    if (!REPO_NAME_RE.test(name)) {
+      json(res, 400, { error: 'name must be URL-safe: letters, digits, . _ - and start with a letter or digit' });
       return;
     }
     const sourceRoot = resolve(rawSource);
@@ -663,6 +710,13 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       // Validate BEFORE the job exists: a garbage readWorkers must be a 400 on
       // this request, not a failed job discovered in the drawer later.
       const genParams = kind === 'generate' ? parseGenerateParams(body) : undefined;
+      // A repo already running a job is a state CONFLICT (409), like DELETE and
+      // cancel report — not a malformed request (400). Check before start(), whose
+      // own throw would otherwise surface as a misleading 400 via the catch-all.
+      if (ctx.jobs.isBusy(repo.name)) {
+        json(res, 409, { error: `repo "${repo.name}" already has a running job — wait for it to finish` });
+        return;
+      }
       const job = ctx.jobs.start(repo.name, jobKind, (logger, signal) => {
         switch (kind) {
           case 'analyze':
@@ -710,7 +764,11 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     }
     if (method === 'GET' && sub === '/graph') {
       try {
-        json(res, 200, impactGraph(repo, url.searchParams.get('stage'), Number(url.searchParams.get('limit') ?? '60')));
+        // A non-numeric ?limit must fall back to the default cap, not collapse
+        // the graph to empty via a NaN slice.
+        const limitParam = url.searchParams.get('limit');
+        const limit = limitParam !== null && Number.isFinite(Number(limitParam)) ? Number(limitParam) : 60;
+        json(res, 200, impactGraph(repo, url.searchParams.get('stage'), limit));
       } catch (error) {
         json(res, 409, { error: `no call graph yet: ${error instanceof Error ? error.message : error}` });
       }
@@ -718,8 +776,8 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     }
     if (method === 'GET' && sub === '/source') {
       const rel = url.searchParams.get('path') ?? '';
-      const full = resolve(repo.sourceRoot, normalize(rel));
-      if (!rel || (full !== resolve(repo.sourceRoot) && !full.startsWith(resolve(repo.sourceRoot) + sep))) {
+      const full = rel ? safeResolve(repo.sourceRoot, rel) : null;
+      if (!full) {
         json(res, 400, { error: 'path escapes the source root' });
         return;
       }

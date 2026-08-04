@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import MarkdownIt from 'markdown-it';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ENGINE, makeFixtureModel } from './fixture.test-helper.js';
 import { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
@@ -64,6 +65,48 @@ describe('renderMarkdownHandbook', () => {
     expect(register).toContain('[Query Pipeline](stage-2.md)');
   });
 
+  it('keeps a register row on one line with pipes/newlines in the title and semantics', () => {
+    const dirty = structuredClone(model);
+    // A `|` in a title used to open an extra column; a newline in semantics
+    // used to split the row across two lines — both break the markdown table.
+    dirty.skeleton.stages[0].title = 'Ingestion | Pipeline';
+    dirty.registers[0].semantics = 'line one\nline two';
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-md-cell-'));
+    try {
+      renderMarkdownHandbook(dirty, out);
+      const reg = readFileSync(join(out, 'register.md'), 'utf8');
+      const row = reg.split('\n').find((l) => l.startsWith('| `reg-parser-cache`')) ?? '';
+      // Exactly three data cells → four unescaped pipe delimiters.
+      const delimiters = row.split(/(?<!\\)\|/).length - 1;
+      expect(delimiters, row).toBe(4);
+      expect(row).toContain('[Ingestion \\| Pipeline](stage-1.md)');
+      expect(row).toContain('line one line two');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps internal links valid when a title has an unbalanced bracket', () => {
+    // An LLM title like `Ingest] beta` used to terminate `[text](sid.md)` at
+    // the stray `]`, dead-ending the stage link in index.md and register.md.
+    const dirty = structuredClone(model);
+    dirty.skeleton.stages[0].title = 'Ingest] beta';
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-md-brk-'));
+    try {
+      renderMarkdownHandbook(dirty, out);
+      const index = readFileSync(join(out, 'index.md'), 'utf8');
+      const register = readFileSync(join(out, 'register.md'), 'utf8');
+      // The bracket is escaped, so the link text stays intact.
+      expect(index).toContain('[Ingest\\] beta](stage-1.md)');
+      expect(register).toContain('[Ingest\\] beta](stage-1.md)');
+      // And it renders as a real link (before the fix there was no anchor).
+      const html = new MarkdownIt({ html: false, linkify: false }).render(index);
+      expect(html).toContain('href="stage-1.md"');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
   it('links register.md and index.md from the overview See also', () => {
     const overview = read('overview.md');
     expect(overview).toContain('# Fixture Handbook');
@@ -102,6 +145,26 @@ describe('renderMarkdownHandbook — mermaid stage map', () => {
     expect(overview).toContain('crosscut-1["Test Harness"]:::crosscut');
     expect(overview).toContain('classDef crosscut');
     expect(overview).not.toContain('stage-1.1["');
+  });
+
+  it('keeps every node label on one line when a stage title contains newlines', () => {
+    const dirty = structuredClone(model);
+    // A title with a hard newline used to split the mermaid node across lines,
+    // producing an unterminated `["…` statement that breaks the whole diagram.
+    dirty.skeleton.stages[0].title = 'Ingestion\nPipeline\twide';
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-md-nl-'));
+    try {
+      renderMarkdownHandbook(dirty, out);
+      const overview = readFileSync(join(out, 'overview.md'), 'utf8');
+      const fence = overview.slice(overview.indexOf('```mermaid'), overview.indexOf('```', overview.indexOf('```mermaid') + 3));
+      // Invariant: any line that opens a node label also closes it.
+      for (const line of fence.split('\n')) {
+        if (line.includes('["')) expect(line, line).toContain('"]');
+      }
+      expect(fence).toContain('stage-1["Ingestion Pipeline wide"]');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
   });
 
   it('omits the diagram for a single-stage skeleton', () => {

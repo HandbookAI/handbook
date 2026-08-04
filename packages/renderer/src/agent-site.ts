@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { FileRole, HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
 import { renderFileCardMd } from './file-card.js';
-import { HandbookView, fileDir, fileStem } from './shared.js';
+import { HandbookView, fileDir, fileStem, mdLinkText } from './shared.js';
 
 /** File stems too generic to serve as entry concepts. */
 const GENERIC_TOKENS = new Set([
@@ -255,7 +255,7 @@ function locatorBlock(ctx: LocatorContext, sid: string, level: number, linkHeadi
   const L = LABELS[lang];
   const title = view.tree.title(sid);
   const headingText = `${sid} · ${title}`;
-  const heading = `${'#'.repeat(Math.min(level, 6))} ${linkHeading ? `[${headingText}](${sid}.md)` : headingText}`;
+  const heading = `${'#'.repeat(Math.min(level, 6))} ${linkHeading ? `[${mdLinkText(headingText)}](${sid}.md)` : headingText}`;
   const parts: string[] = [heading];
 
   // Duty: the summary's full first paragraph, newlines flattened.

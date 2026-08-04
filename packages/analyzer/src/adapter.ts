@@ -5,7 +5,7 @@
  * ({@link ModuleAnalysis}); the graph builder does everything downstream.
  * Adding a language = implementing this interface and registering it.
  */
-import type { ModuleAnalysis } from '@handbook/core';
+import type { FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { listFilesRecursive } from '@handbook/core';
 
 /** Directory names skipped by every adapter's discovery. */
@@ -59,6 +59,20 @@ export function discoverByExtension(
 ): string[] {
   const skipDirs = new Set([...COMMON_SKIP_DIRS, ...extraSkipDirs]);
   return listFilesRecursive(sourceRoot, { skipDirs, extensions, filter });
+}
+
+/**
+ * Collapse functions that share an id — redefinitions (`def f` twice) and
+ * typing `@overload` stubs — to a single node, keeping the LAST definition (the
+ * one live at runtime, e.g. the real `@overload` implementation). Node ids are
+ * required to be globally unique; without this a single logical function emits
+ * duplicate nodes AND its call edges are multiplied, since a pass-2 walk looks
+ * up the shared body by id once per duplicate.
+ */
+export function dedupeFunctionsById(functions: readonly FunctionNode[]): FunctionNode[] {
+  const lastIndex = new Map<string, number>();
+  functions.forEach((fn, i) => lastIndex.set(fn.id, i));
+  return functions.filter((fn, i) => lastIndex.get(fn.id) === i);
 }
 
 const registry = new Map<string, () => LanguageAdapter>();
