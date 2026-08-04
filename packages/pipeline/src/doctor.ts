@@ -143,6 +143,9 @@ export function validateChange(
       const into = change.into;
       if (typeof into !== 'string') return 'merge_stages: missing into';
       if (!ids.has(into) && !sources.includes(into)) return 'merge_stages: unknown target';
+      // A merge whose only sources are the target itself moves nothing — apply
+      // would no-op yet count as progress, wasting a normalize/reassign round.
+      if (sources.every((s) => s === into)) return 'merge_stages: nothing to merge (sources equal the target)';
       return null;
     }
     case 'split_stage': {
