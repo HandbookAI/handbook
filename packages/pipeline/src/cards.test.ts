@@ -221,3 +221,36 @@ describe('generateCards attribution', () => {
     expect(existsSync(join(work.cardsDir, '_rejected'))).toBe(false);
   });
 });
+
+describe('loadCards skips unparseable files instead of crashing the run', () => {
+  const goodCard = (file: string): string =>
+    JSON.stringify({ version: 1, file, purpose: `p:${file}`, role: 'util', lifecycle: 'none' });
+
+  it('skips a syntactically-broken .json (corrupt/partially-synced) and keeps the good cards', () => {
+    // Its docstring promises "Unparseable files are skipped": a foreign json that
+    // fails SCHEMA validation was already tolerated, but one that fails to PARSE
+    // (a half-synced file, an editor scratch, a foreign tool's output) used to
+    // throw a raw SyntaxError and abort the caller entirely.
+    const work = new WorkDir(mkdtempSync(join(tmpdir(), 'hb-work-')));
+    mkdirSync(join(work.cardsDir, 'src'), { recursive: true });
+    writeFileSync(work.cardPath('src/good.ts'), goodCard('src/good.ts'));
+    writeFileSync(join(work.cardsDir, 'broken.json'), '{ not valid json ,,,');
+    writeFileSync(join(work.cardsDir, 'foreign.json'), JSON.stringify({ unrelated: true }));
+    const cards = work.loadCards();
+    expect(Object.keys(cards)).toEqual(['src/good.ts']);
+    expect(cards['src/good.ts']?.purpose).toBe('p:src/good.ts');
+  });
+
+  it('a corrupt json in the cards dir does not abort a resume pass', async () => {
+    const { sourceRoot, graph } = fixture(['src/a.ts']);
+    const work = new WorkDir(mkdtempSync(join(tmpdir(), 'hb-work-')));
+    mkdirSync(work.cardsDir, { recursive: true });
+    writeFileSync(join(work.cardsDir, 'left-behind.json'), 'this is not json');
+    const { client } = replyClient(
+      fence({ purposes: [{ file: 'src/a.ts', purpose: 'described anyway', role: 'util' }] }),
+    );
+    const result = await generateCards({ client, graph, sourceRoot, work, resume: true });
+    expect(result.coverage.nDescribed).toBe(1);
+    expect(result.cards['src/a.ts']?.purpose).toBe('described anyway');
+  });
+});

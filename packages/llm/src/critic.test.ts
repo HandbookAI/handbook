@@ -74,6 +74,70 @@ describe('actorCriticLoop', () => {
     const result = await actorCriticLoop(client, 'ACTOR: propose', { taskContext: 'test' });
     expect(result.accepted).toBe(false);
   });
+
+  it('accepts vacuously with an empty critic panel instead of crashing', async () => {
+    // roles: [] makes `criticConcurrency ?? roles.length` resolve to 0, which
+    // used to hit pLimit(0) and throw a RangeError mid-pipeline.
+    const client = new MockChatClient([{ match: 'ACTOR', respond: { plan: 1 } }]);
+    const result = await actorCriticLoop(client, 'ACTOR: propose', { roles: [], taskContext: 'test' });
+    expect(result.accepted).toBe(true);
+    expect(result.proposal).toEqual({ plan: 1 });
+    expect(result.verdicts).toEqual([]);
+  });
+
+  it('tolerates criticConcurrency: 0 instead of crashing', async () => {
+    const client = new MockChatClient([
+      { match: 'Proposal under review', respond: approve },
+      { match: 'ACTOR', respond: { plan: 1 } },
+    ]);
+    const result = await actorCriticLoop(client, 'ACTOR: propose', {
+      roles: ['engineer', 'architect'],
+      criticConcurrency: 0,
+      taskContext: 'test',
+    });
+    expect(result.accepted).toBe(true);
+    expect(result.proposal).toEqual({ plan: 1 });
+  });
+
+  it('tolerates a non-integer / non-finite criticConcurrency instead of a RangeError', async () => {
+    // Math.max(1, x) alone leaves NaN as NaN, 2.5 as 2.5 and Infinity as
+    // Infinity — every one of which pLimit rejects with a RangeError, crashing
+    // the whole loop. Each must be sanitized to a positive integer.
+    const client = new MockChatClient([
+      { match: 'Proposal under review', respond: approve },
+      { match: 'ACTOR', respond: { plan: 1 } },
+    ]);
+    for (const criticConcurrency of [NaN, 2.5, Infinity, -3, 1.999]) {
+      const result = await actorCriticLoop(client, 'ACTOR: propose', {
+        roles: ['engineer', 'architect', 'reader'],
+        criticConcurrency,
+        taskContext: 'test',
+      });
+      expect(result.accepted).toBe(true);
+      expect(result.proposal).toEqual({ plan: 1 });
+    }
+  });
+
+  it('terminates on an always-REVISE panel even with an absurd maxReviseRounds', async () => {
+    // Infinity revise rounds + a critic that never stops asking for changes is
+    // an infinite loop unless the round count is clamped to a finite integer.
+    let revision = 0;
+    const client = new MockChatClient([
+      {
+        match: 'Proposal under review',
+        respond: { decision: 'REVISE', concerns: ['keep going'], suggested_revision: null, rationale: '' },
+      },
+      { match: "REVIEWER'S CONCERNS", respond: () => ({ plan: (revision += 1) }) },
+      { match: 'ACTOR', respond: { plan: 0 } },
+    ]);
+    const result = await actorCriticLoop(client, 'ACTOR: propose', {
+      taskContext: 'test',
+      maxReviseRounds: Infinity,
+    });
+    // A lingering REVISE after the (clamped) last round ships the latest
+    // revision; the point is that it TERMINATES with a bounded round count.
+    expect(result.rounds).toBeLessThan(10);
+  }, 10_000);
 });
 
 describe('parseVerdict shape tolerance', () => {

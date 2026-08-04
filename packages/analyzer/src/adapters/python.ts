@@ -13,7 +13,7 @@ import type { Node } from 'web-tree-sitter';
 import type { CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { createParser } from '../languages.js';
-import { discoverByExtension, type LanguageAdapter } from '../adapter.js';
+import { dedupeFunctionsById, discoverByExtension, type LanguageAdapter } from '../adapter.js';
 import { collectLineSpans, fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 
 const GENERIC_TYPES = new Set([
@@ -143,29 +143,48 @@ function scanModule(root: Node, file: string): ModuleScan {
 
   collectImports(root, scan.imports);
 
-  const visitBody = (body: Node, classStack: string[], fnStack: string[]): void => {
-    for (const childOrNull of body.namedChildren) {
-      const child = childOrNull;
-      if (!child) continue;
-      const { definition, decorators } = unwrapDecorated(child);
-      if (definition.type === 'class_definition') {
-        const className = fieldText(definition, 'name');
-        if (!scan.classes.has(className)) scan.classes.set(className, new Set());
-        const classBody = definition.childForFieldName('body');
-        if (classBody) visitBody(classBody, [...classStack, className], fnStack);
-      } else if (definition.type === 'function_definition') {
-        recordFunction(scan, definition, decorators, classStack, fnStack);
-        const fnBody = definition.childForFieldName('body');
-        const name = fieldText(definition, 'name');
-        // Nested defs are their own nodes; the class context does not apply inside.
-        if (fnBody) visitBody(fnBody, classStack, [...fnStack, name]);
-      } else if (child.namedChildCount > 0 && child.type !== 'function_definition') {
-        // Recurse into plain blocks (if/try/with at module or class level).
-        visitBody(child, classStack, fnStack);
-      }
+  // Iterative pre-order DFS (explicit stack) rather than recursion: the body
+  // walk descends through arbitrary nested blocks AND expression trees, so a
+  // pathologically nested module (thousands of nested `if`s or a giant nested
+  // call) would otherwise blow the JS call stack. Children are pushed in
+  // reverse so they pop left-to-right — byte-identical order to the recursion.
+  interface Frame {
+    node: Node;
+    classStack: string[];
+    fnStack: string[];
+  }
+  const stack: Frame[] = [];
+  const pushChildren = (container: Node, classStack: string[], fnStack: string[]): void => {
+    const children = container.namedChildren;
+    for (let i = children.length - 1; i >= 0; i -= 1) {
+      const child = children[i];
+      if (child) stack.push({ node: child, classStack, fnStack });
     }
   };
-  visitBody(root, [], []);
+  pushChildren(root, [], []);
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) continue;
+    const { node: child, classStack, fnStack } = frame;
+    const { definition, decorators } = unwrapDecorated(child);
+    if (definition.type === 'class_definition') {
+      const className = fieldText(definition, 'name');
+      if (!scan.classes.has(className)) scan.classes.set(className, new Set());
+      const classBody = definition.childForFieldName('body');
+      if (classBody) pushChildren(classBody, [...classStack, className], fnStack);
+    } else if (definition.type === 'function_definition') {
+      recordFunction(scan, definition, decorators, classStack, fnStack);
+      const fnBody = definition.childForFieldName('body');
+      const name = fieldText(definition, 'name');
+      // Nested defs are their own nodes; the class context does not apply inside.
+      if (fnBody) pushChildren(fnBody, classStack, [...fnStack, name]);
+    } else if (child.namedChildCount > 0 && child.type !== 'function_definition') {
+      // Descend into plain blocks (if/try/with at module or class level).
+      pushChildren(child, classStack, fnStack);
+    }
+  }
+  // Redefinitions / `@overload` stubs share an id; keep the last (live) one.
+  scan.functions = dedupeFunctionsById(scan.functions);
   return scan;
 }
 
@@ -245,7 +264,7 @@ function recordFunction(
   if (className && !isNested) scan.classes.get(className)?.add(name);
 
   const headerEnd = body ? body.startIndex : node.endIndex;
-  const header = node.text.slice(0, Math.max(0, headerEnd - node.startIndex)).replace(/[:\s]+$/, '');
+  const header = stripTrailingColonsAndWs(node.text.slice(0, Math.max(0, headerEnd - node.startIndex)));
   scan.functions.push({
     id,
     name,
@@ -267,6 +286,24 @@ function recordFunction(
   if (body) {
     scan.fnContext.set(id, { body, className: isMethod ? className : null, params: paramTypes });
   }
+}
+
+/**
+ * Strip a trailing run of `:` and whitespace from a def header — the linear
+ * equivalent of `/[:\s]+$/`. The regex form is catastrophically quadratic in
+ * V8 (a `$`-anchored quantifier is retried at every interior whitespace
+ * position), so a header with a long interior whitespace run — `def f(<100k
+ * spaces>x):` — hung for seconds. Walking back from the end touches only the
+ * genuine trailing run, so it is O(trailing) and cannot be gamed.
+ */
+function stripTrailingColonsAndWs(header: string): string {
+  let end = header.length;
+  while (end > 0) {
+    const c = header[end - 1] ?? '';
+    if (c === ':' || /\s/.test(c)) end -= 1;
+    else break;
+  }
+  return end === header.length ? header : header.slice(0, end);
 }
 
 /** Unwrap Optional[T] / T | None, drop generic builtins, resolve through imports. */

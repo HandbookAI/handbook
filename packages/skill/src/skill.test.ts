@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { fileExists } from '@handbook/core';
+import { fileExists, sha256Hex } from '@handbook/core';
 import type { Assignment } from '@handbook/core';
 import { buildSkill } from './build.js';
 import { validateSkill } from './validate.js';
@@ -106,6 +106,24 @@ describe('buildSkill + validateSkill', () => {
     const result = validateSkill({ skillDir: outDir, sourceRoot });
     expect(result.ok).toBe(false);
     expect(result.errors.join('\n')).toMatch(/stale/);
+  });
+
+  it('flags coverage that lists a since-deleted source file', () => {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-del-'));
+    writeRenderedHandbook(hb);
+    const out = join(mkdtempSync(join(tmpdir(), 'hb-delout-')), 'skill');
+    const src = mkdtempSync(join(tmpdir(), 'hb-delsrc-'));
+    mkdirSync(join(src, 'src'), { recursive: true });
+    writeFileSync(join(src, 'src', 'a.py'), 'def a():\n    pass\n');
+    writeFileSync(join(src, 'src', 'b.py'), 'def b():\n    pass\n');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', coverage: { assignment, sourceRoot: src } });
+    // A clean build validates against its own source…
+    expect(validateSkill({ skillDir: out, sourceRoot: src }).ok).toBe(true);
+    // …but once a covered file is deleted, coverage must call it out.
+    rmSync(join(src, 'src', 'b.py'));
+    const result = validateSkill({ skillDir: out, sourceRoot: src });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/deleted files: .*src\/b\.py/);
   });
 
   it('flags an index that never links a stage page', () => {
@@ -312,5 +330,132 @@ describe('validateSkill references/agent/ coverage', () => {
     const result = validateSkill({ skillDir: out });
     expect(result.ok).toBe(false);
     expect(result.errors.join('\n')).toMatch(/agent\/how_to_use\.md.*empty/);
+  });
+});
+
+describe('validateSkill SKILL.md frontmatter — EOL / BOM tolerance', () => {
+  function builtSkill(): string {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-eol-'));
+    writeRenderedHandbook(hb);
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo' });
+    return out;
+  }
+
+  // A SKILL.md checked out on Windows (or under git autocrlf) carries CRLF
+  // endings; corrections.jsonl is already parsed CRLF-tolerantly, so the
+  // frontmatter must be too — otherwise a byte-for-byte valid skill was
+  // rejected with a spurious "no YAML frontmatter".
+  it('parses frontmatter written with CRLF line endings', () => {
+    const out = builtSkill();
+    const skillPath = join(out, 'SKILL.md');
+    const lf = readFileSync(skillPath, 'utf8');
+    // Sanity: the fixture really is LF-only before we convert it.
+    expect(lf.includes('\r\n')).toBe(false);
+    writeFileSync(skillPath, lf.replace(/\n/g, '\r\n'));
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('parses frontmatter behind a leading UTF-8 BOM', () => {
+    const out = builtSkill();
+    const skillPath = join(out, 'SKILL.md');
+    writeFileSync(skillPath, '\uFEFF' + readFileSync(skillPath, 'utf8'));
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('still reports a genuinely missing frontmatter block', () => {
+    const out = builtSkill();
+    writeFileSync(join(out, 'SKILL.md'), '# no frontmatter here\n\nreferences/index.md real source\n');
+    const result = validateSkill({ skillDir: out });
+    expect(result.errors.join('\n')).toMatch(/no YAML frontmatter/);
+  });
+});
+
+describe('deep adversarial pass 2', () => {
+  function builtSkill(): string {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-a2-'));
+    writeRenderedHandbook(hb);
+    const out = join(mkdtempSync(join(tmpdir(), 'hb-a2out-')), 'skill');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo' });
+    return out;
+  }
+
+  // A2-D4: `buildSkill` starts by wiping outDir. Targeting the handbook itself
+  // (or an ancestor of it) would delete the source it is meant to package and
+  // then silently emit a broken, empty skill. It must refuse up front.
+  it('refuses to build into the handbook directory itself', () => {
+    const hb = mkdtempSync(join(tmpdir(), 'hb-selfdest-'));
+    writeRenderedHandbook(hb);
+    expect(() => buildSkill({ handbookDir: hb, outDir: hb, name: 'demo', project: 'Demo' })).toThrow(
+      /delete the source|must not be the handbook/,
+    );
+    // The source handbook survives the refusal untouched.
+    expect(fileExists(join(hb, 'index.md'))).toBe(true);
+    expect(fileExists(join(hb, 'stage-1.md'))).toBe(true);
+  });
+
+  it('refuses to build into an ancestor of the handbook directory', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'hb-anc-'));
+    const hb = join(parent, 'rendered');
+    mkdirSync(hb, { recursive: true });
+    writeRenderedHandbook(hb);
+    expect(() => buildSkill({ handbookDir: hb, outDir: parent, name: 'demo', project: 'Demo' })).toThrow(
+      /delete the source|ancestor/,
+    );
+    expect(fileExists(join(hb, 'index.md'))).toBe(true);
+  });
+
+  // A2-D5: a coverage path that escapes the source root (`../`, absolute,
+  // backslash) would make the validator read — and hash — arbitrary off-tree
+  // files. It must be flagged, not followed.
+  it('refuses a coverage.json path that escapes the source root', () => {
+    const out = builtSkill();
+    const src = mkdtempSync(join(tmpdir(), 'hb-a2-src-'));
+    writeFileSync(
+      join(out, 'references', 'coverage.json'),
+      JSON.stringify({ files: [{ path: '../../../../../../etc/passwd', stage: 'stage-1', sha256: 'deadbeef' }] }),
+    );
+    const result = validateSkill({ skillDir: out, sourceRoot: src });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/escape the source root/);
+    // It must not have hashed anything outside the root and called it "stale".
+    expect(result.errors.join('\n')).not.toMatch(/stale/);
+  });
+
+  // A2-D6: a malformed coverage entry (null, string, wrong-typed) must not
+  // derail drift detection with a misleading "unreadable" — the real deleted /
+  // stale files still have to be reported.
+  it('reports genuine drift even when a coverage entry is malformed', () => {
+    const out = builtSkill();
+    const src = mkdtempSync(join(tmpdir(), 'hb-a2-src2-'));
+    mkdirSync(join(src, 'src'), { recursive: true });
+    writeFileSync(join(src, 'src', 'present.py'), 'ok\n');
+    writeFileSync(
+      join(out, 'references', 'coverage.json'),
+      JSON.stringify({
+        files: [null, 'a-string', { path: 'src/present.py', sha256: sha256Hex('ok\n') }, { path: 'src/gone.py', sha256: 'abc123' }],
+      }),
+    );
+    const result = validateSkill({ skillDir: out, sourceRoot: src });
+    expect(result.ok).toBe(false);
+    const joined = result.errors.join('\n');
+    expect(joined).not.toMatch(/unreadable/);
+    expect(joined).toMatch(/deleted files: .*src\/gone\.py/);
+  });
+
+  // A2-D7: a Map silently let a second `name:` overwrite the first. Duplicate
+  // frontmatter keys are ambiguous and must be flagged.
+  it('flags a duplicate frontmatter key', () => {
+    const out = builtSkill();
+    const skill = readFileSync(join(out, 'SKILL.md'), 'utf8');
+    const doubled = skill.replace('name: demo-handbook\n', 'name: demo-handbook\nname: other-handbook\n');
+    writeFileSync(join(out, 'SKILL.md'), doubled);
+    const result = validateSkill({ skillDir: out });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/duplicate "name" key/);
   });
 });

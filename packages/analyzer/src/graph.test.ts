@@ -91,6 +91,41 @@ describe('buildGraph — degree annotation', () => {
   });
 });
 
+describe('buildGraph — selfAttrs index scale (pass 2)', () => {
+  it('builds the self-attr index in ~linear time for a class with many same-attr methods', () => {
+    // Pre-fix the per-push `Array.includes` dedup was O(n^2): ~4s at 50k here.
+    // Post-fix (insertion-ordered Set) it is ~linear.
+    const N = 50000;
+    const functions: FunctionNode[] = [];
+    for (let i = 0; i < N; i += 1) {
+      functions.push(
+        fn(`m.C.method${i}`, 'm.py', {
+          className: 'C',
+          isMethod: true,
+          selfAttrsRead: ['shared'],
+          selfAttrsWritten: ['shared'],
+        }),
+      );
+    }
+    const t0 = Date.now();
+    const { graph } = buildGraph({ functions, edges: [] }, options({ scannedFiles: ['m.py'] }));
+    const ms = Date.now() - t0;
+    const entry = graph.selfAttrs['C']?.['shared'];
+    expect(entry?.readIn).toHaveLength(N);
+    expect(entry?.writtenIn).toHaveLength(N);
+    // insertion order preserved (method0 first, methodN-1 last)
+    expect(entry?.readIn[0]).toBe('m.C.method0');
+    expect(entry?.readIn.at(-1)).toBe(`m.C.method${N - 1}`);
+    expect(ms).toBeLessThan(2000); // pre-fix: ~4s
+  });
+
+  it('dedupes duplicate-id functions in the self-attr index (defensive)', () => {
+    const dup = fn('m.C.m', 'm.py', { className: 'C', isMethod: true, selfAttrsRead: ['x'] });
+    const { graph } = buildGraph({ functions: [dup, dup, dup], edges: [] }, options({ scannedFiles: ['m.py'] }));
+    expect(graph.selfAttrs['C']?.['x']?.readIn).toEqual(['m.C.m']); // not repeated 3×
+  });
+});
+
 describe('buildGraph — synthetic constructor synthesis', () => {
   it('synthesizes an implicit __init__ endpoint with a fabricated file path', () => {
     const analysis: ModuleAnalysis = {

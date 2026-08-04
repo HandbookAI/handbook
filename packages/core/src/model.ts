@@ -263,13 +263,16 @@ export class StageTree {
 
   /** The stage id plus all of its descendants, in skeleton order. Cycle-safe. */
   subtree(id: string): string[] {
+    // Iterative (explicit stack): a deep parent chain in a corrupted skeleton
+    // would overflow a recursive walk. The `keep` set still guards cycles.
     const keep = new Set<string>();
-    const walk = (sid: string): void => {
-      if (keep.has(sid)) return; // guard against parent cycles in bad input
+    const stack = [id];
+    while (stack.length > 0) {
+      const sid = stack.pop() as string;
+      if (keep.has(sid)) continue; // already visited (or a parent cycle)
       keep.add(sid);
-      for (const child of this.children(sid)) walk(child);
-    };
-    walk(id);
+      for (const child of this.children(sid)) stack.push(child);
+    }
     return this.order.filter((sid) => keep.has(sid));
   }
 }

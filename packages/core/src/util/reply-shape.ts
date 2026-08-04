@@ -54,8 +54,11 @@ export function extractEntryList(
       if (hit) return hit;
     }
   }
+  // `field in record` would also match inherited Object.prototype members
+  // (`toString`, `constructor`, `__proto__`, …), so a reply object could falsely
+  // pass as a single entry. "Carrying" a field means an OWN property.
   const fields = options.single?.fields;
-  if (fields && fields.some((field) => field in record)) return [record];
+  if (fields && fields.some((field) => Object.prototype.hasOwnProperty.call(record, field))) return [record];
   return [];
 }
 

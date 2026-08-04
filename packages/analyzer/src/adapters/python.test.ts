@@ -122,6 +122,93 @@ describe('PythonAdapter', () => {
   });
 });
 
+describe('PythonAdapter — duplicate-id defenses (adversarial round)', () => {
+  it('collapses @overload stubs to one node and does not multiply call edges', async () => {
+    const src = `
+from typing import overload
+
+@overload
+def f(x: int) -> int: ...
+@overload
+def f(x: str) -> str: ...
+def f(x):
+    helper()
+    helper()
+
+def helper():
+    return 0
+`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-py-overload-'));
+    writeFileSync(join(root, 'a.py'), src);
+    const result = await new PythonAdapter().analyze(['a.py'], root);
+    const fNodes = result.functions.filter((n) => n.id === 'a.f');
+    expect(fNodes).toHaveLength(1); // not 3 (two stubs + impl)
+    // kept node is the live implementation (`def f(x)`), not a typed stub
+    expect(fNodes[0]?.signature).toContain('def f(x)');
+    expect(fNodes[0]?.signature).not.toContain('-> int');
+    const edges = result.edges.filter((e) => e.callerId === 'a.f' && e.calleeId === 'a.helper');
+    expect(edges).toHaveLength(2); // exactly the two real helper() calls, not 6
+  });
+
+  it('collapses a plain redefinition to the last definition', async () => {
+    const src = `
+def g():
+    helper()
+
+def g():
+    helper()
+    helper()
+
+def helper():
+    pass
+`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-py-redef-'));
+    writeFileSync(join(root, 'a.py'), src);
+    const result = await new PythonAdapter().analyze(['a.py'], root);
+    expect(result.functions.filter((n) => n.id === 'a.g')).toHaveLength(1);
+    expect(result.edges.filter((e) => e.callerId === 'a.g')).toHaveLength(2);
+  });
+});
+
+describe('PythonAdapter — deep-nesting & ReDoS defenses (pass 2)', () => {
+  it('does not stack-overflow scanning a pathologically deep expression', async () => {
+    // 20k nested parens force the module-body descent (visitBody) and the call
+    // walk arbitrarily deep — both were recursive and blew the stack.
+    const depth = 20000;
+    const src = `x = ${'('.repeat(depth)}1${')'.repeat(depth)}\n\ndef top():\n    return ${'g('.repeat(depth)}1${')'.repeat(depth)}\n`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-py-deep-'));
+    writeFileSync(join(root, 'a.py'), src);
+    const result = await new PythonAdapter().analyze(['a.py'], root);
+    expect(result.functions.find((f) => f.id === 'a.top')).toBeDefined();
+    expect(result.edges.length).toBeGreaterThan(0);
+  });
+
+  it('does not hang on a header with a huge interior whitespace run (ReDoS on /[:\\s]+$/)', async () => {
+    // Pre-fix: /[:\s]+$/ was retried at every interior space — ~5s at 100k,
+    // ~130s at 500k. Post-fix (linear trailing strip): milliseconds.
+    const src = `def f(${' '.repeat(150_000)}x):\n    body_call()\n`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-py-redos-'));
+    writeFileSync(join(root, 'a.py'), src);
+    const t0 = Date.now();
+    const result = await new PythonAdapter().analyze(['a.py'], root);
+    const ms = Date.now() - t0;
+    const f = result.functions.find((x) => x.id === 'a.f');
+    expect(f).toBeDefined();
+    expect(f?.signature).toBe('def f( x)'); // interior run collapsed, trailing colon stripped
+    expect(ms).toBeLessThan(2000); // pre-fix: >10s
+  });
+
+  it('strips a huge trailing whitespace/colon run in linear time', async () => {
+    const src = `def g(x)${' \t'.repeat(150_000)}:\n    body_call()\n`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-py-redos2-'));
+    writeFileSync(join(root, 'a.py'), src);
+    const t0 = Date.now();
+    const result = await new PythonAdapter().analyze(['a.py'], root);
+    expect(result.functions.find((x) => x.id === 'a.g')?.signature).toBe('def g(x)');
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+});
+
 describe('PythonAdapter — module-alias calls (round-1 review)', () => {
   it('resolves alias.attr() into internal_func when the alias is our module', async () => {
     const root = mkdtempSync(join(tmpdir(), 'hb-python-alias-'));

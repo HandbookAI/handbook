@@ -137,6 +137,18 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
   let fabricated = 0;
 
   const runTool = (action: Action): string => {
+    // Tool arguments come straight from model JSON and can be ANY type. A
+    // non-string path/pattern (a number, an object, a bool) must be a graceful
+    // tool error, never a thrown TypeError that rejects the whole run — one
+    // malformed reply used to abort the planner with an unhandled exception.
+    const rawPath: unknown = action.path;
+    const rawPattern: unknown = action.pattern;
+    if (rawPath !== undefined && typeof rawPath !== 'string') {
+      return `invalid "path": expected a string, got ${Array.isArray(rawPath) ? 'array' : typeof rawPath}`;
+    }
+    if (rawPattern !== undefined && typeof rawPattern !== 'string') {
+      return `invalid "pattern": expected a string, got ${Array.isArray(rawPattern) ? 'array' : typeof rawPattern}`;
+    }
     const path = action.path ?? '.';
     const inHandbook = handbookTools && (path === HANDBOOK_MOUNT || path.startsWith(`${HANDBOOK_MOUNT}/`));
     const tools = inHandbook ? handbookTools : sourceTools;
@@ -205,6 +217,14 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     // about this very tool protocol). Only an explicit finish wins over that.
     if (!action || typeof action.tool !== 'string' || (looksLikePlan && action.tool !== 'finish')) {
       if (looksLikePlan || isLast) {
+        // On the LAST turn a reply that carries no EDIT blocks is not a plan —
+        // it is chatter. Returning it as `plan` with no `aborted` reports an
+        // abandoned run as a success, the same false-success the finish and
+        // fabrication paths guard against. Signal the turn limit instead.
+        if (isLast && !looksLikePlan) {
+          logger.warn('[planner] turn limit reached with no usable plan — abandoning');
+          return { plan: '(planner reached the turn limit without producing a plan)', turns: turn, trace, aborted: 'turn-limit' };
+        }
         const fixed = closeDanglingFence(response.text.trim());
         if (fixed.repaired) logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
         return { plan: fixed.plan, declarations: parseDeclarations(fixed.plan), turns: turn, trace };
@@ -232,7 +252,10 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     }
 
     const result = runTool(action);
-    trace.push(`${action.tool}(${truncate(action.pattern ?? action.path ?? '', 80)})`);
+    // The label must be a string: `truncate` calls `.length`/`.slice`, so a
+    // numeric or boolean path/pattern here would throw and abort the run.
+    const traceArg = action.pattern ?? action.path ?? '';
+    trace.push(`${action.tool}(${truncate(typeof traceArg === 'string' ? traceArg : String(traceArg), 80)})`);
     // The tool calls ARE the progress: someone watching a 30-turn agent loop needs
     // to see which files it opened and what it searched for, otherwise the whole
     // run looks like a single silent pause. `-q` still silences it.

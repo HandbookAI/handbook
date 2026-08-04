@@ -94,7 +94,17 @@ export class CachedChatClient implements ChatClient {
     // repo before — see the identical rule in the narration cache).
     if (result.text.trim() !== '') {
       const stored: CacheEntry = { version: CACHE_VERSION, text: result.text };
-      writeFileAtomic(path, `${JSON.stringify(stored, null, 2)}\n`);
+      // A cache is an optimization, never a dependency: a write that fails
+      // (cacheDir is a file, the disk is full, the dir is unwritable, the
+      // rename races another writer) must NOT turn a paid-for success into a
+      // failure. The read side already swallows every error as a miss; the
+      // write side must be just as transparent, or the very re-runs the cache
+      // exists to speed up would instead crash on a read-only cache directory.
+      try {
+        writeFileAtomic(path, `${JSON.stringify(stored, null, 2)}\n`);
+      } catch {
+        // best-effort: the next run simply re-asks instead of serving a hit
+      }
     }
     return result;
   }

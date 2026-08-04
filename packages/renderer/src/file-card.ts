@@ -84,11 +84,24 @@ export function callFactsLine(fn: FunctionNote, lang: NarrateLang): string {
   return `*${L.callGraph}*${L.sep}${clauses.join(L.join)}${L.end}`;
 }
 
+/**
+ * Wrap `code` in a fence whose backtick run is one longer than the longest run
+ * inside it (min 3). A signature that itself contains a ``` line would
+ * otherwise close a fixed 3-backtick fence early and inject the rest of the
+ * signature into the handbook as live markdown (headings, tables, raw HTML).
+ */
+function fencedCode(code: string): string {
+  let longest = 0;
+  for (const run of code.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}\n${code}\n${fence}`;
+}
+
 function renderFunctionMd(fn: FunctionNote, lang: NarrateLang): string {
   const L = LABELS[lang];
   const parts: string[] = [];
   parts.push(`##### \`${fn.qualname}\` ${L.lines(fn.lineRange[0], fn.lineRange[1])}`);
-  if (fn.signature.trim().length > 0) parts.push('```\n' + fn.signature.trim() + '\n```');
+  if (fn.signature.trim().length > 0) parts.push(fencedCode(fn.signature.trim()));
   if (fn.purpose.trim().length > 0) parts.push(`**${L.purpose}**${L.sep}${fn.purpose.trim()}`);
   if (fn.dataFlow.trim().length > 0) parts.push(`**${L.dataFlow}**${L.sep}${fn.dataFlow.trim()}`);
   if (fn.relations.trim().length > 0) parts.push(`**${L.relations}**${L.sep}${fn.relations.trim()}`);

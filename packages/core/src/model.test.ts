@@ -60,3 +60,17 @@ describe('StageTree — cycle safety (round-1 review)', () => {
     expect(tree.subtree('a').sort()).toEqual(['a', 'b']);
   });
 });
+
+describe('StageTree — stack safety (adversarial pass 2)', () => {
+  it('subtree does not overflow on a deep parent chain in a corrupted skeleton', () => {
+    // subtree used to recurse per level; a long chain (valid to zod) overflowed.
+    const n = 20000;
+    const stages: Skeleton['stages'] = [];
+    for (let i = 0; i < n; i += 1) {
+      stages.push({ id: `s${i}`, title: '', description: '', parent: i === 0 ? null : `s${i - 1}`, children: [], crosscut: false });
+    }
+    const tree = new StageTree({ metadata: { version: 1 }, stages });
+    expect(() => tree.subtree('s0')).not.toThrow();
+    expect(tree.subtree('s0')).toHaveLength(n);
+  });
+});

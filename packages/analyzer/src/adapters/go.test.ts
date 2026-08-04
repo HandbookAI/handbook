@@ -174,3 +174,19 @@ describe('GoAdapter — sibling-file package calls (round-1 review)', () => {
     expect(edge?.callType).toBe('internal_func');
   });
 });
+
+describe('GoAdapter — duplicate-id defense (adversarial round)', () => {
+  it('collapses duplicate method defs (invalid source) to one node without multiplying edges', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'hb-go-dup-'));
+    // Two `func (t *T) M()` in one file is invalid Go, but partial/broken
+    // sources must still yield unique ids and un-multiplied edges.
+    const src = 'package main\ntype T struct{}\nfunc (t *T) M() { helper() }\nfunc (t *T) M() { helper(); helper() }\nfunc helper() {}\n';
+    writeFileSync(join(root, 'a.go'), src);
+    const result = await new GoAdapter().analyze(['a.go'], root);
+    expect(result.functions.filter((n) => n.id === 'a.T.M')).toHaveLength(1);
+    expect(result.edges.filter((e) => e.callerId === 'a.T.M')).toHaveLength(2);
+  });
+});

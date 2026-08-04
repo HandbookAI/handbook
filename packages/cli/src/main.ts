@@ -32,7 +32,8 @@ import { buildSkill, validateSkill } from '@handbook/skill';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { WorkDir } from '@handbook/pipeline';
-import { refreshRenderedHandbook } from './render-refresh.js';
+import { refreshRenderedHandbook, resolveTitle } from './render-refresh.js';
+import { parseEnum, toInt } from './args.js';
 
 const program = new Command();
 
@@ -69,15 +70,6 @@ function llmClient(): ChatClient {
 
 function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
-}
-
-/** Parse a numeric CLI flag; garbage values fail loudly instead of NaN-ing a loop away. */
-function toInt(value: unknown, flag: string, min: number): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < min) {
-    throw new Error(`${flag} must be a number >= ${min}, got "${String(value)}"`);
-  }
-  return Math.trunc(parsed);
 }
 
 program
@@ -134,12 +126,12 @@ program
       workDir: resolve(String(opts.work)),
       client,
       phase,
-      strategy: opts.strategy === 'member' ? 'member' : opts.strategy === 'file' ? 'file' : undefined,
+      strategy: parseEnum(opts.strategy, '--strategy', ['file', 'member'] as const),
       skeletonPath: opts.skeleton ? resolve(String(opts.skeleton)) : undefined,
       lang: String(opts.lang),
-      narrateLang: opts.narrateLang === 'zh' ? 'zh' : 'en',
-      detail: opts.detail === 'deep' ? 'deep' : 'brief',
-      synthMode: opts.synthMode === 'doctor' ? 'doctor' : 'oneshot',
+      narrateLang: parseEnum(opts.narrateLang, '--narrate-lang', ['en', 'zh'] as const) ?? 'en',
+      detail: parseEnum(opts.detail, '--detail', ['brief', 'deep'] as const) ?? 'brief',
+      synthMode: parseEnum(opts.synthMode, '--synth-mode', ['oneshot', 'doctor'] as const) ?? 'oneshot',
       maxDoctorRounds: toInt(opts.maxDoctorRounds, '--max-doctor-rounds', 1),
       readWorkers: toInt(opts.readWorkers, '--read-workers', 1),
       resume: Boolean(opts.resume),
@@ -156,7 +148,7 @@ program
   .description('Render a completed work dir to markdown (+ optional HTML site / agent index); no LLM')
   .requiredOption('--work <dir>', 'work directory with completed phase-3 artifacts')
   .option('--out <dir>', 'output directory (default <work>/handbook)')
-  .option('--title <title>', 'handbook title', process.env.HANDBOOK_TITLE ?? 'System Handbook')
+  .option('--title <title>', 'handbook title (default: $HANDBOOK_TITLE or "System Handbook")')
   .option('--html', 'also render the multi-page HTML site under <out>/html')
   .option('--html-single', 'also render a single self-contained HTML page')
   .option('--agent-site', 'also render the agent locator index under <out>/agent')
@@ -165,7 +157,7 @@ program
   .action(async (opts: Record<string, string | boolean>) => {
     const workDir = resolve(String(opts.work));
     const outDir = resolve(String(opts.out ?? `${workDir}/handbook`));
-    const model = loadHandbookModel(workDir, String(opts.title));
+    const model = loadHandbookModel(workDir, resolveTitle(opts.title));
     const links: SourceLinkOptions | undefined = opts.sourceBaseUrl
       ? { sourceBaseUrl: String(opts.sourceBaseUrl) }
       : undefined;
@@ -213,7 +205,7 @@ program
       project: opts.project,
       coverage,
       agentDir: opts.agentDir ? resolve(opts.agentDir) : undefined,
-      lang: opts.lang === 'zh' ? 'zh' : 'en',
+      lang: parseEnum(opts.lang, '--lang', ['en', 'zh'] as const) ?? 'en',
     });
     printJson(result);
   });
@@ -276,7 +268,7 @@ program
   .option('--narrate-lang <l>', 'prose language: en | zh')
   .option('--corrections <file>', 'agent-reported corrections.jsonl — its files widen the refresh set')
   .option('--no-render', 'skip refreshing already-rendered outputs under <work>/handbook')
-  .option('--title <title>', 'handbook title for refreshed outputs', process.env.HANDBOOK_TITLE ?? 'System Handbook')
+  .option('--title <title>', 'handbook title for refreshed outputs (default: $HANDBOOK_TITLE or "System Handbook")')
   .action(async (opts: Record<string, string | boolean | undefined>) => {
     const noLlm = opts.llm === false; // commander maps --no-llm to llm:false
     const workDir = resolve(String(opts.work));
@@ -285,15 +277,15 @@ program
       workDir,
       client: noLlm ? undefined : llmClient(),
       noLlm,
-      detail: opts.detail === 'brief' ? 'brief' : opts.detail === 'deep' ? 'deep' : undefined,
+      detail: parseEnum(opts.detail, '--detail', ['brief', 'deep'] as const),
       correctionsPath: opts.corrections ? resolve(String(opts.corrections)) : undefined,
-      lang: opts.narrateLang === 'zh' ? 'zh' : opts.narrateLang === 'en' ? 'en' : undefined,
+      lang: parseEnum(opts.narrateLang, '--narrate-lang', ['en', 'zh'] as const),
       logger: logger(),
     });
     const rendered =
       opts.render === false || report.skipped
         ? []
-        : refreshRenderedHandbook(workDir, String(opts.title), logger());
+        : refreshRenderedHandbook(workDir, resolveTitle(opts.title), logger());
     printJson({ ...report, rendered });
   });
 

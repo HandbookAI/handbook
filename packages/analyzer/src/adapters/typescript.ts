@@ -14,7 +14,7 @@ import type { Node } from 'web-tree-sitter';
 import type { CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { createParser } from '../languages.js';
-import { discoverByExtension, type LanguageAdapter } from '../adapter.js';
+import { dedupeFunctionsById, discoverByExtension, type LanguageAdapter } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 
 const GENERIC_TYPES = new Set([
@@ -169,6 +169,9 @@ function scanModule(root: Node, file: string): ModuleScan {
       }
     }
   }
+  // A `get x()`/`set x()` pair (or any same-name member) shares an id; keep the
+  // last so ids stay unique and pass-2 edges are not multiplied.
+  scan.functions = dedupeFunctionsById(scan.functions);
   return scan;
 }
 

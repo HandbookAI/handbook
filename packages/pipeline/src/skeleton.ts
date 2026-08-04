@@ -161,7 +161,11 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
     });
   });
   // Follow renames, then null dangling parents (sanitizing like stage ids).
+  // `byId` (built once) replaces the per-lookup `stages.find` scans below: those
+  // scans made the cycle walk O(n³), so a large hand-authored or hallucinated
+  // skeleton (thousands of stages) took tens of seconds to normalize.
   const ids = new Set(stages.map((s) => s.id));
+  const byId = new Map(stages.map((s) => [s.id, s]));
   for (const stage of stages) {
     if (stage.parent !== null) {
       const renamed = renames.get(stage.parent);
@@ -177,19 +181,18 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
     let cursor = stage.parent;
     while (cursor !== null) {
       if (seenUp.has(cursor)) {
-        const cycleNode = stages.find((s) => s.id === cursor);
+        const cycleNode = byId.get(cursor);
         if (cycleNode) cycleNode.parent = null;
         else stage.parent = null;
         break;
       }
       seenUp.add(cursor);
-      cursor = stages.find((s) => s.id === cursor)?.parent ?? null;
+      cursor = byId.get(cursor)?.parent ?? null;
     }
   }
   for (const stage of stages) {
     if (stage.parent !== null) {
-      const parent = stages.find((s) => s.id === stage.parent);
-      parent?.children.push(stage.id);
+      byId.get(stage.parent)?.children.push(stage.id);
     }
   }
   const metadata = (typeof rawObj.metadata === 'object' && rawObj.metadata !== null ? rawObj.metadata : {}) as Record<string, unknown>;

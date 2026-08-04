@@ -46,6 +46,12 @@ export class MockChatClient implements ChatClient {
 
 function matches(matcher: MockRule['match'], prompt: string): boolean {
   if (typeof matcher === 'string') return prompt.includes(matcher);
-  if (matcher instanceof RegExp) return matcher.test(prompt);
+  if (matcher instanceof RegExp) {
+    // `.test()` on a global/sticky regex advances `lastIndex`, so the same
+    // prompt would match on one call and miss on the next — the mock must be
+    // deterministic. Reset the cursor before every test.
+    matcher.lastIndex = 0;
+    return matcher.test(prompt);
+  }
   return matcher(prompt);
 }

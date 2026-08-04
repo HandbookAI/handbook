@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { HandbookModel, NarrateLang } from '@handbook/core';
 import { fileOneLiner } from './file-card.js';
-import { HandbookView, stageMapMermaid } from './shared.js';
+import { HandbookView, mdLinkText, stageMapMermaid } from './shared.js';
 
 /** Longest summary blockquote emitted into llms.txt. */
 const SUMMARY_MAX = 240;
@@ -80,7 +80,7 @@ function stageDescription(view: HandbookView, sid: string): string {
 function llmsTxt(view: HandbookView, lang: NarrateLang): string {
   const L = LABELS[lang];
   const entry = (title: string, href: string, desc: string): string =>
-    `- [${title}](${href})${L.sep}${desc}`;
+    `- [${mdLinkText(title)}](${href})${L.sep}${desc}`;
   const links: string[] = [entry(L.overviewTitle, 'overview.md', L.overviewDesc)];
   for (const sid of view.contentRoots()) {
     links.push(entry(view.tree.title(sid), `${sid}.md`, stageDescription(view, sid)));

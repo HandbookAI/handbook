@@ -358,7 +358,14 @@ async function retryAbortable<T>(
   fn: (attempt: number) => Promise<T>,
   options: RetryAbortableOptions,
 ): Promise<T> {
-  const attempts = Math.max(1, Math.trunc(options.attempts));
+  // `Math.max(1, Math.trunc(x))` does NOT tame every bad input: Math.trunc(NaN)
+  // is NaN and `1 <= NaN` is false, so a NaN cap would skip the loop entirely
+  // and `throw lastError` (undefined) without ever calling `fn` — a request that
+  // rejects with `undefined` and never fires. Math.trunc(Infinity) is Infinity,
+  // which loops forever on a persistently-failing endpoint. A misconfigured
+  // config.maxRetries (bypassing resolveLlmEnv's own guard) reaches here raw, so
+  // clamp non-finite values to a single attempt before counting.
+  const attempts = Math.max(1, Number.isFinite(options.attempts) ? Math.trunc(options.attempts) : 1);
   const jitterMs = Math.max(0, options.jitterMs ?? 500);
   const { signal } = options;
   let lastError: unknown;

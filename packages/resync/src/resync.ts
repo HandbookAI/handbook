@@ -111,7 +111,14 @@ export function filesFromDiff(diffText: string): string[] {
   const files = new Set<string>();
   for (const match of diffText.matchAll(/^[+-]{3} [ab]\/(.+)$/gm)) {
     const path = match[1]?.trim();
-    if (path && path !== 'dev/null') files.add(path);
+    if (!path || path === 'dev/null') continue;
+    // A unified diff's paths are always repo-relative. An absolute path or one
+    // with a `..` segment is malformed or hostile — a diff cannot legitimately
+    // reference outside the tree. Drop it so the returned list can never steer
+    // a caller (this one guards with scannedFiles, but the export is public)
+    // to a path outside the workspace.
+    if (path.startsWith('/') || path.split(/[\\/]/).includes('..')) continue;
+    files.add(path);
   }
   return [...files].sort();
 }

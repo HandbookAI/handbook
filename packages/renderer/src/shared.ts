@@ -157,7 +157,12 @@ export function stageMapMermaid(tree: StageTree): string {
   const lines: string[] = ['flowchart TD'];
   let hasCrosscut = false;
   for (const sid of tree.order) {
-    const label = tree.title(sid).replace(/"/g, '#quot;');
+    // A mermaid node label is single-line: any raw newline (or other line
+    // separator) inside `["…"]` splits the statement and breaks the whole
+    // diagram, so flatten every whitespace run to one space before escaping
+    // quotes. Fall back to the id when the title is blank/whitespace-only, so
+    // we never emit an empty-label node.
+    const label = (tree.title(sid).replace(/\s+/g, ' ').trim() || sid).replace(/"/g, '#quot;');
     const crosscut = tree.isCrosscut(sid);
     hasCrosscut = hasCrosscut || crosscut;
     lines.push(`  ${ids.get(sid)}["${label}"]${crosscut ? ':::crosscut' : ''}`);
@@ -167,6 +172,18 @@ export function stageMapMermaid(tree: StageTree): string {
   }
   if (hasCrosscut) lines.push('  classDef crosscut stroke-dasharray: 5 5;');
   return ['```mermaid', ...lines, '```'].join('\n');
+}
+
+/**
+ * Escape a value used as markdown LINK TEXT (`[<here>](url)`): flatten
+ * whitespace to single spaces and backslash-escape brackets. LLM/codebase
+ * titles routinely contain brackets (`Query [beta]`, a stray `foo]`); an
+ * unbalanced `]`/`[` terminates the link early — dead-ending the internal
+ * navigation link — or lets a `](evil)` sequence forge a second link. Escaping
+ * keeps the bracket literal so the intended link always survives.
+ */
+export function mdLinkText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().replace(/[\\[\]]/g, '\\$&');
 }
 
 /** POSIX basename without its final extension. */

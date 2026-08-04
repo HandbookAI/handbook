@@ -12,21 +12,67 @@
  */
 
 /**
- * Fence openers are anchored to line starts and carry their FULL info string
- * (so ```python and ```python title=x blocks are consumed, not misaligned into
- * the next fence). The opening backtick run is captured and the closing run
- * must be at least as long, so a ````-fenced block keeps its inner ```json
+ * A fence opener is a line of `indent + ≥3 backticks + info` (the info string
+ * carries no backticks). Its closer is a later line of only `indent + ≥opener
+ * backticks + whitespace`, so a ````-fenced block keeps its inner ```json
  * examples as literal content (CommonMark semantics). Only fences whose info
  * string starts with `json`/`jsonc` (or is empty) are parse candidates.
  */
-const FENCE_RE = /^[ \t]*(`{3,})([^\n`]*)\r?\n([\s\S]*?)^[ \t]*\1`*[ \t]*$/gm;
+const FENCE_OPEN_RE = /^[ \t]*(`{3,})([^`\r\n]*)\r?$/;
+
+/**
+ * Total closer-search steps allowed across a whole document. A backtracking
+ * regex with a backreference was O(n²) on many opener-like lines that never
+ * close (each rescans to end); a budgeted line walk stays bounded.
+ */
+const MAX_FENCE_SCAN_STEPS = 1_000_000;
+
+/** Backtick count if `line` is only indent + backticks + trailing space, else -1. */
+function fenceCloserTicks(line: string): number {
+  let k = 0;
+  const n = line.length;
+  while (k < n && (line[k] === ' ' || line[k] === '\t')) k += 1;
+  let ticks = 0;
+  while (k < n && line[k] === '`') {
+    ticks += 1;
+    k += 1;
+  }
+  while (k < n && (line[k] === ' ' || line[k] === '\t' || line[k] === '\r')) k += 1;
+  return k === n && ticks > 0 ? ticks : -1;
+}
+
+/** Enumerate fenced blocks in one O(n) line walk (no backtracking regex). */
+function* fencedBlocks(text: string): Generator<{ info: string; body: string }> {
+  const lines = text.split('\n');
+  let steps = 0;
+  let i = 0;
+  while (i < lines.length) {
+    const open = FENCE_OPEN_RE.exec(lines[i] as string);
+    if (!open) {
+      i += 1;
+      continue;
+    }
+    const need = (open[1] as string).length;
+    let j = i + 1;
+    for (; j < lines.length; j += 1) {
+      if ((steps += 1) > MAX_FENCE_SCAN_STEPS) return; // bounded on unclosed floods
+      if (fenceCloserTicks(lines[j] as string) >= need) break;
+    }
+    if (j < lines.length) {
+      yield { info: (open[2] ?? '').trim(), body: lines.slice(i + 1, j).join('\n') };
+      i = j + 1; // resume after the closer
+    } else {
+      i += 1; // unclosed opener: not a block, mirror the old regex
+    }
+  }
+}
 
 export function extractJsonBlock(text: string): unknown {
   const fenced: string[] = [];
-  for (const match of text.matchAll(FENCE_RE)) {
-    const tag = (match[2] ?? '').trim().split(/\s+/, 1)[0]?.toLowerCase() ?? '';
+  for (const { info, body } of fencedBlocks(text)) {
+    const tag = info.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
     if (tag !== '' && tag !== 'json' && tag !== 'jsonc') continue;
-    const candidate = match[3]?.trim();
+    const candidate = body.trim();
     if (!candidate) continue;
     fenced.push(candidate);
     try {
@@ -76,6 +122,16 @@ export function extractJsonBlock(text: string): unknown {
  */
 export function repairJson(candidate: string): unknown {
   const text = candidate;
+  // Valid JSON has exactly one meaning, so honour the "leaves valid JSON alone"
+  // contract directly. Without this, the backtracker below also explores reading
+  // a properly-escaped `\"` string's real closing quote as literal prose, and the
+  // odd-quote tiebreak can then prefer a WRONG reading that merges two escaped-
+  // quote values into one — corrupting input that JSON.parse handles exactly.
+  try {
+    return JSON.parse(text);
+  } catch {
+    // not valid as-is; fall through to the tolerant, backtracking repair
+  }
   let steps = 0;
   /** Budget exhausted → stop generating candidates rather than hang. */
   const spend = (): boolean => (steps += 1) <= MAX_REPAIR_STEPS;
@@ -195,11 +251,22 @@ export function repairJson(candidate: string): unknown {
   // readings and pick by a property of real prose: an unescaped quote comes in
   // PAIRS (it opens and closes a quoted term), so a reading that leaves strings
   // holding an odd number of quotes has cut one of those pairs in half.
+  // The backtracker recurses once per nesting level AND once per array element /
+  // object key, so an enormous candidate can exhaust the call stack. A partial
+  // reading never satisfies the `end === length` check, so overflow can only
+  // ever cost a would-be answer — treat it as "unrepairable" instead of letting
+  // a RangeError escape and crash the caller. The handler runs after the stack
+  // has unwound, so it has ample headroom.
   const parses: unknown[] = [];
-  for (const [value, end] of readValue(0)) {
-    if (skipWs(end) !== text.length) continue;
-    parses.push(value);
-    if (parses.length >= MAX_REPAIR_PARSES) break;
+  try {
+    for (const [value, end] of readValue(0)) {
+      if (skipWs(end) !== text.length) continue;
+      parses.push(value);
+      if (parses.length >= MAX_REPAIR_PARSES) break;
+    }
+  } catch (error) {
+    if (error instanceof RangeError) return undefined;
+    throw error;
   }
   if (parses.length === 0) return undefined;
   let best = parses[0];
@@ -233,15 +300,27 @@ const MAX_REPAIR_PARSES = 64;
 /** Backtracking budget: enough for real replies, bounded for adversarial ones. */
 const MAX_REPAIR_STEPS = 200_000;
 
+/**
+ * Naive-scan budget for {@link balancedSpans}. A long run of unbalanced openers
+ * (`{{{{…`) makes a per-opener rescan O(n²); this caps total inner steps so an
+ * adversarial reply cannot stall the repair pass.
+ */
+const MAX_SPAN_SCAN_STEPS = 1_000_000;
+
+/** Absolute cap on characters handed to `JSON.parse` during a balanced scan. */
+const MAX_SCAN_PARSE_CHARS = 8_000_000;
+
 /** Every balanced `{…}`/`[…]` span, for the repair pass to try in order. */
 function balancedSpans(text: string): string[] {
   const spans: string[] = [];
+  let steps = 0;
   for (let start = 0; start < text.length; start += 1) {
     const open = text[start];
     if (open !== '{' && open !== '[') continue;
     const close = open === '{' ? '}' : ']';
     let depth = 0;
     for (let i = start; i < text.length; i += 1) {
+      if ((steps += 1) > MAX_SPAN_SCAN_STEPS) return spans; // bounded on `{{{…`
       const ch = text[i];
       if (ch === open) depth += 1;
       else if (ch === close) {
@@ -257,34 +336,58 @@ function balancedSpans(text: string): string[] {
   return spans;
 }
 
+/**
+ * Map every properly-matched `{`/`[` opener index to its closer index in ONE
+ * string-aware left-to-right pass. Brackets inside JSON strings are ignored; a
+ * mismatched closer clears the open stack, because no valid JSON value can
+ * straddle it. This is O(n): the previous per-opener rescan was O(n²) and a
+ * ~20KB reply of unbalanced braces stalled extraction for seconds.
+ */
+function matchBrackets(text: string): Map<number, number> {
+  const closeOf = new Map<number, number>();
+  const stack: Array<[string, number]> = [];
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{' || ch === '[') stack.push([ch, i]);
+    else if (ch === '}' || ch === ']') {
+      const top = stack[stack.length - 1];
+      if (!top) continue; // stray closer
+      if (ch === (top[0] === '{' ? '}' : ']')) {
+        stack.pop();
+        closeOf.set(top[1], i);
+      } else {
+        stack.length = 0; // mismatch: nothing on the stack can still balance
+      }
+    }
+  }
+  return closeOf;
+}
+
 function scanBalanced(text: string): unknown {
-  for (let start = 0; start < text.length; start += 1) {
-    const open = text[start];
-    if (open !== '{' && open !== '[') continue;
-    const close = open === '{' ? '}' : ']';
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let i = start; i < text.length; i += 1) {
-      const ch = text[i];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (ch === '\\') escaped = true;
-        else if (ch === '"') inString = false;
-        continue;
-      }
-      if (ch === '"') inString = true;
-      else if (ch === open) depth += 1;
-      else if (ch === close) {
-        depth -= 1;
-        if (depth === 0) {
-          try {
-            return JSON.parse(text.slice(start, i + 1));
-          } catch {
-            break; // advance to the next opener
-          }
-        }
-      }
+  const closeOf = matchBrackets(text);
+  // Iterating `i` upward visits openers in ascending order, so the first span
+  // that parses is the earliest-starting one — matching "the first parseable
+  // span" without an O(n²) rescan. Parse work is char-capped for pathological
+  // inputs (many large nested spans that each fail to parse).
+  let parsed = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const end = closeOf.get(i);
+    if (end === undefined) continue;
+    const slice = text.slice(i, end + 1);
+    if ((parsed += slice.length) > MAX_SCAN_PARSE_CHARS) break;
+    try {
+      return JSON.parse(slice);
+    } catch {
+      // not valid JSON on its own; try the next opener
     }
   }
   return undefined;

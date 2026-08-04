@@ -168,3 +168,26 @@ describe('TypeScriptAdapter', () => {
     expect(fn('engine.ignite')?.paramTypes.e).toBe('Engine');
   });
 });
+
+describe('TypeScriptAdapter — duplicate-id defenses (adversarial round)', () => {
+  it('collapses a get/set pair (same id) to one node and does not multiply edges', async () => {
+    const src = `
+export class Box {
+  #v = 0;
+  get val(): number { peek(); return this.#v; }
+  set val(n: number) { poke(); this.#v = n; }
+}
+function peek(): void {}
+function poke(): void {}
+`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-ts-getset-'));
+    writeFileSync(join(root, 'a.ts'), src);
+    const result = await new TypeScriptAdapter().analyze(['a.ts'], root);
+    const ids = result.functions.map((f) => f.id);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
+    expect(result.functions.filter((f) => f.id === 'a.Box.val')).toHaveLength(1);
+    // the shared-id node's edges are not duplicated across get+set bodies
+    const valEdges = result.edges.filter((e) => e.callerId === 'a.Box.val');
+    expect(valEdges.length).toBeLessThanOrEqual(2);
+  });
+});

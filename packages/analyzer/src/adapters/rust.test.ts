@@ -156,3 +156,42 @@ describe('RustAdapter', () => {
     expect(only?.callType).toBe('unresolved');
   });
 });
+
+describe('RustAdapter — deep-nesting defenses (pass 2)', () => {
+  it('does not stack-overflow on deeply nested inline modules (was recursive scanInto)', async () => {
+    const depth = 4000;
+    const src = `${'mod m {\n'.repeat(depth)}fn deep() {}\n${'}\n'.repeat(depth)}`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-rs-mod-'));
+    writeFileSync(join(root, 'a.rs'), src);
+    const result = await new RustAdapter().analyze(['a.rs'], root);
+    expect(result.functions.some((f) => f.name === 'deep')).toBe(true);
+  });
+
+  it('does not stack-overflow on a deeply nested use-tree (was recursive collectUse)', async () => {
+    const depth = 3000;
+    const src = `use ${'a::{'.repeat(depth)}x${'}'.repeat(depth)};\nfn f() {}\n`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-rs-use-'));
+    writeFileSync(join(root, 'a.rs'), src);
+    const result = await new RustAdapter().analyze(['a.rs'], root);
+    expect(result.functions.some((f) => f.name === 'f')).toBe(true);
+  });
+
+  it('inline-mod prefixing and first-wins are unchanged by the iterative rewrite', async () => {
+    const src = `
+mod outer {
+    struct S;
+    impl S { fn m(&self) -> i32 { 0 } }
+    mod inner {
+        fn helper() -> i32 { 1 }
+    }
+    fn use_inner() -> i32 { helper() }
+}
+`;
+    const root = mkdtempSync(join(tmpdir(), 'hb-rs-prefix-'));
+    writeFileSync(join(root, 'lib.rs'), src);
+    const result = await new RustAdapter().analyze(['lib.rs'], root);
+    expect(result.functions.find((f) => f.id === 'lib::outer::S::m')).toBeDefined();
+    expect(result.functions.find((f) => f.id === 'lib::outer::inner::helper')).toBeDefined();
+    expect(result.functions.find((f) => f.id === 'lib::outer::use_inner')).toBeDefined();
+  });
+});
