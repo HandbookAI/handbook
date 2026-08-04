@@ -71,6 +71,40 @@ export function parseDeclarations(plan: string): Declarations | undefined {
   }
 }
 
+/**
+ * Close a plan's final code fence if the model forgot it.
+ *
+ * Observed: a complete, correct 2-edit plan was refused wholesale because the
+ * trailing declarations block was missing its closing ```. The executor's
+ * strictness is deliberate and must not be relaxed — a tolerated unclosed fence
+ * is how a truncated anchor once slipped through — so the slip is repaired here,
+ * where we can see it is a delimiter and not content: only ONE fence may be open,
+ * and only at end of text. Anything else is left for the executor to refuse.
+ */
+export function closeDanglingFence(plan: string): { plan: string; repaired: boolean } {
+  const lines = plan.split(/\r?\n/);
+  let open: string | undefined;
+  for (const line of lines) {
+    const m = /^[ \t]*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!m) continue;
+    const marker = m[1] as string;
+    const info = (m[2] ?? '').trim();
+    if (open === undefined) open = marker;
+    else if (marker[0] === open[0] && marker.length >= open.length && info === '') open = undefined;
+  }
+  if (open === undefined) return { plan, repaired: false };
+  return { plan: `${plan.replace(/\s*$/, '')}\n${open}\n`, repaired: true };
+}
+
+/** Repeated after the transcript every turn: the last thing read wins. */
+const TURN_REMINDER =
+  'Respond with EXACTLY ONE JSON action block and nothing else — no prose, no second action, ' +
+  'and NEVER a "## Tool result" section (I write those, from tools I actually ran). ' +
+  'If you already know enough, use the "finish" action with the complete plan in its "plan" field.';
+
+/** Enough for one action, or a finish carrying a multi-edit plan. */
+const PLANNER_MAX_TOKENS = 6000;
+
 /** The harness's own result heading — a model writing it is fabricating. */
 const FABRICATED_RESULT_RE = /^#{1,3}\s*Tool result\b/im;
 /** How many fabricating replies to correct before giving up on the run. */
@@ -115,10 +149,19 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
     const isLast = turn === maxTurns;
+    // The reminder goes LAST, after the transcript. Put it only in the system
+    // prompt and the final thing the model reads is a tool result — which is
+    // exactly the shape it then starts imitating, generating tens of thousands of
+    // characters of invented conversation until it hits the token cap.
     const prompt = isLast
       ? `${transcript.join('\n\n---\n\n')}\n\n---\n\nTurn limit reached. You MUST respond with the "finish" action now, containing your best complete plan.`
-      : transcript.join('\n\n---\n\n');
-    const response = await options.client.complete(prompt, { temperature: 0 });
+      : `${transcript.join('\n\n---\n\n')}\n\n---\n\n${TURN_REMINDER}`;
+    // Say it BEFORE the call: a slow endpoint otherwise looks like a hang, and the
+    // last line printed was the previous turn — which reads as "stuck at 2/30".
+    logger.info(`[planner] turn ${turn}/${maxTurns}: asking the model…`);
+    // One action block needs a few hundred tokens; a plan needs a few thousand.
+    // Leaving the full budget open let a runaway reply burn 16k tokens per turn.
+    const response = await options.client.complete(prompt, { temperature: 0, maxTokens: PLANNER_MAX_TOKENS });
     const action = (response.json ?? undefined) as Action | undefined;
 
     // A reply that writes the harness's own "## Tool result" heading has invented
@@ -155,8 +198,9 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     // about this very tool protocol). Only an explicit finish wins over that.
     if (!action || typeof action.tool !== 'string' || (looksLikePlan && action.tool !== 'finish')) {
       if (looksLikePlan || isLast) {
-        const plan = response.text.trim();
-        return { plan, declarations: parseDeclarations(plan), turns: turn, trace };
+        const fixed = closeDanglingFence(response.text.trim());
+        if (fixed.repaired) logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
+        return { plan: fixed.plan, declarations: parseDeclarations(fixed.plan), turns: turn, trace };
       }
       transcript.push(response.text, 'Your reply was not a valid action block. Respond with exactly one JSON action.');
       continue;
@@ -167,7 +211,10 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
       // transcript once became "the plan". Only fall back when the reply at least
       // carries edit blocks; otherwise say plainly that nothing usable came back.
       const declared = (action.plan ?? '').trim();
-      const plan = declared || (looksLikePlan ? response.text.trim() : '(planner finished without producing a plan)');
+      const raw = declared || (looksLikePlan ? response.text.trim() : '(planner finished without producing a plan)');
+      const fixed = closeDanglingFence(raw);
+      if (fixed.repaired) logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
+      const plan = fixed.plan;
       const nEdits = (plan.match(/^ {0,3}###\s+EDIT\s+\d+\s*$/gm) ?? []).length;
       logger.info(
         `[planner] finished after ${turn} turns — ${nEdits} edit block(s)` +

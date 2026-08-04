@@ -79,7 +79,7 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 /** Repo status summary for the dashboard. */
-function repoStatus(repo: RepoEntry): Record<string, unknown> {
+function repoStatus(repo: RepoEntry, jobs?: JobRunner): Record<string, unknown> {
   const work = new WorkDir(repo.workDir);
   const handbookDir = join(repo.workDir, 'handbook');
   let chapters = 0;
@@ -98,6 +98,13 @@ function repoStatus(repo: RepoEntry): Record<string, unknown> {
     strategy: work.loadStrategy(),
     chapters,
     title,
+    // The UI had no way to know a job was running here, so its buttons stayed
+    // enabled and a second click met a bare "already has a running job"; and a
+    // collapsed drawer left no way back to the job that was still going.
+    runningJob: (() => {
+      const live = jobs?.list(repo.name).find((j) => j.status === 'running');
+      return live ? { id: live.id, kind: live.kind, startedAt: live.startedAt } : null;
+    })(),
     evolutions: countEvolutions(repo),
   };
 }
@@ -498,7 +505,7 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   }
 
   if (path === '/api/repos' && method === 'GET') {
-    json(res, 200, ctx.store.list().map(repoStatus));
+    json(res, 200, ctx.store.list().map((r) => repoStatus(r, ctx.jobs)));
     return;
   }
 
@@ -514,7 +521,7 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     const workDir = body.workDir ? resolve(String(body.workDir)) : join(ctx.stateDirWork, name);
     const entry = ctx.store.add({ name, sourceRoot, workDir });
     ensureDir(workDir);
-    json(res, 201, repoStatus(entry));
+    json(res, 201, repoStatus(entry, ctx.jobs));
     return;
   }
 
@@ -546,7 +553,7 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       return;
     }
     if (method === 'GET' && sub === '') {
-      json(res, 200, repoStatus(repo));
+      json(res, 200, repoStatus(repo, ctx.jobs));
       return;
     }
     if (

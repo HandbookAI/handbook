@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MockChatClient } from '@handbook/llm';
-import { parseDeclarations, runPlanner } from './planner.js';
+import { closeDanglingFence, parseDeclarations, runPlanner } from './planner.js';
 import { ReadOnlyTools } from './tools.js';
 
 const PLAN = `Add a retry to Engine.spin.
@@ -192,5 +192,33 @@ describe('parseDeclarations', () => {
     const plan = '```json\n{"a":1}\n```\ntext\n```json\n{"will_modify":["X"],"will_add":[],"will_remove":[]}\n```';
     expect(parseDeclarations(plan)?.willModify).toEqual(['X']);
     expect(parseDeclarations('```json\n{"a":1}\n```')).toBeUndefined();
+  });
+});
+
+describe('closeDanglingFence', () => {
+  it('closes a final fence the model forgot', () => {
+    // The real case: a correct 2-edit plan whose declarations block never closed,
+    // which made the executor refuse the whole plan.
+    const plan = '### EDIT 1\n```old\na\n```\n```new\nb\n```\n\n```json\n{"will_modify": []}';
+    const out = closeDanglingFence(plan);
+    expect(out.repaired).toBe(true);
+    expect(out.plan.match(/```/g)).toHaveLength(6);
+    expect(parseDeclarations(out.plan)?.willModify).toEqual([]);
+  });
+
+  it('leaves a balanced plan untouched', () => {
+    const plan = '### EDIT 1\n```old\na\n```\n```new\nb\n```\n';
+    expect(closeDanglingFence(plan)).toEqual({ plan, repaired: false });
+  });
+
+  it('matches the marker that was opened', () => {
+    expect(closeDanglingFence('~~~old\nx').plan.trimEnd().endsWith('~~~')).toBe(true);
+  });
+
+  it('does not touch a plan whose fences are all closed but content is missing', () => {
+    // Structural problems that are NOT a dangling delimiter stay for the executor
+    // to refuse — this helper only ever closes one open fence at end of text.
+    const plan = '### EDIT 1\n- file: `a.ts`\n```old\nx\n```\n';
+    expect(closeDanglingFence(plan).repaired).toBe(false);
   });
 });
