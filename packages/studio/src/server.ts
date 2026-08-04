@@ -306,6 +306,17 @@ async function runPlan(ctx: Ctx, repo: RepoEntry, body: Record<string, unknown>,
     request,
     logger,
   });
+  // A run that gave up must not come back green. The planner's own log said
+  // "rejected (3/3)" while the drawer showed SUCCEEDED.
+  if (result.aborted) {
+    const why =
+      result.aborted === 'fabrication'
+        ? 'the model kept inventing tool results instead of reading the code'
+        : result.aborted === 'turn-limit'
+          ? `hit the turn limit (${result.turns}) without finishing`
+          : 'finished without producing a plan';
+    throw new Error(`planner produced no usable plan — ${why}. Nothing from this run is trustworthy.`);
+  }
   return { plan: result.plan, declarations: result.declarations, turns: result.turns, trace: result.trace };
 }
 
