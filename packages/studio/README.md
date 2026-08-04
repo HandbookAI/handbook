@@ -30,7 +30,7 @@ the machine only via the LLM endpoint the pipeline itself is configured to use.
 | `GET /` | the dashboard UI |
 | `GET/POST /api/repos`, `GET/DELETE /api/repos/:name` | registry + status (chapters, strategy, evolutions) |
 | `POST /api/repos/:name/analyze` | phase-1 static analysis job (free, no LLM) |
-| `POST /api/repos/:name/generate` | full pipeline + render job (`{narrateLang, detail, synthMode, resume, title}`) |
+| `POST /api/repos/:name/generate` | full pipeline + render job — accepts every CLI generate option (see below) |
 | `POST /api/repos/:name/plan` | planner job (`{request}` → plan + declarations) |
 | `POST /api/repos/:name/resync` | live-tree resync job (`{description, noLlm, narrateLang}`) + re-render |
 | `GET /api/repos/:name/overview` | stages/summaries/registers/coverage JSON |
@@ -44,6 +44,33 @@ the machine only via the LLM endpoint the pipeline itself is configured to use.
 | `GET /api/repos/:name/handbook/*` | static serving of the rendered handbook (traversal-safe) |
 | `GET /api/jobs?repo=` | `{jobs: [...]}` — recent job summaries (id/repo/kind/status/startedAt, no raw log), newest first |
 | `GET /api/jobs/:id`, `GET /api/jobs/:id/stream` | job status / SSE log stream |
+| `POST /api/jobs/:id/cancel` | request cancellation: `202 {ok:true}` for a running job, `409` if it already finished, `404` unknown |
+
+### Generate options
+
+`POST /api/repos/:name/generate` accepts the full CLI surface; defaults mirror the CLI.
+
+| Field | Meaning |
+|---|---|
+| `narrateLang` (`en`\|`zh`), `detail` (`brief`\|`deep`), `synthMode` (`oneshot`\|`doctor`), `title` | the common four, shown at the top of the dialog |
+| `phase` | `all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3` or a comma list (default `all`) |
+| `strategy` | `file` \| `member`; omitted = keep the work dir's recorded strategy |
+| `skeleton` | path to an authored `skeleton.yaml` — required for `member` |
+| `lang` | source language: `auto \| python \| typescript \| go \| rust \| shell` |
+| `resume`, `refresh` | booleans: skip completed cards / ignore phase-3 caches |
+| `readWorkers` (default 12), `maxDoctorRounds` (default 6, doctor mode only) | numerics, validated server-side: garbage is a `400` on the request, never a NaN'd job |
+
+### Cancellation
+
+Cancellation is **cooperative**: `POST /api/jobs/:id/cancel` aborts the job's
+`AbortSignal` and answers `202` immediately, but the run only stops when it
+reaches its next checkpoint (between pipeline phases / before a render — and,
+as the underlying packages learn to observe the signal, mid-phase). A job that
+stopped this way finishes as **`cancelled`, which is an outcome, not a
+failure**: the UI renders it in the neutral ice tone, `error` stays unset, and
+the log ends with `[job] cancelled by user`. A cancelled job releases the
+per-repo mutex and no longer blocks repo deletion, exactly like a succeeded or
+failed one. The drawer shows a 取消/Cancel button while its job is running.
 
 ## Views
 

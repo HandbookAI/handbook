@@ -330,6 +330,8 @@
   .drawer .head .st{font:10.5px var(--mono);color:var(--gold);letter-spacing:.08em}
   .drawer .head .st.ok{color:var(--jade)}
   .drawer .head .st.bad{color:var(--red)}
+  /* cancelled is an OUTCOME, not an error — same ice family as "no changes". */
+  .drawer .head .st.ice{color:var(--ice)}
   .drawer .head .sp{margin-left:auto}
   .drawer .term{flex:1;border:none;border-radius:0;max-height:none;background:var(--code-bg)}
 
@@ -340,6 +342,13 @@
   dialog h3{margin-bottom:14px;font-size:16px}
   dialog label{display:block;font-size:12.5px;color:var(--dim);margin:12px 0 4px}
   dialog .row{margin-top:20px;justify-content:flex-end}
+  /* collapsed "Advanced" section of the generate dialog */
+  details.adv{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px}
+  details.adv summary{cursor:pointer;font:10.5px var(--mono);letter-spacing:.18em;color:var(--ice)}
+  details.adv summary:hover{color:var(--gold-hi)}
+  dialog label.ck{display:inline-flex;align-items:center;gap:7px;margin:12px 18px 0 0;cursor:pointer}
+  dialog label.ck input{width:auto;margin:0;accent-color:var(--gold)}
+  dialog .half2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 
   /* ---------------------------------------------------------- responsive */
   @media (max-width:1180px){
@@ -406,6 +415,7 @@
   <div class="head">
     <b id="jobTitle"></b><span class="st" id="jobStatus"></span>
     <span class="sp"></span>
+    <button class="sm danger" data-act="job-cancel" id="jobCancel" hidden></button>
     <button class="sm ghost" data-act="drawer-hide" id="drawerHide"></button>
   </div>
   <div class="term" id="jobLog"></div>
@@ -430,9 +440,31 @@
   <label id="lbDetail" for="gDetail"></label>
   <select id="gDetail"></select>
   <label id="lbSynth" for="gSynth"></label>
-  <select id="gSynth"></select>
+  <select id="gSynth" data-change="gen-synth"></select>
   <label id="lbGTitle" for="gTitle"></label><input id="gTitle" autocomplete="off">
+  <details class="adv">
+    <summary id="advTitle"></summary>
+    <label id="lbStrategy" for="gStrategy"></label>
+    <select id="gStrategy" data-change="gen-strategy"></select>
+    <div id="skelRow" hidden>
+      <label id="lbSkeleton" for="gSkeleton"></label>
+      <input id="gSkeleton" autocomplete="off" spellcheck="false" placeholder="/path/to/skeleton.yaml">
+    </div>
+    <div class="half2">
+      <div><label id="lbSrcLang" for="gSrcLang"></label><select id="gSrcLang"></select></div>
+      <div><label id="lbPhase" for="gPhase"></label><input id="gPhase" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div class="half2">
+      <div><label id="lbWorkers" for="gWorkers"></label><input id="gWorkers" type="number" min="1" step="1" value="12"></div>
+      <div><label id="lbRounds" for="gRounds"></label><input id="gRounds" type="number" min="1" step="1" value="6" disabled></div>
+    </div>
+    <div>
+      <label class="ck"><input type="checkbox" id="gResume"><span id="lbResume"></span></label>
+      <label class="ck"><input type="checkbox" id="gRefresh"><span id="lbRefresh"></span></label>
+    </div>
+  </details>
   <div class="hint" id="genHint"></div>
+  <div class="error" id="gErr"></div>
   <div class="row end">
     <button data-act="gen-cancel" id="genCancel"></button>
     <button class="primary" data-act="gen-submit" id="genSubmit"></button>
@@ -585,8 +617,9 @@ const DICT = {
       empty: '还没有演化记录', emptyD: '在某个仓库的「演化」页跑一次重同步后，这里会出现按天分组的时间线。',
       unreadable: '这条记录读不出来'
     },
-    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: '收起（后台继续）',
-           chip: '任务进行中' },
+    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', cancelled: 'CANCELLED',
+           hide: '收起（后台继续）', chip: '任务进行中', cancel: '取消',
+           cancelReq: '… 已请求取消：作业会在下一个检查点停下' },
     dlg: {
       add: '添加仓库', name: '名称（唯一，URL 安全）', source: '源码目录（绝对路径）',
       work: 'work 目录（可留空，自动创建）', workPh: '留空 = Studio 托管', addGo: '添加',
@@ -595,7 +628,19 @@ const DICT = {
       detailBrief: 'brief — 便宜，先试水', detailDeep: 'deep — 逐函数精读',
       synthOne: 'oneshot — 快', synthDoc: 'doctor — 评审循环修复',
       genHint: '需要 .env 或环境变量里的 OPENAI_API_KEY；phase 1 静态分析免费。',
-      genGo: '开始生成', need: '名称与源码目录都必填'
+      genGo: '开始生成', need: '名称与源码目录都必填',
+      advanced: '高级选项',
+      strategy: '骨架策略（strategy）',
+      strategyAuto: '默认（沿用 work 目录已记录的策略）', strategyFile: 'file — 自动骨架，按文件归档',
+      strategyMember: 'member — 手写骨架，函数级归档',
+      skeleton: 'skeleton.yaml 路径（member 策略必填）',
+      srcLang: '源码语言（lang）', phase: '阶段（phase）',
+      phasePh: 'all | 1 | 2 | 2a | 2b | 2c | 3 | 逗号列表',
+      resume: 'resume — 跳过已有完整卡片的文件',
+      refresh: 'refresh — 忽略阶段 3 缓存',
+      readWorkers: '并发卡片批次（readWorkers）',
+      doctorRounds: 'doctor 收敛轮数（仅 doctor 模式）',
+      needSkeleton: 'member 策略需要 skeleton.yaml 路径'
     }
   },
   en: {
@@ -735,8 +780,9 @@ const DICT = {
       empty: 'No evolutions yet', emptyD: 'Run a resync from any repo\'s Evolve tab and a day-grouped timeline appears here.',
       unreadable: 'This record could not be read'
     },
-    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', hide: 'Hide (keeps running)',
-           chip: 'Job running' },
+    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', cancelled: 'CANCELLED',
+           hide: 'Hide (keeps running)', chip: 'Job running', cancel: 'Cancel',
+           cancelReq: '… cancel requested — the job stops at its next checkpoint' },
     dlg: {
       add: 'Add repository', name: 'Name (unique, URL-safe)', source: 'Source directory (absolute path)',
       work: 'Work directory (optional)', workPh: 'empty = managed by Studio', addGo: 'Add',
@@ -745,7 +791,19 @@ const DICT = {
       detailBrief: 'brief — cheap, first look', detailDeep: 'deep — per-function reading',
       synthOne: 'oneshot — fast', synthDoc: 'doctor — review & repair loop',
       genHint: 'Needs OPENAI_API_KEY in .env or the environment; phase-1 static analysis is free.',
-      genGo: 'Start', need: 'Name and source directory are required'
+      genGo: 'Start', need: 'Name and source directory are required',
+      advanced: 'Advanced',
+      strategy: 'Skeleton strategy',
+      strategyAuto: 'default (keep the work dir\'s recorded strategy)', strategyFile: 'file — auto skeleton, file-level filing',
+      strategyMember: 'member — authored skeleton, function-level filing',
+      skeleton: 'skeleton.yaml path (required for member)',
+      srcLang: 'Source language', phase: 'Phase',
+      phasePh: 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list',
+      resume: 'resume — skip files with a completed card',
+      refresh: 'refresh — ignore phase-3 caches',
+      readWorkers: 'Concurrent card batches (readWorkers)',
+      doctorRounds: 'Doctor convergence rounds (doctor mode only)',
+      needSkeleton: 'member strategy needs a skeleton.yaml path'
     }
   }
 };
@@ -876,6 +934,7 @@ function renderChrome() {
   $('langBtn').setAttribute('aria-label', state.lang === 'zh' ? 'switch to English' : '切换到中文');
   $('addBtn').textContent = t('nav.add');
   $('drawerHide').textContent = t('job.hide');
+  $('jobCancel').textContent = t('job.cancel');
   renderJobChip();
   $('reposT').innerHTML = esc(t('nav.repos')) + '<span>' + state.repos.length + '</span>';
 
@@ -1759,10 +1818,14 @@ async function renderRepoHistory(c, tok, repo) {
 
 /* ------------------------------------------------------- job drawer/SSE */
 let evtSource = null;
+/** The job the drawer is currently attached to — what the cancel button acts on. */
+let attachedJobId = null;
 
 function setJobStatus(status) {
   const el = $('jobStatus');
-  el.className = 'st' + (status === 'succeeded' ? ' ok' : status === 'failed' ? ' bad' : '');
+  // cancelled is an outcome, not an error: ice, never red.
+  el.className = 'st' + (status === 'succeeded' ? ' ok' : status === 'failed' ? ' bad'
+    : status === 'cancelled' ? ' ice' : '');
   el.textContent = t('job.' + status) || String(status).toUpperCase();
 }
 
@@ -1786,15 +1849,21 @@ function busyBar() {
 }
 
 function runJob(job, title, onDone) {
+  attachedJobId = job.id;
   $('drawer').classList.add('show');
   $('jobTitle').textContent = title;
   setJobStatus('running');
+  const cancelBtn = $('jobCancel');
+  cancelBtn.textContent = t('job.cancel');
+  cancelBtn.disabled = false;
+  cancelBtn.hidden = false;
   $('jobLog').textContent = '';
   if (evtSource) { evtSource.close(); evtSource = null; }
   let finished = false;
   const finish = async () => {
     if (finished) return;
     finished = true;
+    $('jobCancel').hidden = true;
     if (evtSource) { evtSource.close(); evtSource = null; }
     let full = null;
     try { full = await api('/api/jobs/' + enc(job.id)); } catch (e) { appendLog('✖ ' + errMsg(e)); }
@@ -1831,9 +1900,11 @@ function appendLog(line) {
   el.scrollTop = el.scrollHeight;
 }
 function showError(title, message) {
+  attachedJobId = null;
   $('drawer').classList.add('show');
   $('jobTitle').textContent = title;
   setJobStatus('failed');
+  $('jobCancel').hidden = true;
   $('jobLog').textContent = '✖ ' + message + '\n';
 }
 
@@ -1889,21 +1960,56 @@ const ACT = {
       openRepo(name, 'overview');
     } catch (e) { $('fErr').textContent = errMsg(e); }
   },
-  'gen-open': () => $('dlgGen').showModal(),
+  'gen-open': () => { $('gErr').textContent = ''; $('dlgGen').showModal(); },
   'gen-cancel': () => $('dlgGen').close(),
   'gen-submit': async () => {
-    $('dlgGen').close();
     const repo = current();
     if (!repo) return;
+    const strategy = $('gStrategy').value;
+    const skeleton = $('gSkeleton').value.trim();
+    // The pipeline would reject this anyway — but as a failed job, minutes of
+    // dialog context later. Say it here, while the fix is one field away.
+    if (strategy === 'member' && !skeleton) {
+      $('gErr').textContent = t('dlg.needSkeleton');
+      const adv = document.querySelector('#dlgGen details.adv');
+      if (adv) adv.open = true;
+      return;
+    }
+    $('gErr').textContent = '';
     const body = {
       narrateLang: $('gLang').value, detail: $('gDetail').value, synthMode: $('gSynth').value,
+      lang: $('gSrcLang').value,
+      phase: $('gPhase').value.trim() || 'all',
+      resume: $('gResume').checked,
+      refresh: $('gRefresh').checked,
     };
     const title = $('gTitle').value.trim();
     if (title) body.title = title;
+    if (strategy) body.strategy = strategy;              // empty = keep the recorded strategy
+    if (skeleton) body.skeleton = skeleton;
+    // Send the raw field values: the server is the single fail-loud validator.
+    const workers = $('gWorkers').value.trim();
+    if (workers) body.readWorkers = workers;
+    const rounds = $('gRounds').value.trim();
+    if (body.synthMode === 'doctor' && rounds) body.maxDoctorRounds = rounds;
+    $('dlgGen').close();
     try {
       const job = await api('/api/repos/' + enc(repo.name) + '/generate', { method: 'POST', body: JSON.stringify(body) });
       runJob(job, t('dlg.gen'));
     } catch (e) { showError(t('dlg.gen'), errMsg(e)); }
+  },
+  'job-cancel': async () => {
+    if (!attachedJobId) return;
+    const btn = $('jobCancel');
+    btn.disabled = true;                       // a second POST would just 409
+    try {
+      await api('/api/jobs/' + enc(attachedJobId) + '/cancel', { method: 'POST', body: '{}' });
+      appendLog(t('job.cancelReq'));
+      void loadJobs();                         // the run ends via the SSE done event
+    } catch (e) {
+      btn.disabled = false;
+      appendLog('✖ ' + errMsg(e));
+    }
   },
   'analyze': async () => {
     const repo = current();
@@ -2077,6 +2183,12 @@ document.addEventListener('change', (e) => {
   } else if (el.dataset.change === 'graph-limit') {
     state.graph = { stage: state.graph.stage, limit: Number(el.value) || 60, data: null };
     render();
+  } else if (el.dataset.change === 'gen-strategy') {
+    // The skeleton path only exists for the member strategy.
+    $('skelRow').hidden = el.value !== 'member';
+  } else if (el.dataset.change === 'gen-synth') {
+    // Doctor rounds only mean anything when the doctor loop runs at all.
+    $('gRounds').disabled = el.value !== 'doctor';
   }
 });
 document.addEventListener('keydown', (e) => {
@@ -2107,6 +2219,16 @@ function syncDialogs() {
   $('genHint').textContent = t('dlg.genHint');
   $('genCancel').textContent = t('common.cancel');
   $('genSubmit').textContent = t('dlg.genGo');
+  $('advTitle').textContent = t('dlg.advanced');
+  $('lbStrategy').textContent = t('dlg.strategy');
+  $('lbSkeleton').textContent = t('dlg.skeleton');
+  $('lbSrcLang').textContent = t('dlg.srcLang');
+  $('lbPhase').textContent = t('dlg.phase');
+  $('gPhase').placeholder = t('dlg.phasePh');
+  $('lbWorkers').textContent = t('dlg.readWorkers');
+  $('lbRounds').textContent = t('dlg.doctorRounds');
+  $('lbResume').textContent = t('dlg.resume');
+  $('lbRefresh').textContent = t('dlg.refresh');
   const keep = (sel, opts) => {
     const el = $(sel);
     const cur = el.value;
@@ -2115,6 +2237,9 @@ function syncDialogs() {
   };
   keep('gDetail', [['brief', t('dlg.detailBrief')], ['deep', t('dlg.detailDeep')]]);
   keep('gSynth', [['oneshot', t('dlg.synthOne')], ['doctor', t('dlg.synthDoc')]]);
+  keep('gStrategy', [['', t('dlg.strategyAuto')], ['file', t('dlg.strategyFile')], ['member', t('dlg.strategyMember')]]);
+  keep('gSrcLang', [['auto', 'auto'], ['python', 'python'], ['typescript', 'typescript'],
+                    ['go', 'go'], ['rust', 'rust'], ['shell', 'shell']]);
 }
 
 /* ----------------------------------------------------------------- boot */

@@ -68,6 +68,10 @@ function mockRules(): MockRule[] {
 const PORT = 48611;
 const base = `http://127.0.0.1:${PORT}`;
 
+/** Per-call mock latency. Cancellation is cooperative — it needs a run that is
+ *  actually MID-FLIGHT when the abort lands, so the cancel test dials this up. */
+let llmDelayMs = 0;
+
 async function api(path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(`${base}${path}`, init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined);
   const body = (await res.json().catch(() => ({}))) as any;
@@ -103,7 +107,14 @@ describe('studio server (integration, mock LLM)', () => {
         // and gateway blocks never reach the job log a user is watching.
         factoryLoggers.push(logger);
         logger.warn('[llm] client attached');
-        return new MockChatClient(mockRules());
+        const inner = new MockChatClient(mockRules());
+        return {
+          model: inner.model,
+          complete: async (prompt, options) => {
+            if (llmDelayMs > 0) await new Promise((r) => setTimeout(r, llmDelayMs));
+            return inner.complete(prompt, options);
+          },
+        };
       },
     });
   });
@@ -181,7 +192,7 @@ describe('studio server (integration, mock LLM)', () => {
         id: expect.any(String),
         repo: 'demo',
         kind: expect.any(String),
-        status: expect.stringMatching(/^(running|succeeded|failed)$/),
+        status: expect.stringMatching(/^(running|succeeded|failed|cancelled)$/),
         startedAt: expect.any(String),
       });
       // Summaries, not transcripts: the raw log stays behind /api/jobs/:id.
@@ -194,6 +205,34 @@ describe('studio server (integration, mock LLM)', () => {
     expect((await api('/api/jobs?repo=demo')).jobs).toHaveLength(out.jobs.length);
     expect((await api('/api/jobs?repo=nope')).jobs).toEqual([]);
     await waitJob(started.id); // leave no running job behind for later tests
+  });
+
+  it('forwards advanced generate options to the pipeline', async () => {
+    // member strategy without a skeleton is the pipeline's own fail-loud case:
+    // if the option had been dropped on the floor (as lang/strategy/readWorkers
+    // once were), this run would sail through as a plain file-strategy generate.
+    const job = await api('/api/repos/demo/generate', {
+      method: 'POST',
+      body: JSON.stringify({ strategy: 'member', phase: '2b' }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status).toBe('failed');
+    expect(done.log.join('\n')).toContain('skeleton');
+  });
+
+  it('rejects garbage numeric generate options with a 400, before any job starts', async () => {
+    for (const body of [{ readWorkers: 'garbage' }, { readWorkers: 0 }, { maxDoctorRounds: 'many' }]) {
+      const res = await fetch(`${base}/api/repos/demo/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(400);
+      const out = (await res.json()) as any;
+      expect(String(out.error)).toContain(Object.keys(body)[0] as string);
+    }
+    // Fail-loud means fail EARLY: no job may have been created for these.
+    expect((await api('/api/jobs?repo=demo')).jobs.every((j: any) => j.status !== 'running')).toBe(true);
   });
 
   it('blocks path traversal on the static handbook route', async () => {
@@ -398,6 +437,49 @@ describe('studio server (integration, mock LLM)', () => {
     );
     expect(forced.status).toBe('succeeded');
     expect(readFileSync(engine, 'utf8')).toBe(before);
+  });
+
+  it('cancels a running job cooperatively and frees the per-repo mutex', async () => {
+    llmDelayMs = 120; // every mock LLM call now takes long enough to abort mid-run
+    try {
+      const job = await api('/api/repos/demo/generate', { method: 'POST', body: JSON.stringify({ narrateLang: 'en' }) });
+      const res = await fetch(`${base}/api/jobs/${job.id}/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(res.status).toBe(202);
+      expect(await res.json()).toEqual({ ok: true });
+
+      // Cooperative: the run stops at its next checkpoint, then finishes as an
+      // OUTCOME (cancelled), not an error (failed).
+      const done = await waitJob(job.id);
+      expect(done.status).toBe('cancelled');
+      expect(done.error).toBeUndefined();
+      expect(done.log.join('\n')).toContain('[job] cancelled by user');
+
+      // The mutex must treat cancelled as finished: a follow-up job on the
+      // same repo starts and completes instead of hitting "already running".
+      llmDelayMs = 0;
+      const follow = await api('/api/repos/demo/analyze', { method: 'POST', body: '{}' });
+      expect((await waitJob(follow.id)).status).toBe('succeeded');
+
+      // Cancelling a job that already finished is a conflict; unknown is a 404.
+      const again = await fetch(`${base}/api/jobs/${job.id}/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(again.status).toBe(409);
+      const ghost = await fetch(`${base}/api/jobs/no-such-job/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(ghost.status).toBe(404);
+    } finally {
+      llmDelayMs = 0;
+    }
   });
 
   it('aggregates global history across repos', async () => {
