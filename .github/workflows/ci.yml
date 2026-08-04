@@ -1,0 +1,31 @@
+# Monorepo CI: type-check, lint, and test on every push and pull request.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json engines requires node >=20.11.
+        node-version: [20, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs the pnpm version pinned in package.json's "packageManager".
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          # Caches the pnpm store keyed on pnpm-lock.yaml.
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # tsc -b + eslint --max-warnings 0 + vitest run
+      - run: pnpm check
