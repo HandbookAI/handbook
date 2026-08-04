@@ -283,6 +283,19 @@ describe('resyncHandbook', () => {
     expect(cardPrompts.some((c) => c.prompt.includes('SOURCE FILES IN FULL'))).toBe(false);
   });
 
+  it('refuses to resync while another process holds the work-dir lock', async () => {
+    const lockPath = join(workDir, '.lock');
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: 2147483646, host: 'some-other-machine', startedAt: '2000-01-01T00:00:00Z' }),
+    );
+    try {
+      await expect(resyncHandbook({ caseDir, workDir, noLlm: true })).rejects.toThrow(/another handbook run/);
+    } finally {
+      rmSync(lockPath, { force: true });
+    }
+  });
+
   it('noLlm mode refreshes structure and marks prose stale', async () => {
     const source2 = mkdtempSync(join(tmpdir(), 'hb-rs-src2-'));
     const work2 = mkdtempSync(join(tmpdir(), 'hb-rs-work2-'));

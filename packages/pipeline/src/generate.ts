@@ -7,6 +7,7 @@ import type { ChatClient } from '@handbook/llm';
 import {
   MissingArtifactError,
   silentLogger,
+  withDirLock,
   type HandbookModel,
   type Logger,
   type NarrateLang,
@@ -81,6 +82,14 @@ export interface GenerateStats {
 }
 
 export async function generateHandbook(options: GenerateOptions): Promise<GenerateStats> {
+  // One run per work dir at a time — a concurrent CLI/studio run on the same
+  // artifacts would interleave writes (re-entrant, so runPhase1 nests fine).
+  return withDirLock(options.workDir, 'handbook', options.logger ?? silentLogger, () =>
+    generateLocked(options),
+  );
+}
+
+async function generateLocked(options: GenerateOptions): Promise<GenerateStats> {
   const logger = options.logger ?? silentLogger;
   const phases = expandPhases(options.phase ?? 'all');
   const work = new WorkDir(options.workDir);
