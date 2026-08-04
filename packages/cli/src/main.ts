@@ -225,6 +225,13 @@ program
       maxTurns: toInt(opts.maxTurns, '--max-turns', 1),
       logger: logger(),
     });
+    // A run that gave up must exit non-zero: writing its abort message to
+    // plan.md and returning 0 would let a script feed it straight into `apply`.
+    if (result.aborted) {
+      throw new Error(
+        `planner produced no usable plan (${result.aborted}) after ${result.turns} turn(s): ${result.plan}`,
+      );
+    }
     if (opts.out) {
       writeFileSync(resolve(opts.out), `${result.plan}\n`);
       printJson({ out: resolve(opts.out), turns: result.turns, declarations: result.declarations });

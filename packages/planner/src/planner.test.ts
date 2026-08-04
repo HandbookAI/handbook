@@ -158,6 +158,7 @@ describe('runPlanner', () => {
     expect(result.plan).not.toContain('still_invented');
     expect(result.plan).toContain('### EDIT 1');
     expect(result.declarations?.willModify).toEqual(['Engine.spin']);
+    expect(result.aborted).toBeUndefined(); // recovered — not a failed run
     expect(calls).toBe(3); // two rejections, then the real answer
   });
 
@@ -168,6 +169,8 @@ describe('runPlanner', () => {
     expect(result.plan).toMatch(/kept inventing tool results/);
     expect(result.plan).not.toContain('### EDIT');
     expect(result.declarations).toBeUndefined();
+    // The signal callers act on: a run that gave up must not look like a success.
+    expect(result.aborted).toBe('fabrication');
   });
 
   it('does not dump the raw reply when finish carries no plan', async () => {
@@ -177,6 +180,7 @@ describe('runPlanner', () => {
     const result = await runPlanner({ client, sourceRoot, request: 'x' });
     expect(result.plan).toBe('(planner finished without producing a plan)');
     expect(result.plan).not.toContain('chatter');
+    expect(result.aborted).toBe('no-plan');
   });
 
   it('accepts a prose answer containing EDIT blocks as the plan', async () => {

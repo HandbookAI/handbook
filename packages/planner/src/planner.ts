@@ -39,6 +39,12 @@ export interface PlannerResult {
   turns: number;
   /** One line per tool call, for tracing. */
   trace: string[];
+  /**
+   * Set when the loop gave up instead of producing a plan. Callers MUST treat this
+   * as a failure: a run that abandoned the request used to return normally, so the
+   * job above it reported success while its own log said "rejected (3/3)".
+   */
+  aborted?: 'fabrication' | 'turn-limit' | 'no-plan';
 }
 
 interface Action {
@@ -181,6 +187,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
             'Nothing here is trustworthy — rerun, or point the planner at a stronger endpoint.)',
           turns: turn,
           trace,
+          aborted: 'fabrication',
         };
       }
       transcript.push(
@@ -211,6 +218,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
       // transcript once became "the plan". Only fall back when the reply at least
       // carries edit blocks; otherwise say plainly that nothing usable came back.
       const declared = (action.plan ?? '').trim();
+      const noPlan = !declared && !looksLikePlan;
       const raw = declared || (looksLikePlan ? response.text.trim() : '(planner finished without producing a plan)');
       const fixed = closeDanglingFence(raw);
       if (fixed.repaired) logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
@@ -220,7 +228,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
         `[planner] finished after ${turn} turns — ${nEdits} edit block(s)` +
           (nEdits === 0 ? ' (the planner concluded no code change is needed)' : ''),
       );
-      return { plan, declarations: parseDeclarations(plan), turns: turn, trace };
+      return { plan, declarations: parseDeclarations(plan), turns: turn, trace, ...(noPlan ? { aborted: 'no-plan' as const } : {}) };
     }
 
     const result = runTool(action);
@@ -235,7 +243,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     );
   }
 
-  return { plan: '(planner reached the turn limit without finishing)', turns: maxTurns, trace };
+  return { plan: '(planner reached the turn limit without finishing)', turns: maxTurns, trace, aborted: 'turn-limit' };
 }
 
 /** Convenience: mount a skill directory (references/) as the planner handbook. */
