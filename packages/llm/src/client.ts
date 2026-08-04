@@ -10,7 +10,6 @@ import {
   PermanentError,
   extractJsonBlock,
   pLimit,
-  retry,
   type Logger,
   silentLogger,
   type LimitFn,
@@ -21,6 +20,12 @@ export interface ChatOptions {
   temperature?: number;
   /** Override the client's default max output tokens for this call. */
   maxTokens?: number;
+  /**
+   * Cooperative cancellation. An aborted call rejects with the signal's reason
+   * (an `AbortError`, never wrapped), aborts the in-flight HTTP request, and is
+   * never retried.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ChatResult {
@@ -194,8 +199,11 @@ export class OpenAiChatClient implements ChatClient {
     // other request on a client shared by 16 concurrent workers.
     const call: CallState = { grow: false };
     return this.limit(() =>
-      retry(
+      retryAbortable(
         async (attempt) => {
+          // Checked before EVERY attempt: a cancelled run must not open one
+          // more HTTP request just because a retry was already scheduled.
+          options.signal?.throwIfAborted();
           const startedAt = Date.now();
           const text = await this.request(prompt, options, attempt, call);
           const elapsedSec = (Date.now() - startedAt) / 1000;
@@ -206,6 +214,7 @@ export class OpenAiChatClient implements ChatClient {
         {
           attempts: this.config.maxRetries,
           backoffMs: this.config.retryBackoffMs,
+          signal: options.signal,
           onRetry: (error, attempt) => {
             this.stats.failures += 1;
             this.logger.warn(`LLM call failed (attempt ${attempt}): ${String(error)}`);
@@ -247,7 +256,12 @@ export class OpenAiChatClient implements ChatClient {
         authorization: `Bearer ${this.config.apiKey}`,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
+      // The caller's signal rides along with the per-request deadline, so a
+      // cancelled run tears down its in-flight requests instead of waiting
+      // them out. Without a caller signal the plain timeout is kept as-is.
+      signal: options.signal
+        ? AbortSignal.any([AbortSignal.timeout(this.timeoutMs), options.signal])
+        : AbortSignal.timeout(this.timeoutMs),
     });
 
     if (!response.ok) {
@@ -319,6 +333,67 @@ export class OpenAiChatClient implements ChatClient {
     }
     return text;
   }
+}
+
+interface RetryAbortableOptions {
+  /** Total attempts including the first one. */
+  attempts: number;
+  /** Linear backoff base in ms: sleep `backoffMs * attempt` between tries. */
+  backoffMs: number;
+  /** Uniform random extra sleep in ms added to each backoff. Default 500. */
+  jitterMs?: number;
+  /** Cooperative cancellation: consulted before each sleep and while sleeping. */
+  signal?: AbortSignal;
+  /** Called before each re-attempt with the error that caused it. */
+  onRetry?: (error: unknown, attempt: number) => void;
+}
+
+/**
+ * Core's `retry` semantics (linear backoff + jitter, {@link PermanentError}
+ * aborts immediately) plus cooperative cancellation: once the signal fires,
+ * the AbortError is rethrown untouched — never retried, never wrapped — and a
+ * backoff sleep already in progress wakes up and rejects at once.
+ */
+async function retryAbortable<T>(
+  fn: (attempt: number) => Promise<T>,
+  options: RetryAbortableOptions,
+): Promise<T> {
+  const attempts = Math.max(1, Math.trunc(options.attempts));
+  const jitterMs = Math.max(0, options.jitterMs ?? 500);
+  const { signal } = options;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn(attempt);
+    } catch (error) {
+      if (error instanceof PermanentError) throw error;
+      // An abort is a verdict on the RUN, not on this request — retrying would
+      // keep a cancelled pipeline burning requests. throwIfAborted rethrows
+      // the signal's own reason, so callers still see name === 'AbortError'.
+      signal?.throwIfAborted();
+      lastError = error;
+      if (attempt < attempts) {
+        options.onRetry?.(error, attempt);
+        await abortableSleep(options.backoffMs * attempt + Math.random() * jitterMs, signal);
+      }
+    }
+  }
+  throw lastError;
+}
+
+/** Sleep that rejects with the signal's reason the moment it aborts. */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /** Numeric token count from a usage field; anything else counts as zero. */

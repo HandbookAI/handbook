@@ -72,6 +72,13 @@ export interface GenerateOptions {
   organizeWorkers?: number;
   narrateWorkers?: number;
   refresh?: boolean;
+  /**
+   * Cooperative cancellation: checked between phases and at each batch/worker
+   * checkpoint, and passed into every LLM call so in-flight requests abort.
+   * An aborted run rejects with the signal's reason (`name === 'AbortError'`);
+   * partial artifacts already saved stay on disk and no run manifest is written.
+   */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -137,6 +144,10 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
 
 async function generateLocked(options: GenerateOptions): Promise<GenerateStats> {
   const logger = options.logger ?? silentLogger;
+  const signal = options.signal;
+  // Cooperative checkpoints: once between phases is enough for promptness —
+  // each phase pass re-checks per batch and aborts its in-flight LLM calls.
+  signal?.throwIfAborted();
   const phases = expandPhases(options.phase ?? 'all');
   const work = new WorkDir(options.workDir);
 
@@ -179,6 +190,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
   const graph = work.loadGraph();
 
   if (phases.has('2a')) {
+    signal?.throwIfAborted();
     const result = await generateCards({
       client,
       graph,
@@ -190,19 +202,21 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       detail: options.detail,
       resume: options.resume,
       lang: narrateLang,
+      signal,
       logger,
     });
     stats.nCards = result.coverage.nFiles;
   }
 
   if (phases.has('2b')) {
+    signal?.throwIfAborted();
     const cards = work.loadCards();
     if (Object.keys(cards).length === 0) {
       throw new MissingArtifactError('phase2/cards', 'run phase 2a first');
     }
     if (strategy === 'member') {
       const skeleton = loadUserSkeleton(work, options.skeletonPath as string);
-      const members = await classifyMembers(client, graph, skeleton, { cards, logger });
+      const members = await classifyMembers(client, graph, skeleton, { cards, signal, logger });
       saveMemberAssignment(work, members);
       const derived = deriveFileArtifacts(graph, skeleton, members, cards);
       work.saveSkeleton(skeleton);
@@ -217,6 +231,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         batchSize: options.assignBatchSize,
         maxWorkers: options.assignWorkers,
         cards,
+        signal,
         logger,
       });
       work.saveSkeleton(skeleton);
@@ -229,6 +244,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         lang: narrateLang,
         assignBatchSize: options.assignBatchSize,
         assignWorkers: options.assignWorkers,
+        signal,
         logger,
         onRejectedReply: (reply) => work.saveRejectedReply('skeleton-synth-doctor', reply),
       });
@@ -238,13 +254,19 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       stats.nUnassignedFiles = assignment.coverage.unassigned.length;
     } else {
       const nav = buildNavPack(graph);
-      const skeleton = await synthesizeSkeleton(client, nav, cards, narrateLang, (reply) =>
-        work.saveRejectedReply('skeleton-synth', reply),
+      const skeleton = await synthesizeSkeleton(
+        client,
+        nav,
+        cards,
+        narrateLang,
+        (reply) => work.saveRejectedReply('skeleton-synth', reply),
+        signal,
       );
       const assignment = await assignFiles(client, graph, skeleton, {
         batchSize: options.assignBatchSize,
         maxWorkers: options.assignWorkers,
         cards,
+        signal,
         logger,
       });
       work.saveSkeleton(skeleton);
@@ -260,18 +282,21 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
     logger.info('[2c] member strategy: organization was derived deterministically in 2b — nothing to do');
   }
   if (phases.has('2c') && strategy === 'file') {
+    signal?.throwIfAborted();
     const skeleton = work.loadSkeleton();
     const assignment = work.loadAssignment();
     const cards = work.loadCards();
     const organization = await organizeStages(client, graph, skeleton, assignment, cards, {
       workers: options.organizeWorkers,
       lang: narrateLang,
+      signal,
       logger,
     });
     work.saveOrganization(organization);
   }
 
   if (phases.has('3')) {
+    signal?.throwIfAborted();
     const skeleton = work.loadSkeleton();
     const assignment = work.loadAssignment();
     const organization = work.loadOrganization();
@@ -284,6 +309,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         refresh: options.refresh,
         lang: narrateLang,
         cacheDir: work.cacheDir,
+        signal,
         logger,
       },
     );
@@ -292,6 +318,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       refresh: options.refresh,
       cacheDir: work.cacheDir,
       lang: narrateLang,
+      signal,
       logger,
     });
     work.saveRegisters({ version: 1, registers });

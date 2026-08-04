@@ -67,6 +67,8 @@ export interface NarrateOptions {
   lang?: NarrateLang;
   cacheDir?: string;
   title?: string;
+  /** Cooperative cancellation: checked per stage and passed into every LLM call. */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -84,6 +86,7 @@ async function cachedCall(
   produce: () => Promise<string>,
   fallback: () => string,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<string> {
   const path = cacheDir ? join(cacheDir, `${key}.md`) : undefined;
   if (path && !refresh && fileExists(path)) {
@@ -95,6 +98,8 @@ async function cachedCall(
     text = (await produce()).trim();
     succeeded = text.length > 0;
   } catch (error) {
+    // A cancellation must end the run, not be papered over with fallback prose.
+    signal?.throwIfAborted();
     logger.warn(`[narrate] LLM failed for ${key}: ${String(error)}`);
   }
   if (!succeeded) text = fallback();
@@ -112,7 +117,7 @@ export async function narrate(
   inputs: NarrateInputs,
   options: NarrateOptions = {},
 ): Promise<Narration> {
-  const { workers = 8, refresh = false, lang = 'en' } = options;
+  const { workers = 8, refresh = false, lang = 'en', signal } = options;
   const logger = options.logger ?? silentLogger;
   const tree = new StageTree(inputs.skeleton);
   const rules = lang === 'zh' ? STAGE_RULES_ZH : STAGE_RULES_EN;
@@ -136,6 +141,7 @@ export async function narrate(
   for (const depth of depths) {
     const stages = byDepth.get(depth) ?? [];
     await mapLimit(stages, workers, async (sid) => {
+      signal?.throwIfAborted(); // cooperative checkpoint: no new stage after abort
       const stage = tree.byId.get(sid);
       if (!stage) return;
       const parts: string[] = [rules, `## Stage title: ${stage.title}`];
@@ -161,9 +167,10 @@ export async function narrate(
         options.cacheDir,
         key,
         refresh,
-        async () => (await client.complete(prompt, { temperature: 0 })).text,
+        async () => (await client.complete(prompt, { temperature: 0, signal })).text,
         () => stage.description || stage.title,
         logger,
+        signal,
       );
     });
   }
@@ -181,13 +188,15 @@ export async function narrate(
     .filter(Boolean)
     .join('\n\n');
   const systemKey = `system_${shortHash(`${PROMPT_VERSION}|${lang}|system|${archetype}|${systemPrompt}`)}`;
+  signal?.throwIfAborted(); // cooperative checkpoint before the system overview
   const systemOverview = await cachedCall(
     options.cacheDir,
     systemKey,
     refresh,
-    async () => (await client.complete(systemPrompt, { temperature: 0 })).text,
+    async () => (await client.complete(systemPrompt, { temperature: 0, signal })).text,
     () => archetype || '(system overview generation failed.)',
     logger,
+    signal,
   );
 
   return { version: 1, lang, systemOverview, stageSummaries: summaries };
@@ -242,6 +251,8 @@ export interface RegistersOptions {
   cacheDir?: string;
   lang?: NarrateLang;
   dataModelCap?: number;
+  /** Cooperative cancellation: checked per round and passed into every LLM call. */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -275,7 +286,7 @@ export async function extractRegisters(
   cards: Record<string, FileCard>,
   options: RegistersOptions = {},
 ): Promise<RegisterEntry[]> {
-  const { maxRounds = 5, dryStreak = 2, refresh = false, lang = 'en', dataModelCap = 120 } = options;
+  const { maxRounds = 5, dryStreak = 2, refresh = false, lang = 'en', dataModelCap = 120, signal } = options;
   const logger = options.logger ?? silentLogger;
   const tree = new StageTree(skeleton);
   const validIds = new Set(skeleton.stages.map((s) => s.id));
@@ -316,6 +327,7 @@ export async function extractRegisters(
   const found = new Map<string, RegisterEntry>();
   let dry = 0;
   for (let round = 1; round <= maxRounds && dry < dryStreak; round += 1) {
+    signal?.throwIfAborted(); // cooperative checkpoint between extraction rounds
     const rules =
       round === 1
         ? lang === 'zh'
@@ -334,7 +346,7 @@ export async function extractRegisters(
     /** Entries that arrived but could not be used. Reported, never swallowed. */
     const dropped: string[] = [];
     try {
-      const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, { temperature: 0 });
+      const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, { temperature: 0, signal });
       // Tolerate the shape drift real endpoints produce (bare array, other
       // container names, a lone register) plus name/description spelled instead
       // of id/semantics.
@@ -401,6 +413,7 @@ export async function extractRegisters(
         );
       }
     } catch (error) {
+      signal?.throwIfAborted(); // cancellation ends the extraction, never degrades
       logger.warn(`[registers] round ${round} failed: ${String(error)}`);
     }
     dry = added === 0 ? dry + 1 : 0;
@@ -417,7 +430,7 @@ export async function extractRegisters(
       lang === 'zh' ? REGISTER_FILL_RULES_ZH : REGISTER_FILL_RULES_EN
     }\n\n## Stage menu (valid IDs)\n${menu}\n\n## Registers to map\n${list}`;
     try {
-      const response = await client.complete(fillPrompt, { temperature: 0 });
+      const response = await client.complete(fillPrompt, { temperature: 0, signal });
       const entries = extractEntryList(response.json, ['assignments', 'registers'], {
         single: { fields: ['stages'] },
       });
@@ -431,6 +444,7 @@ export async function extractRegisters(
         if (stages.length > 0) found.set(id, { ...target, stages });
       }
     } catch (error) {
+      signal?.throwIfAborted(); // cancellation ends the extraction, never degrades
       logger.warn(`[registers] stage-fill pass failed: ${String(error)}`);
     }
   }

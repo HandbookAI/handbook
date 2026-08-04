@@ -1,9 +1,9 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CodeGraph, FileCard } from '@handbook/core';
-import { MockChatClient, type MockRule } from '@handbook/llm';
+import { MockChatClient, type ChatClient, type MockRule } from '@handbook/llm';
 import { WorkDir, generateHandbook } from '@handbook/pipeline';
 import {
   detectCardDetail,
@@ -281,6 +281,72 @@ describe('resyncHandbook', () => {
     expect(cardPrompts.length).toBeGreaterThan(0);
     // A brief handbook must resync with brief card prompts, not silently upgrade to deep.
     expect(cardPrompts.some((c) => c.prompt.includes('SOURCE FILES IN FULL'))).toBe(false);
+  });
+
+  it('folds agent corrections into the refresh set and archives them', async () => {
+    const source5 = mkdtempSync(join(tmpdir(), 'hb-rs-src5-'));
+    const work5 = mkdtempSync(join(tmpdir(), 'hb-rs-work5-'));
+    const case5 = mkdtempSync(join(tmpdir(), 'hb-rs-case5-'));
+    writeRepo(source5);
+    await generateHandbook({ sourceRoot: source5, workDir: work5, client: pipelineMock(), phase: 'all' });
+    // The tree is UNCHANGED: only a correction justifies redescribing the file.
+    cpSync(source5, join(case5, 'edited'), { recursive: true });
+    const correctionsPath = join(case5, 'corrections.jsonl');
+    writeFileSync(
+      correctionsPath,
+      [
+        JSON.stringify({ file: 'app/main.py', claim: 'main() retries', actual: 'it does not retry' }),
+        JSON.stringify({ file: 'ghost/missing.py', claim: 'nonsense' }),
+      ].join('\n') + '\n',
+    );
+
+    const report = await resyncHandbook({ caseDir: case5, workDir: work5, client: pipelineMock(), correctionsPath });
+    expect(report.changedFiles).toContain('app/main.py');
+    expect(report.corrections?.applied).toBe(1);
+    expect(report.corrections?.files).toEqual(['app/main.py']);
+    // A file outside the analyzed set is reported, never silently dropped.
+    expect(report.corrections?.problems.join(' ')).toMatch(/ghost\/missing\.py/);
+    // Consumed corrections are archived so the next resync does not redo them.
+    expect(existsSync(correctionsPath)).toBe(false);
+    expect(report.corrections?.archivedTo).toMatch(/corrections\..*\.applied\.jsonl$/);
+    expect(existsSync(String(report.corrections?.archivedTo))).toBe(true);
+  });
+
+  it('rejects with AbortError when the signal is already aborted', async () => {
+    const report = resyncHandbook({
+      caseDir,
+      workDir,
+      noLlm: true,
+      signal: AbortSignal.abort(),
+    });
+    await expect(report).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('stops a mid-flight resync at the next checkpoint', async () => {
+    const source4 = mkdtempSync(join(tmpdir(), 'hb-rs-src4-'));
+    const work4 = mkdtempSync(join(tmpdir(), 'hb-rs-work4-'));
+    const case4 = mkdtempSync(join(tmpdir(), 'hb-rs-case4-'));
+    writeRepo(source4);
+    await generateHandbook({ sourceRoot: source4, workDir: work4, client: pipelineMock(), phase: 'all' });
+    const edited = join(case4, 'edited');
+    cpSync(source4, edited, { recursive: true });
+    writeFileSync(join(edited, 'app', 'engine.py'), 'class Engine:\n    def spin(self):\n        return 7\n');
+
+    // Abort from inside the first card call — the pass must not continue.
+    const controller = new AbortController();
+    const base = pipelineMock();
+    const client: ChatClient = {
+      model: 'mock-abort',
+      complete: (prompt, options) => {
+        if (prompt.includes('Files to describe')) controller.abort();
+        return base.complete(prompt, options);
+      },
+    };
+    await expect(
+      resyncHandbook({ caseDir: case4, workDir: work4, client, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    // The lock must be released so a later run can proceed.
+    expect(existsSync(join(work4, '.lock'))).toBe(false);
   });
 
   it('refuses to resync while another process holds the work-dir lock', async () => {

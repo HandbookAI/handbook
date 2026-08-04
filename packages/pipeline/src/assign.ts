@@ -37,6 +37,8 @@ export interface AssignOptions {
   batchSize?: number;
   maxWorkers?: number;
   cards?: Record<string, FileCard>;
+  /** Cooperative cancellation: checked per batch and passed into every LLM call. */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -63,6 +65,7 @@ async function assignBatch(
   validIds: ReadonlySet<string>,
   cards: Record<string, FileCard>,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<Record<string, { stage: string; also: string[] }>> {
   const prompt = [
     ASSIGN_RULES,
@@ -72,7 +75,7 @@ async function assignBatch(
   ].join('\n\n');
   const out: Record<string, { stage: string; also: string[] }> = {};
   try {
-    const response = await client.complete(prompt, { temperature: 0 });
+    const response = await client.complete(prompt, { temperature: 0, signal });
     const entries = extractEntryList(response.json, ['assignments', 'files'], {
       single: { fields: ['stage', 'file'] },
     });
@@ -98,6 +101,7 @@ async function assignBatch(
       );
     }
   } catch (error) {
+    signal?.throwIfAborted(); // cancellation ends the pass, never degrades
     logger.warn(`[assign] batch of ${batch.length} failed: ${String(error)}`);
   }
   return out;
@@ -138,7 +142,7 @@ export async function assignFiles(
   skeleton: Skeleton,
   options: AssignOptions = {},
 ): Promise<Assignment> {
-  const { batchSize = 25, maxWorkers = 12, cards = {} } = options;
+  const { batchSize = 25, maxWorkers = 12, cards = {}, signal } = options;
   const logger = options.logger ?? silentLogger;
   const nav = buildNavPack(graph);
   const files = allFileDescriptors(graph, nav);
@@ -151,7 +155,8 @@ export async function assignFiles(
   const fileStage: Record<string, { stage: string; also: string[] }> = {};
   const progress = new Progress(logger, 'assign', files.length);
   await mapLimit(batches, maxWorkers, async (batch) => {
-    const result = await assignBatch(client, batch, menuBlock, validIds, cards, logger);
+    signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
+    const result = await assignBatch(client, batch, menuBlock, validIds, cards, logger, signal);
     Object.assign(fileStage, result);
     progress.tick(batch.length);
   });
@@ -173,7 +178,7 @@ export async function reassignSubset(
   previous: Assignment,
   options: AssignOptions = {},
 ): Promise<Assignment> {
-  const { batchSize = 25, maxWorkers = 12, cards = {} } = options;
+  const { batchSize = 25, maxWorkers = 12, cards = {}, signal } = options;
   const logger = options.logger ?? silentLogger;
   const nav = buildNavPack(graph);
   const files = allFileDescriptors(graph, nav).filter((d) => subset.includes(d.file));
@@ -184,7 +189,8 @@ export async function reassignSubset(
   const batches: NavFileDescriptor[][] = [];
   for (let i = 0; i < files.length; i += batchSize) batches.push(files.slice(i, i + batchSize));
   await mapLimit(batches, maxWorkers, async (batch) => {
-    Object.assign(merged, await assignBatch(client, batch, menuBlock, validIds, cards, logger));
+    signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
+    Object.assign(merged, await assignBatch(client, batch, menuBlock, validIds, cards, logger, signal));
   });
   return rebuildAssignment(merged, skeleton);
 }
