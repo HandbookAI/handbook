@@ -274,6 +274,7 @@ program
   .option('--no-llm', 'structural refresh only (no LLM; prose marked stale)')
   .option('--detail <d>', 'card depth for regenerated cards: brief | deep (default: match the existing handbook)')
   .option('--narrate-lang <l>', 'prose language: en | zh')
+  .option('--corrections <file>', 'agent-reported corrections.jsonl — its files widen the refresh set')
   .option('--no-render', 'skip refreshing already-rendered outputs under <work>/handbook')
   .option('--title <title>', 'handbook title for refreshed outputs', process.env.HANDBOOK_TITLE ?? 'System Handbook')
   .action(async (opts: Record<string, string | boolean | undefined>) => {
@@ -285,6 +286,7 @@ program
       client: noLlm ? undefined : llmClient(),
       noLlm,
       detail: opts.detail === 'brief' ? 'brief' : opts.detail === 'deep' ? 'deep' : undefined,
+      correctionsPath: opts.corrections ? resolve(String(opts.corrections)) : undefined,
       lang: opts.narrateLang === 'zh' ? 'zh' : opts.narrateLang === 'en' ? 'en' : undefined,
       logger: logger(),
     });
