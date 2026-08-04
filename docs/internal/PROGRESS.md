@@ -236,3 +236,30 @@ P1：ChatClient 统一 prompt-hash 缓存（2a/2b/2c 目前零缓存）+ usage �
 + resync/doctor/navpack 补测试。P2：llms.txt 输出、搜索、graph.dot→mermaid、源码链接、
 配置文件、studio 任务取消/重连、SKILL 打包 agent 站点 + i18n。P3：MCP docs server、
 agent 纠错回路、最小质量评测集。
+
+## 2026-08-04（深夜）：P1/P2 并行冲刺（5 个并行 subagent + 串行集成，451 测试绿）
+
+按包边界切 5 个互不重叠的工作块并行实现，CLI 接线与集成串行收尾。全部 TDD。
+
+1. **llm/pipeline**：`CachedChatClient` prompt-hash 缓存装饰器（只缓存非空成功；坏文件当
+   miss；hits/misses 计数）；`LlmUsageStats` 累计 prompt/completion tokens（被拒重试的回复
+   也如实计费）；`generateHandbook` 写 `<work>/run-manifest.json`（model/phases/时间/usage/
+   stats，失败不覆盖）。CLI：`generate --llm-cache`，结果里带 usage。
+2. **CI + 测试补强**：`.github/workflows/ci.yml`（Node 20/24 跑 pnpm check）；graph/doctor/
+   organize 三个零测试模块 +39 测试。**顺手修一个新缺陷**：`validateChange` 接受自合并
+   merge_stages，apply no-op 却计为 progress、干扰卡壳检测（doctor.ts merge 分支新增守卫）。
+3. **renderer**：`renderLlmsTxt`（llms.txt + llms-full.txt，AI agent 直接可消费）；
+   `SourceLinkOptions.sourceBaseUrl` 文件卡片链接源码（默认输出字节不变，零外链保证仍然
+   对默认成立）；overview.md mermaid 阶段树（crosscut 虚线）。CLI：`render --llms-txt
+   --source-base-url`。
+4. **skill**：`agentDir` 把 how_to_use/disambiguation 打进 `references/agent/`（成对才打包，
+   SKILL.md 路由协议加消歧步骤）；`lang:'zh'` 本地化正文、frontmatter 保持英文（路由靠
+   description）。CLI：`skill --agent-dir --lang`。demo 脚本全链路吃到新旗标，validate OK。
+5. **studio**：`GET /api/jobs`；`state.job` 接活——刷新页面后头部脉冲芯片可重连运行中任务
+   （SSE 回放补齐日志）；repoStatus 报 outputs 存在性，Handbook 视图新增 章节站点/单页版/
+   Agent 索引 切换条；清掉 5 个死 DICT 键。**任务取消仍未做**（需要 abort 信号贯穿
+   pipeline/llm，留待下轮）。
+
+集成阶段：pnpm check 全绿（361 → **451** 测试），离线 demo 端到端验证（llms.txt 格式、
+mermaid、references/agent/ 打包、validate OK）。仍开放：studio 任务取消、MCP docs server、
+agent 纠错回路、最小评测集、生成对话框暴露全部选项。
