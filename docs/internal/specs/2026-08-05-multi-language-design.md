@@ -224,6 +224,24 @@ SP2 做 Java/C# 时会**大量**遇到静态方法调用,届时正式评估。
 4. 新增:一个 JS fixture 仓库与一个 kotlin fixture 仓库能各自产出非空的 functions + edges。
 5. `graph.metadata.languages` 带上每门语言的 capability,渲染层可见。
 
+## SP2 的 IR 决策:**不加** `static_method`(2026-08-06 定案)
+
+SP1 暴露的"限定调用无 callType"问题,在 SP2 前先查证再决策,结论是**不动 IR**。依据:
+
+1. **`callType` 是边上的描述性元数据,不是路由键。** 全仓只有两处消费:
+   `graph.ts:57`(`unresolved` → dropped)和 `graph.ts:334`(`boundary*` → DOT 虚线)。
+   `categorizeDropped` 按 callee id 字符串分类而非 callType;navpack/inventory/cards **都不用**它;
+   **它从不进 LLM prompt**;寄存器推断靠 `selfAttrs`。连既有的 `self_method` vs `internal_func`
+   之分都没有任何下游消费者——现有分类已经比任何消费方需要的都细。
+2. **代码里已有先例。** TypeScript 适配器对"类名在扫描集内的限定调用"就是解析成 `internal_func`
+   并指向真实内部节点(`adapters/typescript.ts` 的 `scan.classes.has(base)` 分支)。
+   而 `internal_func` 的定义正是"对另一个内部函数的调用(同模块或跨模块)"——静态方法就是内部函数。
+3. **通用引擎降级 `unresolved` 依然正确**:它无法区分 `Helpers.shout()` 是静态调用、还是同名局部
+   变量的实例方法调用;全保真适配器有类型/作用域知识,能区分,所以不必降级。
+
+因此 Java/C# 的静态方法调用 → `internal_func`(`new` → `internal_constructor`),
+指向 `<module>.<Type>.<method>`。IR schema 不变,旧 work-dir 不受影响,不新增无人消费的区分。
+
 ## 非目标(本子项目不做)
 
 - 不做 Java/C#/C/C++/Ruby/PHP/Swift/Dart/Solidity 的全保真适配器 —— 那是 SP2–SP6。
