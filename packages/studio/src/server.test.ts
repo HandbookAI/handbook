@@ -684,3 +684,110 @@ describe('studio server (integration, mock LLM)', () => {
     expect(await api('/api/repos')).toHaveLength(0);
   });
 });
+
+describe('registering a repo adopts an existing handbook', () => {
+  /**
+   * The reported failure: a user who had already generated a handbook with the
+   * CLI registered the same tree in studio, left the work dir blank, got a
+   * fresh empty one, and concluded the handbook was lost — then paid to
+   * regenerate it. Studio must find what is already sitting there.
+   */
+  const PORT2 = 48612;
+  const base2 = `http://127.0.0.1:${PORT2}`;
+  let server2: Server;
+
+  const register = async (body: unknown): Promise<any> => {
+    const res = await fetch(`${base2}/api/repos`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: (await res.json()) as any };
+  };
+
+  beforeAll(async () => {
+    server2 = await startStudio({ stateDir: mkdtempSync(join(tmpdir(), 'hb-adopt-state-')), port: PORT2 });
+  });
+  afterAll(() => server2.close());
+
+  const repoWith = (stem: string): { root: string; src: string } => {
+    const root = mkdtempSync(join(tmpdir(), `hb-adopt-${stem}-`));
+    const src = join(root, stem);
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, 'main.py'), 'def main():\n    return 1\n');
+    return { root, src };
+  };
+
+  /** A work dir is claimed only if its graph says it came from `builtFrom`. */
+  const plantHandbook = (dir: string, builtFrom: string): void => {
+    mkdirSync(join(dir, 'phase1'), { recursive: true });
+    writeFileSync(
+      join(dir, 'phase1', 'graph.json'),
+      JSON.stringify({
+        version: 1,
+        metadata: {
+          generatedAt: 't', language: 'python', sourceRoot: builtFrom, scannedFiles: [],
+          nInternalFunctions: 0, nBoundaryNodes: 0, nEdges: 0, policy: 'test',
+        },
+        nodes: {}, edges: [], selfAttrs: {},
+      }),
+    );
+    mkdirSync(join(dir, 'phase3'), { recursive: true });
+    writeFileSync(join(dir, 'phase3', 'narration.json'), '{"version":1}');
+  };
+
+  it('adopts a conventional sibling work dir that already holds a handbook', async () => {
+    const { root, src } = repoWith('alpha');
+    plantHandbook(join(root, 'work', 'alpha'), src); // the README's own `--work work/<name>` convention
+    const res = await register({ name: 'alpha', sourceRoot: src });
+    expect(res.status).toBe(201);
+    expect(res.body.workDir).toBe(join(root, 'work', 'alpha'));
+    expect(res.body.adoptedWorkDir).toBe(true);
+    expect(res.body.hasNarration).toBe(true);
+  });
+
+  it('falls back to a fresh state-dir work dir when nothing exists', async () => {
+    const { src } = repoWith('beta');
+    const res = await register({ name: 'beta', sourceRoot: src });
+    expect(res.status).toBe(201);
+    expect(res.body.adoptedWorkDir).toBe(false);
+    expect(res.body.hasNarration).toBe(false);
+  });
+
+  it('never overrides an explicitly given work dir', async () => {
+    const { root, src } = repoWith('gamma');
+    plantHandbook(join(root, 'work', 'gamma'), src);
+    const chosen = join(root, 'elsewhere');
+    const res = await register({ name: 'gamma', sourceRoot: src, workDir: chosen });
+    expect(res.status).toBe(201);
+    expect(res.body.workDir).toBe(chosen);
+    expect(res.body.adoptedWorkDir).toBe(false);
+  });
+
+  it('adopts a work dir whose NAME matches nothing, because its graph names this tree', async () => {
+    // The real-world case: this repo's own handbook lives in examples/work/self,
+    // matching neither the repo name nor the source basename.
+    const { root, src } = repoWith('epsilon');
+    plantHandbook(join(root, 'examples', 'work', 'self'), src);
+    const res = await register({ name: 'epsilon', sourceRoot: src });
+    expect(res.status).toBe(201);
+    expect(res.body.workDir).toBe(join(root, 'examples', 'work', 'self'));
+    expect(res.body.adoptedWorkDir).toBe(true);
+  });
+
+  it('never adopts a work dir built from a DIFFERENT tree', async () => {
+    const { root, src } = repoWith('zeta');
+    plantHandbook(join(root, 'work', 'zeta'), join(root, 'some-other-tree'));
+    const res = await register({ name: 'zeta', sourceRoot: src });
+    expect(res.status).toBe(201);
+    expect(res.body.adoptedWorkDir).toBe(false);
+  });
+
+  it('ignores a candidate that exists but holds no handbook', async () => {
+    const { root, src } = repoWith('delta');
+    mkdirSync(join(root, 'work', 'delta'), { recursive: true }); // empty dir — not a handbook
+    const res = await register({ name: 'delta', sourceRoot: src });
+    expect(res.status).toBe(201);
+    expect(res.body.adoptedWorkDir).toBe(false);
+  });
+});

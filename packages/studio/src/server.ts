@@ -6,7 +6,7 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFileSync, realpathSync, rmSync, statSync, readdirSync, existsSync } from 'node:fs';
-import { extname, join, normalize, resolve, sep } from 'node:path';
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ensureDir,
@@ -82,6 +82,58 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
     throw new Error('body must be a JSON object');
   }
   return parsed as Record<string, unknown>;
+}
+
+/**
+ * An existing work dir built from THIS source tree, if one is sitting in a
+ * conventional place.
+ *
+ * Matching is by evidence, not by name: `phase1/graph.json` records the
+ * `sourceRoot` it was analyzed from, so a directory can be claimed only when it
+ * says it belongs to this tree. Guessing directory names does not work — this
+ * repo's own handbook lives in `examples/work/self`, which matches neither the
+ * repo name nor the source basename.
+ *
+ * Only conventional containers are listed, one level deep — never a disk search.
+ * Without this, someone who generated a handbook with the CLI and then
+ * registered the same tree in studio got a fresh empty work dir, concluded the
+ * handbook was lost, and paid to regenerate it.
+ */
+function findWorkDirFor(sourceRoot: string, stateDirWork: string): string | undefined {
+  const parent = dirname(resolve(sourceRoot));
+  const containers = [stateDirWork, join(parent, 'work'), join(parent, 'examples', 'work')];
+  const wanted = realpathOrSelf(resolve(sourceRoot));
+  for (const container of containers) {
+    let entries: string[];
+    try {
+      entries = readdirSync(container);
+    } catch {
+      continue; // container absent — nothing to adopt here
+    }
+    for (const entry of entries.sort()) {
+      const dir = join(container, entry);
+      if (builtFrom(dir) === wanted) return dir;
+    }
+  }
+  return undefined;
+}
+
+/** The source root a work dir was analyzed from, or undefined if it holds no graph. */
+function builtFrom(workDir: string): string | undefined {
+  try {
+    const recorded = new WorkDir(workDir).loadGraph().metadata.sourceRoot;
+    return realpathOrSelf(recorded);
+  } catch {
+    return undefined; // not a work dir, unreadable, or a graph we cannot validate
+  }
+}
+
+function realpathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 /** Repo status summary for the dashboard. */
@@ -670,10 +722,14 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       return;
     }
     const sourceRoot = resolve(rawSource);
-    const workDir = body.workDir ? resolve(String(body.workDir)) : join(ctx.stateDirWork, name);
+    // An explicit path is obeyed as given; a blank one adopts an existing
+    // handbook when one is sitting in a conventional spot.
+    const explicit = body.workDir ? resolve(String(body.workDir)) : undefined;
+    const adopted = explicit ? undefined : findWorkDirFor(String(body.sourceRoot ?? ''), ctx.stateDirWork);
+    const workDir = explicit ?? adopted ?? join(ctx.stateDirWork, name);
     const entry = ctx.store.add({ name, sourceRoot, workDir });
     ensureDir(workDir);
-    json(res, 201, repoStatus(entry, ctx.jobs));
+    json(res, 201, { ...repoStatus(entry, ctx.jobs), adoptedWorkDir: adopted !== undefined });
     return;
   }
 
