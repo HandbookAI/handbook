@@ -10,4 +10,4 @@ export { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
 export { renderAgentSite } from './agent-site.js';
 export { renderHtmlSite, renderSinglePageHtml } from './html.js';
 export { renderLlmsTxt } from './llms-txt.js';
-export type { SourceLinkOptions } from './shared.js';
+export type { FidelityOptions, RenderOptions, SourceLinkOptions } from './shared.js';

@@ -139,3 +139,36 @@ describe('renderLlmsTxt — gating and languages', () => {
     }
   });
 });
+
+describe('renderLlmsTxt — fidelity disclosure', () => {
+  const generic = {
+    kotlin: { tier: 'generic' as const, callTypes: ['internal_func' as const], selfAttrs: false, statementSpans: false },
+    python: { tier: 'full' as const, callTypes: ['internal_func' as const], selfAttrs: true, statementSpans: true },
+  };
+
+  it('says nothing about fidelity when the option is omitted', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hb-llms-fid-a-'));
+    renderLlmsTxt(model, dir);
+    const txt = readFileSync(join(dir, 'llms.txt'), 'utf8');
+    const full = readFileSync(join(dir, 'llms-full.txt'), 'utf8');
+    expect(txt).not.toMatch(/fidelity|保真度/i);
+    expect(full).not.toMatch(/fidelity|保真度/i);
+  });
+
+  it('says nothing when every contributing language is full tier', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hb-llms-fid-b-'));
+    renderLlmsTxt(model, dir, { languages: { python: generic.python } });
+    expect(readFileSync(join(dir, 'llms.txt'), 'utf8')).not.toMatch(/fidelity/i);
+  });
+
+  it('names only the generic-tier languages, before the link list', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hb-llms-fid-c-'));
+    renderLlmsTxt(model, dir, { languages: generic });
+    const txt = readFileSync(join(dir, 'llms.txt'), 'utf8');
+    expect(txt).toMatch(/Analysis fidelity: call relations for kotlin are best-effort/);
+    expect(txt).not.toContain('python are best-effort');
+    // an agent may read only the head — the caveat must precede the links
+    expect(txt.indexOf('Analysis fidelity')).toBeLessThan(txt.indexOf('## '));
+    expect(readFileSync(join(dir, 'llms-full.txt'), 'utf8')).toMatch(/Analysis fidelity/);
+  });
+});

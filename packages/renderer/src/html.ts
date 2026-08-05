@@ -14,8 +14,8 @@ import type { MarkdownIt as Markdown } from 'markdown-it';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { FileCard, FunctionNote, HandbookModel, NarrateLang } from '@handbook/core';
 import { callFactsLine } from './file-card.js';
-import { HandbookView, sourceFileUrl } from './shared.js';
-import type { SourceLinkOptions } from './shared.js';
+import { HandbookView, genericTierLanguages, sourceFileUrl } from './shared.js';
+import type { FidelityOptions, RenderOptions } from './shared.js';
 
 interface HtmlLabels {
   systemOverview: string;
@@ -38,6 +38,9 @@ interface HtmlLabels {
   dataFlow: string;
   relations: string;
   noProse: string;
+  fidelityLead: string;
+  /** Disclosure for languages analyzed by the generic engine (see genericTierLanguages). */
+  fidelityNote: (languages: readonly string[]) => string;
 }
 
 const LABELS: Record<NarrateLang, HtmlLabels> = {
@@ -62,6 +65,9 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     dataFlow: 'Data flow',
     relations: 'Call relations',
     noProse: '(This file has no description yet.)',
+    fidelityLead: 'Analysis fidelity',
+    fidelityNote: (languages) =>
+      `call relations for ${languages.join(', ')} come from the generic (config-driven) analyzer: they are best-effort and may be incomplete. The file inventory and the structure of these languages are exact.`,
   },
   zh: {
     systemOverview: '🗺️ 系统总览',
@@ -84,6 +90,9 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     dataFlow: '数据流',
     relations: '调用关系',
     noProse: '（该文件暂无描述。）',
+    fidelityLead: '保真度说明',
+    fidelityNote: (languages) =>
+      `${languages.join('、')} 的调用关系来自通用（配置驱动）分析器：尽力而为，可能不完整。这些语言的文件清单与结构仍是精确的。`,
   },
 };
 
@@ -299,6 +308,22 @@ function stageBody(
   return parts.join('\n');
 }
 
+/**
+ * Overview disclosure that some languages were analyzed by the generic engine —
+ * or '' when there is nothing to disclose (every language full-tier, or no
+ * capability map was passed).
+ *
+ * Styled inline rather than through the shared stylesheet: a handbook rendered
+ * without the option must keep its previous bytes exactly, and a CSS rule would
+ * change every page whether or not the note appears.
+ */
+function fidelityNoteHtml(lang: NarrateLang, options: FidelityOptions): string {
+  const generic = genericTierLanguages(options.languages);
+  if (generic.length === 0) return '';
+  const L = LABELS[lang];
+  return `<p class="meta" style="border-left:3px solid var(--warn);padding-left:10px;color:var(--warn)"><strong>${esc(L.fidelityLead)}</strong> — ${esc(L.fidelityNote(generic))}</p>`;
+}
+
 function registerTableHtml(view: HandbookView, lang: NarrateLang, stageHref: (sid: string) => string): string {
   const L = LABELS[lang];
   const [h1, h2, h3] = L.registerHeader;
@@ -320,11 +345,13 @@ function registerTableHtml(view: HandbookView, lang: NarrateLang, stageHref: (si
  * Render the multi-page HTML site into `outDir`.
  * `options.sourceBaseUrl` (opt-in) links every file-card path to its source
  * file; without it the site references no external URL.
+ * `options.languages` (opt-in) discloses per-language analysis fidelity on the
+ * overview page; without it the site is unchanged.
  */
 export function renderHtmlSite(
   model: HandbookModel,
   outDir: string,
-  options: SourceLinkOptions = {},
+  options: RenderOptions = {},
 ): { nPages: number } {
   const view = new HandbookView(model);
   const lang = model.lang;
@@ -356,6 +383,8 @@ export function renderHtmlSite(
     `<h1>${esc(L.systemOverview)}</h1>`,
     md.render(model.narration.systemOverview.trim()),
   ];
+  const fidelity = fidelityNoteHtml(lang, options);
+  if (fidelity.length > 0) overviewParts.push(fidelity);
   if (model.registers.length > 0) {
     overviewParts.push(`<p><a href="register.html">${esc(L.registers)}</a></p>`);
   }
@@ -401,8 +430,17 @@ function numberMap(view: HandbookView): Map<string, string> {
   return numbers;
 }
 
-/** Render the whole handbook as one self-contained HTML page at `outPath`. */
-export function renderSinglePageHtml(model: HandbookModel, outPath: string): { bytes: number } {
+/**
+ * Render the whole handbook as one self-contained HTML page at `outPath`.
+ * `options.languages` (opt-in) discloses per-language analysis fidelity next to
+ * the system overview — the single page is a handbook in its own right, so it
+ * must not be the one output where mixed fidelity goes unsaid.
+ */
+export function renderSinglePageHtml(
+  model: HandbookModel,
+  outPath: string,
+  options: FidelityOptions = {},
+): { bytes: number } {
   const view = new HandbookView(model);
   const lang = model.lang;
   const L = LABELS[lang];
@@ -435,10 +473,12 @@ export function renderSinglePageHtml(model: HandbookModel, outPath: string): { b
       ? `<h2 id="registers">${esc(L.registers)}</h2>${registerTableHtml(view, lang, (sid) => `#${sid}`)}`
       : '';
 
+  const fidelity = fidelityNoteHtml(lang, options);
   const body = [
     `<h1 id="top">${esc(model.title)}</h1>`,
     `<h2>${esc(L.systemOverview)}</h2>`,
     md.render(model.narration.systemOverview.trim()),
+    ...(fidelity.length > 0 ? [fidelity] : []),
     `<div class="cards">${view.contentRoots().map((sid) => stageCard(view, sid, lang, `#${sid}`)).join('')}</div>`,
     sections.join('\n'),
     registersSection,

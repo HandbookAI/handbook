@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { AdapterCapabilities } from '@handbook/core';
 import { makeFixtureModel } from './fixture.test-helper.js';
 import { renderHtmlSite, renderSinglePageHtml } from './html.js';
 
@@ -158,6 +159,80 @@ describe('renderHtmlSite — untrusted content is escaped (no script/markup inje
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
+  });
+});
+
+describe('HTML renderers — analysis-fidelity disclosure', () => {
+  const FULL: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func'],
+    selfAttrs: true,
+    statementSpans: true,
+  };
+  const GENERIC: AdapterCapabilities = {
+    tier: 'generic',
+    callTypes: ['internal_func'],
+    selfAttrs: false,
+    statementSpans: false,
+  };
+
+  function withTempDir<T>(run: (out: string) => T): T {
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-html-fid-'));
+    try {
+      return run(out);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }
+
+  it('discloses generic-tier languages on the overview page', () => {
+    withTempDir((out) => {
+      renderHtmlSite(model, out, { languages: { python: FULL, kotlin: GENERIC } });
+      const overview = readFileSync(join(out, 'overview.html'), 'utf8');
+      expect(overview).toContain('<strong>Analysis fidelity</strong>');
+      expect(overview).toContain('call relations for kotlin come from the generic');
+      expect(overview).toContain('var(--warn)');
+      // Only the overview carries the note; stage pages stay as they were.
+      expect(readFileSync(join(out, 'stage-1.html'), 'utf8')).not.toContain('Analysis fidelity');
+    });
+  });
+
+  it('discloses it on the single page too', () => {
+    withTempDir((out) => {
+      const page = join(out, 'handbook.html');
+      renderSinglePageHtml(model, page, { languages: { kotlin: GENERIC } });
+      expect(readFileSync(page, 'utf8')).toContain('<strong>Analysis fidelity</strong>');
+    });
+  });
+
+  it('writes the note in the handbook language', () => {
+    withTempDir((out) => {
+      const zh = makeFixtureModel();
+      zh.lang = 'zh';
+      zh.narration.lang = 'zh';
+      renderHtmlSite(zh, out, { languages: { kotlin: GENERIC } });
+      const overview = readFileSync(join(out, 'overview.html'), 'utf8');
+      expect(overview).toContain('<strong>保真度说明</strong>');
+      expect(overview).toContain('kotlin 的调用关系来自通用（配置驱动）分析器');
+    });
+  });
+
+  it('produces byte-identical output when nothing is generic-tier or the option is absent', () => {
+    withTempDir((a) =>
+      withTempDir((b) => {
+        renderHtmlSite(model, a, { languages: { python: FULL } });
+        renderHtmlSite(model, b);
+        for (const name of ['overview.html', 'stage-1.html', 'register.html']) {
+          expect(readFileSync(join(a, name), 'utf8'), name).toBe(readFileSync(join(b, name), 'utf8'));
+        }
+        const single = (dir: string): string => {
+          const path = join(dir, 'handbook.html');
+          renderSinglePageHtml(model, path, dir === a ? { languages: { python: FULL } } : {});
+          return readFileSync(path, 'utf8');
+        };
+        expect(single(a)).toBe(single(b));
+      }),
+    );
   });
 });
 

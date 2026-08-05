@@ -31,6 +31,41 @@ export const CALL_TYPES = [
 export type CallType = (typeof CALL_TYPES)[number];
 
 /**
+ * What one language adapter can actually deliver — its fidelity declaration.
+ *
+ * Two tiers of analysis coexist: hand-written `full` adapters, and a
+ * config-driven `generic` engine that covers the long tail of languages with a
+ * declarative spec. Both feed the same IR, so nothing downstream can tell them
+ * apart by looking at nodes and edges — which is exactly the trap: a reader
+ * (especially a code agent) would assume a generic-tier language's call facts
+ * are as hard as Python's. Adapters therefore say what they can do, phase 1
+ * records it per language in {@link CodeGraph}'s metadata, and the renderers and
+ * Studio disclose it. Same honesty rule the handbook already applies to
+ * "assigned vs described" coverage and machine-written descriptions.
+ */
+export interface AdapterCapabilities {
+  tier: 'full' | 'generic';
+  /** The callTypes this adapter can actually produce. */
+  callTypes: readonly CallType[];
+  /** Can it track self/this attribute reads+writes (drives register inference strength)? */
+  selfAttrs: boolean;
+  /** Can it report statement spans (drives resync snap precision)? */
+  statementSpans: boolean;
+}
+
+/**
+ * Validator for {@link AdapterCapabilities}. Typed as a schema OF the interface
+ * so the two cannot drift apart unnoticed: adapters are written against the
+ * interface, while what lands in `graph.json` is checked by the schema.
+ */
+export const adapterCapabilitiesSchema: z.ZodType<AdapterCapabilities> = z.object({
+  tier: z.enum(['full', 'generic']),
+  callTypes: z.array(z.enum(CALL_TYPES)),
+  selfAttrs: z.boolean(),
+  statementSpans: z.boolean(),
+});
+
+/**
  * One internal function or method, or a synthesized node (e.g. an implicit
  * constructor that is referenced by an edge but never written as an explicit
  * definition — for those, `synthetic` is true and line numbers are 0).
@@ -142,6 +177,17 @@ export const codeGraphSchema = z.object({
     nBoundaryNodes: z.number().int(),
     nEdges: z.number().int(),
     policy: z.string(),
+    /**
+     * Language name → what the adapter that analyzed it can actually deliver.
+     * Per language because a multi-language graph mixes fidelity tiers, and a
+     * single `language: 'multi'` label would hide that.
+     *
+     * Optional on purpose: there is no artifact-migration mechanism here, so
+     * every `graph.json` written before fidelity declarations existed must keep
+     * validating (bumping `version` would invalidate every existing work dir).
+     * Absent = the analysis predates the declaration, NOT "no capabilities".
+     */
+    languages: z.record(z.string(), adapterCapabilitiesSchema).optional(),
   }),
   nodes: z.record(z.string(), graphNodeSchema),
   edges: z.array(callEdgeSchema),

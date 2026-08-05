@@ -389,10 +389,14 @@ async function runGenerate(
   const title = params.title ?? repo.title ?? `${repo.name} Handbook`;
   ctx.store.setTitle(repo.name, title);
   const model = loadHandbookModel(repo.workDir, title);
-  const md = renderMarkdownHandbook(model, outDir);
+  // The handbook model carries no graph metadata, so the renderers are handed the
+  // per-language capability map separately — without it a generic-tier language's
+  // call relations would read, in the rendered handbook, as hard as Python's.
+  const languages = readOptional(() => work.loadGraph().metadata.languages) ?? undefined;
+  const md = renderMarkdownHandbook(model, outDir, { languages });
   const agent = renderAgentSite(model, join(outDir, 'agent'));
-  const html = renderHtmlSite(model, join(outDir, 'html'));
-  const single = renderSinglePageHtml(model, join(outDir, 'handbook.html'));
+  const html = renderHtmlSite(model, join(outDir, 'html'), { languages });
+  const single = renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
   return { ...stats, render: { ...md, files: undefined, agent, html, single } };
 }
 
@@ -601,10 +605,14 @@ async function runResync(
   logger.info('re-rendering handbook…');
   const outDir = join(repo.workDir, 'handbook');
   const model = loadHandbookModel(repo.workDir, repo.title ?? `${repo.name} Handbook`);
-  renderMarkdownHandbook(model, outDir);
+  // Same fidelity disclosure as a full generate: a resync re-renders the whole
+  // handbook, so dropping it here would silently un-say it.
+  const languages =
+    readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
+  renderMarkdownHandbook(model, outDir, { languages });
   renderAgentSite(model, join(outDir, 'agent'));
-  renderHtmlSite(model, join(outDir, 'html'));
-  renderSinglePageHtml(model, join(outDir, 'handbook.html'));
+  renderHtmlSite(model, join(outDir, 'html'), { languages });
+  renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
   // A resync with no description used to leave a bare dash in the timeline while
   // the facts needed to label it sat in the report. Fill it in — but never let the
   // reader mistake a machine summary for the author's own intent, and never let a
@@ -755,6 +763,12 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
           // about whether the files were actually DESCRIBED. Report both, so a
           // run whose cards came back empty cannot look complete.
           cardCoverage: readOptional(() => work.loadCardCoverage() ?? null),
+          // Which languages were analyzed at which fidelity tier. A multi-language
+          // graph mixes tiers, and nothing in the nodes/edges reveals it — so the
+          // UI is told, instead of letting a generic-tier language's call facts
+          // read as hard as a full-tier one's. Null covers both "no graph" and a
+          // graph written before capabilities were recorded.
+          languages: readOptional(() => work.loadGraph().metadata.languages ?? null),
           registers,
         });
       } catch (error) {

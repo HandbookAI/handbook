@@ -180,6 +180,28 @@ describe('studio server (integration, mock LLM)', () => {
     expect(overview.cardCoverage.nDescribed).toBe(overview.cardCoverage.nFiles);
   });
 
+  it('reports per-language analysis fidelity, and tolerates a graph that has none', async () => {
+    // Two fidelity tiers can coexist in one graph, so the UI needs to be told
+    // which languages are generic-tier — it cannot infer that from the nodes.
+    const repo = (await api('/api/repos')).find((r: any) => r.name === 'demo');
+    const graphPath = join(repo.workDir, 'phase1', 'graph.json');
+    const graph = JSON.parse(readFileSync(graphPath, 'utf8'));
+
+    // A graph written before capabilities existed has no such field, and this
+    // repo has no artifact migration: the overview must still answer 200.
+    delete graph.metadata.languages;
+    writeFileSync(graphPath, JSON.stringify(graph));
+    expect((await api('/api/repos/demo/overview')).languages).toBe(null);
+
+    const languages = {
+      kotlin: { tier: 'generic', callTypes: ['internal_func'], selfAttrs: false, statementSpans: false },
+      python: { tier: 'full', callTypes: ['self_method', 'internal_func'], selfAttrs: true, statementSpans: true },
+    };
+    graph.metadata.languages = languages;
+    writeFileSync(graphPath, JSON.stringify(graph));
+    expect((await api('/api/repos/demo/overview')).languages).toEqual(languages);
+  });
+
   it('lists jobs with a stable summary shape, newest first', async () => {
     // The generate job above must be in the list, and a freshly started job
     // must appear immediately — that is what page-reload reattach hangs on.
