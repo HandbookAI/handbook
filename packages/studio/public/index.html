@@ -625,7 +625,8 @@ const DICT = {
            cancelReq: '… 已请求取消：作业会在下一个检查点停下' },
     dlg: {
       add: '添加仓库', name: '名称（唯一，URL 安全）', source: '源码目录（绝对路径）',
-      work: 'work 目录（可留空，自动创建）', workPh: '留空 = Studio 托管', addGo: '添加',
+      work: 'work 目录（可留空）', workPh: '留空 = 先沿用已有手册，找不到再由 Studio 托管', addGo: '添加',
+      adopted: '已接管该目录下已有的手册：', 
       gen: '生成手册', lang: '叙述语言', detail: '卡片深度', synth: '骨架模式',
       title2: '手册标题（可留空）',
       detailBrief: 'brief — 便宜，先试水', detailDeep: 'deep — 逐函数精读',
@@ -790,7 +791,8 @@ const DICT = {
            cancelReq: '… cancel requested — the job stops at its next checkpoint' },
     dlg: {
       add: 'Add repository', name: 'Name (unique, URL-safe)', source: 'Source directory (absolute path)',
-      work: 'Work directory (optional)', workPh: 'empty = managed by Studio', addGo: 'Add',
+      work: 'Work directory (optional)', workPh: 'empty = adopt an existing handbook, else Studio-managed', addGo: 'Add',
+      adopted: 'Adopted the handbook already in: ', 
       gen: 'Generate handbook', lang: 'Narration language', detail: 'Card depth', synth: 'Skeleton mode',
       title2: 'Handbook title (optional)',
       detailBrief: 'brief — cheap, first look', detailDeep: 'deep — per-function reading',
@@ -1925,6 +1927,16 @@ function appendLog(line) {
   el.textContent += String(line) + '\n';
   el.scrollTop = el.scrollHeight;
 }
+/** Neutral news in the same drawer showError uses — ice, never red. */
+function notice(title, message) {
+  attachedJobId = null;
+  $('drawer').classList.add('show');
+  $('jobTitle').textContent = title;
+  setJobStatus('cancelled');          // the drawer's only neutral styling
+  $('jobStatus').textContent = 'INFO';
+  $('jobCancel').hidden = true;
+  $('jobLog').textContent = String(message) + '\n';
+}
 function showError(title, message) {
   attachedJobId = null;
   $('drawer').classList.add('show');
@@ -1977,13 +1989,16 @@ const ACT = {
     if (!name || !sourceRoot) { $('fErr').textContent = t('dlg.need'); return; }
     try {
       $('fErr').textContent = '';
-      await api('/api/repos', {
+      const created = await api('/api/repos', {
         method: 'POST',
         body: JSON.stringify({ name, sourceRoot, workDir: workDir || undefined }),
       });
       $('dlgAdd').close();
       await loadRepos();
       openRepo(name, 'overview');
+      // Finding an existing handbook is good news, but silent good news still
+      // reads as "why is there content I did not generate?".
+      if (created && created.adoptedWorkDir) notice(t('nav.add'), t('dlg.adopted') + created.workDir);
     } catch (e) { $('fErr').textContent = errMsg(e); }
   },
   'gen-open': () => { $('gErr').textContent = ''; $('dlgGen').showModal(); },
