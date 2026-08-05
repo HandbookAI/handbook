@@ -7,3 +7,10 @@ work/
 runs/
 .DS_Store
 *.log
+
+# Local agent-harness state. Kept out of the repo on purpose: these files carry
+# personal choices (permission mode) and machine state (pids, session ids), and
+# committing a permission-bypass setting would silently disable another
+# contributor's prompts on clone. Share a team config only by un-ignoring a
+# deliberately written file — never by committing whatever happens to be here.
+.claude/
