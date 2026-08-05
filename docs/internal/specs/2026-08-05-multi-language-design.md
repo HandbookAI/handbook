@@ -157,7 +157,33 @@ interface GenericLanguageSpec {
 }
 ```
 
-首批配置:kotlin、scala、lua、elixir、zig、objc、ocaml(语法均已在磁盘上)。
+首批实际交付:**kotlin、scala、zig、objc、ocaml**。
+
+放弃两门,原因记录在案(下次不必重新踩):
+
+- **elixir** —— `defmodule` / `def` / `import` 与普通函数调用在语法树里**是同一种 `call` 节点**,
+  任何"节点类型清单"都无法区分"定义"与"调用"。声明式配置在这门语言上不成立,它需要手写适配器。
+- **lua** —— 锁定版本的 `tree-sitter-lua` wasm **本身有缺陷**:遇到普通顶层语句就报错,并且
+  **丢掉哪些函数声明取决于同一个 parser 之前解析过什么**(`helper.lua` 单独解析得 1 个函数;
+  先解析过兄弟文件后得 0 个)。用独立探针复现,其余语法在同一测试下均 `hasError=false` 且顺序无关。
+  **不可复现的事实比没有事实更糟**,故本轮不收 lua,等语法重建后再议。
+
+实测节点类型(全部读自真实语法树,无一处猜测):
+
+| 语言 | 扩展名 | 声明的 callTypes | fixture 产出 |
+|---|---|---|---|
+| kotlin | `.kt .kts` | internal_func, internal_constructor, self_method, boundary, unresolved | 7 函数 / 10 边 |
+| scala | `.scala .sc` | 同上 5 种 | 6 函数 / 8 边 |
+| zig | `.zig` | internal_func, unresolved | 4 函数 / 5 边 |
+| objc | `.m` | internal_func, self_method, boundary, unresolved | 5 函数 / 7 边 |
+| ocaml | `.ml` | internal_func, boundary, unresolved | 3 函数 / 4 边 |
+
+### 暴露的一个 IR 层空缺(留给后续子项目)
+
+`CallType` 里**没有"对已扫描类型的限定调用"这一种**——`Helpers.shout()`、`[Engine reset]` 这类
+"目标就在扫描集内、但通过类型名限定调用"的边,只能降级为 `unresolved`(退成 `boundary` 会
+谎称目标在外部,更糟)。补一个 `static_method` 之类需要动 IR schema,超出 SP1 范围;
+SP2 做 Java/C# 时会**大量**遇到静态方法调用,届时正式评估。
 
 ### 4. JavaScript(白送)
 
