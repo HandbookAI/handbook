@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { AdapterCapabilities } from '@handbook/core';
 import { ENGINE, makeFixtureModel } from './fixture.test-helper.js';
 import { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
+import type { RenderOptions } from './shared.js';
 
 const model = makeFixtureModel();
 let dir: string;
@@ -202,6 +204,65 @@ describe('renderMarkdownHandbook — source links (opt-in)', () => {
     const page = read('stage-1.md');
     expect(page).toContain('### `src/ingest/loader.ts`');
     expect(page).not.toMatch(/https?:\/\//);
+  });
+});
+
+describe('renderMarkdownHandbook — analysis-fidelity disclosure', () => {
+  const FULL: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary'],
+    selfAttrs: true,
+    statementSpans: true,
+  };
+  const GENERIC: AdapterCapabilities = {
+    tier: 'generic',
+    callTypes: ['internal_func', 'boundary'],
+    selfAttrs: false,
+    statementSpans: false,
+  };
+
+  /** Render a fresh copy and return its overview.md. */
+  function overviewOf(options: RenderOptions, lang: 'en' | 'zh' = 'en'): string {
+    const m = makeFixtureModel();
+    if (lang === 'zh') {
+      m.lang = 'zh';
+      m.narration.lang = 'zh';
+    }
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-md-fid-'));
+    try {
+      renderMarkdownHandbook(m, out, options);
+      return readFileSync(join(out, 'overview.md'), 'utf8');
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }
+
+  it('names every generic-tier language and says exactly what is best-effort', () => {
+    const overview = overviewOf({ languages: { python: FULL, lua: GENERIC, kotlin: GENERIC } });
+    expect(overview).toContain('**Analysis fidelity**');
+    expect(overview).toContain('call relations for kotlin, lua come from the generic');
+    expect(overview).toContain('best-effort');
+    // Structure is NOT best-effort — the note must not overstate the doubt.
+    expect(overview).toContain('The file inventory and the structure of these languages are exact.');
+    // A full-tier language is not dragged into the warning.
+    expect(overview).not.toContain('python');
+  });
+
+  it('says nothing when every contributing language is full-tier', () => {
+    // No noise for the common case: identical to a render that was told nothing.
+    expect(overviewOf({ languages: { python: FULL, typescript: FULL } })).toBe(overviewOf({}));
+  });
+
+  it('leaves the default output untouched when the option is absent', () => {
+    expect(overviewOf({})).not.toContain('fidelity');
+    expect(overviewOf({ sourceBaseUrl: 'https://example.com/repo' })).not.toContain('fidelity');
+  });
+
+  it('writes the note in the handbook language', () => {
+    const overview = overviewOf({ languages: { kotlin: GENERIC } }, 'zh');
+    expect(overview).toContain('**保真度说明**');
+    expect(overview).toContain('kotlin 的调用关系来自通用（配置驱动）分析器');
+    expect(overview).toContain('这些语言的文件清单与结构仍是精确的。');
   });
 });
 

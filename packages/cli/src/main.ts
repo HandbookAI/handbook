@@ -26,13 +26,12 @@ import {
   renderLlmsTxt,
   renderMarkdownHandbook,
   renderSinglePageHtml,
-  type SourceLinkOptions,
 } from '@handbook/renderer';
 import { buildSkill, validateSkill } from '@handbook/skill';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { WorkDir } from '@handbook/pipeline';
-import { refreshRenderedHandbook, resolveTitle } from './render-refresh.js';
+import { graphFidelity, refreshRenderedHandbook, resolveTitle } from './render-refresh.js';
 import { parseEnum, toInt } from './args.js';
 
 const program = new Command();
@@ -158,22 +157,21 @@ program
     const workDir = resolve(String(opts.work));
     const outDir = resolve(String(opts.out ?? `${workDir}/handbook`));
     const model = loadHandbookModel(workDir, resolveTitle(opts.title));
-    const links: SourceLinkOptions | undefined = opts.sourceBaseUrl
-      ? { sourceBaseUrl: String(opts.sourceBaseUrl) }
-      : undefined;
-    const md = renderMarkdownHandbook(model, outDir, links);
+    const languages = graphFidelity(workDir);
+    const render = { languages, ...(opts.sourceBaseUrl ? { sourceBaseUrl: String(opts.sourceBaseUrl) } : {}) };
+    const md = renderMarkdownHandbook(model, outDir, render);
     const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
     if (opts.agentSite) {
-      result.agent = renderAgentSite(model, `${outDir}/agent`);
+      result.agent = renderAgentSite(model, `${outDir}/agent`, { languages });
     }
     if (opts.html) {
-      result.html = renderHtmlSite(model, `${outDir}/html`, links);
+      result.html = renderHtmlSite(model, `${outDir}/html`, render);
     }
     if (opts.htmlSingle) {
-      result.htmlSingle = renderSinglePageHtml(model, `${outDir}/handbook.html`);
+      result.htmlSingle = renderSinglePageHtml(model, `${outDir}/handbook.html`, { languages });
     }
     if (opts.llmsTxt) {
-      result.llms = renderLlmsTxt(model, outDir);
+      result.llms = renderLlmsTxt(model, outDir, { languages });
     }
     printJson(result);
   });

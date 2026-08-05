@@ -153,6 +153,7 @@
   .pill.gold{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 45%,transparent)}
   .pill.ice{color:var(--ice);border-color:color-mix(in srgb,var(--ice) 45%,transparent)}
   .pill.red{color:var(--red);border-color:color-mix(in srgb,var(--red) 45%,transparent)}
+  .pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
   code,.mono{font-family:var(--mono);font-size:11.5px}
   .empty{max-width:560px;margin:11vh auto;text-align:center;color:var(--dim)}
   .empty h3{font-size:21px;color:var(--fg);margin-bottom:10px}
@@ -563,6 +564,8 @@ const DICT = {
       analyze: '① 免费分析', gen: '② 生成手册', regen: '重新生成',
       actHint: '先免费分析看规模，再决定生成深度。',
       sysOv: 'SYSTEM OVERVIEW', stages: '阶段索引', registers: 'STATE REGISTERS',
+      languages: 'LANGUAGES', tierFull: '全保真', tierGeneric: '通用档',
+      fidelityHint: '通用档语言的调用关系由通用（配置驱动）分析器提取：尽力而为，可能不完整。文件清单与结构仍是精确的。',
       hotFiles: '热点文件', hotHint: '按调用度排序，来自调用图；点一个进源码视图。',
       chapter: '章节', graph: '影响图', crosscut: '横切',
       noStages: '还没有阶段数据', notGen: '这个仓库还没生成手册。先「免费分析」看看规模，再「生成手册」。'
@@ -726,6 +729,8 @@ const DICT = {
       analyze: '① Free analysis', gen: '② Generate handbook', regen: 'Regenerate',
       actHint: 'Analyse for free to see the size, then choose a depth.',
       sysOv: 'SYSTEM OVERVIEW', stages: 'Stage index', registers: 'STATE REGISTERS',
+      languages: 'LANGUAGES', tierFull: 'full', tierGeneric: 'generic',
+      fidelityHint: 'Generic-tier call relations come from the config-driven analyzer: best-effort and possibly incomplete. The file inventory and structure are still exact.',
       hotFiles: 'Hot files', hotHint: 'Ranked by call degree, from the call graph. Click one to open the source viewer.',
       chapter: 'Chapter', graph: 'Graph', crosscut: 'crosscut',
       noStages: 'No stage data yet', notGen: 'No handbook for this repo yet. Run the free analysis first, then generate.'
@@ -1301,6 +1306,21 @@ async function renderOverview(c, tok, repo) {
   }
 
   let b = '';
+  // Analysis fidelity, per language: nothing in the stage list or the coverage
+  // number reveals that some languages were analysed by the generic engine, so
+  // say it here — warn-coloured, exactly like coverage below 100%.
+  const langs = ov.languages && typeof ov.languages === 'object' ? ov.languages : null;
+  const langNames = langs ? Object.keys(langs).sort() : [];
+  if (langNames.length) {
+    const isGeneric = (n) => !!(langs[n] && langs[n].tier === 'generic');
+    b += '<div class="card" style="margin-top:16px"><span class="k">' + esc(t('ov.languages')) + '</span>' +
+      '<div class="row" style="margin-top:8px">' +
+      langNames.map((n) => '<span class="pill' + (isGeneric(n) ? ' warn' : '') + '">' + esc(n) + ' · ' +
+        esc(t(isGeneric(n) ? 'ov.tierGeneric' : 'ov.tierFull')) + '</span>').join('') + '</div>' +
+      (langNames.some(isGeneric)
+        ? '<p class="hint" style="color:var(--warn)">' + esc(t('ov.fidelityHint')) + '</p>' : '') +
+      '</div>';
+  }
   if (ov.systemOverview) {
     b += '<div class="card" style="margin-top:16px"><span class="k">' + esc(t('ov.sysOv')) + '</span>' +
       '<p style="font-size:13.5px;line-height:1.85">' + esc(ov.systemOverview) + '</p></div>';

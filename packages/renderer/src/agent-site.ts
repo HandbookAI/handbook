@@ -11,7 +11,8 @@ import { join } from 'node:path';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { FileRole, HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
 import { renderFileCardMd } from './file-card.js';
-import { HandbookView, fileDir, fileStem, mdLinkText } from './shared.js';
+import { HandbookView, genericTierLanguages, fileDir, fileStem, mdLinkText } from './shared.js';
+import type { FidelityOptions } from './shared.js';
 
 /** File stems too generic to serve as entry concepts. */
 const GENERIC_TOKENS = new Set([
@@ -314,7 +315,15 @@ function locatorBlock(ctx: LocatorContext, sid: string, level: number, linkHeadi
   return parts.join('\n\n');
 }
 
-function howToUseMd(lang: NarrateLang): string {
+function howToUseMd(lang: NarrateLang, genericLanguages: readonly string[] = []): string {
+  // The agent reads this page before it trusts anything else, so a weaker
+  // analysis tier is disclosed HERE — not only in the human overview.
+  const caveat =
+    genericLanguages.length === 0
+      ? ''
+      : lang === 'zh'
+        ? `\n- **${genericLanguages.join('、')} 的调用关系是尽力而为的**（通用分析器）：文件清单与阶段归属是精确的，但"谁调用谁"可能不全。对这些语言，把调用事实当线索而非结论，务必回源码核对。\n`
+        : `\n- **Call relations for ${genericLanguages.join(', ')} are best-effort** (generic analyzer): the file inventory and stage assignment are exact, but "who calls whom" may be incomplete. Treat call facts for these languages as leads, not conclusions — confirm against the source.\n`;
   if (lang === 'zh') {
     return `# 如何使用本手册（智能体操作规程）
 
@@ -325,7 +334,7 @@ function howToUseMd(lang: NarrateLang): string {
 
 ## 本手册不是什么
 
-- 不是代码的替代品。跳转过去并 Read 真实文件 — 手册可能过时；代码是唯一的事实来源。
+- 不是代码的替代品。跳转过去并 Read 真实文件 — 手册可能过时；代码是唯一的事实来源。${caveat}
 
 ## 查找配方
 
@@ -353,7 +362,7 @@ function howToUseMd(lang: NarrateLang): string {
 
 ## What this handbook IS NOT
 
-- Not a replacement for the code. Jump there and Read the real file — the handbook can be stale; the code is the only source of truth.
+- Not a replacement for the code. Jump there and Read the real file — the handbook can be stale; the code is the only source of truth.${caveat}
 
 ## Lookup recipes
 
@@ -418,6 +427,7 @@ function agentStagePageMd(ctx: LocatorContext, sid: string): string {
 export function renderAgentSite(
   model: HandbookModel,
   outDir: string,
+  options: FidelityOptions = {},
 ): { nStagePages: number; nCollisions: number } {
   const view = new HandbookView(model);
   const ctx: LocatorContext = {
@@ -437,7 +447,7 @@ export function renderAgentSite(
   for (const sid of contentStages) {
     writeFileAtomic(join(outDir, `${sid}.md`), agentStagePageMd(ctx, sid));
   }
-  writeFileAtomic(join(outDir, 'how_to_use.md'), howToUseMd(model.lang));
+  writeFileAtomic(join(outDir, 'how_to_use.md'), howToUseMd(model.lang, genericTierLanguages(options.languages)));
   writeFileAtomic(join(outDir, 'index.md'), agentIndexMd(ctx));
   writeFileAtomic(join(outDir, 'disambiguation.md'), disambiguationMd(ctx, written));
 

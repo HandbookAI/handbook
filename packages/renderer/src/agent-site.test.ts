@@ -163,3 +163,29 @@ describe('strongTwins — every shipped language\'s test-naming convention', () 
     expect(strongTwins('src/client.test.ts', ['src/client.test.ts', 'src/client.ts'])).toEqual([]);
   });
 });
+
+describe('renderAgentSite — fidelity disclosure in how_to_use', () => {
+  const caps = {
+    kotlin: { tier: 'generic' as const, callTypes: ['internal_func' as const], selfAttrs: false, statementSpans: false },
+    python: { tier: 'full' as const, callTypes: ['internal_func' as const], selfAttrs: true, statementSpans: true },
+  };
+
+  it('stays silent when no option is given (byte-identical default)', () => {
+    const a = mkdtempSync(join(tmpdir(), 'hb-ag-fid-a-'));
+    const b = mkdtempSync(join(tmpdir(), 'hb-ag-fid-b-'));
+    renderAgentSite(model, a);
+    renderAgentSite(model, b, {});
+    const read = (d: string) => readFileSync(join(d, 'how_to_use.md'), 'utf8');
+    expect(read(a)).toBe(read(b));
+    expect(read(a)).not.toMatch(/best-effort|尽力而为/);
+  });
+
+  it('warns the agent that generic-tier call facts are leads, not conclusions', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hb-ag-fid-c-'));
+    renderAgentSite(model, dir, { languages: caps });
+    const how = readFileSync(join(dir, 'how_to_use.md'), 'utf8');
+    expect(how).toMatch(/Call relations for kotlin are best-effort/);
+    expect(how).toMatch(/leads, not conclusions/);
+    expect(how).not.toContain('python are best-effort');
+  });
+});

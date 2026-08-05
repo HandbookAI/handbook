@@ -6,7 +6,7 @@
  * organization-ordered file lists, subtree file counts and summary fallbacks.
  */
 import { StageTree } from '@handbook/core';
-import type { FileCard, HandbookModel, RegisterEntry } from '@handbook/core';
+import type { AdapterCapabilities, FileCard, HandbookModel, RegisterEntry } from '@handbook/core';
 
 /** One organization group resolved against the stage's actual bucket. */
 export interface ResolvedGroup {
@@ -126,6 +126,33 @@ export interface SourceLinkOptions {
    * output stays free of external URLs.
    */
   sourceBaseUrl?: string;
+}
+
+/** Options for renderers that can disclose how the call facts were obtained. */
+export interface FidelityOptions {
+  /**
+   * `graph.metadata.languages` — language name → what its adapter can deliver.
+   * The handbook model deliberately does not carry graph metadata, so this
+   * arrives as a render option; omit it and the output says nothing about
+   * fidelity (which is also what every pre-existing graph.json supports).
+   */
+  languages?: Record<string, AdapterCapabilities>;
+}
+
+/** Everything the markdown and multi-page HTML renderers accept. */
+export interface RenderOptions extends SourceLinkOptions, FidelityOptions {}
+
+/**
+ * Contributing languages analyzed by the generic (config-driven) engine, sorted.
+ *
+ * Only these need disclosing: a full-tier language's call facts are as hard as
+ * the analyzer gets, so naming it would be noise. Empty = say nothing at all.
+ */
+export function genericTierLanguages(languages: FidelityOptions['languages']): string[] {
+  return Object.entries(languages ?? {})
+    .filter(([, capabilities]) => capabilities.tier === 'generic')
+    .map(([name]) => name)
+    .sort();
 }
 
 /**

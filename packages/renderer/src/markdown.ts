@@ -11,8 +11,8 @@ import { basename, join } from 'node:path';
 import { ensureDir, writeFileAtomic } from '@handbook/core';
 import type { HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
 import { renderFileCardMd } from './file-card.js';
-import { HandbookView, mdLinkText, stageMapMermaid } from './shared.js';
-import type { SourceLinkOptions } from './shared.js';
+import { HandbookView, genericTierLanguages, mdLinkText, stageMapMermaid } from './shared.js';
+import type { RenderOptions, SourceLinkOptions } from './shared.js';
 
 interface MdLabels {
   subStages: string;
@@ -32,6 +32,8 @@ interface MdLabels {
   registerTableHeader: string;
   noRegisters: string;
   stageRegisterMarker: string;
+  /** Disclosure for languages analyzed by the generic engine (see genericTierLanguages). */
+  fidelityNote: (languages: readonly string[]) => string;
 }
 
 const LABELS: Record<NarrateLang, MdLabels> = {
@@ -54,6 +56,8 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     registerTableHeader: '| State register | Semantics | Stages touched |\n| --- | --- | --- |',
     noRegisters: '_(No state registers extracted.)_',
     stageRegisterMarker: '## 📊 State Registers Touched',
+    fidelityNote: (languages) =>
+      `> **Analysis fidelity** — call relations for ${languages.join(', ')} come from the generic (config-driven) analyzer: they are best-effort and may be incomplete. The file inventory and the structure of these languages are exact.`,
   },
   zh: {
     subStages: '子阶段',
@@ -73,6 +77,8 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     registerTableHeader: '| 状态寄存器 | 语义 | 涉及阶段 |\n| --- | --- | --- |',
     noRegisters: '_（未提取到状态寄存器。）_',
     stageRegisterMarker: '## 📊 本阶段涉及的状态',
+    fidelityNote: (languages) =>
+      `> **保真度说明** —— ${languages.join('、')} 的调用关系来自通用（配置驱动）分析器：尽力而为，可能不完整。这些语言的文件清单与结构仍是精确的。`,
   },
 };
 
@@ -151,9 +157,14 @@ function stagePageMd(
   return `${parts.join('\n\n')}\n`;
 }
 
-function overviewMd(view: HandbookView, lang: NarrateLang): string {
+function overviewMd(view: HandbookView, lang: NarrateLang, options: RenderOptions): string {
   const L = LABELS[lang];
   const parts = [`# ${view.model.title}`, L.systemOverview, view.model.narration.systemOverview.trim()];
+  // Disclose mixed fidelity right under the overview prose, where a reader (or an
+  // agent) forms its trust in the call facts — and nowhere at all when every
+  // language is full-tier, so the common case stays noise-free.
+  const generic = genericTierLanguages(options.languages);
+  if (generic.length > 0) parts.push(L.fidelityNote(generic));
   const mermaid = stageMapMermaid(view.tree);
   if (mermaid.length > 0) parts.push(L.stageMap, mermaid);
   parts.push('---', `## ${L.seeAlso}`);
@@ -186,11 +197,13 @@ function indexMd(view: HandbookView, lang: NarrateLang): string {
  * Returns the number of stage pages and every file written (absolute paths).
  * `options.sourceBaseUrl` (opt-in) turns every file-card path into a link to
  * the source file; without it the output contains no external URLs.
+ * `options.languages` (opt-in) discloses per-language analysis fidelity in the
+ * overview; without it the output is unchanged.
  */
 export function renderMarkdownHandbook(
   model: HandbookModel,
   outDir: string,
-  options: SourceLinkOptions = {},
+  options: RenderOptions = {},
 ): { nStagePages: number; files: string[] } {
   const view = new HandbookView(model);
   const lang = model.lang;
@@ -209,7 +222,7 @@ export function renderMarkdownHandbook(
   const contentStages = view.contentStages();
   for (const sid of contentStages) write(`${sid}.md`, stagePageMd(view, sid, lang, options));
 
-  write('overview.md', overviewMd(view, lang));
+  write('overview.md', overviewMd(view, lang, options));
   if (model.registers.length > 0) {
     const table = renderRegisterTable(model.registers, (sid) => view.tree.title(sid), lang, (sid) =>
       view.hasContent(sid),

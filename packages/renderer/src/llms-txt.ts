@@ -16,7 +16,8 @@ import { join } from 'node:path';
 import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
 import type { HandbookModel, NarrateLang } from '@handbook/core';
 import { fileOneLiner } from './file-card.js';
-import { HandbookView, mdLinkText, stageMapMermaid } from './shared.js';
+import { HandbookView, mdLinkText, stageMapMermaid, genericTierLanguages } from './shared.js';
+import type { FidelityOptions } from './shared.js';
 
 /** Longest summary blockquote emitted into llms.txt. */
 const SUMMARY_MAX = 240;
@@ -35,6 +36,7 @@ interface LlmsLabels {
   stateFlow: string;
   crosscutSuffix: string;
   stages: (names: string) => string;
+  fidelityNote: (names: string) => string;
 }
 
 const LABELS: Record<NarrateLang, LlmsLabels> = {
@@ -50,6 +52,8 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stateFlow: 'State Flow',
     crosscutSuffix: ' (cross-cutting infrastructure)',
     stages: (names) => `(stages: ${names})`,
+    fidelityNote: (names) =>
+      `Analysis fidelity: call relations for ${names} are best-effort (generic analyzer); file inventory and stage assignment are exact.`,
   },
   zh: {
     handbookSection: '手册',
@@ -63,6 +67,8 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stateFlow: '状态流动',
     crosscutSuffix: '（横切基础设施）',
     stages: (names) => `（涉及阶段：${names}）`,
+    fidelityNote: (names) =>
+      `保真度说明：${names} 的调用关系是尽力而为的（通用分析器）；文件清单与阶段归属是精确的。`,
   },
 };
 
@@ -77,7 +83,7 @@ function stageDescription(view: HandbookView, sid: string): string {
   return oneLine(description.length > 0 ? description : view.summary(sid), DESCRIPTION_MAX);
 }
 
-function llmsTxt(view: HandbookView, lang: NarrateLang): string {
+function llmsTxt(view: HandbookView, lang: NarrateLang, generic: readonly string[]): string {
   const L = LABELS[lang];
   const entry = (title: string, href: string, desc: string): string =>
     `- [${mdLinkText(title)}](${href})${L.sep}${desc}`;
@@ -91,19 +97,22 @@ function llmsTxt(view: HandbookView, lang: NarrateLang): string {
   const parts = [
     `# ${view.model.title}`,
     `> ${oneLine(view.model.narration.systemOverview, SUMMARY_MAX)}`,
-    `## ${L.handbookSection}`,
-    links.join('\n'),
   ];
+  // An agent may read only the head of this file, so mixed fidelity is
+  // disclosed before the link list rather than after it.
+  if (generic.length > 0) parts.push(`> ${L.fidelityNote(generic.join(L === LABELS.zh ? '、' : ', '))}`);
+  parts.push(`## ${L.handbookSection}`, links.join('\n'));
   return `${parts.join('\n\n')}\n`;
 }
 
-function llmsFull(view: HandbookView, lang: NarrateLang): string {
+function llmsFull(view: HandbookView, lang: NarrateLang, generic: readonly string[]): string {
   const L = LABELS[lang];
   const parts: string[] = [
     `# ${view.model.title}`,
     `## ${L.systemOverview}`,
     view.model.narration.systemOverview.trim(),
   ];
+  if (generic.length > 0) parts.push(`> ${L.fidelityNote(generic.join(L === LABELS.zh ? '、' : ', '))}`);
   const mermaid = stageMapMermaid(view.tree);
   if (mermaid.length > 0) parts.push(`## ${L.stageMap}`, mermaid);
 
@@ -137,12 +146,17 @@ function llmsFull(view: HandbookView, lang: NarrateLang): string {
  * markdown handbook to be rendered into the same directory so the llms.txt
  * links resolve.
  */
-export function renderLlmsTxt(model: HandbookModel, outDir: string): { files: string[] } {
+export function renderLlmsTxt(
+  model: HandbookModel,
+  outDir: string,
+  options: FidelityOptions = {},
+): { files: string[] } {
   const view = new HandbookView(model);
   ensureDir(outDir);
   const llmsPath = join(outDir, 'llms.txt');
   const fullPath = join(outDir, 'llms-full.txt');
-  writeFileAtomic(llmsPath, llmsTxt(view, model.lang));
-  writeFileAtomic(fullPath, llmsFull(view, model.lang));
+  const generic = genericTierLanguages(options.languages);
+  writeFileAtomic(llmsPath, llmsTxt(view, model.lang, generic));
+  writeFileAtomic(fullPath, llmsFull(view, model.lang, generic));
   return { files: [llmsPath, fullPath] };
 }
