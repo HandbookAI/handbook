@@ -169,6 +169,17 @@ interface GenericLanguageSpec {
 `.js` / `.mjs` / `.cjs` → `typescript` 语法;`.jsx` → `tsx` 语法。
 排除规则沿用(`.d.ts` 已排除,新增 `.min.js` 排除)。
 
+## capability 声明的语义边界(实测发现)
+
+`AdapterCapabilities.callTypes` 声明的是**这个适配器有能力产出哪些调用类型**,不是"覆盖密度的承诺"。
+实测例证:JavaScript 复用 TS 适配器,因此声明 `tier: 'full'` + 全部 8 种调用类型——这是真的;
+但真实 JS 代码缺少类型标注,所以类型驱动的那几种(`self_attr_method` / `param_method`)实际触发得
+比 TS 少。同样地 `const e = new Engine(); e.spin()` 不产出边,因为 TS 适配器学字段与参数类型、
+**不做局部变量推断**(TS 源码里行为一致,不是 JS 引入的退化)。
+
+结论:声明是**能力上界**,读者对"密度"的期待要由覆盖率数字回答,而不是由 tier 回答。渲染层的
+披露文案因此只说"generic 档的调用关系尽力而为",不对 full 档承诺完备性。
+
 ## 测试策略
 
 - **回归**:59 个现有 analyzer 测试是迁移的安全网,断言一律不动。全绿 = 行为未变。
