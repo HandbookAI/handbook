@@ -20,6 +20,7 @@ import { applyEnvFile } from './env-file.js';
 import { createLogger, type LogLevel } from '@handbook/core';
 import { CachedChatClient, OpenAiChatClient, type ChatClient } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
+import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
 import {
   renderAgentSite,
   renderHtmlSite,
@@ -67,6 +68,15 @@ function llmClient(): ChatClient {
   return new OpenAiChatClient({ logger: logger() });
 }
 
+/**
+ * `auto|<every registered language>` — derived, never hand-written: this help
+ * string had drifted five languages behind the registry.
+ */
+function languageChoices(): string {
+  registerBuiltinAdapters();
+  return ['auto', ...availableLanguages()].join('|');
+}
+
 function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
@@ -76,7 +86,7 @@ program
   .description('Phase 1 only: build the static call graph (no LLM needed)')
   .requiredOption('--source <dir>', 'source root to analyze')
   .requiredOption('--work <dir>', 'work directory for artifacts')
-  .option('--lang <lang>', 'language (auto|python|typescript|go|rust|shell)', 'auto')
+  .option('--lang <lang>', `language (${languageChoices()})`, 'auto')
   .action(async (opts: { source: string; work: string; lang: string }) => {
     const stats = await runPhase1({
       sourceRoot: resolve(opts.source),
@@ -95,7 +105,7 @@ program
   .option('--phase <spec>', 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list', 'all')
   .option('--strategy <s>', 'file | member (default: file, or the work dir\'s recorded strategy)')
   .option('--skeleton <path>', 'user-authored skeleton.yaml (required for member strategy)')
-  .option('--lang <lang>', 'source language (auto detects)', 'auto')
+  .option('--lang <lang>', `source language, auto-detects (${languageChoices()})`, 'auto')
   .option('--narrate-lang <l>', 'prose language: en | zh', 'en')
   .option('--detail <d>', 'card depth: brief | deep', 'brief')
   .option('--synth-mode <m>', 'skeleton synthesis: oneshot | doctor', 'oneshot')

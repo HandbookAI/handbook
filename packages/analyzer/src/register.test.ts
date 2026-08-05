@@ -247,12 +247,135 @@ function lint {
   analyze: ['scripts/deploy.sh', 'lib/util.bash'],
 };
 
+/**
+ * Generic-tier fixtures. Smaller than the full-tier ones above because a generic
+ * adapter declares less — but held to the same bidirectional standard: whatever
+ * the config claims, the fixture must actually produce.
+ */
+const KOTLIN: Fixture = {
+  files: {
+    'demo/app.kt': `package demo
+
+import demo.engine.Engine
+import kotlin.math.max
+
+class App {
+    fun run(): String {
+        this.prepare()
+        max(1, 2)
+        mystery()
+        Engine()
+        return shout("x")
+    }
+
+    private fun prepare(): String = "ready"
+}
+
+fun shout(text: String): String = text
+`,
+    'demo/engine.kt': `package demo.engine
+
+class Engine {
+    fun spin(): Int = 1
+}
+`,
+  },
+  analyze: ['demo/app.kt', 'demo/engine.kt'],
+};
+
+const SCALA: Fixture = {
+  files: {
+    'demo/app.scala': `package demo
+
+import demo.engine.Engine
+import scala.math.max
+
+class App {
+  def run(): String = {
+    this.prepare()
+    max(1, 2)
+    mystery()
+    new Engine()
+    shout("x")
+  }
+
+  private def prepare(): String = "ready"
+}
+
+def shout(text: String): String = text
+`,
+    'demo/engine.scala': `package demo.engine
+
+class Engine {
+  def spin(): Int = 1
+}
+`,
+  },
+  analyze: ['demo/app.scala', 'demo/engine.scala'],
+};
+
+const ZIG: Fixture = {
+  files: {
+    'app.zig': `pub fn run() void {
+    prepare();
+    mystery();
+}
+
+fn prepare() void {}
+`,
+  },
+  analyze: ['app.zig'],
+};
+
+const OBJC: Fixture = {
+  files: {
+    'app.m': `#import "Logger.h"
+
+@implementation App
+- (void)run {
+    [self prepare];
+    [Logger warn];
+    shout(@"x");
+    NSLog(@"%@", @"hi");
+}
+
+- (void)prepare {
+}
+@end
+
+void shout(NSString *text) {
+}
+`,
+  },
+  analyze: ['app.m'],
+};
+
+const OCAML: Fixture = {
+  files: {
+    'app.ml': `open Logger
+
+let prepare y = y
+
+let run x =
+  let z = prepare x in
+  Logger.warn z;
+  String.length z
+`,
+  },
+  analyze: ['app.ml'],
+};
+
 const FIXTURES: Record<string, Fixture> = {
   python: PYTHON,
   typescript: TYPESCRIPT,
   go: GO,
   rust: RUST,
   shell: SHELL,
+  kotlin: KOTLIN,
+  scala: SCALA,
+  zig: ZIG,
+  objc: OBJC,
+  ocaml: OCAML,
 };
 
 function writeFixture(fixture: Fixture): string {

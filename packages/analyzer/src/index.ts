@@ -7,4 +7,5 @@ export { TypeScriptAdapter } from './adapters/typescript.js';
 export { GoAdapter } from './adapters/go.js';
 export { RustAdapter } from './adapters/rust.js';
 export { ShellAdapter } from './adapters/shell.js';
+export * from './generic.js';
 export { registerBuiltinAdapters } from './register.js';
