@@ -316,3 +316,63 @@ studio 界面默认中文 → `narrateLang=zh` → pipeline 发出**中文**规�
 专项取消 12/12（API 202/409、结算为 cancelled、互斥释放、按钮显隐与禁用、中性配色）。
 
 仍开放：MCP docs server、最小质量评测集、studio 手册内容编辑。
+
+## 2026-08-05/06：多语言支持 SP1 地基（脊梁 + 保真度 + 通用引擎 + JavaScript，809 测试绿）
+
+用户要求把 java/C#/C/C++/ruby/php/swift/dart/javascript/solidity/shell/go/php/rust/PowerShell
+全部做成**全保真**，未点名语言走通用引擎。设计与路线见
+`docs/internal/specs/2026-08-05-multi-language-design.md`（SP1–SP6 六个子项目）。
+关键事实：`tree-sitter-wasms@0.1.13` **已自带**这 10 门新语言的 wasm 语法，无需新依赖，
+版本锁不动；PowerShell 无语法文件，本轮不做。
+
+### 为什么先做地基（不是为了省代码行数）
+
+审计的 A1 是结构性缺陷的症状：跨模块自由函数索引这个零件，python/rust 有、typescript/go 没有，
+四个镜像实现漏装两个，且 TS 的测试把错误行为写成了断言。四个就漏一个；再加九个手写适配器，
+这类 bug 翻三倍。`buildStandardIndexes` 一次建全四张标准索引表，**"忘装零件"在结构上不再可能**。
+
+### 交付
+
+1. **公共脊梁**（`spine.ts`）：驱动器 + `BaseScan` + `buildStandardIndexes` + 无状态解析助手。
+   设计中途**推翻了自己一个方案**：原打算"公共层固定解析顺序、语言只提供取值器"，深入分析后
+   放弃——C 没有方法、Ruby 无类型标注、Solidity 有 modifier，强行统一会做出漏抽象的紧身衣。
+   改为工具箱：各语言在自己的 `extractCalls` 里按自己的次序调用助手。
+2. **5 个适配器迁移，行为逐字节不变**。这条承重 claim 没只信断言：取一份**两个分析器都没碰过**的
+   106 文件语料（旧 commit 的 worktree 快照），新旧各跑一遍——**459 函数、1491 边逐项相同，
+   连 callType 与行号都一致**。（先前"自分析边数从 1363 涨到 3859"的疑点也查清了：分析器在分析
+   自己被改过的源码，文件路径同、内容变了，自分析无法隔离这个变量。）
+3. **JavaScript 白送**：TS 语法解析纯 JS 零错误，`.js/.mjs/.cjs → typescript`、`.jsx → tsx`。
+   真实项目验证跨文件解析正确（`.jsx` 里 import `.js` 的自由函数 → `internal_func` 而非 boundary）。
+4. **保真度声明**（诚实性）：适配器声明 `tier / callTypes / selfAttrs / statementSpans`，
+   透传 `graph.metadata.languages` → 渲染层 → Studio 芯片。`register.test.ts` **双向**校验
+   （产出 ⊆ 声明 **且** 声明 ⊆ 产出），杜绝少报与**过度声明**。
+   我额外补了 agent 站点与 llms.txt 的披露——**手册的主要消费者是 code agent**，
+   `how_to_use.md` 明确写"把这些语言的调用事实当**线索而非结论**"；llms.txt 的披露放在链接列表
+   **之前**，因为 agent 可能只读文件头。demo 含 shell（诚实声明 generic 档），三种产出全自动触发。
+5. **通用引擎**（`generic.ts`）：kotlin / scala / zig / objc / ocaml。`callTypes` 必填且
+   `createGenericAdapter` 对越权声明直接抛错，`self_attr_method`/`param_method` 结构上不可达。
+
+### 两个诚实的放弃（原因记录在案，避免重复踩）
+
+- **elixir**：`defmodule`/`def`/`import`/普通调用是**同一种节点**，声明式配置无法区分定义与调用。
+- **lua**：锁定版 `tree-sitter-lua` wasm 有缺陷——**丢哪些函数取决于同一 parser 之前解析过什么**
+  （单独解析得 1 个函数，先解析兄弟文件后得 0 个）。独立探针复现，其他语法均无此问题。
+  **不可复现的事实比没有事实更糟。**
+
+### 实测发现（已写入 spec）
+
+- **capability 声明是能力上界，不是覆盖密度承诺**：JS 复用 TS 适配器故声明 full+8 种——为真；
+  但真实 JS 缺类型标注，类型驱动的几种触发更少。`const e = new Engine(); e.spin()` 不产边，
+  因为适配器学字段/参数类型、**不做局部变量推断**（TS 源码同理，非 JS 退化）。
+  故渲染层只对 generic 档说"尽力而为"，**不对 full 档承诺完备性**。
+- **IR 层空缺**：`CallType` 没有"对已扫描类型的限定调用"（`Helpers.shout()`、`[Engine reset]`），
+  只能降级 `unresolved`（退 `boundary` 会谎称目标在外部）。SP2 做 Java/C# 会大量遇到静态方法，
+  届时正式评估是否加 `static_method`。
+- **CLI 帮助文本漂移已结构性修掉**：`--lang` 曾硬编码 6 门、落后 5 门，现从注册表推导，不会再漂。
+
+### 状态
+
+analyzer 90 → 257 测试；全仓 484 → **809**。`pnpm check` 全绿，demo(en/zh) 双通。
+现支持 10 门：python/typescript(+JS)/go/rust/shell(full 档，shell 声明 generic 待 SP6 升级)
++ kotlin/scala/zig/objc/ocaml(generic 档)。
+下一步 **SP2：Java + C#**（全保真，含静态方法这个 IR 决策）。
