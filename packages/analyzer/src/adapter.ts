@@ -5,7 +5,7 @@
  * ({@link ModuleAnalysis}); the graph builder does everything downstream.
  * Adding a language = implementing this interface and registering it.
  */
-import type { FunctionNode, ModuleAnalysis } from '@handbook/core';
+import type { AdapterCapabilities, FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { listFilesRecursive } from '@handbook/core';
 
 /** Directory names skipped by every adapter's discovery. */
@@ -39,6 +39,12 @@ export interface LanguageAdapter {
   readonly name: string;
   /** File extensions (with dot) this adapter owns. */
   readonly extensions: readonly string[];
+  /**
+   * What this adapter can actually deliver. Required, not optional: two
+   * fidelity tiers coexist in the graph, and a reader cannot tell them apart
+   * from nodes and edges alone — so every adapter must say so out loud.
+   */
+  readonly capabilities: AdapterCapabilities;
   /** Find analyzable files under `sourceRoot` (relative POSIX paths, sorted). */
   discover(sourceRoot: string): string[];
   /** Parse `files` (relative POSIX paths) into the IR. */

@@ -39,6 +39,7 @@ describe('discoverAll — broken adapter handling', () => {
     registerAdapter('broken', () => ({
       name: 'broken',
       extensions: ['.broken'],
+      capabilities: { tier: 'generic', callTypes: [], selfAttrs: false, statementSpans: false },
       discover(): string[] {
         throw new Error('grammar exploded');
       },
