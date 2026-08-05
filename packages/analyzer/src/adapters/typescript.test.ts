@@ -191,3 +191,137 @@ function poke(): void {}
     expect(valEdges.length).toBeLessThanOrEqual(2);
   });
 });
+
+/**
+ * JavaScript rides on this adapter: the `typescript` grammar parses plain JS and
+ * the `tsx` grammar parses JSX, both with zero parse errors, so `.js`/`.mjs`/
+ * `.cjs`/`.jsx` are handled here rather than by a second adapter.
+ */
+const APP_JS = `
+import { Engine } from './engine.SPEC_ENGINE';
+import { shout } from './helpers.SPEC_HELPERS';
+
+export class App {
+  label = '';
+  greet = (msg) => {
+    return shout(msg);
+  };
+
+  constructor(engine) {
+    this.engine = engine;
+  }
+
+  async run() {
+    this.prepare();
+    mystery();
+  }
+
+  prepare() {
+    this.label = 'ready';
+  }
+}
+
+export function main() {
+  const app = new App(new Engine());
+  app.greet('hi');
+}
+
+const double = (x) => { return x * 2; };
+`;
+
+const ENGINE_JS = `
+export class Engine {
+  async spin() {
+    return 1;
+  }
+}
+`;
+
+const HELPERS_JS = `
+export function shout(text) {
+  return text.toUpperCase();
+}
+`;
+
+const WIDGET_JSX = `
+import { shout } from './helpers.SPEC_HELPERS';
+export function Widget() {
+  return <div>{shout('hey')}</div>;
+}
+`;
+
+/** The fixture with import specifiers pointing at the given extensions. */
+function withSpecifiers(source: string, engineExt: string, helpersExt: string): string {
+  return source.replace('SPEC_ENGINE', engineExt).replace('SPEC_HELPERS', helpersExt);
+}
+
+describe('TypeScriptAdapter — JavaScript (.js/.mjs/.cjs/.jsx)', () => {
+  let analysis: ModuleAnalysis;
+  let root: string;
+  const adapter = new TypeScriptAdapter();
+
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), 'hb-js-'));
+    writeFileSync(join(root, 'app.js'), withSpecifiers(APP_JS, 'mjs', 'cjs'));
+    writeFileSync(join(root, 'engine.mjs'), ENGINE_JS);
+    writeFileSync(join(root, 'helpers.cjs'), HELPERS_JS);
+    writeFileSync(join(root, 'widget.jsx'), withSpecifiers(WIDGET_JSX, 'mjs', 'cjs'));
+    writeFileSync(join(root, 'bundle.min.js'), 'function a(){b()}function b(){}\n');
+    analysis = await adapter.analyze(['app.js', 'engine.mjs', 'helpers.cjs', 'widget.jsx'], root);
+  });
+
+  const fn = (id: string) => analysis.functions.find((f) => f.id === id);
+  const edge = (caller: string, callee: string) =>
+    analysis.edges.find((e) => e.callerId === caller && e.calleeId === callee);
+
+  it('discovers every JS flavour but never a minified bundle or a .d.ts', () => {
+    const files = adapter.discover(root);
+    expect(files).toContain('app.js');
+    expect(files).toContain('engine.mjs');
+    expect(files).toContain('helpers.cjs');
+    expect(files).toContain('widget.jsx');
+    expect(files).not.toContain('bundle.min.js');
+  });
+
+  it('extracts class methods, arrow-function fields and top-level arrows', () => {
+    expect(fn('app.App.run')?.isMethod).toBe(true);
+    expect(fn('app.App.run')?.isAsync).toBe(true);
+    expect(fn('app.App.greet')?.isMethod).toBe(true); // arrow field recorded as method
+    expect(fn('app.main')?.isMethod).toBe(false);
+    expect(fn('app.double')).toBeDefined();
+    expect(fn('widget.Widget')).toBeDefined(); // tsx grammar on .jsx
+  });
+
+  it('tracks this-attribute writes without type annotations', () => {
+    expect(fn('app.App.constructor')?.selfAttrsWritten).toContain('engine');
+    expect(fn('app.App.prepare')?.selfAttrsWritten).toContain('label');
+  });
+
+  it('resolves this.m(), imports of scanned modules, and new-expressions', () => {
+    expect(edge('app.App.run', 'app.App.prepare')?.callType).toBe('self_method');
+    expect(edge('app.App.greet', 'helpers.shout')?.callType).toBe('internal_func');
+    expect(edge('app.main', 'app.App.constructor')?.callType).toBe('internal_constructor');
+    expect(edge('app.main', 'engine.Engine.constructor')?.callType).toBe('internal_constructor');
+    expect(edge('widget.Widget', 'helpers.shout')?.callType).toBe('internal_func');
+  });
+
+  it('produces the same graph as the equivalent TypeScript source', async () => {
+    // Module ids drop the extension, so an identical program in .ts must yield
+    // identical nodes and edges — that is what "JavaScript is free" means.
+    const tsRoot = mkdtempSync(join(tmpdir(), 'hb-js-ts-'));
+    writeFileSync(join(tsRoot, 'app.ts'), withSpecifiers(APP_JS, 'js', 'js'));
+    writeFileSync(join(tsRoot, 'engine.ts'), ENGINE_JS);
+    writeFileSync(join(tsRoot, 'helpers.ts'), HELPERS_JS);
+    writeFileSync(join(tsRoot, 'widget.tsx'), withSpecifiers(WIDGET_JSX, 'js', 'js'));
+    const tsAnalysis = await adapter.analyze(
+      ['app.ts', 'engine.ts', 'helpers.ts', 'widget.tsx'],
+      tsRoot,
+    );
+
+    const shape = (a: ModuleAnalysis) => ({
+      functions: a.functions.map((f) => [f.id, f.isMethod, f.isAsync, f.className] as const),
+      edges: a.edges.map((e) => [e.callerId, e.calleeId, e.callType, e.isAwait] as const),
+    });
+    expect(shape(analysis)).toEqual(shape(tsAnalysis));
+  });
+});

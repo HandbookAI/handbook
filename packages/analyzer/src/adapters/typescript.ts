@@ -7,15 +7,32 @@
  *      free functions, `this.X` attribute usage, parameter types;
  *   2. resolve every call / new-expression against the cross-module indexes
  *      into typed {@link CallEdge}s.
+ *
+ * JavaScript rides along: the `typescript` grammar parses plain JS with zero
+ * errors and the `tsx` grammar parses JSX, so `.js`/`.mjs`/`.cjs`/`.jsx` are
+ * handled by THIS adapter rather than a second, near-identical one. Declaration
+ * files (`.d.ts`, no bodies) and minified bundles (`.min.js`, one giant
+ * unreadable line) are excluded from discovery.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Node } from 'web-tree-sitter';
-import type { CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge } from '@handbook/core';
 import { truncate } from '@handbook/core';
-import { createParser } from '../languages.js';
-import { dedupeFunctionsById, discoverByExtension, type LanguageAdapter } from '../adapter.js';
+import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
+import {
+  boundaryOf,
+  resolveFieldType,
+  resolveOwnMethod,
+  resolveSameFileFree,
+  resolveViaImport,
+  unresolvedOf,
+  SpineAdapter,
+  type BaseScan,
+  type ImportResolveOptions,
+  type LanguageSpec,
+  type Resolved,
+  type StandardIndexes,
+} from '../spine.js';
 
 const GENERIC_TYPES = new Set([
   'number', 'string', 'boolean', 'any', 'unknown', 'void', 'never', 'object',
@@ -30,68 +47,24 @@ const NESTED_SCOPES = new Set([
   'method_definition', 'class_declaration', 'abstract_class_declaration',
 ]);
 
-interface ModuleScan {
-  moduleId: string;
-  file: string;
-  /** local name → `source::exported` (named/default) or `source` (namespace). */
-  imports: Map<string, string>;
-  /** class name → set of method names (incl. arrow-function fields). */
-  classes: Map<string, Set<string>>;
-  /** `Class.field` → bare type name. */
-  fieldTypes: Map<string, string>;
-  /** top-level function names (declarations + const arrow/function bindings). */
-  topLevelFunctions: Set<string>;
-  functions: FunctionNode[];
-  /** function id → its AST context for pass 2. */
-  fnContext: Map<string, { body: Node; className: string | null; params: Map<string, string> }>;
+interface FnContext {
+  body: Node;
+  className: string | null;
+  params: Map<string, string>;
 }
 
-export class TypeScriptAdapter implements LanguageAdapter {
-  readonly name = 'typescript';
-  readonly extensions = ['.ts', '.tsx'];
-
-  discover(sourceRoot: string): string[] {
-    return discoverByExtension(sourceRoot, this.extensions, EXTRA_SKIP_DIRS, (rel) => !rel.endsWith('.d.ts'));
-  }
-
-  async analyze(files: readonly string[], sourceRoot: string): Promise<ModuleAnalysis> {
-    const tsParser = await createParser('typescript');
-    const tsxParser = await createParser('tsx');
-    const scans: ModuleScan[] = [];
-    for (const file of files) {
-      let source: string;
-      try {
-        source = readFileSync(join(sourceRoot, file), 'utf8');
-      } catch {
-        continue;
-      }
-      const parser = file.endsWith('.tsx') ? tsxParser : tsParser;
-      const tree = parser.parse(source);
-      if (!tree) continue;
-      scans.push(scanModule(tree.rootNode, file));
-    }
-
-    // Cross-module indexes (first definition wins on collisions).
-    const classToModule = new Map<string, string>();
-    const moduleFunctions = new Map<string, Set<string>>();
-    for (const scan of scans) {
-      moduleFunctions.set(scan.moduleId, scan.topLevelFunctions);
-      for (const cls of scan.classes.keys()) {
-        if (!classToModule.has(cls)) classToModule.set(cls, scan.moduleId);
-      }
-    }
-    const indexes: CrossModuleIndexes = { classToModule, moduleFunctions };
-
-    const functions = scans.flatMap((s) => s.functions);
-    const edges = scans.flatMap((s) => extractCalls(s, indexes));
-    return { functions, edges };
-  }
+interface ModuleScan extends BaseScan {
+  /**
+   * `imports`: local name → `source::exported` (named/default) or `source`
+   * (namespace). `ownerMethods`: class name → method names, arrow-function
+   * fields included. `fieldTypes`: `Class.field` → bare type name.
+   * `freeFunctions`: top-level declarations plus const arrow/function bindings.
+   */
+  fnContext: Map<string, FnContext>;
 }
 
-interface CrossModuleIndexes {
-  classToModule: Map<string, string>;
-  /** moduleId → top-level function names (resolves imports of scanned free functions). */
-  moduleFunctions: Map<string, Set<string>>;
+export function moduleIdForFile(file: string): string {
+  return file.replace(/\.(tsx|ts|jsx|js|mjs|cjs)$/, '').split('/').join('.');
 }
 
 /**
@@ -114,65 +87,28 @@ function resolveRelativeModule(importerFile: string, specifier: string): string 
   return stack.length > 0 ? stack.join('.') : undefined;
 }
 
-export function moduleIdForFile(file: string): string {
-  return file.replace(/\.(tsx|ts)$/, '').split('/').join('.');
-}
-
 /** `'./x.js::Engine'` → `Engine`; plain names pass through. */
 function leafName(imported: string): string {
   return imported.split('::').pop() ?? imported;
 }
 
+/** How the spine reads this language's `imports` values. */
+function importOptions(scan: ModuleScan): ImportResolveOptions {
+  const file = scan.files[0] ?? '';
+  return {
+    parse: (imported) => {
+      const at = imported.indexOf('::');
+      return { source: at >= 0 ? imported.slice(0, at) : imported, leaf: leafName(imported) };
+    },
+    constructorName: 'constructor',
+    capitalizedIsConstructor: true,
+    moduleOf: (source) => resolveRelativeModule(file, source),
+  };
+}
+
 function unwrapExport(node: Node): Node {
   if (node.type !== 'export_statement') return node;
   return node.childForFieldName('declaration') ?? node;
-}
-
-function scanModule(root: Node, file: string): ModuleScan {
-  const scan: ModuleScan = {
-    moduleId: moduleIdForFile(file),
-    file,
-    imports: new Map(),
-    classes: new Map(),
-    fieldTypes: new Map(),
-    topLevelFunctions: new Set(),
-    functions: [],
-    fnContext: new Map(),
-  };
-
-  for (const childOrNull of root.namedChildren) {
-    const child = childOrNull;
-    if (!child) continue;
-    if (child.type === 'import_statement') {
-      collectImport(child, scan.imports);
-      continue;
-    }
-    const decl = unwrapExport(child);
-    if (decl.type === 'class_declaration' || decl.type === 'abstract_class_declaration') {
-      scanClass(scan, decl);
-    } else if (decl.type === 'function_declaration') {
-      const name = fieldText(decl, 'name');
-      if (name) {
-        scan.topLevelFunctions.add(name);
-        recordFunction(scan, { name, className: null, defNode: decl, fnNode: decl });
-      }
-    } else if (decl.type === 'lexical_declaration' || decl.type === 'variable_declaration') {
-      for (const declarator of decl.namedChildren) {
-        if (!declarator || declarator.type !== 'variable_declarator') continue;
-        const value = declarator.childForFieldName('value');
-        const nameNode = declarator.childForFieldName('name');
-        if (!value || !nameNode || nameNode.type !== 'identifier') continue;
-        if (value.type === 'arrow_function' || value.type === 'function_expression') {
-          scan.topLevelFunctions.add(nameNode.text);
-          recordFunction(scan, { name: nameNode.text, className: null, defNode: declarator, fnNode: value });
-        }
-      }
-    }
-  }
-  // A `get x()`/`set x()` pair (or any same-name member) shares an id; keep the
-  // last so ids stay unique and pass-2 edges are not multiplied.
-  scan.functions = dedupeFunctionsById(scan.functions);
-  return scan;
 }
 
 function collectImport(node: Node, imports: Map<string, string>): void {
@@ -201,10 +137,10 @@ function collectImport(node: Node, imports: Map<string, string>): void {
   }
 }
 
-function scanClass(scan: ModuleScan, classNode: Node): void {
+function scanClass(scan: ModuleScan, classNode: Node, file: string): void {
   const className = fieldText(classNode, 'name');
   if (!className) return;
-  if (!scan.classes.has(className)) scan.classes.set(className, new Set());
+  if (!scan.ownerMethods.has(className)) scan.ownerMethods.set(className, new Set());
   const body = classNode.childForFieldName('body');
   if (!body) return;
 
@@ -213,8 +149,8 @@ function scanClass(scan: ModuleScan, classNode: Node): void {
     if (member.type === 'method_definition') {
       const name = fieldText(member, 'name');
       if (!name) continue;
-      scan.classes.get(className)?.add(name);
-      recordFunction(scan, { name, className, defNode: member, fnNode: member });
+      scan.ownerMethods.get(className)?.add(name);
+      recordFunction(scan, { name, className, defNode: member, fnNode: member, file });
       if (name === 'constructor') mineParameterProperties(scan, member, className);
     } else if (member.type === 'public_field_definition') {
       const name = fieldText(member, 'name');
@@ -222,8 +158,8 @@ function scanClass(scan: ModuleScan, classNode: Node): void {
       const value = member.childForFieldName('value');
       if (value && (value.type === 'arrow_function' || value.type === 'function_expression')) {
         // Function-valued fields ARE methods for our purposes.
-        scan.classes.get(className)?.add(name);
-        recordFunction(scan, { name, className, defNode: member, fnNode: value });
+        scan.ownerMethods.get(className)?.add(name);
+        recordFunction(scan, { name, className, defNode: member, fnNode: value, file });
       } else {
         const type = typeFromAnnotation(member.childForFieldName('type'), scan.imports);
         if (type) scan.fieldTypes.set(`${className}.${name}`, leafName(type));
@@ -265,9 +201,9 @@ function typeFromAnnotation(annotation: Node | null, imports: Map<string, string
 
 function recordFunction(
   scan: ModuleScan,
-  opts: { name: string; className: string | null; defNode: Node; fnNode: Node },
+  opts: { name: string; className: string | null; defNode: Node; fnNode: Node; file: string },
 ): void {
-  const { name, className, defNode, fnNode } = opts;
+  const { name, className, defNode, fnNode, file } = opts;
   const qualname = className ? `${className}.${name}` : name;
   const id = `${scan.moduleId}.${qualname}`;
   const body = fnNode.childForFieldName('body');
@@ -292,7 +228,7 @@ function recordFunction(
     id,
     name,
     qualname,
-    file: scan.file,
+    file,
     lineStart: lineStart(defNode),
     lineEnd: lineEnd(defNode),
     signature: truncate(header.replace(/\s+/g, ' ').trim(), 200),
@@ -346,84 +282,41 @@ function trackThisAttrs(body: Node): { reads: string[]; writes: string[] } {
   return { reads: [...reads].sort(), writes: [...writes].sort() };
 }
 
-function extractCalls(scan: ModuleScan, indexes: CrossModuleIndexes): CallEdge[] {
-  const edges: CallEdge[] = [];
-  for (const fn of scan.functions) {
-    const context = scan.fnContext.get(fn.id);
-    if (!context) continue;
-    walk(context.body, (node) => {
-      if (NESTED_SCOPES.has(node.type)) return false;
-      const isAwait = node.parent?.type === 'await_expression';
-      if (node.type === 'call_expression') {
-        const callee = node.childForFieldName('function');
-        if (!callee) return undefined;
-        const resolved = resolveCall(callee, scan, context, indexes);
-        edges.push({
-          callerId: fn.id,
-          calleeId: resolved.calleeId,
-          isAwait,
-          callType: resolved.callType,
-          line: lineStart(node),
-          raw: truncate(callee.text, 80),
-        });
-      } else if (node.type === 'new_expression') {
-        const resolved = resolveNew(node, scan, indexes);
-        edges.push({
-          callerId: fn.id,
-          calleeId: resolved.calleeId,
-          isAwait,
-          callType: resolved.callType,
-          line: lineStart(node),
-          raw: truncate(node.text, 80),
-        });
-      }
-      return undefined;
-    });
-  }
-  return edges;
-}
-
-interface Resolved {
-  calleeId: string;
-  callType: CallType;
-}
-
 function resolveCall(
   callee: Node,
   scan: ModuleScan,
   context: { className: string | null; params: Map<string, string> },
-  indexes: CrossModuleIndexes,
+  std: StandardIndexes,
 ): Resolved {
   // A. bare `name(...)`
   if (callee.type === 'identifier') {
-    return resolveBareName(callee.text, scan, indexes);
+    return (
+      resolveSameFileFree(callee.text, scan) ??
+      resolveViaImport(callee.text, scan, std, importOptions(scan)) ??
+      unresolvedOf(callee.text)
+    );
   }
 
   if (callee.type === 'member_expression') {
     const object = callee.childForFieldName('object');
     const prop = fieldText(callee, 'property');
-    if (!object || !prop) return unresolved(callee.text);
+    if (!object || !prop) return unresolvedOf(callee.text);
 
     // B1. `this.m(...)`
     if (object.type === 'this') {
-      if (context.className && scan.classes.get(context.className)?.has(prop)) {
-        return { calleeId: `${scan.moduleId}.${context.className}.${prop}`, callType: 'self_method' };
-      }
-      return unresolved(`this.${prop}`);
+      const own = context.className
+        ? resolveOwnMethod(context.className, prop, scan, std)
+        : undefined;
+      return own ?? unresolvedOf(`this.${prop}`);
     }
 
     // B2. `this.field.m(...)`
     if (object.type === 'member_expression' && object.childForFieldName('object')?.type === 'this') {
       const field = fieldText(object, 'property');
-      const type = context.className ? scan.fieldTypes.get(`${context.className}.${field}`) : undefined;
-      if (type) {
-        const typeModule = indexes.classToModule.get(type);
-        if (typeModule) {
-          return { calleeId: `${typeModule}.${type}.${prop}`, callType: 'self_attr_method' };
-        }
-        return { calleeId: `boundary:${type}.${prop}`, callType: 'boundary' };
-      }
-      return unresolved(`this.${field}.${prop}`);
+      const viaField = context.className
+        ? resolveFieldType(context.className, field, prop, scan, std)
+        : undefined;
+      return viaField ?? unresolvedOf(`this.${field}.${prop}`);
     }
 
     // B3. `base.m(...)` where base is a bare identifier
@@ -432,79 +325,54 @@ function resolveCall(
       const paramType = context.params.get(base);
       if (paramType) {
         const bare = leafName(paramType);
-        const typeModule = indexes.classToModule.get(bare);
+        const typeModule = std.typeToModule.get(bare);
         if (typeModule) return { calleeId: `${typeModule}.${bare}.${prop}`, callType: 'param_method' };
-        return { calleeId: `boundary:${paramType}.${prop}`, callType: 'boundary' };
+        return boundaryOf(paramType, prop);
       }
-      if (scan.classes.has(base)) {
+      if (scan.ownerMethods.has(base)) {
         return { calleeId: `${scan.moduleId}.${base}.${prop}`, callType: 'internal_func' };
       }
       const imported = scan.imports.get(base);
       if (imported) {
         const bare = leafName(imported);
-        const typeModule = indexes.classToModule.get(bare);
+        const typeModule = std.typeToModule.get(bare);
         if (typeModule) return { calleeId: `${typeModule}.${bare}.${prop}`, callType: 'internal_func' };
         if (!imported.includes('::')) {
           // namespace import of a scanned sibling module
-          const scannedModule = resolveRelativeModule(scan.file, imported);
-          if (scannedModule && indexes.moduleFunctions.get(scannedModule)?.has(prop)) {
+          const scannedModule = resolveRelativeModule(scan.files[0] ?? '', imported);
+          if (scannedModule && std.moduleFunctions.get(scannedModule)?.has(prop)) {
             return { calleeId: `${scannedModule}.${prop}`, callType: 'internal_func' };
           }
         }
-        return { calleeId: `boundary:${imported}.${prop}`, callType: 'boundary' };
+        return boundaryOf(imported, prop);
       }
-      return unresolved(`${base}.${prop}`);
+      return unresolvedOf(`${base}.${prop}`);
     }
   }
 
   // C. anything else
-  return unresolved(callee.text);
+  return unresolvedOf(callee.text);
 }
 
-function resolveBareName(name: string, scan: ModuleScan, indexes: CrossModuleIndexes): Resolved {
-  if (scan.topLevelFunctions.has(name)) {
-    return { calleeId: `${scan.moduleId}.${name}`, callType: 'internal_func' };
-  }
-  const imported = scan.imports.get(name);
-  if (imported) {
-    const sep = imported.indexOf('::');
-    const source = sep >= 0 ? imported.slice(0, sep) : imported;
-    const leaf = leafName(imported);
-    const scannedModule = resolveRelativeModule(scan.file, source);
-    if (scannedModule && indexes.moduleFunctions.get(scannedModule)?.has(leaf)) {
-      return { calleeId: `${scannedModule}.${leaf}`, callType: 'internal_func' };
-    }
-    const typeModule = indexes.classToModule.get(leaf);
-    if (typeModule) {
-      return { calleeId: `${typeModule}.${leaf}.constructor`, callType: 'internal_constructor' };
-    }
-    if (/^[A-Z]/.test(leaf)) {
-      return { calleeId: `boundary:${imported}`, callType: 'boundary_constructor' };
-    }
-    return { calleeId: `boundary:${imported}`, callType: 'boundary' };
-  }
-  return unresolved(name);
-}
-
-function resolveNew(node: Node, scan: ModuleScan, indexes: CrossModuleIndexes): Resolved {
+function resolveNew(node: Node, scan: ModuleScan, std: StandardIndexes): Resolved {
   const ctor = node.childForFieldName('constructor');
-  if (!ctor) return unresolved(node.text);
+  if (!ctor) return unresolvedOf(node.text);
 
   if (ctor.type === 'identifier') {
     const name = ctor.text;
-    if (scan.classes.has(name)) {
+    if (scan.ownerMethods.has(name)) {
       return { calleeId: `${scan.moduleId}.${name}.constructor`, callType: 'internal_constructor' };
     }
     const imported = scan.imports.get(name);
     if (imported) {
       const leaf = leafName(imported);
-      const typeModule = indexes.classToModule.get(leaf);
+      const typeModule = std.typeToModule.get(leaf);
       if (typeModule) {
         return { calleeId: `${typeModule}.${leaf}.constructor`, callType: 'internal_constructor' };
       }
-      return { calleeId: `boundary:${imported}`, callType: 'boundary_constructor' };
+      return boundaryOf(imported, undefined, { isConstructor: true });
     }
-    return { calleeId: `boundary:${name}`, callType: 'boundary_constructor' };
+    return boundaryOf(name, undefined, { isConstructor: true });
   }
 
   // `new ns.Thing(...)` — via a namespace import → boundary; else unresolved.
@@ -513,14 +381,125 @@ function resolveNew(node: Node, scan: ModuleScan, indexes: CrossModuleIndexes): 
     const prop = fieldText(ctor, 'property');
     if (object?.type === 'identifier' && prop) {
       const imported = scan.imports.get(object.text);
-      if (imported) {
-        return { calleeId: `boundary:${imported}.${prop}`, callType: 'boundary_constructor' };
-      }
+      if (imported) return boundaryOf(imported, prop, { isConstructor: true });
     }
   }
-  return unresolved(node.text);
+  return unresolvedOf(node.text);
 }
 
-function unresolved(hint: string): Resolved {
-  return { calleeId: `unresolved:${truncate(hint, 80)}`, callType: 'unresolved' };
+const CAPABILITIES: AdapterCapabilities = {
+  tier: 'full',
+  callTypes: [
+    'self_method',
+    'self_attr_method',
+    'param_method',
+    'internal_func',
+    'internal_constructor',
+    'boundary',
+    'boundary_constructor',
+    'unresolved',
+  ],
+  selfAttrs: true,
+  statementSpans: false,
+};
+
+const TYPESCRIPT_SPEC: LanguageSpec<ModuleScan> = {
+  name: 'typescript',
+  extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
+  grammarFor: (file) => (file.endsWith('.tsx') || file.endsWith('.jsx') ? 'tsx' : 'typescript'),
+  extraSkipDirs: EXTRA_SKIP_DIRS,
+  discoverFilter: (rel) => !rel.endsWith('.d.ts') && !rel.endsWith('.min.js'),
+  moduleIdForFile,
+  capabilities: CAPABILITIES,
+
+  emptyScan(moduleId) {
+    return {
+      moduleId,
+      files: [],
+      functions: [],
+      fnContext: new Map(),
+      imports: new Map(),
+      ownerMethods: new Map(),
+      fieldTypes: new Map(),
+      freeFunctions: new Set(),
+    };
+  },
+
+  scan(scan, root, file) {
+    for (const childOrNull of root.namedChildren) {
+      const child = childOrNull;
+      if (!child) continue;
+      if (child.type === 'import_statement') {
+        collectImport(child, scan.imports);
+        continue;
+      }
+      const decl = unwrapExport(child);
+      if (decl.type === 'class_declaration' || decl.type === 'abstract_class_declaration') {
+        scanClass(scan, decl, file);
+      } else if (decl.type === 'function_declaration') {
+        const name = fieldText(decl, 'name');
+        if (name) {
+          scan.freeFunctions.add(name);
+          recordFunction(scan, { name, className: null, defNode: decl, fnNode: decl, file });
+        }
+      } else if (decl.type === 'lexical_declaration' || decl.type === 'variable_declaration') {
+        for (const declarator of decl.namedChildren) {
+          if (!declarator || declarator.type !== 'variable_declarator') continue;
+          const value = declarator.childForFieldName('value');
+          const nameNode = declarator.childForFieldName('name');
+          if (!value || !nameNode || nameNode.type !== 'identifier') continue;
+          if (value.type === 'arrow_function' || value.type === 'function_expression') {
+            scan.freeFunctions.add(nameNode.text);
+            recordFunction(scan, { name: nameNode.text, className: null, defNode: declarator, fnNode: value, file });
+          }
+        }
+      }
+    }
+    // A `get x()`/`set x()` pair (or any same-name member) shares an id; keep the
+    // last so ids stay unique and pass-2 edges are not multiplied.
+    scan.functions = dedupeFunctionsById(scan.functions);
+  },
+
+  extractCalls(scan, std) {
+    const edges: CallEdge[] = [];
+    for (const fn of scan.functions) {
+      const context = scan.fnContext.get(fn.id);
+      if (!context) continue;
+      walk(context.body, (node) => {
+        if (NESTED_SCOPES.has(node.type)) return false;
+        const isAwait = node.parent?.type === 'await_expression';
+        if (node.type === 'call_expression') {
+          const callee = node.childForFieldName('function');
+          if (!callee) return undefined;
+          const resolved = resolveCall(callee, scan, context, std);
+          edges.push({
+            callerId: fn.id,
+            calleeId: resolved.calleeId,
+            isAwait,
+            callType: resolved.callType,
+            line: lineStart(node),
+            raw: truncate(callee.text, 80),
+          });
+        } else if (node.type === 'new_expression') {
+          const resolved = resolveNew(node, scan, std);
+          edges.push({
+            callerId: fn.id,
+            calleeId: resolved.calleeId,
+            isAwait,
+            callType: resolved.callType,
+            line: lineStart(node),
+            raw: truncate(node.text, 80),
+          });
+        }
+        return undefined;
+      });
+    }
+    return edges;
+  },
+};
+
+export class TypeScriptAdapter extends SpineAdapter<ModuleScan> {
+  constructor() {
+    super(TYPESCRIPT_SPEC);
+  }
 }

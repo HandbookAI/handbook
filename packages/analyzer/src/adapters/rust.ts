@@ -9,17 +9,30 @@
  *      param method calls, macros) into typed {@link CallEdge}s.
  *
  * Ids are `::`-separated: `<moduleId>::<Owner>::<name>`. Sibling files that
- * collapse to the same moduleId (lib.rs/main.rs/mod.rs) are merged, first
- * definition wins.
+ * collapse to the same moduleId (lib.rs/main.rs/mod.rs) are merged by the spine
+ * (`mergeByModule`), first definition wins. Inline `mod` blocks mean a type's
+ * owning module is NOT simply the file's moduleId, which is what the scan's
+ * `typeModules` table records.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Node } from 'web-tree-sitter';
-import type { CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge } from '@handbook/core';
 import { truncate } from '@handbook/core';
-import { createParser } from '../languages.js';
-import { discoverByExtension, type LanguageAdapter } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
+import {
+  boundaryOf,
+  resolveFieldType,
+  resolveOwnMethod,
+  resolveSameFileFree,
+  resolveViaImport,
+  unresolvedOf,
+  SpineAdapter,
+  type BaseScan,
+  type LanguageSpec,
+  type Resolved,
+  type StandardIndexes,
+} from '../spine.js';
+
+const SEP = '::';
 
 const GENERIC_TYPES = new Set([
   'i8', 'i16', 'i32', 'i64', 'i128', 'isize',
@@ -35,105 +48,35 @@ const CTOR_NAMES = new Set(['new', 'default', 'from']);
 /** Nested function scopes are skipped while walking a body. */
 const NESTED_SCOPES = new Set(['closure_expression', 'function_item']);
 
-interface ModuleScan {
-  moduleId: string;
-  files: string[];
-  /** local name → full `::`-separated path. */
-  imports: Map<string, string>;
-  /** bare type name → effective module id (moduleId + inline-mod prefix). */
+interface FnContext {
+  body: Node;
+  owner: string | null;
+  selfIdBase: string | null;
+  params: Map<string, string>;
+}
+
+interface ModuleScan extends BaseScan {
+  /**
+   * `imports`: local name → full `::`-separated path. `ownerMethods`: bare owner
+   * type name → method names. `typeModules`: bare type name → effective module
+   * (moduleId + inline-mod prefix). `fieldTypes`: `Owner.field` → core type.
+   */
+  fnContext: Map<string, FnContext>;
   typeModules: Map<string, string>;
-  /** bare owner type name → set of method names. */
-  methods: Map<string, Set<string>>;
-  /** `Owner.field` → core type name. */
-  fieldTypes: Map<string, string>;
-  /** free-fn leaf name → node id (first wins). */
-  freeFns: Map<string, string>;
+  /** free-fn leaf name → node id, prefix included (first wins). */
+  freeFnIds: Map<string, string>;
   /** free-fn entries for the cross-module unique index. */
   freeFnEntries: Array<{ name: string; id: string; effModule: string }>;
-  functions: FunctionNode[];
-  fnContext: Map<string, { body: Node; owner: string | null; selfIdBase: string | null; params: Map<string, string> }>;
 }
 
-export class RustAdapter implements LanguageAdapter {
-  readonly name = 'rust';
-  readonly extensions = ['.rs'];
-
-  discover(sourceRoot: string): string[] {
-    return discoverByExtension(sourceRoot, this.extensions, ['target']);
-  }
-
-  async analyze(files: readonly string[], sourceRoot: string): Promise<ModuleAnalysis> {
-    const parser = await createParser('rust');
-    // Sibling files collapsing to one moduleId are merged (first wins).
-    const byModule = new Map<string, ModuleScan>();
-    for (const file of files) {
-      let source: string;
-      try {
-        source = readFileSync(join(sourceRoot, file), 'utf8');
-      } catch {
-        continue;
-      }
-      const tree = parser.parse(source);
-      if (!tree) continue;
-      const moduleId = moduleIdForFile(file);
-      let scan = byModule.get(moduleId);
-      if (!scan) {
-        scan = emptyScan(moduleId);
-        byModule.set(moduleId, scan);
-      }
-      scan.files.push(file);
-      scanInto(scan, tree.rootNode, file, '');
-    }
-    const scans = [...byModule.values()];
-
-    // Cross-module indexes (first definition wins on collisions).
-    const typeToModule = new Map<string, string>();
-    const freeFnsByTailName = new Map<string, Set<string>>();
-    for (const scan of scans) {
-      for (const [type, effModule] of scan.typeModules) {
-        if (!typeToModule.has(type)) typeToModule.set(type, effModule);
-      }
-      for (const { name, id, effModule } of scan.freeFnEntries) {
-        const tail = effModule.split('::').pop() ?? effModule;
-        const key = `${tail}::${name}`;
-        if (!freeFnsByTailName.has(key)) freeFnsByTailName.set(key, new Set());
-        freeFnsByTailName.get(key)?.add(id);
-      }
-    }
-    const indexes: CrossModuleIndexes = { typeToModule, freeFnsByTailName };
-
-    const functions = scans.flatMap((s) => s.functions);
-    const edges = scans.flatMap((s) => extractCalls(s, indexes));
-    return { functions, edges };
-  }
-}
-
-interface CrossModuleIndexes {
-  typeToModule: Map<string, string>;
-  /** `<module tail>::<fn name>` → ids; resolvable only when exactly one. */
-  freeFnsByTailName: Map<string, Set<string>>;
-}
+/** `<module tail>::<fn name>` → ids; resolvable only when exactly one. */
+type RustIndexes = Map<string, Set<string>>;
 
 export function moduleIdForFile(file: string): string {
   const stem = file.replace(/\.rs$/, '');
   const segments = stem.split('/').filter((s) => s !== 'mod' && s !== 'lib' && s !== 'main');
-  if (segments.length === 0) return stem.split('/').join('::');
-  return segments.join('::');
-}
-
-function emptyScan(moduleId: string): ModuleScan {
-  return {
-    moduleId,
-    files: [],
-    imports: new Map(),
-    typeModules: new Map(),
-    methods: new Map(),
-    fieldTypes: new Map(),
-    freeFns: new Map(),
-    freeFnEntries: [],
-    functions: [],
-    fnContext: new Map(),
-  };
+  if (segments.length === 0) return stem.split('/').join(SEP);
+  return segments.join(SEP);
 }
 
 /** Peel refs/generics/scoped paths down to the core named type; '' for builtins. */
@@ -157,7 +100,7 @@ function coreTypeName(typeNode: Node | null): string {
 
 /** The module id that owns items declared under `prefix` (inline mods). */
 function effectiveModule(moduleId: string, prefix: string): string {
-  return prefix ? `${moduleId}::${prefix.replace(/::$/, '')}` : moduleId;
+  return prefix ? `${moduleId}${SEP}${prefix.replace(/::$/, '')}` : moduleId;
 }
 
 function scanInto(scan: ModuleScan, container: Node, file: string, prefix: string): void {
@@ -237,7 +180,7 @@ function scanInto(scan: ModuleScan, container: Node, file: string, prefix: strin
       case 'mod_item': {
         const name = fieldText(child, 'name');
         const body = child.childForFieldName('body');
-        if (name && body) expand(body, `${childPrefix}${name}::`);
+        if (name && body) expand(body, `${childPrefix}${name}${SEP}`);
         break;
       }
       case 'function_item': {
@@ -279,17 +222,17 @@ function collectUse(node: Node, base: string, imports: Map<string, string>): voi
     const frame = stack.pop();
     if (!frame) continue;
     const { node: current, base: curBase } = frame;
-    const prefixed = (path: string): string => (curBase ? `${curBase}::${path}` : path);
+    const prefixed = (path: string): string => (curBase ? `${curBase}${SEP}${path}` : path);
     switch (current.type) {
       case 'identifier':
       case 'scoped_identifier': {
         const full = prefixed(current.text);
-        const leaf = full.split('::').pop() ?? full;
+        const leaf = full.split(SEP).pop() ?? full;
         if (!imports.has(leaf)) imports.set(leaf, full);
         break;
       }
       case 'self': {
-        const leaf = curBase.split('::').pop() ?? curBase;
+        const leaf = curBase.split(SEP).pop() ?? curBase;
         if (leaf && !imports.has(leaf)) imports.set(leaf, curBase);
         break;
       }
@@ -323,7 +266,7 @@ function collectUse(node: Node, base: string, imports: Map<string, string>): voi
 function registerType(scan: ModuleScan, name: string, prefix: string): void {
   const effModule = effectiveModule(scan.moduleId, prefix);
   if (!scan.typeModules.has(name)) scan.typeModules.set(name, effModule);
-  if (!scan.methods.has(name)) scan.methods.set(name, new Set());
+  if (!scan.ownerMethods.has(name)) scan.ownerMethods.set(name, new Set());
 }
 
 function collectFieldTypes(scan: ModuleScan, body: Node, owner: string): void {
@@ -346,8 +289,8 @@ function recordFunction(
 ): void {
   const name = fieldText(node, 'name');
   if (!name) return;
-  const qualname = owner ? `${prefix}${owner}::${name}` : `${prefix}${name}`;
-  const id = `${scan.moduleId}::${qualname}`;
+  const qualname = owner ? `${prefix}${owner}${SEP}${name}` : `${prefix}${name}`;
+  const id = `${scan.moduleId}${SEP}${qualname}`;
   if (scan.fnContext.has(id) || scan.functions.some((f) => f.id === id)) return; // merged sibling: first wins
   const body = node.childForFieldName('body');
   const isAsync = node.children.some((c) => c?.type === 'function_modifiers' && c.text.includes('async'));
@@ -364,10 +307,11 @@ function recordFunction(
   }
 
   if (owner) {
-    if (!scan.methods.has(owner)) scan.methods.set(owner, new Set());
-    scan.methods.get(owner)?.add(name);
+    if (!scan.ownerMethods.has(owner)) scan.ownerMethods.set(owner, new Set());
+    scan.ownerMethods.get(owner)?.add(name);
   } else {
-    if (!scan.freeFns.has(name)) scan.freeFns.set(name, id);
+    if (!scan.freeFnIds.has(name)) scan.freeFnIds.set(name, id);
+    scan.freeFunctions.add(name);
     scan.freeFnEntries.push({ name, id, effModule: effectiveModule(scan.moduleId, prefix) });
   }
 
@@ -397,7 +341,7 @@ function recordFunction(
     scan.fnContext.set(id, {
       body,
       owner,
-      selfIdBase: owner ? `${scan.moduleId}::${prefix}${owner}` : null,
+      selfIdBase: owner ? `${scan.moduleId}${SEP}${prefix}${owner}` : null,
       params,
     });
   }
@@ -439,166 +383,245 @@ function trackSelfAttrs(body: Node): { reads: string[]; writes: string[] } {
   return { reads: [...reads].sort(), writes: [...writes].sort() };
 }
 
-function extractCalls(scan: ModuleScan, indexes: CrossModuleIndexes): CallEdge[] {
-  const edges: CallEdge[] = [];
-  for (const fn of scan.functions) {
-    const context = scan.fnContext.get(fn.id);
-    if (!context) continue;
-    walk(context.body, (node) => {
-      if (NESTED_SCOPES.has(node.type)) return false;
-      if (node.type === 'macro_invocation') {
-        const macro = fieldText(node, 'macro').split('::').pop() ?? '';
-        if (macro) {
-          edges.push({
-            callerId: fn.id,
-            calleeId: `boundary:${macro}!`,
-            isAwait: false,
-            callType: 'boundary',
-            line: lineStart(node),
-            raw: truncate(`${macro}!`, 80),
-          });
-        }
-        return false;
-      }
-      if (node.type !== 'call_expression') return undefined;
-      const callee = node.childForFieldName('function');
-      if (!callee) return undefined;
-      const isAwait = node.parent?.type === 'await_expression';
-      const resolved = resolveCall(callee, scan, context, indexes);
-      edges.push({
-        callerId: fn.id,
-        calleeId: resolved.calleeId,
-        isAwait,
-        callType: resolved.callType,
-        line: lineStart(node),
-        raw: truncate(callee.text, 80),
-      });
-      return undefined;
-    });
-  }
-  return edges;
-}
-
-interface Resolved {
-  calleeId: string;
-  callType: CallType;
-}
-
 function resolveCall(
   callee: Node,
   scan: ModuleScan,
-  context: { owner: string | null; selfIdBase: string | null; params: Map<string, string> },
-  indexes: CrossModuleIndexes,
+  context: FnContext,
+  std: StandardIndexes,
+  own: RustIndexes,
 ): Resolved {
   // A. bare `name(...)`
   if (callee.type === 'identifier') {
-    return resolveBareName(callee.text, scan, indexes);
+    return resolveBareName(callee.text, scan, std, own);
   }
 
   // B. `A::b(...)` (possibly deep: `std::mem::swap`)
   if (callee.type === 'scoped_identifier') {
-    return resolveScoped(callee, scan, indexes);
+    return resolveScoped(callee, scan, std, own);
   }
 
   // C. `x.m(...)`
   if (callee.type === 'field_expression') {
     const value = callee.childForFieldName('value');
     const method = fieldText(callee, 'field');
-    if (!value || !method) return unresolved(callee.text);
+    if (!value || !method) return unresolvedOf(callee.text);
 
     // C1. `self.m(...)`
     if (value.type === 'self') {
-      if (context.owner && context.selfIdBase && scan.methods.get(context.owner)?.has(method)) {
-        return { calleeId: `${context.selfIdBase}::${method}`, callType: 'self_method' };
-      }
-      return unresolved(`self.${method}`);
+      const own2 =
+        context.owner && context.selfIdBase
+          ? resolveOwnMethod(context.owner, method, scan, std, {
+              separator: SEP,
+              idBase: context.selfIdBase,
+            })
+          : undefined;
+      return own2 ?? unresolvedOf(`self.${method}`);
     }
 
     // C2. `self.field.m(...)` through a learned field type
     if (value.type === 'field_expression' && value.childForFieldName('value')?.type === 'self') {
       const field = fieldText(value, 'field');
-      const type = context.owner ? scan.fieldTypes.get(`${context.owner}.${field}`) : undefined;
-      if (type) {
-        const typeModule = indexes.typeToModule.get(type);
-        if (typeModule) {
-          return { calleeId: `${typeModule}::${type}::${method}`, callType: 'self_attr_method' };
-        }
-        return { calleeId: `boundary:${type}::${method}`, callType: 'boundary' };
-      }
-      return unresolved(`self.${field}.${method}`);
+      const viaField = context.owner
+        ? resolveFieldType(context.owner, field, method, scan, std, { separator: SEP })
+        : undefined;
+      return viaField ?? unresolvedOf(`self.${field}.${method}`);
     }
 
     // C3. `param.m(...)` via a typed parameter
     if (value.type === 'identifier') {
       const paramType = context.params.get(value.text);
       if (paramType) {
-        const typeModule = indexes.typeToModule.get(paramType);
+        const typeModule = std.typeToModule.get(paramType);
         if (typeModule) {
-          return { calleeId: `${typeModule}::${paramType}::${method}`, callType: 'param_method' };
+          return {
+            calleeId: `${typeModule}${SEP}${paramType}${SEP}${method}`,
+            callType: 'param_method',
+          };
         }
-        return { calleeId: `boundary:${paramType}::${method}`, callType: 'boundary' };
+        return boundaryOf(paramType, method, { separator: SEP });
       }
-      return unresolved(`${value.text}.${method}`);
+      return unresolvedOf(`${value.text}.${method}`);
     }
   }
 
-  return unresolved(callee.text);
+  return unresolvedOf(callee.text);
 }
 
-function resolveBareName(name: string, scan: ModuleScan, indexes: CrossModuleIndexes): Resolved {
-  const localFn = scan.freeFns.get(name);
-  if (localFn) return { calleeId: localFn, callType: 'internal_func' };
-
-  const imported = scan.imports.get(name);
-  if (imported) {
-    const leaf = imported.split('::').pop() ?? imported;
-    const typeModule = indexes.typeToModule.get(leaf);
-    if (typeModule) {
-      return { calleeId: `${typeModule}::${leaf}::new`, callType: 'internal_constructor' };
-    }
-    const segments = imported.split('::');
-    const tail = segments.at(-2);
-    if (tail) {
-      const ids = indexes.freeFnsByTailName.get(`${tail}::${leaf}`);
-      if (ids && ids.size === 1) {
-        return { calleeId: [...ids][0] ?? '', callType: 'internal_func' };
-      }
-    }
-    return { calleeId: `boundary:${imported}`, callType: 'boundary' };
-  }
-  return unresolved(name);
+/** The one free-fn id a `<module tail>::<name>` pair points at, if unambiguous. */
+function uniqueFreeFn(own: RustIndexes, tail: string, name: string): string | undefined {
+  const ids = own.get(`${tail}${SEP}${name}`);
+  if (!ids || ids.size !== 1) return undefined;
+  return [...ids][0] ?? '';
 }
 
-function resolveScoped(callee: Node, scan: ModuleScan, indexes: CrossModuleIndexes): Resolved {
+function resolveBareName(
+  name: string,
+  scan: ModuleScan,
+  std: StandardIndexes,
+  own: RustIndexes,
+): Resolved {
+  return (
+    resolveSameFileFree(name, scan, { separator: SEP, idOf: (n) => scan.freeFnIds.get(n) }) ??
+    resolveViaImport(name, scan, std, {
+      separator: SEP,
+      typeFirst: true,
+      constructorName: 'new',
+      parse: (imported) => {
+        const segments = imported.split(SEP);
+        return { source: segments.slice(0, -1).join(SEP), leaf: segments.at(-1) ?? imported };
+      },
+      // Rust imports name the item, not the module, so a module-tail match is
+      // the only handle we have — and it must be unique to be trusted.
+      freeFunctionId: (source, leaf) => {
+        const tail = source.split(SEP).pop();
+        return tail ? uniqueFreeFn(own, tail, leaf) : undefined;
+      },
+    }) ??
+    unresolvedOf(name)
+  );
+}
+
+function resolveScoped(
+  callee: Node,
+  scan: ModuleScan,
+  std: StandardIndexes,
+  own: RustIndexes,
+): Resolved {
   const pathText = callee.childForFieldName('path')?.text ?? '';
   const leaf = fieldText(callee, 'name');
-  if (!pathText || !leaf) return unresolved(callee.text);
-  const ownerBare = pathText.split('::').pop() ?? pathText;
+  if (!pathText || !leaf) return unresolvedOf(callee.text);
+  const ownerBare = pathText.split(SEP).pop() ?? pathText;
 
   // B1. owner is a scanned type
-  const typeModule = indexes.typeToModule.get(ownerBare);
+  const typeModule = std.typeToModule.get(ownerBare);
   if (typeModule) {
     return {
-      calleeId: `${typeModule}::${ownerBare}::${leaf}`,
+      calleeId: `${typeModule}${SEP}${ownerBare}${SEP}${leaf}`,
       callType: CTOR_NAMES.has(leaf) ? 'internal_constructor' : 'internal_func',
     };
   }
 
   // B2. unique free function in a module whose tail matches the path tail
-  const ids = indexes.freeFnsByTailName.get(`${ownerBare}::${leaf}`);
-  if (ids && ids.size === 1) {
-    return { calleeId: [...ids][0] ?? '', callType: 'internal_func' };
-  }
+  const unique = uniqueFreeFn(own, ownerBare, leaf);
+  if (unique !== undefined) return { calleeId: unique, callType: 'internal_func' };
 
   // B3. boundary — qualify the head through imports when possible
-  const segments = `${pathText}::${leaf}`.split('::');
+  const segments = `${pathText}${SEP}${leaf}`.split(SEP);
   const head = segments[0] ?? '';
   const expanded = scan.imports.get(head);
-  const qual = expanded ? [expanded, ...segments.slice(1)].join('::') : segments.join('::');
+  const qual = expanded ? [expanded, ...segments.slice(1)].join(SEP) : segments.join(SEP);
   const isCtor = /^[A-Z]/.test(ownerBare) && CTOR_NAMES.has(leaf);
-  return { calleeId: `boundary:${qual}`, callType: isCtor ? 'boundary_constructor' : 'boundary' };
+  return boundaryOf(qual, undefined, { separator: SEP, isConstructor: isCtor });
 }
 
-function unresolved(hint: string): Resolved {
-  return { calleeId: `unresolved:${truncate(hint, 80)}`, callType: 'unresolved' };
+const CAPABILITIES: AdapterCapabilities = {
+  tier: 'full',
+  callTypes: [
+    'self_method',
+    'self_attr_method',
+    'param_method',
+    'internal_func',
+    'internal_constructor',
+    'boundary',
+    'boundary_constructor',
+    'unresolved',
+  ],
+  selfAttrs: true,
+  statementSpans: false,
+};
+
+const RUST_SPEC: LanguageSpec<ModuleScan, RustIndexes> = {
+  name: 'rust',
+  extensions: ['.rs'],
+  grammarFor: () => 'rust',
+  extraSkipDirs: ['target'],
+  moduleIdForFile,
+  mergeByModule: true,
+  idSeparator: SEP,
+  capabilities: CAPABILITIES,
+
+  emptyScan(moduleId) {
+    return {
+      moduleId,
+      files: [],
+      functions: [],
+      fnContext: new Map(),
+      imports: new Map(),
+      ownerMethods: new Map(),
+      typeModules: new Map(),
+      fieldTypes: new Map(),
+      freeFunctions: new Set(),
+      freeFnIds: new Map(),
+      freeFnEntries: [],
+    };
+  },
+
+  scan(scan, root, file) {
+    scanInto(scan, root, file, '');
+  },
+
+  buildIndexes(scans) {
+    // Rust's own index: a `use` names the ITEM, so resolving an imported free
+    // function means matching the module tail — and only when it is unique.
+    const freeFnsByTailName: RustIndexes = new Map();
+    for (const scan of scans) {
+      for (const { name, id, effModule } of scan.freeFnEntries) {
+        const tail = effModule.split(SEP).pop() ?? effModule;
+        const key = `${tail}${SEP}${name}`;
+        let ids = freeFnsByTailName.get(key);
+        if (!ids) {
+          ids = new Set<string>();
+          freeFnsByTailName.set(key, ids);
+        }
+        ids.add(id);
+      }
+    }
+    return freeFnsByTailName;
+  },
+
+  extractCalls(scan, std, own) {
+    const edges: CallEdge[] = [];
+    for (const fn of scan.functions) {
+      const context = scan.fnContext.get(fn.id);
+      if (!context) continue;
+      walk(context.body, (node) => {
+        if (NESTED_SCOPES.has(node.type)) return false;
+        if (node.type === 'macro_invocation') {
+          const macro = fieldText(node, 'macro').split(SEP).pop() ?? '';
+          if (macro) {
+            edges.push({
+              callerId: fn.id,
+              calleeId: `boundary:${macro}!`,
+              isAwait: false,
+              callType: 'boundary',
+              line: lineStart(node),
+              raw: truncate(`${macro}!`, 80),
+            });
+          }
+          return false;
+        }
+        if (node.type !== 'call_expression') return undefined;
+        const callee = node.childForFieldName('function');
+        if (!callee) return undefined;
+        const isAwait = node.parent?.type === 'await_expression';
+        const resolved = resolveCall(callee, scan, context, std, own);
+        edges.push({
+          callerId: fn.id,
+          calleeId: resolved.calleeId,
+          isAwait,
+          callType: resolved.callType,
+          line: lineStart(node),
+          raw: truncate(callee.text, 80),
+        });
+        return undefined;
+      });
+    }
+    return edges;
+  },
+};
+
+export class RustAdapter extends SpineAdapter<ModuleScan, RustIndexes> {
+  constructor() {
+    super(RUST_SPEC);
+  }
 }
