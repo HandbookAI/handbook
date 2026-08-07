@@ -180,6 +180,37 @@ pnpm mock-llm         # 单独起内置 mock LLM 服务（端口 8099）
 > 需要 LLM 的命令（`generate` 除阶段 1、`plan`、未加 `--no-llm` 的 `resync`、Studio 里的作业）
 > 会自动加载**当前目录**的 `./.env`，shell 里已有的变量优先——所以请在仓库根目录执行。
 
+## Docker
+
+不需要本机装 Node/pnpm——镜像用 Node 22（特意不用 24，见 Dockerfile 里的注释）加上构建好的各包：
+
+```bash
+pnpm run docker:build     # docker build -t handbook:local .
+
+# 跑任意子命令。镜像里已经写好 HANDBOOK_SOURCE=/src、HANDBOOK_WORK=/work，
+# 挂载卷就行，不必再传 --source/--work：
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate --narrate-lang zh
+
+# --env-file 与工具链自带的 .env 加载是叠加关系（两者都生效；--env-file 里的
+# OPENAI_* 变量跟 shell 里 export 的效果一样能被读到）：
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
+```
+
+Studio 通过 `docker compose` 启动（见 `docker-compose.yml`）：
+
+```bash
+pnpm run docker:studio    # docker compose up --build studio
+```
+
+**只有 `http://localhost:4860` 能访问——LAN IP 或容器名都不行。** Studio 的
+CSRF 防线校验的是 `Host` 请求头，不是 socket，所以容器必须绑 `0.0.0.0` 才能让
+发布出去的端口连得通（compose 文件里的 `HANDBOOK_STUDIO_HOST=0.0.0.0`），但这
+并不会放宽谁能连上它：从宿主机浏览 `http://localhost:4860` 发出的仍是
+`Host: localhost:4860`，照样通过；而用 LAN IP 或 `studio` 容器名访问会被
+**故意** 拒绝，返回 `403`。远程访问是另一个需要单独设计的功能（显式
+allowlist），目前故意不做。
+
 ## 开发
 
 ```bash

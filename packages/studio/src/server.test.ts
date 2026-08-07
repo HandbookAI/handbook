@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Server } from 'node:http';
+import { request, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockChatClient, type MockRule } from '@handbook/llm';
 import { startStudio } from './server.js';
@@ -835,5 +835,40 @@ describe('registering a repo adopts an existing handbook', () => {
     const res = await register({ name: 'delta', sourceRoot: src });
     expect(res.status).toBe(201);
     expect(res.body.adoptedWorkDir).toBe(false);
+  });
+});
+
+describe('the bind address is configurable, and the Host-header guard is unaffected by it', () => {
+  it('binds the requested address, defaulting to loopback', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'hb-studio-host-'));
+    const server = await startStudio({ stateDir, port: 0, host: '0.0.0.0' });
+    const address = server.address();
+    expect(typeof address === 'object' && address?.address).toBe('0.0.0.0');
+    server.close();
+  });
+
+  it('still refuses a non-loopback Host header when bound to 0.0.0.0', async () => {
+    // The CSRF defence is about the Host HEADER, not the socket. Binding wide
+    // for a container must not widen who may talk to it.
+    //
+    // `fetch` (undici) will not let a caller override the Host header — it
+    // always reflects the actual connection target, not whatever value is
+    // passed in `headers` — so this uses node:http's `request`, which does.
+    const stateDir = mkdtempSync(join(tmpdir(), 'hb-studio-host-'));
+    const server = await startStudio({ stateDir, port: 0, host: '0.0.0.0' });
+    const port = (server.address() as { port: number }).port;
+    const status = await new Promise<number>((resolvePromise, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port, path: '/api/repos', headers: { host: 'evil.example.com' } },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolvePromise(res.statusCode ?? 0));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    expect(status).toBe(403);
+    server.close();
   });
 });
