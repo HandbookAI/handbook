@@ -224,6 +224,47 @@ describe('OpenAiChatClient', () => {
   });
 });
 
+describe('OpenAiChatClient config vs. environment isolation', () => {
+  // Every field LlmEnvConfig declares — a caller supplying all of them needs
+  // nothing from the environment.
+  const complete = {
+    apiKey: 'k',
+    model: 'm',
+    baseUrl: 'http://x/v1',
+    maxTokens: 500,
+    maxRetries: 3,
+    retryBackoffMs: 1,
+    timeoutMs: 1000,
+    extraBody: {},
+  };
+
+  it('a complete config is not broken by an unrelated malformed env var', () => {
+    const saved = process.env.OPENAI_MAX_TOKENS;
+    process.env.OPENAI_MAX_TOKENS = 'not-a-number'; // would make resolveLlmEnv() throw if consulted
+    try {
+      expect(() => new OpenAiChatClient({ config: complete })).not.toThrow();
+    } finally {
+      if (saved === undefined) delete process.env.OPENAI_MAX_TOKENS;
+      else process.env.OPENAI_MAX_TOKENS = saved;
+    }
+  });
+
+  it('an incomplete config still surfaces the loud environment error', () => {
+    const saved = process.env.OPENAI_MAX_TOKENS;
+    process.env.OPENAI_MAX_TOKENS = 'not-a-number';
+    try {
+      // Missing `model` (among other fields) means the environment is still
+      // consulted, and its malformed value must still be reported loudly.
+      expect(() => new OpenAiChatClient({ config: { apiKey: 'k', baseUrl: 'http://x/v1' } })).toThrow(
+        /OPENAI_MAX_TOKENS/,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.OPENAI_MAX_TOKENS;
+      else process.env.OPENAI_MAX_TOKENS = saved;
+    }
+  });
+});
+
 describe('OpenAiChatClient degenerate retry caps (never reject-with-undefined, never hang)', () => {
   const base = { apiKey: 'test', baseUrl: 'http://x/v1', retryBackoffMs: 1 };
 

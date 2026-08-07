@@ -10,6 +10,7 @@
  * Errors are collected rather than thrown so `handbook config --check` can
  * report every problem in one pass.
  */
+import { dirname } from 'node:path';
 import { ConfigError, coerceValue } from './coerce.js';
 import { envName, fileKeyCandidates, scopedEnvName } from './names.js';
 import { settingsFor } from './registry.js';
@@ -103,7 +104,7 @@ export function resolveConfig(input: ResolveInput): ResolveResult {
     if (file) {
       const keyPath = fileKeyCandidates(command, setting).find((k) => file.flat[k] !== undefined);
       if (keyPath !== undefined) {
-        const base = file.path.replace(/[/\\][^/\\]*$/, '') || cwd;
+        const base = dirname(file.path);
         attempt(
           file.flat[keyPath],
           `${file.path} (${keyPath})`,

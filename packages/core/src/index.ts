@@ -18,3 +18,4 @@ export * from './config/defaults.js';
 export * from './config/registry.js';
 export * from './config/coerce.js';
 export * from './config/resolve.js';
+export * from './config/file.js';

@@ -18,6 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "yaml": "catalog:",
     "zod": "catalog:"
   },
   "license": "MIT",
