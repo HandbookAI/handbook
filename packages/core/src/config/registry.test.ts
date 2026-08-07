@@ -94,6 +94,14 @@ describe('registry agrees with the pipeline defaults', () => {
   it('leaves readBatchSize a pass-through, because its default depends on --detail', () => {
     expect(settingByKey('readBatchSize')?.default).toBeUndefined();
   });
+
+  it('leaves resync prose language and card detail as pass-throughs', () => {
+    // A default here would silently narrate a Chinese handbook in English:
+    // resync falls back to the language recorded in the existing handbook.
+    expect(settingByKey('proseLang')?.default).toBeUndefined();
+    expect(settingByKey('cardDetail')?.default).toBeUndefined();
+    expect(settingByKey('narrateLang')?.commands).toEqual(['generate']);
+  });
 });
 
 describe('every command the CLI ships is represented', () => {

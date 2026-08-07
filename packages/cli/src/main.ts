@@ -12,15 +12,20 @@
  *   rollback   restore a source tree from a patch backup
  *   resync     roll a handbook forward after a code change
  *   studio     local web UI over all of the above
+ *
+ * Every subcommand's options are derived from the `@handbook/core` registry
+ * (see options.ts) and resolved at action time (see resolve-config.ts) —
+ * neither commander defaults nor hand-written parsing live here anymore.
  */
 import { Command } from 'commander';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { applyEnvFile } from './env-file.js';
+import { addSettings } from './options.js';
+import { resolveOrThrow } from './resolve-config.js';
 import { createLogger, type LogLevel } from '@handbook/core';
 import { CachedChatClient, OpenAiChatClient, type ChatClient } from '@handbook/llm';
-import { generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
-import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
+import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbook/pipeline';
 import {
   renderAgentSite,
   renderHtmlSite,
@@ -31,9 +36,7 @@ import {
 import { buildSkill, validateSkill } from '@handbook/skill';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
-import { WorkDir } from '@handbook/pipeline';
-import { graphFidelity, refreshRenderedHandbook, resolveTitle } from './render-refresh.js';
-import { parseEnum, toInt } from './args.js';
+import { graphFidelity, refreshRenderedHandbook } from './render-refresh.js';
 
 const program = new Command();
 
@@ -61,9 +64,14 @@ program.hook('preAction', () => {
   }
 });
 
-function logger(): ReturnType<typeof createLogger> {
+/** Level comes from the resolved config; -v/-q are top-level shorthand that override it (quiet wins). */
+function logger(cfg?: Record<string, unknown>): ReturnType<typeof createLogger> {
   const opts = program.opts<{ verbose?: boolean; quiet?: boolean }>();
-  const level: LogLevel = opts.quiet ? 'error' : opts.verbose ? 'debug' : 'info';
+  const level: LogLevel = opts.quiet
+    ? 'error'
+    : opts.verbose
+      ? 'debug'
+      : ((cfg?.logLevel as LogLevel | undefined) ?? 'info');
   return createLogger('', level);
 }
 
@@ -71,300 +79,255 @@ function llmClient(): ChatClient {
   return new OpenAiChatClient({ logger: logger() });
 }
 
-/**
- * `auto|<every registered language>` — derived, never hand-written: this help
- * string had drifted five languages behind the registry.
- */
-function languageChoices(): string {
-  registerBuiltinAdapters();
-  return ['auto', ...availableLanguages()].join('|');
-}
-
 function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-program
-  .command('analyze')
-  .description('Phase 1 only: build the static call graph (no LLM needed)')
-  .requiredOption('--source <dir>', 'source root to analyze')
-  .requiredOption('--work <dir>', 'work directory for artifacts')
-  .option('--lang <lang>', `language (${languageChoices()})`, 'auto')
-  .action(async (opts: { source: string; work: string; lang: string }) => {
-    const stats = await runPhase1({
-      sourceRoot: resolve(opts.source),
-      workDir: resolve(opts.work),
-      lang: opts.lang,
-      logger: logger(),
-    });
-    printJson(stats);
+addSettings(
+  program.command('analyze').description('Phase 1 only: build the static call graph (no LLM needed)'),
+  'analyze',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('analyze', opts);
+  const stats = await runPhase1({
+    sourceRoot: cfg.source as string,
+    workDir: cfg.work as string,
+    lang: cfg.lang as string,
+    logger: logger(cfg),
   });
+  printJson(stats);
+});
 
-program
-  .command('generate')
-  .description('Run the handbook generation pipeline (env: OPENAI_API_KEY/MODEL/BASE_URL)')
-  .requiredOption('--source <dir>', 'source root')
-  .requiredOption('--work <dir>', 'work directory')
-  .option('--phase <spec>', 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list', 'all')
-  .option('--strategy <s>', "file | member (default: file, or the work dir's recorded strategy)")
-  .option('--skeleton <path>', 'user-authored skeleton.yaml (required for member strategy)')
-  .option('--lang <lang>', `source language, auto-detects (${languageChoices()})`, 'auto')
-  .option('--narrate-lang <l>', 'prose language: en | zh', 'en')
-  .option('--detail <d>', 'card depth: brief | deep', 'brief')
-  .option('--synth-mode <m>', 'skeleton synthesis: oneshot | doctor', 'oneshot')
-  .option('--max-doctor-rounds <n>', 'doctor convergence rounds', '6')
-  .option('--read-workers <n>', 'concurrent card batches', '12')
-  .option('--resume', 'skip files that already have a completed card')
-  .option('--refresh', 'ignore phase-3 caches')
-  .option(
-    '--llm-cache',
-    'cache raw LLM replies under <work>/phase3/cache (prompt-hash; disabled by --refresh)',
-  )
-  .action(async (opts: Record<string, string | boolean>) => {
-    const phase = String(opts.phase);
-    // Build the client opportunistically: some selections need no LLM at all
-    // (phase 1; member-strategy 2c). generateHandbook fails with a clear
-    // message if a key is genuinely required but missing.
-    let client: ChatClient | undefined;
-    if (phase !== '1') {
-      try {
-        client = llmClient();
-      } catch {
-        client = undefined;
-      }
+addSettings(
+  program
+    .command('generate')
+    .description('Run the handbook generation pipeline (env: OPENAI_API_KEY/MODEL/BASE_URL)'),
+  'generate',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('generate', opts);
+  const phase = String(cfg.phase);
+  // Build the client opportunistically: some selections need no LLM at all
+  // (phase 1; member-strategy 2c). generateHandbook fails with a clear
+  // message if a key is genuinely required but missing.
+  let client: ChatClient | undefined;
+  if (phase !== '1') {
+    try {
+      client = llmClient();
+    } catch {
+      client = undefined;
     }
-    if (client && opts.llmCache && !opts.refresh) {
-      client = new CachedChatClient(client, `${resolve(String(opts.work))}/phase3/cache`);
-    }
-    const stats = await generateHandbook({
-      sourceRoot: resolve(String(opts.source)),
-      workDir: resolve(String(opts.work)),
-      client,
-      phase,
-      strategy: parseEnum(opts.strategy, '--strategy', ['file', 'member'] as const),
-      skeletonPath: opts.skeleton ? resolve(String(opts.skeleton)) : undefined,
-      lang: String(opts.lang),
-      narrateLang: parseEnum(opts.narrateLang, '--narrate-lang', ['en', 'zh'] as const) ?? 'en',
-      detail: parseEnum(opts.detail, '--detail', ['brief', 'deep'] as const) ?? 'brief',
-      synthMode: parseEnum(opts.synthMode, '--synth-mode', ['oneshot', 'doctor'] as const) ?? 'oneshot',
-      maxDoctorRounds: toInt(opts.maxDoctorRounds, '--max-doctor-rounds', 1),
-      readWorkers: toInt(opts.readWorkers, '--read-workers', 1),
-      resume: Boolean(opts.resume),
-      refresh: Boolean(opts.refresh),
-      logger: logger(),
-    });
-    // Surface what the run cost right where it finished (also in run-manifest.json).
-    const usage = (client as { usage?: () => unknown } | undefined)?.usage?.();
-    printJson(usage ? { ...stats, usage } : stats);
+  }
+  if (client && cfg.llmCache && !cfg.refresh) {
+    client = new CachedChatClient(client, join(cfg.work as string, 'phase3', 'cache'));
+  }
+  const stats = await generateHandbook({
+    sourceRoot: cfg.source as string,
+    workDir: cfg.work as string,
+    client,
+    phase,
+    strategy: cfg.strategy as 'file' | 'member' | undefined,
+    skeletonPath: cfg.skeleton as string | undefined,
+    lang: cfg.lang as string,
+    narrateLang: cfg.narrateLang as 'en' | 'zh',
+    detail: cfg.detail as 'brief' | 'deep',
+    synthMode: cfg.synthMode as 'oneshot' | 'doctor',
+    maxDoctorRounds: cfg.maxDoctorRounds as number,
+    readWorkers: cfg.readWorkers as number,
+    readBatchSize: cfg.readBatchSize as number | undefined,
+    maxCharsPerFile: cfg.maxCharsPerFile as number,
+    assignBatchSize: cfg.assignBatchSize as number,
+    assignWorkers: cfg.assignWorkers as number,
+    organizeWorkers: cfg.organizeWorkers as number,
+    narrateWorkers: cfg.narrateWorkers as number,
+    resume: cfg.resume as boolean,
+    refresh: cfg.refresh as boolean,
+    logger: logger(cfg),
   });
+  // Surface what the run cost right where it finished (also in run-manifest.json).
+  const usage = (client as { usage?: () => unknown } | undefined)?.usage?.();
+  printJson(usage ? { ...stats, usage } : stats);
+});
 
-program
-  .command('render')
-  .description('Render a completed work dir to markdown (+ optional HTML site / agent index); no LLM')
-  .requiredOption('--work <dir>', 'work directory with completed phase-3 artifacts')
-  .option('--out <dir>', 'output directory (default <work>/handbook)')
-  .option('--title <title>', 'handbook title (default: $HANDBOOK_TITLE or "System Handbook")')
-  .option('--html', 'also render the multi-page HTML site under <out>/html')
-  .option('--html-single', 'also render a single self-contained HTML page')
-  .option('--agent-site', 'also render the agent locator index under <out>/agent')
-  .option('--llms-txt', 'also write llms.txt + llms-full.txt next to the markdown')
-  .option('--source-base-url <url>', 'link file cards to the source at <url>/<relative path>')
-  .action(async (opts: Record<string, string | boolean>) => {
-    const workDir = resolve(String(opts.work));
-    const outDir = resolve(String(opts.out ?? `${workDir}/handbook`));
-    const model = loadHandbookModel(workDir, resolveTitle(opts.title));
-    const languages = graphFidelity(workDir);
-    const render = {
-      languages,
-      ...(opts.sourceBaseUrl ? { sourceBaseUrl: String(opts.sourceBaseUrl) } : {}),
+addSettings(
+  program
+    .command('render')
+    .description('Render a completed work dir to markdown (+ optional HTML site / agent index); no LLM'),
+  'render',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('render', opts);
+  const workDir = cfg.work as string;
+  const outDir = (cfg.out as string | undefined) ?? join(workDir, 'handbook');
+  const model = loadHandbookModel(workDir, cfg.title as string);
+  const languages = graphFidelity(workDir);
+  const render = {
+    languages,
+    ...(cfg.sourceBaseUrl ? { sourceBaseUrl: cfg.sourceBaseUrl as string } : {}),
+  };
+  const md = renderMarkdownHandbook(model, outDir, render);
+  const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
+  if (cfg.agentSite) {
+    result.agent = renderAgentSite(model, `${outDir}/agent`, { languages });
+  }
+  if (cfg.html) {
+    result.html = renderHtmlSite(model, `${outDir}/html`, render);
+  }
+  if (cfg.htmlSingle) {
+    result.htmlSingle = renderSinglePageHtml(model, `${outDir}/handbook.html`, { languages });
+  }
+  if (cfg.llmsTxt) {
+    result.llms = renderLlmsTxt(model, outDir, { languages });
+  }
+  printJson(result);
+});
+
+addSettings(
+  program.command('skill').description('Package a rendered handbook as an agent SKILL; no LLM'),
+  'skill',
+).action((opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('skill', opts);
+  let coverage;
+  if (cfg.work) {
+    const work = new WorkDir(cfg.work as string);
+    coverage = {
+      assignment: work.loadAssignment(),
+      sourceRoot: cfg.source as string | undefined,
     };
-    const md = renderMarkdownHandbook(model, outDir, render);
-    const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
-    if (opts.agentSite) {
-      result.agent = renderAgentSite(model, `${outDir}/agent`, { languages });
-    }
-    if (opts.html) {
-      result.html = renderHtmlSite(model, `${outDir}/html`, render);
-    }
-    if (opts.htmlSingle) {
-      result.htmlSingle = renderSinglePageHtml(model, `${outDir}/handbook.html`, { languages });
-    }
-    if (opts.llmsTxt) {
-      result.llms = renderLlmsTxt(model, outDir, { languages });
-    }
-    printJson(result);
+  }
+  const result = buildSkill({
+    handbookDir: cfg.handbook as string,
+    outDir: cfg.out as string,
+    name: cfg.name as string,
+    project: cfg.project as string | undefined,
+    coverage,
+    agentDir: cfg.agentDir as string | undefined,
+    lang: cfg.bodyLang as 'en' | 'zh',
   });
+  printJson(result);
+});
 
-program
-  .command('skill')
-  .description('Package a rendered handbook as an agent SKILL; no LLM')
-  .requiredOption('--handbook <dir>', 'rendered handbook directory')
-  .requiredOption('--out <dir>', 'skill output directory')
-  .requiredOption('--name <slug>', 'skill slug (lowercase-hyphen)')
-  .option('--project <name>', 'human project name for prose')
-  .option('--work <dir>', 'work dir — adds coverage.json from its assignment')
-  .option('--source <dir>', 'source root — adds content hashes to coverage.json')
-  .option('--agent-dir <dir>', 'rendered agent locator site — ships under references/agent/')
-  .option('--lang <l>', 'SKILL.md body language: en | zh (frontmatter stays English for routing)', 'en')
-  .action((opts: Record<string, string | undefined>) => {
-    let coverage;
-    if (opts.work) {
-      const work = new WorkDir(resolve(opts.work));
-      coverage = {
-        assignment: work.loadAssignment(),
-        sourceRoot: opts.source ? resolve(opts.source) : undefined,
-      };
-    }
-    const result = buildSkill({
-      handbookDir: resolve(String(opts.handbook)),
-      outDir: resolve(String(opts.out)),
-      name: String(opts.name),
-      project: opts.project,
-      coverage,
-      agentDir: opts.agentDir ? resolve(opts.agentDir) : undefined,
-      lang: parseEnum(opts.lang, '--lang', ['en', 'zh'] as const) ?? 'en',
-    });
-    printJson(result);
+addSettings(
+  program
+    .command('validate')
+    .description('Validate a SKILL package (structure, index links, coverage freshness); no LLM'),
+  'validate',
+).action((opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('validate', opts);
+  const result = validateSkill({
+    skillDir: cfg.skill as string,
+    sourceRoot: cfg.source as string | undefined,
   });
+  for (const warning of result.warnings) process.stderr.write(`validate: warning: ${warning}\n`);
+  for (const error of result.errors) process.stderr.write(`validate: error: ${error}\n`);
+  process.stderr.write(result.ok ? 'validate: OK\n' : 'validate: FAILED\n');
+  process.exitCode = result.ok ? 0 : 2;
+});
 
-program
-  .command('validate')
-  .description('Validate a SKILL package (structure, index links, coverage freshness); no LLM')
-  .requiredOption('--skill <dir>', 'skill directory')
-  .option('--source <dir>', 'source root for hash freshness checks')
-  .action((opts: { skill: string; source?: string }) => {
-    const result = validateSkill({
-      skillDir: resolve(opts.skill),
-      sourceRoot: opts.source ? resolve(opts.source) : undefined,
-    });
-    for (const warning of result.warnings) process.stderr.write(`validate: warning: ${warning}\n`);
-    for (const error of result.errors) process.stderr.write(`validate: error: ${error}\n`);
-    process.stderr.write(result.ok ? 'validate: OK\n' : 'validate: FAILED\n');
-    process.exitCode = result.ok ? 0 : 2;
+addSettings(
+  program
+    .command('plan')
+    .description('Localize a change request with the handbook and emit a precise edit plan'),
+  'plan',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('plan', opts);
+  const result = await runPlanner({
+    client: llmClient(),
+    sourceRoot: cfg.source as string,
+    handbookDir: cfg.handbook as string | undefined,
+    request: cfg.request as string,
+    maxTurns: cfg.maxTurns as number,
+    logger: logger(cfg),
   });
-
-program
-  .command('plan')
-  .description('Localize a change request with the handbook and emit a precise edit plan')
-  .requiredOption('--source <dir>', 'codebase to plan against (read-only)')
-  .requiredOption('--request <text>', 'the natural-language change request')
-  .option('--handbook <dir>', 'rendered handbook or skill references dir')
-  .option('--out <file>', 'write the plan to a file (default stdout)')
-  .option('--max-turns <n>', 'agent turn budget', '30')
-  .action(async (opts: Record<string, string | undefined>) => {
-    const result = await runPlanner({
-      client: llmClient(),
-      sourceRoot: resolve(String(opts.source)),
-      handbookDir: opts.handbook ? resolve(opts.handbook) : undefined,
-      request: String(opts.request),
-      maxTurns: toInt(opts.maxTurns, '--max-turns', 1),
-      logger: logger(),
-    });
-    // A run that gave up must exit non-zero: writing its abort message to
-    // plan.md and returning 0 would let a script feed it straight into `apply`.
-    if (result.aborted) {
-      throw new Error(
-        `planner produced no usable plan (${result.aborted}) after ${result.turns} turn(s): ${result.plan}`,
-      );
-    }
-    if (opts.out) {
-      writeFileSync(resolve(opts.out), `${result.plan}\n`);
-      printJson({ out: resolve(opts.out), turns: result.turns, declarations: result.declarations });
-    } else {
-      process.stdout.write(`${result.plan}\n`);
-    }
-  });
-
-program
-  .command('resync')
-  .description('Roll a handbook forward after a code change (case dir: edited/ + plan.md + change.diff)')
-  .requiredOption('--case <dir>', 'case directory')
-  .requiredOption('--work <dir>', 'work directory holding the handbook artifacts')
-  .option('--no-llm', 'structural refresh only (no LLM; prose marked stale)')
-  .option(
-    '--detail <d>',
-    'card depth for regenerated cards: brief | deep (default: match the existing handbook)',
-  )
-  .option('--narrate-lang <l>', 'prose language: en | zh')
-  .option('--corrections <file>', 'agent-reported corrections.jsonl — its files widen the refresh set')
-  .option('--no-render', 'skip refreshing already-rendered outputs under <work>/handbook')
-  .option(
-    '--title <title>',
-    'handbook title for refreshed outputs (default: $HANDBOOK_TITLE or "System Handbook")',
-  )
-  .action(async (opts: Record<string, string | boolean | undefined>) => {
-    const noLlm = opts.llm === false; // commander maps --no-llm to llm:false
-    const workDir = resolve(String(opts.work));
-    const report = await resyncHandbook({
-      caseDir: resolve(String(opts.case)),
-      workDir,
-      client: noLlm ? undefined : llmClient(),
-      noLlm,
-      detail: parseEnum(opts.detail, '--detail', ['brief', 'deep'] as const),
-      correctionsPath: opts.corrections ? resolve(String(opts.corrections)) : undefined,
-      lang: parseEnum(opts.narrateLang, '--narrate-lang', ['en', 'zh'] as const),
-      logger: logger(),
-    });
-    const rendered =
-      opts.render === false || report.skipped
-        ? []
-        : refreshRenderedHandbook(workDir, resolveTitle(opts.title), logger());
-    printJson({ ...report, rendered });
-  });
-
-program
-  .command('apply')
-  .description("Apply a plan's EDIT blocks to a source tree (byte-exact, all-or-nothing, with backups)")
-  .requiredOption('--source <dir>', 'source tree to edit')
-  .requiredOption('--plan <file>', 'plan file produced by `handbook plan`')
-  .option('--dry-run', 'verify only — never write')
-  .option('--backup-root <dir>', 'where backups go (default <source>/.handbook-patches)')
-  .action(async (opts: { source: string; plan: string; dryRun?: boolean; backupRoot?: string }) => {
-    const { applyPlan } = await import('@handbook/patcher');
-    const result = applyPlan({
-      sourceRoot: resolve(opts.source),
-      plan: readFileSync(resolve(opts.plan), 'utf8'),
-      dryRun: Boolean(opts.dryRun),
-      backupRoot: opts.backupRoot ? resolve(opts.backupRoot) : undefined,
-      logger: logger(),
-    });
-    printJson(result);
-    process.exitCode = result.ok ? 0 : 2;
-  });
-
-program
-  .command('rollback')
-  .description('Restore a source tree from a patch backup produced by `handbook apply`')
-  .requiredOption('--backup <dir>', 'backup directory (contains manifest.json)')
-  .option('--source <dir>', 'the tree this backup belongs to (guards against restoring into the wrong repo)')
-  .option('--force', 'restore even files that changed after the patch')
-  .action(async (opts: { backup: string; source?: string; force?: boolean }) => {
-    const { rollback } = await import('@handbook/patcher');
-    printJson(
-      rollback(resolve(opts.backup), {
-        force: Boolean(opts.force),
-        expectedSourceRoot: opts.source ? resolve(opts.source) : undefined,
-        logger: logger(),
-      }),
+  // A run that gave up must exit non-zero: writing its abort message to
+  // plan.md and returning 0 would let a script feed it straight into `apply`.
+  if (result.aborted) {
+    throw new Error(
+      `planner produced no usable plan (${result.aborted}) after ${result.turns} turn(s): ${result.plan}`,
     );
-  });
+  }
+  if (cfg.out) {
+    writeFileSync(cfg.out as string, `${result.plan}\n`);
+    printJson({ out: cfg.out, turns: result.turns, declarations: result.declarations });
+  } else {
+    process.stdout.write(`${result.plan}\n`);
+  }
+});
 
-program
-  .command('studio')
-  .description('Launch the local web UI (repos · generate · browse · evolve); binds to 127.0.0.1')
-  .option('--port <n>', 'port to listen on', '4860')
-  .option(
-    '--state-dir <dir>',
-    'where studio.json and managed work dirs live',
-    `${process.env.HOME ?? '.'}/.handbook-studio`,
-  )
-  .action(async (opts: { port: string; stateDir: string }) => {
-    const { startStudio } = await import('@handbook/studio');
-    const port = toInt(opts.port, '--port', 1);
-    await startStudio({ stateDir: resolve(opts.stateDir), port, logger: logger() });
-    process.stderr.write(`handbook studio → http://127.0.0.1:${port}\n`);
-    await new Promise(() => {}); // run until Ctrl-C
+addSettings(
+  program
+    .command('resync')
+    .description('Roll a handbook forward after a code change (case dir: edited/ + plan.md + change.diff)'),
+  'resync',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('resync', opts);
+  const workDir = cfg.work as string;
+  const useLlm = cfg.useLlm as boolean;
+  const report = await resyncHandbook({
+    caseDir: cfg.case as string,
+    workDir,
+    client: useLlm ? llmClient() : undefined,
+    noLlm: !useLlm,
+    detail: cfg.cardDetail as 'brief' | 'deep' | undefined,
+    correctionsPath: cfg.corrections as string | undefined,
+    lang: cfg.proseLang as 'en' | 'zh' | undefined,
+    logger: logger(cfg),
   });
+  const rendered =
+    !(cfg.refreshRendered as boolean) || report.skipped
+      ? []
+      : refreshRenderedHandbook(workDir, cfg.title as string, logger(cfg));
+  printJson({ ...report, rendered });
+});
+
+addSettings(
+  program
+    .command('apply')
+    .description("Apply a plan's EDIT blocks to a source tree (byte-exact, all-or-nothing, with backups)"),
+  'apply',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('apply', opts);
+  const { applyPlan } = await import('@handbook/patcher');
+  const result = applyPlan({
+    sourceRoot: cfg.source as string,
+    plan: readFileSync(cfg.plan as string, 'utf8'),
+    dryRun: cfg.dryRun as boolean,
+    backupRoot: cfg.backupRoot as string | undefined,
+    logger: logger(cfg),
+  });
+  printJson(result);
+  process.exitCode = result.ok ? 0 : 2;
+});
+
+addSettings(
+  program
+    .command('rollback')
+    .description('Restore a source tree from a patch backup produced by `handbook apply`'),
+  'rollback',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('rollback', opts);
+  const { rollback } = await import('@handbook/patcher');
+  printJson(
+    rollback(cfg.backup as string, {
+      force: cfg.force as boolean,
+      expectedSourceRoot: cfg.source as string | undefined,
+      logger: logger(cfg),
+    }),
+  );
+});
+
+addSettings(
+  program
+    .command('studio')
+    .description('Launch the local web UI (repos · generate · browse · evolve); binds to 127.0.0.1'),
+  'studio',
+).action(async (opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('studio', opts);
+  const { startStudio } = await import('@handbook/studio');
+  const port = cfg.port as number;
+  const stateDir =
+    (cfg.stateDir as string | undefined) ?? resolve(`${process.env.HOME ?? '.'}/.handbook-studio`);
+  await startStudio({ stateDir, port, logger: logger(cfg) });
+  process.stderr.write(`handbook studio → http://127.0.0.1:${port}\n`);
+  await new Promise(() => {}); // run until Ctrl-C
+});
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
