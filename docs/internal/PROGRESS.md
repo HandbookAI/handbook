@@ -553,3 +553,45 @@ Solidity（跨文件 import + 状态变量类型驱动的调用）均正确。
 
 **注**：`pnpm check` 当前会红在 `scripts/smoke-install.mjs` 的一个未用变量——那是并发会话
 尚未提交的在写文件，不在本次提交范围内。
+
+## 2026-08-07/08 配置登记表、脚本体系与容器镜像
+
+规格 `docs/internal/specs/2026-08-07-config-and-scripts-design.md`，计划
+`docs/internal/plans/2026-08-07-config-and-scripts.md`（12 个 Task，逐个独立 review）。
+
+起因是三件看起来无关的抱怨——scripts 不优雅、`.env.example` 太单薄、flag 与 env 不通——
+根因只有一个：没有任何地方声明"一项配置是什么"。盘点后的事实：约 45 个 flag 里**只有
+`--title` 一个**同时能用环境变量设置；LLM 端点根本没有 flag；`GenerateOptions` 里六个真实
+字段两头都到不了。
+
+现在 `packages/core/src/config/` 一张登记表（61 项）派生四个界面：commander 选项、解析、
+`.env.example`、`docs/configuration.md`。优先级 flag > shell env > `.env` >
+`handbook.config.yaml` > 默认值，每个值都记来源，`handbook config` 能打出来。
+`.env.example` 从 19 行手写变成 174 行生成，漂移测试逐字节钉住。
+
+**后来者需要知道的几件事：**
+- **不要给 commander 设默认值**，也不要用 `requiredOption`。默认值一律来自 action 时的解析器；
+  提前求值会在 `preAction` 应用 env 文件之前抓到 shell 的值（`render-refresh.ts` 里那条旧教训，
+  该函数已被登记表取代）。必填改由解析后判定（`required` / `requiredFor`）。
+- **commander 会给取反 flag 一个隐式 `true`**：注册 `--no-llm` 后，即使用户没传，`opts.llm`
+  也是 `true`，于是 flag 层会永久遮蔽 env / 配置文件 / 默认值。`.default(undefined)`
+  **不管用**（实测仍是 `{llm:true}`）；真正的解法是同时注册一个隐藏的正向选项。别"简化"掉它。
+- **默认值一度住在三个地方**：流水线的解构默认值、`llmConfigFromValues` 里的九个字面量、
+  studio `server.ts` 里的 `6`/`12`。现在只有 `PIPELINE_DEFAULTS` 与登记表。三次都是
+  **未覆盖的分支**先露出马脚——那不是测试缺口，是重复的征兆。
+- **`resolveLlmEnv` 不再宽容**（破坏性变更，已写进 changeset）。它按 `studio` 命令解析而不是
+  `generate`：两者的 llm* 组相同，但 generate 还要求 source/work，这个函数无从提供。
+- **resync 的 `--narrate-lang` 与 `--detail` 必须没有默认值**（`proseLang` / `cardDetail`）。
+  给 `narrateLang` 一个 `'en'` 默认值会让中文手册 resync 之后静默改用英文行文——resync 靠
+  `undefined` 回落到手册里记录的语言。已有测试钉住。
+- **secret 永不进配置文件**，`loadConfigFile` 直接拒绝——那个文件是要提交的。
+- **studio 的 `--host` 可配（默认 loopback），但 `isLoopbackRequest` 校验的是 `Host` 请求头**，
+  不是 socket。所以容器里绑 `0.0.0.0` 之后，宿主机访问 `localhost:4860` 照样通过，用 LAN IP
+  或容器名会 403——**这是正确行为，不许为了"方便"放宽那两个正则**。
+- **镜像用 Node 22 不用 24**：`tree-sitter-swift` 在 V8 >= 13 上会终止进程（exit 133）。
+- `pnpm config` 是 pnpm 内置命令，所以脚本叫 `config:show`。
+- 脚本改名不留别名：`smoke:install`→`check:install`、`release`→`release:publish`、
+  `version-packages`→`release:version`，README 里的脚本名有漂移测试兜着。
+- 生成物（`.env.example`、`docs/configuration.md`、`handbook.config.example.yaml`）在
+  `.prettierignore` 里——格式化器改写它们会让逐字节比对永远无法满足。改登记表后跑
+  `pnpm run config:docs`，不要手改。
