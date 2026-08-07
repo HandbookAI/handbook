@@ -204,6 +204,40 @@ pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
 > and Studio's jobs) auto-load `./.env` from the **current directory**, with shell
 > variables winning — so run them from the repo root.
 
+## Docker
+
+No local Node/pnpm install needed — the image is Node 22 (deliberately not 24;
+see the Dockerfile) plus the built packages:
+
+```bash
+pnpm run docker:build     # docker build -t handbook:local .
+
+# Run any subcommand. HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked
+# into the image, so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate --narrate-lang en
+
+# --env-file layers on top of the toolchain's own .env loading (both apply;
+# an OPENAI_* var from --env-file is visible the same way a shell export is):
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
+```
+
+Studio, via `docker compose` (see `docker-compose.yml`):
+
+```bash
+pnpm run docker:studio    # docker compose up --build studio
+```
+
+**Only `http://localhost:4860` works — not a LAN IP or the container name.**
+Studio's CSRF defence checks the `Host` request header, not the socket, so a
+container has to bind `0.0.0.0` for the published port to be reachable at all
+(`HANDBOOK_STUDIO_HOST=0.0.0.0` in the compose file), but that does not widen
+who may talk to it: browsing `http://localhost:4860` from the host machine
+still sends `Host: localhost:4860` and passes, while a request naming a LAN IP
+or the `studio` container hostname gets refused with `403` by design. Remote
+access is a deliberately unimplemented, separate feature (an explicit
+allowlist), not a bug in this defence.
+
 ## Development
 
 ```bash

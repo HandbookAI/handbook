@@ -1,8 +1,11 @@
 /**
  * The Studio server: a dependency-free node:http JSON API + SSE job streams +
- * static serving of rendered handbooks, all bound to 127.0.0.1 (local tool —
- * source paths and prose never leave the machine except via the configured
- * LLM endpoint used by the pipeline itself).
+ * static serving of rendered handbooks. Binds 127.0.0.1 by default — a local
+ * tool; source paths and prose never leave the machine except via the
+ * configured LLM endpoint used by the pipeline itself. The bind address is
+ * configurable (a container needs 0.0.0.0), but the Host-header CSRF guard
+ * below is unaffected by that: it is what actually decides who may talk to
+ * this server, not the socket it happens to be listening on.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFileSync, realpathSync, rmSync, statSync, readdirSync, existsSync } from 'node:fs';
@@ -36,8 +39,11 @@ import { JobRunner, type Job, type JobKind } from './jobs.js';
 export interface StudioOptions {
   /** Directory for studio.json and default work dirs. */
   stateDir: string;
-  /** Port to listen on (127.0.0.1 only). Default 4860. */
+  /** Port to listen on. Default 4860. */
   port?: number;
+  /** Bind address. Default 127.0.0.1 — a container passes 0.0.0.0. The Host-header
+   *  guard in createStudioServer is unaffected and must stay as it is. */
+  host?: string;
   /** LLM client factory — injectable for tests; default reads OPENAI_* env. */
   /** Injectable LLM client. Receives the job logger so retries reach its log. */
   clientFactory?: (logger: Logger) => ChatClient;
@@ -1013,12 +1019,20 @@ export function createStudioServer(options: StudioOptions): Server {
   });
 }
 
-/** Start the server on 127.0.0.1 and return it once listening. */
+/** Start the server and return it once listening.
+ *
+ * Defaults to 127.0.0.1 — a container needs 0.0.0.0 or a published port is
+ * unreachable from the host. The CSRF defence in createStudioServer checks
+ * the Host *header*, not the socket, so binding wide does not widen who may
+ * talk to it: browsing http://localhost:<port> still passes, and a LAN IP or
+ * container name still gets 403.
+ */
 export function startStudio(options: StudioOptions): Promise<Server> {
   const server = createStudioServer(options);
   const port = options.port ?? 4860;
+  const host = options.host ?? '127.0.0.1';
   return new Promise((resolvePromise, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => resolvePromise(server));
+    server.listen(port, host, () => resolvePromise(server));
   });
 }

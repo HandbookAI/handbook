@@ -125,6 +125,16 @@ describe('every command the CLI ships is represented', () => {
   });
 });
 
+describe('studio host setting', () => {
+  it('defaults studio to loopback, and keeps it configurable', () => {
+    // Containers need 0.0.0.0; everyone else must stay on loopback by default.
+    const host = settingByKey('host');
+    expect(host?.default).toBe('127.0.0.1');
+    expect(host?.commands).toEqual(['studio']);
+    expect(host?.flag).toBe('--host <addr>');
+  });
+});
+
 describe('settingsFor', () => {
   it('returns only the settings that declare the command', () => {
     expect(settingsFor('generate').every((s) => s.commands.includes('generate'))).toBe(true);

@@ -1,0 +1,16 @@
+services:
+  studio:
+    build: .
+    command: ['studio']
+    ports: ['4860:4860']
+    environment:
+      # A container must listen wide or the published port is unreachable. The
+      # Host-header guard still applies, so browse http://localhost:4860 from the
+      # host — a LAN IP or the container name is refused by design.
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+      HANDBOOK_STUDIO_STATE_DIR: /work/.handbook-studio
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+volumes:
+  handbook-work:

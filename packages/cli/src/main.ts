@@ -349,16 +349,19 @@ addSettings(
 addSettings(
   program
     .command('studio')
-    .description('Launch the local web UI (repos · generate · browse · evolve); binds to 127.0.0.1'),
+    .description(
+      'Launch the local web UI (repos · generate · browse · evolve); binds to 127.0.0.1 by default',
+    ),
   'studio',
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('studio', opts);
   const { startStudio } = await import('@handbook/studio');
   const port = cfg.port as number;
+  const host = cfg.host as string;
   const stateDir =
     (cfg.stateDir as string | undefined) ?? resolve(`${process.env.HOME ?? '.'}/.handbook-studio`);
-  await startStudio({ stateDir, port, logger: logger(cfg) });
-  process.stderr.write(`handbook studio → http://127.0.0.1:${port}\n`);
+  await startStudio({ stateDir, port, host, logger: logger(cfg) });
+  process.stderr.write(`handbook studio → http://${host}:${port}\n`);
   await new Promise(() => {}); // run until Ctrl-C
 });
 

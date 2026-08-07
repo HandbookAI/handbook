@@ -534,7 +534,15 @@ export const SETTINGS: readonly Setting[] = [
     default: 4860,
     flag: '--port <n>',
     commands: ['studio'],
-    doc: 'port to listen on; binds 127.0.0.1 only',
+    doc: 'port to listen on',
+  },
+  {
+    key: 'host',
+    type: 'string',
+    flag: '--host <addr>',
+    default: '127.0.0.1',
+    commands: ['studio'],
+    doc: 'bind address; stays on loopback unless you set it (containers need 0.0.0.0). The CSRF guard still requires a loopback Host header',
   },
   {
     key: 'stateDir',

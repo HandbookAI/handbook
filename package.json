@@ -46,6 +46,8 @@
     "resync": "pnpm run cli resync",
     "studio": "pnpm run cli studio",
     "config:show": "pnpm run cli config",
+    "docker:build": "docker build -t handbook:local .",
+    "docker:studio": "docker compose up --build studio",
     "demo": "bash examples/run-demo.sh",
     "demo:self": "bash examples/run-self.sh",
     "demo:self:real": "bash examples/run-self.sh --real",
