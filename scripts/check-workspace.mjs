@@ -166,6 +166,18 @@ for (const { dir, manifest } of packages.values()) {
   if (!Array.isArray(manifest.files) || !manifest.files.includes('dist')) {
     fail(`packages/${dir}/package.json`, '"files" must be an array containing "dist"');
   }
+  // Source maps name `../../src/*.ts`, which `files` never ships. Publishing
+  // them is 36% of the tarball pointing at nothing. They stay for local
+  // development, where the sources they reference actually exist.
+  if (!manifest.files?.includes('!dist/**/*.map')) {
+    fail(
+      `packages/${dir}/package.json`,
+      '"files" must exclude "!dist/**/*.map" — maps dangle once published',
+    );
+  }
+  if (manifest.engines?.node !== '>=20.11') {
+    fail(`packages/${dir}/package.json`, 'must declare engines.node ">=20.11", matching the root manifest');
+  }
   if (manifest.exports?.['.']?.types !== './dist/index.d.ts') {
     fail(`packages/${dir}/package.json`, 'exports["."].types must be "./dist/index.d.ts"');
   }
