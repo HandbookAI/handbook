@@ -18,17 +18,33 @@ describe('resolveLlmEnv', () => {
     expect(resolveLlmEnv({} as NodeJS.ProcessEnv).timeoutMs).toBe(300_000);
     expect(resolveLlmEnv({ OPENAI_TIMEOUT: '90' } as NodeJS.ProcessEnv).timeoutMs).toBe(90_000);
     expect(resolveLlmEnv({ HANDBOOK_LLM_TIMEOUT: '45' } as NodeJS.ProcessEnv).timeoutMs).toBe(45_000);
-    expect(resolveLlmEnv({ OPENAI_TIMEOUT: 'nonsense' } as NodeJS.ProcessEnv).timeoutMs).toBe(300_000);
+    // Behaviour change, deliberate: a garbage timeout used to fall back to the
+    // default silently; it now throws, naming the variable.
+    expect(() => resolveLlmEnv({ OPENAI_TIMEOUT: 'nonsense' } as NodeJS.ProcessEnv)).toThrow(
+      /OPENAI_TIMEOUT/,
+    );
   });
 
-  it('prefers OPENAI_* and strips trailing slashes', () => {
+  it('accepts OPENAI_* as a fallback and strips trailing slashes', () => {
     const env = resolveLlmEnv({
       OPENAI_API_KEY: 'k',
-      HANDBOOK_LLM_API_KEY: 'ignored',
       OPENAI_BASE_URL: 'http://localhost:8000/v1///',
     } as NodeJS.ProcessEnv);
     expect(env.apiKey).toBe('k');
     expect(env.baseUrl).toBe('http://localhost:8000/v1');
+  });
+
+  it('ranks the HANDBOOK_LLM_* alias above the vendor name, like every other registry setting', () => {
+    // Behaviour change, deliberate: resolveLlmEnv now goes through the shared
+    // registry, whose precedence rule is "handbook names beat vendor aliases"
+    // (see core/config/resolve.test.ts, "ranks it below the handbook names") —
+    // the opposite of this function's old, bespoke
+    // `pick(OPENAI_*, HANDBOOK_LLM_*)` order, which put the vendor name first.
+    const env = resolveLlmEnv({
+      OPENAI_API_KEY: 'vendor',
+      HANDBOOK_LLM_API_KEY: 'ours',
+    } as NodeJS.ProcessEnv);
+    expect(env.apiKey).toBe('ours');
   });
 
   it('falls back to HANDBOOK_LLM_*', () => {
@@ -62,9 +78,49 @@ describe('OPENAI_EXTRA_BODY', () => {
     expect(bodies[0]?.model).not.toBe('hijacked');
   });
 
-  it('ignores malformed JSON instead of failing every call', () => {
-    expect(resolveLlmEnv({ OPENAI_EXTRA_BODY: 'not json' } as NodeJS.ProcessEnv).extraBody).toEqual({});
-    expect(resolveLlmEnv({ OPENAI_EXTRA_BODY: '[1,2]' } as NodeJS.ProcessEnv).extraBody).toEqual({});
+  it('fails loudly on malformed or non-object JSON instead of silently dropping it', () => {
+    // Behaviour change, deliberate: this used to resolve to `{}` for both a
+    // syntax error and a JSON array; a bad value now throws, naming the var.
+    expect(() => resolveLlmEnv({ OPENAI_EXTRA_BODY: 'not json' } as NodeJS.ProcessEnv)).toThrow(
+      /OPENAI_EXTRA_BODY/,
+    );
+    expect(() => resolveLlmEnv({ OPENAI_EXTRA_BODY: '[1,2]' } as NodeJS.ProcessEnv)).toThrow(
+      /OPENAI_EXTRA_BODY/,
+    );
+  });
+});
+
+describe('resolveLlmEnv strictness', () => {
+  it('still reads the vendor env names and the handbook aliases', () => {
+    const cfg = resolveLlmEnv({ OPENAI_MODEL: 'm', OPENAI_BASE_URL: 'https://x/v1/', OPENAI_API_KEY: 'k' });
+    expect(cfg.model).toBe('m');
+    expect(cfg.baseUrl).toBe('https://x/v1'); // trailing slashes still stripped
+    expect(cfg.apiKey).toBe('k');
+  });
+
+  it('fails loudly on a garbage numeric instead of silently using the default', () => {
+    // Behaviour change, deliberate: the old code documented falling back to
+    // 16000 so a bad value could not poison a request, but that also meant a
+    // typo'd tuning var did nothing and said nothing.
+    expect(() => resolveLlmEnv({ OPENAI_MAX_TOKENS: 'lots' })).toThrow(
+      /OPENAI_MAX_TOKENS: llmMaxTokens must be an integer >= 1/,
+    );
+    expect(() => resolveLlmEnv({ OPENAI_TIMEOUT: '-5' })).toThrow(/OPENAI_TIMEOUT/);
+  });
+
+  it('fails loudly on malformed extra body instead of dropping the vendor field', () => {
+    expect(() => resolveLlmEnv({ OPENAI_EXTRA_BODY: '{"thinking":}' })).toThrow(
+      /OPENAI_EXTRA_BODY: llmExtraBody must be valid JSON/,
+    );
+  });
+
+  it('still refuses to let extra body override the fields the client owns', () => {
+    const cfg = resolveLlmEnv({ OPENAI_EXTRA_BODY: '{"model":"evil","thinking":{"type":"disabled"}}' });
+    expect(cfg.extraBody).toEqual({ thinking: { type: 'disabled' } });
+  });
+
+  it('keeps 0 retries meaningful (one attempt), not replaced by the default', () => {
+    expect(resolveLlmEnv({ HANDBOOK_LLM_MAX_RETRIES: '0' }).maxRetries).toBe(1);
   });
 });
 

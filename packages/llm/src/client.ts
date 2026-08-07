@@ -7,9 +7,11 @@
  * works in production via {@link OpenAiChatClient}.
  */
 import {
+  ConfigError,
   PermanentError,
   extractJsonBlock,
   pLimit,
+  resolveConfig,
   type Logger,
   silentLogger,
   type LimitFn,
@@ -68,51 +70,61 @@ export interface LlmEnvConfig {
 const RESERVED_BODY_FIELDS = new Set(['model', 'messages', 'max_tokens', 'max_completion_tokens', 'stream']);
 
 /**
- * Resolve client configuration from the standard OpenAI environment variables,
- * with `HANDBOOK_LLM_*` accepted as fallbacks:
- * `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-4o-mini`), `OPENAI_BASE_URL`
- * (default `https://api.openai.com/v1`), `OPENAI_MAX_TOKENS` (default 16000),
- * `OPENAI_TIMEOUT` in seconds (default 300 — a stalled request is retried rather
- * than allowed to hold a phase hostage).
- * Use `OPENAI_API_KEY=EMPTY` for keyless local endpoints.
+ * Resolve client configuration through the shared config registry, so the LLM
+ * settings obey exactly the same precedence, naming and validation as every
+ * other setting — and are reachable from flags, which they never were.
+ *
+ * Strict by design: a garbage value now throws with the variable named. The
+ * previous silent fallback kept a bad value from poisoning a request, but it
+ * also meant `OPENAI_MAX_TOKENS=lots` ran at 16000 and said nothing.
+ *
+ * Resolved as `studio` rather than `generate`: both carry the identical llm*
+ * group (see `LLM_COMMANDS` in the registry), but `generate` also requires
+ * `source`/`work` — settings this function has no way to supply and no
+ * business demanding, since all it resolves is the llm* group. `studio` is
+ * also the one real caller of this path with no config object of its own (see
+ * `OpenAiChatClient`'s constructor and studio's default `clientFactory`).
  */
 export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfig {
-  const pick = (a: string, b: string, fallback: string): string => env[a] || env[b] || fallback;
-  // Garbage numeric env values fall back to defaults instead of poisoning
-  // requests (NaN max_tokens) or the retry loop (0/NaN attempts → throw undefined).
-  const num = (raw: string, fallback: number, min: number): number => {
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= min ? value : fallback;
-  };
+  const { values, errors } = resolveConfig({ command: 'studio', flags: {}, env });
+  if (errors.length > 0) throw new ConfigError(errors.join('; '));
+  return llmConfigFromValues(values) as LlmEnvConfig;
+}
+
+/**
+ * Map resolved registry values onto the client's own shape. Seconds become
+ * milliseconds here, and `maxRetries` is clamped to at least one attempt: 0 is
+ * a legitimate "no retries" request, not "never try".
+ */
+export function llmConfigFromValues(values: Record<string, unknown>): Partial<LlmEnvConfig> {
+  const num = (key: string): number | undefined =>
+    typeof values[key] === 'number' ? (values[key] as number) : undefined;
+  const str = (key: string): string | undefined =>
+    typeof values[key] === 'string' ? (values[key] as string) : undefined;
+
+  const maxRetries = num('llmMaxRetries');
+  const backoffSec = num('llmRetryBackoff');
+  const timeoutSec = num('llmTimeout');
+  const extra = values.llmExtraBody;
+
   return {
-    apiKey: pick('OPENAI_API_KEY', 'HANDBOOK_LLM_API_KEY', ''),
-    model: pick('OPENAI_MODEL', 'HANDBOOK_LLM_MODEL', 'gpt-4o-mini'),
-    baseUrl: pick('OPENAI_BASE_URL', 'HANDBOOK_LLM_BASE_URL', 'https://api.openai.com/v1').replace(
-      /\/+$/,
-      '',
-    ),
-    maxTokens: num(pick('OPENAI_MAX_TOKENS', 'HANDBOOK_LLM_MAX_TOKENS', '16000'), 16_000, 1),
-    // 0 is a legitimate "no retries" request — clamp to 1 attempt, don't
-    // silently replace it with the default.
-    maxRetries: Math.max(1, num(env.HANDBOOK_LLM_MAX_RETRIES || '6', 6, 0)),
-    retryBackoffMs: Math.round(num(env.HANDBOOK_LLM_RETRY_BACKOFF || '3', 3, 0) * 1000),
-    timeoutMs: Math.round(num(pick('OPENAI_TIMEOUT', 'HANDBOOK_LLM_TIMEOUT', '300'), 300, 1) * 1000),
-    extraBody: parseExtraBody(pick('OPENAI_EXTRA_BODY', 'HANDBOOK_LLM_EXTRA_BODY', '')),
+    apiKey: str('llmApiKey') ?? '',
+    model: str('llmModel') ?? 'gpt-4o-mini',
+    baseUrl: (str('llmBaseUrl') ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
+    maxTokens: num('llmMaxTokens') ?? 16_000,
+    maxRetries: Math.max(1, maxRetries ?? 6),
+    retryBackoffMs: Math.round((backoffSec ?? 3) * 1000),
+    timeoutMs: Math.round((timeoutSec ?? 300) * 1000),
+    extraBody: stripReservedBodyFields(extra),
   };
 }
 
-/** Parse `OPENAI_EXTRA_BODY`; malformed JSON is ignored, never fatal. */
-function parseExtraBody(raw: string): Record<string, unknown> {
-  if (!raw.trim()) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter(([key]) => !RESERVED_BODY_FIELDS.has(key)),
-    );
-  } catch {
-    return {};
-  }
+/** Fields the client owns; extra-body must not fight them. */
+function stripReservedBodyFields(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>).filter(([key]) => !RESERVED_BODY_FIELDS.has(key)),
+  );
 }
 
 export interface OpenAiChatClientOptions {
@@ -368,8 +380,8 @@ async function retryAbortable<T>(
   // and `throw lastError` (undefined) without ever calling `fn` — a request that
   // rejects with `undefined` and never fires. Math.trunc(Infinity) is Infinity,
   // which loops forever on a persistently-failing endpoint. A misconfigured
-  // config.maxRetries (bypassing resolveLlmEnv's own guard) reaches here raw, so
-  // clamp non-finite values to a single attempt before counting.
+  // config.maxRetries (bypassing `llmConfigFromValues`'s own >= 1 clamp) reaches
+  // here raw, so clamp non-finite values to a single attempt before counting.
   const attempts = Math.max(1, Number.isFinite(options.attempts) ? Math.trunc(options.attempts) : 1);
   const jitterMs = Math.max(0, options.jitterMs ?? 500);
   const { signal } = options;
