@@ -500,9 +500,7 @@ public class Trouble extends RuntimeException {
 
   it('skips an anonymous class body, whose this is a different object', () => {
     expect(edge('hidden')).toBeUndefined();
-    expect(edge('new Runnable() { public void run() { hidden(); } }')?.callType).toBe(
-      'boundary_constructor',
-    );
+    expect(edge('new Runnable() { public void run() { hidden(); } }')?.callType).toBe('boundary_constructor');
   });
 });
 

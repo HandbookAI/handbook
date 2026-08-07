@@ -75,14 +75,18 @@ export class StateStore {
     }
     for (const other of this.state.repos) {
       if (inside(parsed.workDir, other.workDir) || inside(other.workDir, parsed.workDir)) {
-        throw new Error(`workDir overlaps repo "${other.name}" (${other.workDir}) — artifacts would clobber each other`);
+        throw new Error(
+          `workDir overlaps repo "${other.name}" (${other.workDir}) — artifacts would clobber each other`,
+        );
       }
       // Two entries sharing a source tree would let concurrent jobs patch the
       // same files (the job mutex is keyed on repo name).
       const mine = realOf(parsed.sourceRoot);
       const theirs = realOf(other.sourceRoot);
       if (inside(mine, theirs) || inside(theirs, mine)) {
-        throw new Error(`sourceRoot overlaps repo "${other.name}" (${other.sourceRoot}) — one tree, one repo`);
+        throw new Error(
+          `sourceRoot overlaps repo "${other.name}" (${other.sourceRoot}) — one tree, one repo`,
+        );
       }
     }
     const full: RepoEntry = { ...parsed, addedAt: new Date().toISOString() };

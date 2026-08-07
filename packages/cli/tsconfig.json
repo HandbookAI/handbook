@@ -5,5 +5,37 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../analyzer" }, { "path": "../llm" }, { "path": "../pipeline" }, { "path": "../renderer" }, { "path": "../skill" }, { "path": "../planner" }, { "path": "../resync" }]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test-helper.ts"],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../analyzer"
+    },
+    {
+      "path": "../llm"
+    },
+    {
+      "path": "../patcher"
+    },
+    {
+      "path": "../pipeline"
+    },
+    {
+      "path": "../planner"
+    },
+    {
+      "path": "../renderer"
+    },
+    {
+      "path": "../resync"
+    },
+    {
+      "path": "../skill"
+    },
+    {
+      "path": "../studio"
+    }
+  ]
 }

@@ -33,8 +33,26 @@ import {
 } from '../spine.js';
 
 const GENERIC_TYPES = new Set([
-  'str', 'int', 'float', 'bool', 'bytes', 'list', 'dict', 'set', 'tuple', 'object', 'None',
-  'Any', 'Optional', 'Union', 'Callable', 'Iterable', 'Iterator', 'Sequence', 'Mapping', 'Path',
+  'str',
+  'int',
+  'float',
+  'bool',
+  'bytes',
+  'list',
+  'dict',
+  'set',
+  'tuple',
+  'object',
+  'None',
+  'Any',
+  'Optional',
+  'Union',
+  'Callable',
+  'Iterable',
+  'Iterator',
+  'Sequence',
+  'Mapping',
+  'Path',
 ]);
 
 interface FnContext {
@@ -143,7 +161,8 @@ function recordFunction(
     for (const p of params.namedChildren) {
       if (!p) continue;
       if (p.type === 'typed_parameter' || p.type === 'typed_default_parameter') {
-        const pname = p.namedChildren[0]?.type === 'identifier' ? (p.namedChildren[0]?.text ?? '') : fieldText(p, 'name');
+        const pname =
+          p.namedChildren[0]?.type === 'identifier' ? (p.namedChildren[0]?.text ?? '') : fieldText(p, 'name');
         const type = cleanTypeName(p.childForFieldName('type')?.text ?? '', scan.imports);
         if (pname && type) paramTypes.set(pname, type);
       }
@@ -288,10 +307,7 @@ function learnSelfAttrTypes(
     if (!callee) return undefined;
     if (callee.type === 'identifier' && /^[A-Z]/.test(callee.text)) {
       scan.fieldTypes.set(`${className}.${attr}`, callee.text);
-    } else if (
-      callee.type === 'attribute' &&
-      callee.childForFieldName('object')?.text === 'self'
-    ) {
+    } else if (callee.type === 'attribute' && callee.childForFieldName('object')?.text === 'self') {
       const method = fieldText(callee, 'attribute');
       const ret = scan.methodReturns.get(`${className}.${method}`);
       if (ret && /^[A-Za-z_][A-Za-z0-9_]*$/.test(ret) && !GENERIC_TYPES.has(ret)) {
@@ -302,12 +318,7 @@ function learnSelfAttrTypes(
   });
 }
 
-function resolveCall(
-  callee: Node,
-  scan: ModuleScan,
-  context: FnContext,
-  std: StandardIndexes,
-): Resolved {
+function resolveCall(callee: Node, scan: ModuleScan, context: FnContext, std: StandardIndexes): Resolved {
   // A. bare `name(...)`
   if (callee.type === 'identifier') {
     return resolveBareName(callee.text, scan, std);
@@ -320,9 +331,7 @@ function resolveCall(
 
     // B1. `self.foo(...)`
     if (object.type === 'identifier' && object.text === 'self') {
-      const own = context.className
-        ? resolveOwnMethod(context.className, attr, scan, std)
-        : undefined;
+      const own = context.className ? resolveOwnMethod(context.className, attr, scan, std) : undefined;
       return own ?? unresolvedOf(`self.${attr}`);
     }
 

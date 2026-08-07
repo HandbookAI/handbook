@@ -45,7 +45,13 @@ describe('OPENAI_EXTRA_BODY', () => {
 
     const bodies: Array<Record<string, any>> = [];
     const client = new OpenAiChatClient({
-      config: { apiKey: 'k', baseUrl: 'http://x/v1', maxRetries: 1, extraBody: config.extraBody, maxTokens: 800 },
+      config: {
+        apiKey: 'k',
+        baseUrl: 'http://x/v1',
+        maxRetries: 1,
+        extraBody: config.extraBody,
+        maxTokens: 800,
+      },
       fetchImpl: (async (_u: string, init: RequestInit) => {
         bodies.push(JSON.parse(String(init.body)));
         return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
@@ -77,7 +83,10 @@ describe('OpenAiChatClient', () => {
   });
 
   it('returns text and extracted json', async () => {
-    const client = new OpenAiChatClient({ config: base, fetchImpl: fakeFetch(() => ({ status: 200, body: okBody })) });
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: fakeFetch(() => ({ status: 200, body: okBody })),
+    });
     const result = await client.complete('hi');
     expect(result.json).toEqual({ a: 1 });
     expect(client.usage().calls).toBe(1);
@@ -118,7 +127,10 @@ describe('OpenAiChatClient', () => {
   });
 
   it('tolerates responses without a usage block', async () => {
-    const client = new OpenAiChatClient({ config: base, fetchImpl: fakeFetch(() => ({ status: 200, body: okBody })) });
+    const client = new OpenAiChatClient({
+      config: base,
+      fetchImpl: fakeFetch(() => ({ status: 200, body: okBody })),
+    });
     await client.complete('p');
     expect(client.usage()).toMatchObject({ calls: 1, promptTokens: 0, completionTokens: 0 });
   });
@@ -363,9 +375,13 @@ describe('OpenAiChatClient with a reasoning endpoint', () => {
         const body = JSON.parse(String(init.body));
         bodies.push(body);
         if (body.max_tokens > 2000) {
-          return new Response(JSON.stringify({ error: { message: 'max_tokens too large' } }), { status: 400 });
+          return new Response(JSON.stringify({ error: { message: 'max_tokens too large' } }), {
+            status: 400,
+          });
         }
-        return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":1}' } }] }), { status: 200 });
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":1}' } }] }), {
+          status: 200,
+        });
       }) as unknown as typeof fetch,
     });
     // A 400 about the token parameter must not be permanent: it is a verdict on
@@ -387,7 +403,9 @@ describe('OpenAiChatClient with a reasoning endpoint', () => {
           { status: 200 },
         )) as unknown as typeof fetch,
     });
-    await expect(client.complete('p')).rejects.toThrow(/spent its budget on reasoning \(4096 reasoning tokens\)/);
+    await expect(client.complete('p')).rejects.toThrow(
+      /spent its budget on reasoning \(4096 reasoning tokens\)/,
+    );
   });
 
   it('still rejects whitespace-only content', async () => {
@@ -420,7 +438,9 @@ describe('gateway pages vs API errors', () => {
         calls += 1;
         return calls < 3
           ? new Response(gateway, { status: 405 })
-          : new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":1}' } }] }), { status: 200 });
+          : new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":1}' } }] }), {
+              status: 200,
+            });
       }) as unknown as typeof fetch,
     });
     await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
@@ -465,12 +485,17 @@ describe('truncated completions', () => {
         bodies.push(JSON.parse(String(init.body)));
         return calls < 2
           ? new Response(
-              JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{"stages": [{"id":' } }] }),
+              JSON.stringify({
+                choices: [{ finish_reason: 'length', message: { content: '{"stages": [{"id":' } }],
+              }),
               { status: 200 },
             )
-          : new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"ok":1}' } }] }), {
-              status: 200,
-            });
+          : new Response(
+              JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"ok":1}' } }] }),
+              {
+                status: 200,
+              },
+            );
       }) as unknown as typeof fetch,
     });
     await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
@@ -483,7 +508,9 @@ describe('truncated completions', () => {
       config: { ...base, maxRetries: 1 },
       fetchImpl: (async () =>
         new Response(
-          JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{"stages": [{"id": "a"' } }] }),
+          JSON.stringify({
+            choices: [{ finish_reason: 'length', message: { content: '{"stages": [{"id": "a"' } }],
+          }),
           { status: 200 },
         )) as unknown as typeof fetch,
     });
@@ -506,7 +533,9 @@ describe('truncated completions', () => {
       fetchImpl: (async () =>
         new Response(
           JSON.stringify({
-            choices: [{ finish_reason: 'length', message: { content: 'The queue stage takes work from the' } }],
+            choices: [
+              { finish_reason: 'length', message: { content: 'The queue stage takes work from the' } },
+            ],
           }),
           { status: 200 },
         )) as unknown as typeof fetch,
@@ -522,7 +551,12 @@ describe('truncated completions', () => {
       fetchImpl: (async () =>
         new Response(
           JSON.stringify({
-            choices: [{ finish_reason: 'length', message: { content: '```json\n{"ok":1}\n```\nand then some trail' } }],
+            choices: [
+              {
+                finish_reason: 'length',
+                message: { content: '```json\n{"ok":1}\n```\nand then some trail' },
+              },
+            ],
           }),
           { status: 200 },
         )) as unknown as typeof fetch,

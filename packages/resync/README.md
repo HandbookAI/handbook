@@ -17,6 +17,7 @@ Rolls a handbook's derived layer forward after a real code change, without re-ru
 ## Public API
 
 All in `resync.ts`:
+
 - `resyncHandbook(options: ResyncOptions): Promise<ResyncReport>` — the whole flow; updates the work directory in place and writes `<case>/resync-report.json`.
   - `ResyncOptions` — `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, correctionsPath?, signal?, logger? }`; `client` is required unless `noLlm` is true; `detail` (`'brief' | 'deep'`) defaults to whatever the existing cards were built with; `editedRoot`/`planText` let a caller (e.g. studio's live-tree flow) supply the edited tree and plan directly instead of via case files.
   - `ResyncReport` — `{ skipped, changedFiles, addedFiles, deletedFiles, affectedStages, cardsRegenerated, narrated }`.
@@ -50,7 +51,7 @@ import { OpenAiChatClient } from '@handbook/llm';
 // case dir layout: <case>/edited/ (changed tree), plan.md?, change.diff?
 const report = await resyncHandbook({
   caseDir: '/path/to/case',
-  workDir: '/path/to/work',   // holds the handbook artifacts to roll forward
+  workDir: '/path/to/work', // holds the handbook artifacts to roll forward
   client: new OpenAiChatClient(),
   lang: 'en', // detail is detected from the existing cards unless you pass it
 });
@@ -72,6 +73,7 @@ For a structural-only refresh with no LLM: pass `noLlm: true` and omit `client` 
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — artifact types, file helpers, `isInternalNode`, errors.
 - `@handbook/analyzer` — indirectly via phase 1 (fresh graph over the edited tree).
 - `@handbook/pipeline` — `WorkDir`, `runPhase1`, `generateCards`, `rebuildAssignment`/`reassignSubset`, `suggestOrder`/`fileCallAdjacency`, `narrate`, `extractRegisters`, `buildInventory`.

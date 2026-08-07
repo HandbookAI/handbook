@@ -74,7 +74,11 @@ export function parseVerdict(json: unknown, text?: string): Verdict | undefined 
   };
   // A REVISE with no concerns gives the actor nothing to act on — treat as APPROVE.
   if (verdict.decision === 'REVISE' && verdict.concerns.length === 0) {
-    verdict = { ...verdict, decision: 'APPROVE', rationale: `[normalized vacuous REVISE] ${verdict.rationale}` };
+    verdict = {
+      ...verdict,
+      decision: 'APPROVE',
+      rationale: `[normalized vacuous REVISE] ${verdict.rationale}`,
+    };
   }
   return verdict;
 }
@@ -91,8 +95,18 @@ function parseVerdictText(text: string | undefined): Verdict | undefined {
   // A bare REVISE carries no concerns to act on, which the JSON path normalises
   // to APPROVE; keep that rule identical here.
   return decision === 'REVISE'
-    ? { decision: 'APPROVE', concerns: [], suggestedRevision: null, rationale: '[bare REVISE with no concerns]' }
-    : { decision, concerns: [], suggestedRevision: null, rationale: '[decision read from a plain-text reply]' };
+    ? {
+        decision: 'APPROVE',
+        concerns: [],
+        suggestedRevision: null,
+        rationale: '[bare REVISE with no concerns]',
+      }
+    : {
+        decision,
+        concerns: [],
+        suggestedRevision: null,
+        rationale: '[decision read from a plain-text reply]',
+      };
 }
 
 export function buildCriticPrompt(args: {

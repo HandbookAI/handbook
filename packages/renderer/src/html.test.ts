@@ -28,7 +28,15 @@ afterAll(() => {
 describe('renderHtmlSite', () => {
   it('writes index + overview + register + one page per content stage', () => {
     expect(site.nPages).toBe(7);
-    for (const name of ['index.html', 'overview.html', 'register.html', 'stage-1.html', 'stage-1.1.html', 'stage-2.html', 'crosscut-1.html']) {
+    for (const name of [
+      'index.html',
+      'overview.html',
+      'register.html',
+      'stage-1.html',
+      'stage-1.1.html',
+      'stage-2.html',
+      'crosscut-1.html',
+    ]) {
       expect(existsSync(join(dir, name)), name).toBe(true);
     }
   });
@@ -64,7 +72,9 @@ describe('renderHtmlSite', () => {
 
   it('builds the breadcrumb from the stage ancestry', () => {
     const page = read('stage-1.1.html');
-    expect(page).toContain('<a href="overview.html">System</a> / <a href="stage-1.html">Ingestion Pipeline</a> / Ingestion Parser');
+    expect(page).toContain(
+      '<a href="overview.html">System</a> / <a href="stage-1.html">Ingestion Pipeline</a> / Ingestion Parser',
+    );
   });
 
   it('renders the register table with stage links', () => {

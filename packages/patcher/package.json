@@ -1,7 +1,6 @@
 {
   "name": "@handbook/patcher",
   "version": "0.1.0",
-  "private": true,
   "description": "Apply a plan's EDIT blocks to a source tree byte-exactly, with dry-run, verification and rollback",
   "type": "module",
   "exports": {
@@ -10,12 +9,18 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
     "@handbook/core": "workspace:*"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

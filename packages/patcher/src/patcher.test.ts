@@ -39,8 +39,12 @@ describe('parsePlan', () => {
 
   it('reports plans it cannot use instead of guessing', () => {
     expect(parsePlan('no blocks here').problems[0]).toMatch(/no "### EDIT/);
-    expect(parsePlan('### EDIT 1\n- where: `x`\n```old\na\n```\n```new\nb\n```').problems[0]).toMatch(/missing "- file/);
-    expect(parsePlan('### EDIT 1\n- file: `a.py`\n```old\na\n```').problems[0]).toMatch(/one ```old and one ```new/);
+    expect(parsePlan('### EDIT 1\n- where: `x`\n```old\na\n```\n```new\nb\n```').problems[0]).toMatch(
+      /missing "- file/,
+    );
+    expect(parsePlan('### EDIT 1\n- file: `a.py`\n```old\na\n```').problems[0]).toMatch(
+      /one ```old and one ```new/,
+    );
     expect(parsePlan(plan([{ file: 'a.py', old: 'same', next: 'same' }])).problems[0]).toMatch(/identical/);
   });
 
@@ -93,7 +97,10 @@ describe('applyPlan', () => {
   it('refuses ambiguous anchors', () => {
     const root = repo();
     writeFileSync(join(root, 'app/dup.py'), 'pass\npass\n');
-    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/dup.py', old: 'pass', next: 'return' }]) });
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/dup.py', old: 'pass', next: 'return' }]),
+    });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('ambiguous');
     expect(result.outcomes[0]?.detail).toMatch(/appears 2 times/);
@@ -144,7 +151,10 @@ describe('applyPlan', () => {
 
   it('rejects paths that escape the source root', () => {
     const root = repo();
-    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: '../evil.py', old: '', next: 'boom' }]) });
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: '../evil.py', old: '', next: 'boom' }]),
+    });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('unsafe-path');
   });
@@ -205,7 +215,9 @@ describe('patcher — review regressions', () => {
 
   it('refuses a block whose content has a fence run as long as its opener', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `a.md`', '```old', 'text', '```', 'more', '```', '```new', 'x', '```'].join('\n'),
+      ['### EDIT 1', '- file: `a.md`', '```old', 'text', '```', 'more', '```', '```new', 'x', '```'].join(
+        '\n',
+      ),
     );
     expect(parsed.edits).toHaveLength(0);
     expect(parsed.problems.join(' ')).toMatch(/content outside the fenced blocks|LONGER fence|exactly one/);
@@ -213,14 +225,25 @@ describe('patcher — review regressions', () => {
 
   it('ignores a `- file:` line hidden inside a fenced block', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `intended.py`', '```old', '- file: `victim.py`', '```', '```new', 'x', '```'].join('\n'),
+      [
+        '### EDIT 1',
+        '- file: `intended.py`',
+        '```old',
+        '- file: `victim.py`',
+        '```',
+        '```new',
+        'x',
+        '```',
+      ].join('\n'),
     );
     expect(parsed.edits[0]?.file).toBe('intended.py');
   });
 
   it('rejects unusable file paths with an explicit problem', () => {
     for (const bad of ['~/secrets.txt', '/etc/passwd', 'src\\win\\app.py', 'src/a.py (line 12)']) {
-      const parsed = parsePlan(['### EDIT 1', `- file: \`${bad}\``, '```old', 'a', '```', '```new', 'b', '```'].join('\n'));
+      const parsed = parsePlan(
+        ['### EDIT 1', `- file: \`${bad}\``, '```old', 'a', '```', '```new', 'b', '```'].join('\n'),
+      );
       expect(parsed.edits, bad).toHaveLength(0);
       expect(parsed.problems.join(' '), bad).toMatch(/file path/);
     }
@@ -228,8 +251,24 @@ describe('patcher — review regressions', () => {
 
   it('flags duplicate and out-of-order edit numbers', () => {
     const dup = parsePlan(
-      ['### EDIT 1', '- file: `a.py`', '```old', 'a', '```', '```new', 'b', '```',
-       '### EDIT 1', '- file: `c.py`', '```old', 'c', '```', '```new', 'd', '```'].join('\n'),
+      [
+        '### EDIT 1',
+        '- file: `a.py`',
+        '```old',
+        'a',
+        '```',
+        '```new',
+        'b',
+        '```',
+        '### EDIT 1',
+        '- file: `c.py`',
+        '```old',
+        'c',
+        '```',
+        '```new',
+        'd',
+        '```',
+      ].join('\n'),
     );
     expect(dup.problems.join(' ')).toMatch(/duplicate edit number/);
   });
@@ -265,7 +304,10 @@ describe('patcher — review regressions', () => {
     const root = repo();
     const bin = join(root, 'app/bin.dat');
     writeFileSync(bin, Buffer.from([0x61, 0xff, 0x62]));
-    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/bin.dat', old: 'a', next: 'z' }]) });
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/bin.dat', old: 'a', next: 'z' }]),
+    });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('undecodable');
     expect(readFileSync(bin)).toEqual(Buffer.from([0x61, 0xff, 0x62]));
@@ -318,8 +360,16 @@ describe('patcher — review regressions', () => {
   it('never reuses a backup stamp directory', () => {
     const root = repo();
     const backupRoot = join(mkdtempSync(join(tmpdir(), 'hb-bk-')), 'stamps');
-    const a = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]), backupRoot });
-    const b = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 2', next: 'self.rpm += 3' }]), backupRoot });
+    const a = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]),
+      backupRoot,
+    });
+    const b = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 2', next: 'self.rpm += 3' }]),
+      backupRoot,
+    });
     expect(a.backupDir).not.toBe(b.backupDir);
     expect(listBackups(backupRoot).length).toBe(2);
   });
@@ -344,7 +394,17 @@ describe('patcher — review regressions', () => {
 describe('patcher — R2 regressions', () => {
   it('refuses a plan whose inner bare fence closed a block early', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `docs/g.md`', '```old', 'text', '```', 'orphan line', '```new', 'x', '```'].join('\n'),
+      [
+        '### EDIT 1',
+        '- file: `docs/g.md`',
+        '```old',
+        'text',
+        '```',
+        'orphan line',
+        '```new',
+        'x',
+        '```',
+      ].join('\n'),
     );
     expect(parsed.edits).toHaveLength(0);
     expect(parsed.problems.join(' ')).toMatch(/content outside the fenced blocks|LONGER fence|exactly one/);
@@ -352,7 +412,19 @@ describe('patcher — R2 regressions', () => {
 
   it('accepts a legitimate fenced payload when the opener is longer', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `docs/g.md`', '````old', 'text', '```', 'inner', '```', '````', '````new', 'y', '````'].join('\n'),
+      [
+        '### EDIT 1',
+        '- file: `docs/g.md`',
+        '````old',
+        'text',
+        '```',
+        'inner',
+        '```',
+        '````',
+        '````new',
+        'y',
+        '````',
+      ].join('\n'),
     );
     expect(parsed.problems).toEqual([]);
     expect(parsed.edits[0]?.oldText).toBe('text\n```\ninner\n```');
@@ -386,7 +458,9 @@ describe('patcher — R2 regressions', () => {
 
   it('does not flag inline backticks that cannot close the block', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `a.py`', '```old', 'x = "`` inline ``"', '```', '```new', 'y = 1', '```'].join('\n'),
+      ['### EDIT 1', '- file: `a.py`', '```old', 'x = "`` inline ``"', '```', '```new', 'y = 1', '```'].join(
+        '\n',
+      ),
     );
     expect(parsed.problems).toEqual([]);
     expect(parsed.edits).toHaveLength(1);
@@ -413,7 +487,10 @@ describe('patcher — R2 regressions', () => {
   it('refuses a create whose parent path is a regular file', () => {
     const root = repo();
     writeFileSync(join(root, 'blocker'), 'i am a file\n');
-    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'blocker/child.py', old: '', next: 'x' }]) });
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'blocker/child.py', old: '', next: 'x' }]),
+    });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('not-a-file');
   });
@@ -450,7 +527,7 @@ describe('patcher — R2 regressions', () => {
   });
 });
 
-describe('patcher — R3: the planner\'s real output shape', () => {
+describe("patcher — R3: the planner's real output shape", () => {
   /** Exactly what packages/planner/src/prompt.ts instructs the agent to emit. */
   function plannerShapedPlan(file: string, oldText: string, newText: string): string {
     return [
@@ -492,7 +569,9 @@ describe('patcher — R3: the planner\'s real output shape', () => {
 
   it('still refuses content BETWEEN the old and new blocks', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `a.py`', '```old', 'a', '```', 'orphan between', '```new', 'b', '```'].join('\n'),
+      ['### EDIT 1', '- file: `a.py`', '```old', 'a', '```', 'orphan between', '```new', 'b', '```'].join(
+        '\n',
+      ),
     );
     expect(parsed.edits).toHaveLength(0);
     expect(parsed.problems.join(' ')).toMatch(/content between the fenced blocks/);
@@ -500,7 +579,20 @@ describe('patcher — R3: the planner\'s real output shape', () => {
 
   it('does not let an indented inner fence close a block', () => {
     const parsed = parsePlan(
-      ['### EDIT 1', '- file: `a.md`', '```old', 'text', '    ```', '    indented', '    ```', 'tail', '```', '```new', 'y', '```'].join('\n'),
+      [
+        '### EDIT 1',
+        '- file: `a.md`',
+        '```old',
+        'text',
+        '    ```',
+        '    indented',
+        '    ```',
+        'tail',
+        '```',
+        '```new',
+        'y',
+        '```',
+      ].join('\n'),
     );
     // The indented fences are content; the block closes at the unindented one.
     expect(parsed.problems).toEqual([]);
@@ -516,7 +608,10 @@ describe('patcher — R3: the planner\'s real output shape', () => {
     );
     const started = Date.now();
     expect(() =>
-      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]),
+      }),
     ).toThrow(/another patch run/);
     expect(Date.now() - started).toBeLessThan(2000); // no busy-wait
   });
@@ -539,7 +634,10 @@ describe('patcher — R3: the planner\'s real output shape', () => {
     const root = repo();
     const big = join(root, 'app/big.py');
     writeFileSync(big, `x = 1\n${'# pad\n'.repeat(1_600_000)}`); // > 8 MiB
-    const result = applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/big.py', old: 'x = 1', next: 'x = 2' }]) });
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/big.py', old: 'x = 1', next: 'x = 2' }]),
+    });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('undecodable');
   });
@@ -549,7 +647,18 @@ describe('patcher — R4 regressions', () => {
   it('refuses a plan whose new block opens with a fence (truncation debris)', () => {
     const root = repo();
     writeFileSync(join(root, 'README.md'), 'Install:\nrun it\n');
-    const p = ['### EDIT 1', '- file: `README.md`', '```old', 'Install:', '```', '```new', '```', 'run it', '```', '```'].join('\n');
+    const p = [
+      '### EDIT 1',
+      '- file: `README.md`',
+      '```old',
+      'Install:',
+      '```',
+      '```new',
+      '```',
+      'run it',
+      '```',
+      '```',
+    ].join('\n');
     const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
     expect(result.ok).toBe(false);
     expect(result.problems.join(' ')).toMatch(/untagged|between the fenced blocks|exactly one/);
@@ -584,7 +693,10 @@ describe('patcher — R4 regressions', () => {
     mkdirSync(join(root, '.handbook-patches'), { recursive: true });
     writeFileSync(lockPath, 'NOT JSON');
     expect(() =>
-      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]),
+      }),
     ).toThrow(/another patch run/);
   });
 
@@ -651,7 +763,10 @@ describe('patcher — R4 reverification (audit A6)', () => {
       JSON.stringify({ pid: 2147483646, host: 'some-other-machine', startedAt: '2000-01-01T00:00:00Z' }),
     );
     expect(() =>
-      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]),
+      }),
     ).toThrow(/another patch run/);
   });
 
@@ -663,7 +778,10 @@ describe('patcher — R4 reverification (audit A6)', () => {
       JSON.stringify({ pid: process.pid, host: hostname(), startedAt: '2026-08-04T00:00:00Z' }),
     );
     expect(() =>
-      applyPlan({ sourceRoot: root, plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]) }),
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 2' }]),
+      }),
     ).toThrow(/2026-08-04T00:00:00Z[\s\S]*apply\.lock/);
   });
 
@@ -720,7 +838,10 @@ describe('patcher — byte-exactness hardening (QA sweep)', () => {
   it('preserves a leading UTF-8 BOM and the exact tail bytes across an edit', () => {
     const root = repo();
     const target = join(root, 'app/bom.js');
-    const before = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('const a = 1\nconst b = 2', 'utf8')]);
+    const before = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('const a = 1\nconst b = 2', 'utf8'),
+    ]);
     writeFileSync(target, before); // note: no trailing newline
     const result = applyPlan({
       sourceRoot: root,
@@ -731,14 +852,18 @@ describe('patcher — byte-exactness hardening (QA sweep)', () => {
     const after = readFileSync(target);
     // BOM intact, no trailing newline introduced, only the matched bytes changed.
     expect([...after.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
-    expect(after).toEqual(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('const a = 1\nconst b = 3', 'utf8')]));
+    expect(after).toEqual(
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('const a = 1\nconst b = 3', 'utf8')]),
+    );
   });
 
   it('applies a deletion (empty new) byte-exactly', () => {
     const root = repo();
     const target = join(root, 'app/del.py');
     writeFileSync(target, 'a\nDELETE ME\nb\n');
-    const p = ['### EDIT 1', '- file: `app/del.py`', '```old', 'DELETE ME\n', '```', '```new', '```'].join('\n');
+    const p = ['### EDIT 1', '- file: `app/del.py`', '```old', 'DELETE ME\n', '```', '```new', '```'].join(
+      '\n',
+    );
     const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
     expect(result.ok).toBe(true);
     expect(result.outcomes[0]?.detail).toMatch(/removed the matched text/);
@@ -845,7 +970,16 @@ describe('patcher — deep adversarial pass 2', () => {
   // cleanly by the parser, and apply must leave the tree untouched.
   it('rejects a NUL byte in a file path instead of crashing the write phase', () => {
     const nulPath = `app/x${String.fromCharCode(0)}.py`;
-    const rawPlan = ['### EDIT 1', `- file: \`${nulPath}\``, '```old', '', '```', '```new', 'boom', '```'].join('\n');
+    const rawPlan = [
+      '### EDIT 1',
+      `- file: \`${nulPath}\``,
+      '```old',
+      '',
+      '```',
+      '```new',
+      'boom',
+      '```',
+    ].join('\n');
     const parsed = parsePlan(rawPlan);
     expect(parsed.edits).toHaveLength(0);
     expect(parsed.problems.join(' ')).toMatch(/control characters/);

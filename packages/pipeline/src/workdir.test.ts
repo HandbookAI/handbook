@@ -103,7 +103,10 @@ describe('WorkDir YAML load boundaries reject corrupt artifacts with a located e
     const w = newWork();
     const userPath = join(mkdtempSync(join(tmpdir(), 'hb-userskel-')), 'skeleton.yaml');
     writeFileSync(userPath, 'metadata: {version: 1\nstages: [');
-    expectLocatedValidationError(() => w.parseSkeletonYaml('metadata: {version: 1\nstages: [', userPath), userPath);
+    expectLocatedValidationError(
+      () => w.parseSkeletonYaml('metadata: {version: 1\nstages: [', userPath),
+      userPath,
+    );
   });
 });
 
@@ -123,7 +126,10 @@ describe('WorkDir load boundaries still accept VALID artifacts (no regression)',
     const w = newWork();
     mkdirSync(w.phase2Dir, { recursive: true });
     // Parses as valid JSON, but assignment.buckets should be an object of arrays.
-    writeFileSync(w.assignmentPath, JSON.stringify({ version: 1, fileStage: {}, buckets: 'nope', coverage: {} }));
+    writeFileSync(
+      w.assignmentPath,
+      JSON.stringify({ version: 1, fileStage: {}, buckets: 'nope', coverage: {} }),
+    );
     expectLocatedValidationError(() => w.loadAssignment(), w.assignmentPath);
   });
 });

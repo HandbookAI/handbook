@@ -35,16 +35,33 @@ import {
 } from '../spine.js';
 
 const GENERIC_TYPES = new Set([
-  'number', 'string', 'boolean', 'any', 'unknown', 'void', 'never', 'object',
-  'Array', 'Promise', 'Map', 'Set', 'Record', 'Date', 'Object',
+  'number',
+  'string',
+  'boolean',
+  'any',
+  'unknown',
+  'void',
+  'never',
+  'object',
+  'Array',
+  'Promise',
+  'Map',
+  'Set',
+  'Record',
+  'Date',
+  'Object',
 ]);
 
 const EXTRA_SKIP_DIRS = ['dist', 'build', 'out', 'coverage'];
 
 /** Node types that open a nested function scope (skipped while walking a body). */
 const NESTED_SCOPES = new Set([
-  'arrow_function', 'function_expression', 'function_declaration',
-  'method_definition', 'class_declaration', 'abstract_class_declaration',
+  'arrow_function',
+  'function_expression',
+  'function_declaration',
+  'method_definition',
+  'class_declaration',
+  'abstract_class_declaration',
 ]);
 
 interface FnContext {
@@ -64,7 +81,10 @@ interface ModuleScan extends BaseScan {
 }
 
 export function moduleIdForFile(file: string): string {
-  return file.replace(/\.(tsx|ts|jsx|js|mjs|cjs)$/, '').split('/').join('.');
+  return file
+    .replace(/\.(tsx|ts|jsx|js|mjs|cjs)$/, '')
+    .split('/')
+    .join('.');
 }
 
 /**
@@ -267,7 +287,8 @@ function trackThisAttrs(body: Node): { reads: string[]; writes: string[] } {
       const left = node.childForFieldName('left');
       if (left) {
         for (const attr of thisAttrsIn(left)) writes.add(attr);
-        if (node.type === 'augmented_assignment_expression') for (const attr of thisAttrsIn(left)) reads.add(attr);
+        if (node.type === 'augmented_assignment_expression')
+          for (const attr of thisAttrsIn(left)) reads.add(attr);
       }
       const right = node.childForFieldName('right');
       if (right) for (const attr of thisAttrsIn(right)) reads.add(attr);
@@ -304,9 +325,7 @@ function resolveCall(
 
     // B1. `this.m(...)`
     if (object.type === 'this') {
-      const own = context.className
-        ? resolveOwnMethod(context.className, prop, scan, std)
-        : undefined;
+      const own = context.className ? resolveOwnMethod(context.className, prop, scan, std) : undefined;
       return own ?? unresolvedOf(`this.${prop}`);
     }
 
@@ -450,7 +469,13 @@ const TYPESCRIPT_SPEC: LanguageSpec<ModuleScan> = {
           if (!value || !nameNode || nameNode.type !== 'identifier') continue;
           if (value.type === 'arrow_function' || value.type === 'function_expression') {
             scan.freeFunctions.add(nameNode.text);
-            recordFunction(scan, { name: nameNode.text, className: null, defNode: declarator, fnNode: value, file });
+            recordFunction(scan, {
+              name: nameNode.text,
+              className: null,
+              defNode: declarator,
+              fnNode: value,
+              file,
+            });
           }
         }
       }

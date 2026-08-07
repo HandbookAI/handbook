@@ -1,0 +1,3 @@
+# The history was already Conventional Commits by hand. This keeps it that way,
+# which is what the changelog generation depends on.
+pnpm commitlint --edit "$1"

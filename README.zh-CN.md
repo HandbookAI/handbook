@@ -98,31 +98,31 @@ handbook resync   --case cases/upload-retry --work work/myrepo
 
 ## 生成管线如何工作
 
-| 阶段 | 内容 | LLM |
-|---|---|---|
-| 1 | 各语言 adapter（tree-sitter WASM）把每个文件解析成带类型的调用图：函数/方法、已解析的调用边（self / 属性 / 参数 / import 四类规则）、外部边界调用；无法解析的调用被隔离进 `dropped-calls.json`，绝不混入图中。 | 无 |
-| 2a | 每个文件一张**卡片**：purpose / role / lifecycle；deep 模式再加 120–300 词走读 + 逐函数 purpose / data_flow / relations（prose 由 LLM 写，事实来自调用图）。批量、三级降级、崩溃安全、可续跑。 | 有 |
-| 2b | 从目录卷积 + 入口点合成阶段**骨架**（按执行生命周期排序的叙事主线），再把每个文件指派到唯一主阶段。`--synth-mode doctor` 启动 actor-critic 修复循环（工程师/架构师/读者三个评审），直到无未指派文件且再无结构变更通过评审。 | 有 |
-| 2c | 每个阶段内按调用图拓扑排序，再编成 2–8 个带标题的小组；任何失败都退化为确定性平铺顺序——文件永不丢失。 | 有 |
-| 3 | 自底向上叙述：先子后父生成阶段概述、系统总览，并用 loop-until-dry 间隙轮提取跨阶段**状态寄存器**。全部内容哈希缓存。 | 有 |
+| 阶段 | 内容                                                                                                                                                                                                                        | LLM |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 1    | 各语言 adapter（tree-sitter WASM）把每个文件解析成带类型的调用图：函数/方法、已解析的调用边（self / 属性 / 参数 / import 四类规则）、外部边界调用；无法解析的调用被隔离进 `dropped-calls.json`，绝不混入图中。              | 无  |
+| 2a   | 每个文件一张**卡片**：purpose / role / lifecycle；deep 模式再加 120–300 词走读 + 逐函数 purpose / data_flow / relations（prose 由 LLM 写，事实来自调用图）。批量、三级降级、崩溃安全、可续跑。                              | 有  |
+| 2b   | 从目录卷积 + 入口点合成阶段**骨架**（按执行生命周期排序的叙事主线），再把每个文件指派到唯一主阶段。`--synth-mode doctor` 启动 actor-critic 修复循环（工程师/架构师/读者三个评审），直到无未指派文件且再无结构变更通过评审。 | 有  |
+| 2c   | 每个阶段内按调用图拓扑排序，再编成 2–8 个带标题的小组；任何失败都退化为确定性平铺顺序——文件永不丢失。                                                                                                                       | 有  |
+| 3    | 自底向上叙述：先子后父生成阶段概述、系统总览，并用 loop-until-dry 间隙轮提取跨阶段**状态寄存器**。全部内容哈希缓存。                                                                                                        | 有  |
 
 所有产物都是 work 目录下经 schema 校验的 JSON/YAML；任何阶段都能独立重跑，崩溃后原地续跑。
 
 ## Monorepo 布局
 
-| 包 | 职责 |
-|---|---|
-| [`@handbook/core`](packages/core/README.zh-CN.md) | 数据模型（调用图 IR + 手册模型）、zod schema、零依赖工具库 |
-| [`@handbook/analyzer`](packages/analyzer/README.zh-CN.md) | 多语言静态调用图（tree-sitter WASM），无 LLM |
-| [`@handbook/llm`](packages/llm/README.zh-CN.md) | OpenAI 兼容客户端 + actor-critic 编排 + 离线 mock |
-| [`@handbook/pipeline`](packages/pipeline/README.zh-CN.md) | 生成管线（阶段 1–3，file/member 双策略） |
-| [`@handbook/renderer`](packages/renderer/README.zh-CN.md) | markdown 页面、agent 定位索引、自包含 HTML 站点，无 LLM |
-| [`@handbook/skill`](packages/skill/README.zh-CN.md) | SKILL 打包 + 校验 + 覆盖率漂移检测，无 LLM |
-| [`@handbook/planner`](packages/planner/README.zh-CN.md) | 手册驱动的只读规划 agent |
-| [`@handbook/patcher`](packages/patcher/README.zh-CN.md) | 逐字节应用计划里的 EDIT 块——全成或全不成、自动备份、可回滚 |
-| [`@handbook/resync`](packages/resync/README.zh-CN.md) | 代码变更后的手册增量前滚 |
-| [`@handbook/studio`](packages/studio/README.zh-CN.md) | 本地 Web 界面：仓库 · 生成 · 浏览 · 演化（仅 127.0.0.1） |
-| [`@handbook/cli`](packages/cli/README.zh-CN.md) | `handbook` 命令行 |
+| 包                                                        | 职责                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------- |
+| [`@handbook/core`](packages/core/README.zh-CN.md)         | 数据模型（调用图 IR + 手册模型）、zod schema、零依赖工具库 |
+| [`@handbook/analyzer`](packages/analyzer/README.zh-CN.md) | 多语言静态调用图（tree-sitter WASM），无 LLM               |
+| [`@handbook/llm`](packages/llm/README.zh-CN.md)           | OpenAI 兼容客户端 + actor-critic 编排 + 离线 mock          |
+| [`@handbook/pipeline`](packages/pipeline/README.zh-CN.md) | 生成管线（阶段 1–3，file/member 双策略）                   |
+| [`@handbook/renderer`](packages/renderer/README.zh-CN.md) | markdown 页面、agent 定位索引、自包含 HTML 站点，无 LLM    |
+| [`@handbook/skill`](packages/skill/README.zh-CN.md)       | SKILL 打包 + 校验 + 覆盖率漂移检测，无 LLM                 |
+| [`@handbook/planner`](packages/planner/README.zh-CN.md)   | 手册驱动的只读规划 agent                                   |
+| [`@handbook/patcher`](packages/patcher/README.zh-CN.md)   | 逐字节应用计划里的 EDIT 块——全成或全不成、自动备份、可回滚 |
+| [`@handbook/resync`](packages/resync/README.zh-CN.md)     | 代码变更后的手册增量前滚                                   |
+| [`@handbook/studio`](packages/studio/README.zh-CN.md)     | 本地 Web 界面：仓库 · 生成 · 浏览 · 演化（仅 127.0.0.1）   |
+| [`@handbook/cli`](packages/cli/README.zh-CN.md)           | `handbook` 命令行                                          |
 
 依赖方向严格单向（`cli → pipeline/renderer/skill/planner/resync → analyzer/llm → core`）；
 触碰 LLM 的代码与确定性代码按包边界分层，analyzer / renderer / skill 完全不依赖 LLM，可独立复用。
@@ -175,15 +175,43 @@ pnpm mock-llm         # 单独起内置 mock LLM 服务（端口 8099）
 ## 开发
 
 ```bash
-pnpm build          # tsc -b（composite 引用，增量构建）
-pnpm test           # 构建 + vitest（全部离线）
-pnpm check          # 构建 + lint（零警告）+ 全部测试，提交前跑这个
-pnpm lint           # eslint
-pnpm format         # prettier
+pnpm build            # tsc -b（composite 引用，增量构建）
+pnpm test             # 构建 + vitest（全部离线）
+pnpm check            # 完整门禁，提交前跑这个（见下）
+pnpm typecheck        # 先 tsc -b，再用 tsconfig.tests.json 检查测试
+pnpm lint             # eslint，覆盖整个仓库
+pnpm format           # prettier，覆盖整个仓库
+pnpm test:coverage    # 带覆盖率阈值的 vitest
+pnpm check:workspace  # monorepo 结构不变量
 ```
+
+`pnpm check` 就是 CI 跑的东西，顺序为：类型检查（先源码后测试）→ 工作区不变量 →
+eslint 零警告 → prettier → 带覆盖率阈值的测试。pre-commit 钩子只对暂存文件跑格式化和
+lint，commit-msg 钩子强制 Conventional Commits。
 
 测试哲学：一切离线。LLM 相关流程用 `MockChatClient`（规则脚本）与内置 mock HTTP 端点测试；
 确定性包直接测试。任何测试都不需要 API key。
+
+两条由工具强制、而非仅写在文档里的约定：
+
+- **版本只有一处。** 所有三方依赖的版本声明在 `pnpm-workspace.yaml` 的 catalog 里，
+  各包一律依赖 `"catalog:"`，不重复写版本区间。manifest 里出现字面版本会让
+  `pnpm check:workspace` 失败。
+- **`dist/` 就是发布面。** 构建工程排除 `*.test.ts` 与 `*.test-helper.ts`，
+  改由 `tsconfig.tests.json` 以 `noEmit` 做类型检查。`dist/` 下出现测试产物同样会让上面那条检查失败。
+
+## 发布
+
+发布由 [changesets](https://github.com/changesets/changesets) 驱动：
+
+```bash
+pnpm changeset        # 描述本次改动并选择版本升级方式
+```
+
+把生成的文件与代码一起提交。合入 `main` 后，Release 工作流会开一个 "Version Packages" PR：
+应用待处理的 changeset、升版本、生成各包的 `CHANGELOG.md`。合并该 PR 即发布到 npm——
+在配置 `NPM_TOKEN` secret 之前这一步是空转的，因此无论是否真的对外发布，版本号和
+changelog 都保持正确。
 
 ## 许可证
 

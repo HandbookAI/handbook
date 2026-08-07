@@ -40,7 +40,10 @@ export function readValidatedJson<T>(path: string, schema: z.ZodType<T>): T {
   const raw = readJsonFile(path);
   const result = schema.safeParse(raw);
   if (!result.success) {
-    throw new ArtifactValidationError(path, result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    throw new ArtifactValidationError(
+      path,
+      result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    );
   }
   return result.data;
 }

@@ -94,10 +94,7 @@ function llmsTxt(view: HandbookView, lang: NarrateLang, generic: readonly string
   if (view.model.registers.length > 0) {
     links.push(entry(L.registerTitle, 'register.md', L.registerDesc));
   }
-  const parts = [
-    `# ${view.model.title}`,
-    `> ${oneLine(view.model.narration.systemOverview, SUMMARY_MAX)}`,
-  ];
+  const parts = [`# ${view.model.title}`, `> ${oneLine(view.model.narration.systemOverview, SUMMARY_MAX)}`];
   // An agent may read only the head of this file, so mixed fidelity is
   // disclosed before the link list rather than after it.
   if (generic.length > 0) parts.push(`> ${L.fidelityNote(generic.join(L === LABELS.zh ? '、' : ', '))}`);

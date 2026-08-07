@@ -97,11 +97,7 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
 };
 
 function esc(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 const CSS = `
@@ -177,7 +173,8 @@ function breadcrumb(view: HandbookView, sid: string | null, lang: NarrateLang): 
   const parts = [`<a href="overview.html">${esc(L.system)}</a>`];
   if (sid !== null) {
     const chain = [...view.ancestors(sid)].reverse();
-    for (const ancestor of chain) parts.push(`<a href="${ancestor}.html">${esc(view.tree.title(ancestor))}</a>`);
+    for (const ancestor of chain)
+      parts.push(`<a href="${ancestor}.html">${esc(view.tree.title(ancestor))}</a>`);
     parts.push(esc(view.tree.title(sid)));
   }
   return parts.join(' / ');
@@ -243,9 +240,12 @@ function functionDetails(fn: FunctionNote, lang: NarrateLang): string {
   const L = LABELS[lang];
   const fields: string[] = [];
   if (fn.signature.trim().length > 0) fields.push(`<pre><code>${esc(fn.signature.trim())}</code></pre>`);
-  if (fn.purpose.trim().length > 0) fields.push(`<p><strong>${esc(L.purpose)}</strong>: ${esc(fn.purpose.trim())}</p>`);
-  if (fn.dataFlow.trim().length > 0) fields.push(`<p><strong>${esc(L.dataFlow)}</strong>: ${esc(fn.dataFlow.trim())}</p>`);
-  if (fn.relations.trim().length > 0) fields.push(`<p><strong>${esc(L.relations)}</strong>: ${esc(fn.relations.trim())}</p>`);
+  if (fn.purpose.trim().length > 0)
+    fields.push(`<p><strong>${esc(L.purpose)}</strong>: ${esc(fn.purpose.trim())}</p>`);
+  if (fn.dataFlow.trim().length > 0)
+    fields.push(`<p><strong>${esc(L.dataFlow)}</strong>: ${esc(fn.dataFlow.trim())}</p>`);
+  if (fn.relations.trim().length > 0)
+    fields.push(`<p><strong>${esc(L.relations)}</strong>: ${esc(fn.relations.trim())}</p>`);
   const facts = callFactsLine(fn, lang);
   if (facts.length > 0) fields.push(`<p class="callfacts">${esc(facts.replace(/\*/g, ''))}</p>`);
   return `<details class="fn"><summary><code>${esc(fn.qualname)}</code> <span class="meta">${esc(L.lines(fn.lineRange[0], fn.lineRange[1]))}</span></summary><div class="fnfields">${fields.join('')}</div></details>`;
@@ -260,7 +260,8 @@ function fileDetails(
 ): string {
   const L = LABELS[lang];
   const lifecycle = card.lifecycle.trim();
-  const lifecycleBadge = lifecycle.length > 0 && lifecycle !== 'none' ? ` <span class="badge">${esc(lifecycle)}</span>` : '';
+  const lifecycleBadge =
+    lifecycle.length > 0 && lifecycle !== 'none' ? ` <span class="badge">${esc(lifecycle)}</span>` : '';
   const prose = (card.description ?? '').trim() || card.purpose.trim() || L.noProse;
   const functions = card.functions ?? [];
   const fnBlock =
@@ -287,7 +288,9 @@ function stageBody(
   const parts: string[] = [md.render(view.summary(sid))];
   const children = view.contentChildren(sid);
   if (children.length > 0) {
-    parts.push(`<h2>${esc(L.subStages)}</h2><div class="cards">${children.map((c) => stageCard(view, c, lang, childHref(c))).join('')}</div>`);
+    parts.push(
+      `<h2>${esc(L.subStages)}</h2><div class="cards">${children.map((c) => stageCard(view, c, lang, childHref(c))).join('')}</div>`,
+    );
   }
   const direct = view.directFiles(sid);
   if (direct.length > 0) {
@@ -324,7 +327,11 @@ function fidelityNoteHtml(lang: NarrateLang, options: FidelityOptions): string {
   return `<p class="meta" style="border-left:3px solid var(--warn);padding-left:10px;color:var(--warn)"><strong>${esc(L.fidelityLead)}</strong> — ${esc(L.fidelityNote(generic))}</p>`;
 }
 
-function registerTableHtml(view: HandbookView, lang: NarrateLang, stageHref: (sid: string) => string): string {
+function registerTableHtml(
+  view: HandbookView,
+  lang: NarrateLang,
+  stageHref: (sid: string) => string,
+): string {
   const L = LABELS[lang];
   const [h1, h2, h3] = L.registerHeader;
   const rows = view.model.registers.map((reg) => {
@@ -452,8 +459,7 @@ export function renderSinglePageHtml(
     const nested = children.length > 0 ? `<ul>${children.map(tocItem).join('')}</ul>` : '';
     return `<li><a href="#${sid}">${numbers.get(sid)} ${esc(view.tree.title(sid))}</a>${nested}</li>`;
   };
-  const regToc =
-    model.registers.length > 0 ? `<li><a href="#registers">${esc(L.registers)}</a></li>` : '';
+  const regToc = model.registers.length > 0 ? `<li><a href="#registers">${esc(L.registers)}</a></li>` : '';
   const sidebar = `<nav class="sidebar"><p class="brand">${esc(model.title)}</p><ul><li><a href="#top">${esc(L.overview)}</a></li>${regToc}</ul>${`<ul>${view.contentRoots().map(tocItem).join('')}</ul>`}</nav>`;
 
   const sections: string[] = [];
@@ -479,7 +485,10 @@ export function renderSinglePageHtml(
     `<h2>${esc(L.systemOverview)}</h2>`,
     md.render(model.narration.systemOverview.trim()),
     ...(fidelity.length > 0 ? [fidelity] : []),
-    `<div class="cards">${view.contentRoots().map((sid) => stageCard(view, sid, lang, `#${sid}`)).join('')}</div>`,
+    `<div class="cards">${view
+      .contentRoots()
+      .map((sid) => stageCard(view, sid, lang, `#${sid}`))
+      .join('')}</div>`,
     sections.join('\n'),
     registersSection,
   ].join('\n');

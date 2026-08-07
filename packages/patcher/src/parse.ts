@@ -182,7 +182,8 @@ function captureFences(lines: readonly string[]): {
     const content = body
       .map((l) => {
         let strip = 0;
-        while (strip < open.indent.length && strip < l.length && (l[strip] === ' ' || l[strip] === '\t')) strip += 1;
+        while (strip < open.indent.length && strip < l.length && (l[strip] === ' ' || l[strip] === '\t'))
+          strip += 1;
         return l.slice(strip);
       })
       .join('\n');
@@ -252,8 +253,12 @@ export function parsePlan(plan: string): ParsedPlan {
       continue;
     }
 
-    const fileLines = headerLines.map((l) => l.match(FILE_RE)).filter((m): m is RegExpMatchArray => m !== null);
-    const whereLine = headerLines.map((l) => l.match(WHERE_RE)).find((m): m is RegExpMatchArray => m !== null);
+    const fileLines = headerLines
+      .map((l) => l.match(FILE_RE))
+      .filter((m): m is RegExpMatchArray => m !== null);
+    const whereLine = headerLines
+      .map((l) => l.match(WHERE_RE))
+      .find((m): m is RegExpMatchArray => m !== null);
 
     if (fileLines.length === 0) {
       problems.push(`${label}: missing "- file: \`path\`" line before the fenced blocks`);
@@ -263,7 +268,10 @@ export function parsePlan(plan: string): ParsedPlan {
       problems.push(`${label}: ${fileLines.length} "- file:" lines — exactly one is required`);
       continue;
     }
-    const file = (fileLines[0]?.[1] ?? '').trim().replace(/^`+|`+$/g, '').trim();
+    const file = (fileLines[0]?.[1] ?? '')
+      .trim()
+      .replace(/^`+|`+$/g, '')
+      .trim();
     const badPath = file === '' ? 'is empty' : pathProblem(file);
     if (badPath) {
       problems.push(`${label}: file path "${file}" ${badPath}`);
@@ -283,9 +291,7 @@ export function parsePlan(plan: string): ParsedPlan {
     // debris of an inner fence having closed `old`/`new` early — refuse it no
     // matter where it sits, or a truncated anchor can slip through as epilogue.
     const untagged = blocks.filter((b) => b.kind === '');
-    const unexpected = blocks
-      .slice(0, lastEditBlock)
-      .filter((b) => b.kind !== 'old' && b.kind !== 'new');
+    const unexpected = blocks.slice(0, lastEditBlock).filter((b) => b.kind !== 'old' && b.kind !== 'new');
     if (untagged.length > 0) {
       problems.push(
         `${label} (${file}): an untagged \`\`\` block appeared — \`old\`/\`new\` content containing a fence must be opened with a LONGER fence (\`\`\`\`) so it is not closed early`,
@@ -301,7 +307,9 @@ export function parsePlan(plan: string): ParsedPlan {
     const firstOld = blocks.findIndex((b) => b.kind === 'old');
     const firstNew = blocks.findIndex((b) => b.kind === 'new');
     if (firstNew < firstOld) {
-      problems.push(`${label} (${file}): the \`new\` block appears before \`old\` — write the anchor first, then the replacement`);
+      problems.push(
+        `${label} (${file}): the \`new\` block appears before \`old\` — write the anchor first, then the replacement`,
+      );
       continue;
     }
     if (unexpected.length > 0) {

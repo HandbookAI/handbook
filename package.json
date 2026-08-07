@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Turn any codebase into a navigable, always-current handbook — and use it to drive precise code-change planning.",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=20.11"
@@ -10,14 +11,21 @@
   "packageManager": "pnpm@10.18.1",
   "scripts": {
     "build": "tsc -b",
-    "clean": "tsc -b --clean && rm -rf packages/*/dist",
+    "clean": "tsc -b --clean && rm -rf packages/*/dist coverage",
+    "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "tsc -b && vitest run",
     "test:watch": "vitest",
-    "lint": "eslint packages/*/src",
-    "format": "prettier --write \"packages/*/src/**/*.ts\" \"docs/**/*.md\" \"*.md\"",
-    "format:check": "prettier --check \"packages/*/src/**/*.ts\"",
-    "check": "tsc -b && eslint packages/*/src --max-warnings 0 && vitest run",
-
+    "test:coverage": "tsc -b && vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:workspace": "node scripts/check-workspace.mjs",
+    "check": "pnpm typecheck && pnpm check:workspace && eslint . --max-warnings 0 && pnpm format:check && vitest run --coverage",
+    "prepare": "husky",
+    "changeset": "changeset",
+    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "release": "pnpm build && changeset publish",
     "handbook": "tsc -b && node packages/cli/dist/main.js",
     "studio": "tsc -b && node packages/cli/dist/main.js studio",
     "analyze": "tsc -b && node packages/cli/dist/main.js analyze",
@@ -29,18 +37,29 @@
     "apply": "tsc -b && node packages/cli/dist/main.js apply",
     "rollback": "tsc -b && node packages/cli/dist/main.js rollback",
     "resync": "tsc -b && node packages/cli/dist/main.js resync",
-
     "demo": "bash examples/run-demo.sh",
     "demo:self": "bash examples/run-self.sh",
     "demo:self:real": "bash examples/run-self.sh --real",
     "mock-llm": "node examples/mock-llm-server.mjs 8099"
   },
+  "lint-staged": {
+    "*.{ts,mjs,js,json,md,yml,yaml}": "prettier --write",
+    "*.{ts,mjs,js}": "eslint --fix --max-warnings 0"
+  },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "eslint": "^9.0.0",
-    "prettier": "^3.3.0",
-    "typescript": "^5.7.0",
-    "typescript-eslint": "^8.0.0",
-    "vitest": "^4.0.0"
+    "@changesets/cli": "catalog:",
+    "@commitlint/cli": "catalog:",
+    "@commitlint/config-conventional": "catalog:",
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "eslint": "catalog:",
+    "globals": "catalog:",
+    "husky": "catalog:",
+    "lint-staged": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
   }
 }

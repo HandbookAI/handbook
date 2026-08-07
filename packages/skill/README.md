@@ -19,6 +19,7 @@ Packages a rendered handbook directory as an agent SKILL — a self-contained, s
 ## Public API
 
 Build (`build.ts`):
+
 - `buildSkill(options: BuildSkillOptions): BuildSkillResult` — assemble the skill package (the output directory is recreated from scratch; an existing `corrections.jsonl` at the output root is the one exception — it is preserved byte-for-byte, and the builder never creates it).
   - `BuildSkillOptions` — `{ handbookDir, outDir, name, project?, coverage?: { assignment, sourceRoot? }, agentDir?, lang? }`; `name` is the slug (skill name becomes `<slug>-handbook`), `project` the human name used in prose.
     - `agentDir?: string` — a rendered agent locator site. When it contains both `how_to_use.md` and `disambiguation.md`, they are copied to `references/agent/` and the SKILL.md routing protocol gains a step ("when a term is ambiguous, check `references/agent/disambiguation.md`"). Locator pages ship only as a pair, so SKILL.md never routes to a missing file. Omitted (or pages missing): output is byte-identical to a build without the option.
@@ -26,6 +27,7 @@ Build (`build.ts`):
   - `BuildSkillResult` — `{ outDir, nStagePages, references }` (`references` lists `agent/*.md` entries when packaged).
 
 Validate (`validate.ts`):
+
 - `validateSkill(options: ValidateSkillOptions): ValidationResult` — check the package.
   - `ValidateSkillOptions` — `{ skillDir, sourceRoot? }`; passing `sourceRoot` re-hashes source files against `coverage.json` to detect stale or deleted entries.
   - `ValidationResult` — `{ ok, errors, warnings }`.
@@ -40,13 +42,13 @@ import { WorkDir } from '@handbook/pipeline';
 
 const work = new WorkDir('/path/to/work');
 const result = buildSkill({
-  handbookDir: '/path/to/out',          // rendered markdown handbook
+  handbookDir: '/path/to/out', // rendered markdown handbook
   outDir: '/path/to/skills/myproject',
   name: 'myproject',
   project: 'MyProject',
   coverage: { assignment: work.loadAssignment(), sourceRoot: '/path/to/project' },
-  agentDir: '/path/to/out/agent',       // optional: ship the agent locator pages
-  lang: 'zh',                           // optional: Chinese body, English frontmatter
+  agentDir: '/path/to/out/agent', // optional: ship the agent locator pages
+  lang: 'zh', // optional: Chinese body, English frontmatter
 });
 console.log(result.nStagePages, result.references);
 
@@ -67,6 +69,7 @@ if (!check.ok) console.error(check.errors);
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — file I/O helpers (`writeFileAtomic`, `writeJsonFile`, `listFilesRecursive`), `sha256Hex`, the `Assignment` type.
 
 External: none.

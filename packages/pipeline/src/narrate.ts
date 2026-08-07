@@ -264,12 +264,22 @@ export interface RegistersOptions {
  * registers. Anything looser belongs in the JSON path, not here.
  */
 /** Field names models use for a register's meaning. `semantic` is common. */
-const SEMANTICS_KEYS = ['semantics', 'semantic', 'description', 'desc', 'meaning', 'summary', 'what'] as const;
+const SEMANTICS_KEYS = [
+  'semantics',
+  'semantic',
+  'description',
+  'desc',
+  'meaning',
+  'summary',
+  'what',
+] as const;
 
 export function parseRegisterLines(text: string): Array<Record<string, unknown>> {
   const found = new Map<string, Record<string, unknown>>();
   for (const line of text.split(/\r?\n/)) {
-    const match = /^\s*(?:[-*•]|\d+[.)])?\s*`?(reg[-_][A-Za-z0-9_-]+)`?\s*(?::|—|–|\s-\s)\s*(.+?)\s*$/.exec(line);
+    const match = /^\s*(?:[-*•]|\d+[.)])?\s*`?(reg[-_][A-Za-z0-9_-]+)`?\s*(?::|—|–|\s-\s)\s*(.+?)\s*$/.exec(
+      line,
+    );
     if (!match) continue;
     const id = (match[1] as string).replace(/_/g, '-').toLowerCase();
     const semantics = (match[2] as string).replace(/^\*\*|\*\*$/g, '').trim();
@@ -346,7 +356,10 @@ export async function extractRegisters(
     /** Entries that arrived but could not be used. Reported, never swallowed. */
     const dropped: string[] = [];
     try {
-      const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, { temperature: 0, signal });
+      const response = await client.complete(`${rules}\n\n${evidence}${alreadyBlock}`, {
+        temperature: 0,
+        signal,
+      });
       // Tolerate the shape drift real endpoints produce (bare array, other
       // container names, a lone register) plus name/description spelled instead
       // of id/semantics.
@@ -381,7 +394,10 @@ export async function extractRegisters(
         // Coerce near-miss ids (`reg_task_queue`, `Task Queue`) into the
         // canonical form instead of silently dropping the register.
         const rawId = pickString(r, ['id', 'name', 'register', 'key']) ?? '';
-        let id = rawId.trim().toLowerCase().replace(/[_\s]+/g, '-');
+        let id = rawId
+          .trim()
+          .toLowerCase()
+          .replace(/[_\s]+/g, '-');
         if (id && !id.startsWith('reg-')) id = `reg-${id.replace(/^-+/, '')}`;
         const semantics = pickString(r, SEMANTICS_KEYS) ?? '';
         if (!/^reg-[a-z0-9-]+$/.test(id) || !semantics) {

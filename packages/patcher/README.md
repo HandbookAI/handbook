@@ -10,7 +10,7 @@ that turns a handbook-guided plan into real code changes without ever guessing.
 
 - Parse a plan's `### EDIT n` blocks into a typed edit list, reporting problems instead of
   improvising when the format does not hold (`parsePlan`).
-- Verify every edit against current file contents *before writing anything*, and refuse
+- Verify every edit against current file contents _before writing anything_, and refuse
   the whole plan if any edit fails (`applyPlan`).
 - Back up each touched file plus a manifest, so a change can be undone to the exact prior
   bytes (`rollback`, `listBackups`).
@@ -20,21 +20,21 @@ that turns a handbook-guided plan into real code changes without ever guessing.
 
 ## Safety contract
 
-| Situation | Outcome |
-|---|---|
-| `old` matches exactly once | applied at that offset (line reported) |
-| `old` not found | `no-match` — the code changed since the plan was made |
-| `old` found 2+ times | `ambiguous` — the anchor needs more context |
-| `old` empty, file absent | `created` |
-| `old` empty, file has content | `no-match` (never silently overwrites; judged against the file's on-disk state, so an earlier edit in the same plan cannot unlock it) |
-| path escapes the source root — directly, or through a symlinked parent on creation | `unsafe-path` |
-| target is a symlink, a directory, or not valid UTF-8 | `unsafe-path` / `not-a-file` / `undecodable` |
-| any edit fails verification | **nothing is written**; the successful ones report `skipped` |
-| an `fs` error during the write | already-renamed files are restored from the backup taken moments before, then the error is rethrown |
-| target file exceeds 8 MiB, or its bytes do not round-trip UTF-8 | `undecodable` — never patched |
-| target's parent directory is not writable | `permission` — caught in the verify pass, before anything lands |
-| the plan's fencing is malformed (untagged block, unclosed fence, `new` before `old`, duplicate/descending numbers) | the parse is refused with a per-EDIT problem; no edit from that plan runs |
-| another `apply` holds this tree's lock | the run **throws** (`another patch run is writing to this tree (pid … on … , started …)`); a lock whose recorded owner is a dead local pid is reclaimed, a foreign-host or unreadable owner counts as alive — delete `.handbook-patches/apply.lock` manually if its owner is provably gone |
+| Situation                                                                                                          | Outcome                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `old` matches exactly once                                                                                         | applied at that offset (line reported)                                                                                                                                                                                                                                                     |
+| `old` not found                                                                                                    | `no-match` — the code changed since the plan was made                                                                                                                                                                                                                                      |
+| `old` found 2+ times                                                                                               | `ambiguous` — the anchor needs more context                                                                                                                                                                                                                                                |
+| `old` empty, file absent                                                                                           | `created`                                                                                                                                                                                                                                                                                  |
+| `old` empty, file has content                                                                                      | `no-match` (never silently overwrites; judged against the file's on-disk state, so an earlier edit in the same plan cannot unlock it)                                                                                                                                                      |
+| path escapes the source root — directly, or through a symlinked parent on creation                                 | `unsafe-path`                                                                                                                                                                                                                                                                              |
+| target is a symlink, a directory, or not valid UTF-8                                                               | `unsafe-path` / `not-a-file` / `undecodable`                                                                                                                                                                                                                                               |
+| any edit fails verification                                                                                        | **nothing is written**; the successful ones report `skipped`                                                                                                                                                                                                                               |
+| an `fs` error during the write                                                                                     | already-renamed files are restored from the backup taken moments before, then the error is rethrown                                                                                                                                                                                        |
+| target file exceeds 8 MiB, or its bytes do not round-trip UTF-8                                                    | `undecodable` — never patched                                                                                                                                                                                                                                                              |
+| target's parent directory is not writable                                                                          | `permission` — caught in the verify pass, before anything lands                                                                                                                                                                                                                            |
+| the plan's fencing is malformed (untagged block, unclosed fence, `new` before `old`, duplicate/descending numbers) | the parse is refused with a per-EDIT problem; no edit from that plan runs                                                                                                                                                                                                                  |
+| another `apply` holds this tree's lock                                                                             | the run **throws** (`another patch run is writing to this tree (pid … on … , started …)`); a lock whose recorded owner is a dead local pid is reclaimed, a foreign-host or unreadable owner counts as alive — delete `.handbook-patches/apply.lock` manually if its owner is provably gone |
 
 Multiple edits to one file compose in plan order against the accumulating content, so a
 plan may touch the same file several times as long as each anchor is unique when reached.
@@ -46,12 +46,12 @@ restore pass. Callers automating apply should catch and surface those, not parse
 
 ## Public API
 
-| Export | Purpose |
-|---|---|
-| `parsePlan(plan): ParsedPlan` | `{ edits: EditBlock[], problems: string[] }` |
-| `applyPlan(options): ApplyResult` | verify + (unless `dryRun`) write; returns per-edit `outcomes`, `changedFiles`, `backupDir` |
-| `rollback(backupDir, options?)` | restore backed-up files, delete files the patch created; files changed *after* the patch are reported in `skipped` unless `{force:true}` |
-| `listBackups(backupRoot)` | backup stamps, newest first |
+| Export                            | Purpose                                                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `parsePlan(plan): ParsedPlan`     | `{ edits: EditBlock[], problems: string[] }`                                                                                             |
+| `applyPlan(options): ApplyResult` | verify + (unless `dryRun`) write; returns per-edit `outcomes`, `changedFiles`, `backupDir`                                               |
+| `rollback(backupDir, options?)`   | restore backed-up files, delete files the patch created; files changed _after_ the patch are reported in `skipped` unless `{force:true}` |
+| `listBackups(backupRoot)`         | backup stamps, newest first                                                                                                              |
 
 `ApplyOptions`: `{ sourceRoot, plan, dryRun?, backupRoot?, logger? }` — backups default to
 `<sourceRoot>/.handbook-patches/<timestamp>/` (inside the repo, so sibling checkouts never

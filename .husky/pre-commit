@@ -1,0 +1,4 @@
+# Formats and lints only what is staged. The full gate is `pnpm check`; this is
+# the fast half of it, so a commit can never introduce a formatting or lint
+# failure that CI then has to report minutes later.
+pnpm lint-staged

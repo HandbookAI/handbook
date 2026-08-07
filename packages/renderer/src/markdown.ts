@@ -47,8 +47,7 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     seeAlsoIndex: '- [Stage index](index.md) — every stage and what it does.',
     stateFlowSuffix: 'State Flow',
     stageIndexSuffix: 'Stage Index',
-    indexIntro:
-      "Each stage below links to its full page; the paragraph is the stage's role in the system.",
+    indexIntro: "Each stage below links to its full page; the paragraph is the stage's role in the system.",
     crosscutBadge: ' (cross-cutting infrastructure)',
     crosscutInline: ' · (cross-cutting)',
     files: (n) => `${n} files`,
@@ -122,12 +121,7 @@ function renderStageRegisters(registers: readonly RegisterEntry[], lang: Narrate
   return `${LABELS[lang].stageRegisterMarker}\n\n${bullets.join('\n')}\n`;
 }
 
-function stagePageMd(
-  view: HandbookView,
-  sid: string,
-  lang: NarrateLang,
-  options: SourceLinkOptions,
-): string {
+function stagePageMd(view: HandbookView, sid: string, lang: NarrateLang, options: SourceLinkOptions): string {
   const L = LABELS[lang];
   const { tree } = view;
   const crosscut = tree.isCrosscut(sid) ? L.crosscutBadge : '';
@@ -136,7 +130,8 @@ function stagePageMd(
   const children = view.contentChildren(sid);
   if (children.length > 0) {
     const bullets = children.map(
-      (child) => `- [${mdLinkText(tree.title(child))}](${child}.md) \`${child}\` — ${L.files(view.subtreeFileCount(child))}`,
+      (child) =>
+        `- [${mdLinkText(tree.title(child))}](${child}.md) \`${child}\` — ${L.files(view.subtreeFileCount(child))}`,
     );
     parts.push(`## ${L.subStages}\n\n${bullets.join('\n')}`);
   }
@@ -224,8 +219,11 @@ export function renderMarkdownHandbook(
 
   write('overview.md', overviewMd(view, lang, options));
   if (model.registers.length > 0) {
-    const table = renderRegisterTable(model.registers, (sid) => view.tree.title(sid), lang, (sid) =>
-      view.hasContent(sid),
+    const table = renderRegisterTable(
+      model.registers,
+      (sid) => view.tree.title(sid),
+      lang,
+      (sid) => view.hasContent(sid),
     );
     const suffix = LABELS[lang].stateFlowSuffix;
     write('register.md', `# ${model.title} — ${suffix}\n\n${table}`);

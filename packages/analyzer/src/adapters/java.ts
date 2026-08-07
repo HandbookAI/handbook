@@ -64,10 +64,40 @@ import {
 
 /** Types that name no scannable class: primitives, `var`, and JDK ubiquities. */
 const GENERIC_TYPES = new Set([
-  'var', 'void', 'boolean', 'byte', 'short', 'int', 'long', 'char', 'float', 'double',
-  'Boolean', 'Byte', 'Short', 'Integer', 'Long', 'Character', 'Float', 'Double',
-  'String', 'CharSequence', 'Object', 'Number', 'Class', 'Iterable', 'Iterator',
-  'Collection', 'List', 'ArrayList', 'Map', 'HashMap', 'Set', 'HashSet', 'Optional', 'Stream',
+  'var',
+  'void',
+  'boolean',
+  'byte',
+  'short',
+  'int',
+  'long',
+  'char',
+  'float',
+  'double',
+  'Boolean',
+  'Byte',
+  'Short',
+  'Integer',
+  'Long',
+  'Character',
+  'Float',
+  'Double',
+  'String',
+  'CharSequence',
+  'Object',
+  'Number',
+  'Class',
+  'Iterable',
+  'Iterator',
+  'Collection',
+  'List',
+  'ArrayList',
+  'Map',
+  'HashMap',
+  'Set',
+  'HashSet',
+  'Optional',
+  'Stream',
 ]);
 
 /** Build outputs; Gradle/Maven put generated sources under these too. */
@@ -149,7 +179,10 @@ interface JavaIndexes {
 }
 
 export function moduleIdForFile(file: string): string {
-  return file.replace(/\.java$/, '').split('/').join('.');
+  return file
+    .replace(/\.java$/, '')
+    .split('/')
+    .join('.');
 }
 
 /**
@@ -239,7 +272,11 @@ function supertypeNamesOf(decl: Node): { supertypes: string[]; superclass: strin
   let superclass = '';
   for (const child of decl.namedChildren) {
     if (!child) continue;
-    if (child.type !== 'superclass' && child.type !== 'super_interfaces' && child.type !== 'extends_interfaces') {
+    if (
+      child.type !== 'superclass' &&
+      child.type !== 'super_interfaces' &&
+      child.type !== 'extends_interfaces'
+    ) {
       continue;
     }
     for (const inner of child.namedChildren) {
@@ -502,7 +539,10 @@ function scanTypeDeclaration(scan: ModuleScan, root: Node, file: string): void {
       } else if (member.type === 'static_initializer' || member.type === 'block') {
         recordFunction(scan, {
           node: member,
-          body: member.type === 'block' ? member : (member.namedChildren.find((c) => c?.type === 'block') ?? null),
+          body:
+            member.type === 'block'
+              ? member
+              : (member.namedChildren.find((c) => c?.type === 'block') ?? null),
           name: member.type === 'block' ? INSTANCE_INIT : STATIC_INIT,
           className,
           typeVars,
@@ -691,9 +731,7 @@ function resolveInvocation(
   // B. `this.m(...)`
   if (object.type === 'this') {
     return (
-      resolveOwnMethod(context.className, method, scan, std) ??
-      inherited() ??
-      unresolvedOf(`this.${method}`)
+      resolveOwnMethod(context.className, method, scan, std) ?? inherited() ?? unresolvedOf(`this.${method}`)
     );
   }
 

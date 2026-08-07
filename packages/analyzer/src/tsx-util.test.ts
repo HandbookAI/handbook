@@ -12,7 +12,9 @@ function recursivePreorder(node: Node, out: string[]): void {
 describe('tsx-util walk — adversarial deep-nesting (pass 2)', () => {
   it('visits nodes in the exact same pre-order as a recursive traversal', async () => {
     const parser = await createParser('python');
-    const tree = parser.parse('class C:\n    def m(self, x):\n        return f(g(x), h())\n\ndef top():\n    return 1\n');
+    const tree = parser.parse(
+      'class C:\n    def m(self, x):\n        return f(g(x), h())\n\ndef top():\n    return 1\n',
+    );
     const reference: string[] = [];
     recursivePreorder(tree!.rootNode, reference);
     const got: string[] = [];
@@ -42,9 +44,11 @@ describe('tsx-util walk — adversarial deep-nesting (pass 2)', () => {
     const parser = await createParser('python');
     const tree = parser.parse(`${'('.repeat(depth)}1${')'.repeat(depth)}\n`);
     let count = 0;
-    expect(() => walk(tree!.rootNode, () => {
-      count += 1;
-    })).not.toThrow();
+    expect(() =>
+      walk(tree!.rootNode, () => {
+        count += 1;
+      }),
+    ).not.toThrow();
     expect(count).toBeGreaterThan(depth);
   });
 

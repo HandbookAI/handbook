@@ -1,7 +1,6 @@
 {
   "name": "@handbook/studio",
   "version": "0.1.0",
-  "private": true,
   "description": "Local web UI over the handbook toolchain: browse handbooks, run generation, plan changes, and roll handbooks forward",
   "type": "module",
   "exports": {
@@ -27,6 +26,10 @@
     "@handbook/renderer": "workspace:*",
     "@handbook/resync": "workspace:*",
     "@handbook/skill": "workspace:*",
-    "zod": "^4.0.0"
+    "zod": "catalog:"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

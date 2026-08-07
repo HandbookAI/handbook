@@ -32,7 +32,9 @@ export interface StageStats {
 }
 
 export function computeStageStats(skeleton: Skeleton, assignment: Assignment): StageStats {
-  const sizes = Object.values(assignment.buckets).map((b) => b.length).filter((n) => n > 0);
+  const sizes = Object.values(assignment.buckets)
+    .map((b) => b.length)
+    .filter((n) => n > 0);
   const mean = sizes.length ? sizes.reduce((a, b) => a + b, 0) / sizes.length : 0;
   const overloadFloor = Math.max(20, 2.5 * mean);
   const perStage: StageStats['perStage'] = {};
@@ -52,12 +54,16 @@ export function computeStageStats(skeleton: Skeleton, assignment: Assignment): S
 /** Ground-truth evidence shared by the actor and every critic. */
 export function renderStats(skeleton: Skeleton, stats: StageStats, cards: Record<string, FileCard>): string {
   const lines: string[] = [];
-  lines.push(`Skeleton: ${skeleton.stages.length} stages, ${stats.nFiles} files total, ${stats.nUnassigned} UNASSIGNED.`);
+  lines.push(
+    `Skeleton: ${skeleton.stages.length} stages, ${stats.nFiles} files total, ${stats.nUnassigned} UNASSIGNED.`,
+  );
   lines.push('', '## Current skeleton');
   for (const stage of skeleton.stages) {
     const flags = stage.crosscut ? ' [crosscut]' : '';
     const firstSentence = (stage.description.split(/(?<=\.)\s|。/)[0] ?? '').slice(0, 80);
-    lines.push(`- ${stage.id} parent=${stage.parent ?? 'null'} children=${stage.children.length}${flags} — ${firstSentence}`);
+    lines.push(
+      `- ${stage.id} parent=${stage.parent ?? 'null'} children=${stage.children.length}${flags} — ${firstSentence}`,
+    );
   }
   lines.push('', '## File distribution per stage');
   for (const stage of skeleton.stages) {
@@ -118,7 +124,8 @@ export function validateChange(
         if (typeof m.file !== 'string' || !m.file) return 'add_stage: move_files entry missing file';
         const from = typeof m.from_stage === 'string' ? m.from_stage : 'unassigned';
         if (from === 'unassigned') {
-          if (!assignment.coverage.unassigned.includes(m.file)) return `add_stage: ${m.file} is not unassigned`;
+          if (!assignment.coverage.unassigned.includes(m.file))
+            return `add_stage: ${m.file} is not unassigned`;
         } else if (!(assignment.buckets[from] ?? []).includes(m.file)) {
           return `add_stage: ${m.file} is not in stage ${from}`;
         }
@@ -131,7 +138,8 @@ export function validateChange(
       const bucket = assignment.buckets[sid] ?? [];
       const moveTo = change.move_to;
       if (bucket.length > 0) {
-        if (typeof moveTo !== 'string' || !ids.has(moveTo)) return 'remove_stage: non-empty stage needs a valid move_to';
+        if (typeof moveTo !== 'string' || !ids.has(moveTo))
+          return 'remove_stage: non-empty stage needs a valid move_to';
         if (moveTo === sid) return 'remove_stage: move_to equals stage_id';
       }
       return null;
@@ -139,13 +147,15 @@ export function validateChange(
     case 'merge_stages': {
       const sources = Array.isArray(change.stages_to_merge) ? change.stages_to_merge : [];
       if (sources.length === 0) return 'merge_stages: empty stages_to_merge';
-      for (const s of sources) if (typeof s !== 'string' || !ids.has(s)) return `merge_stages: unknown source ${String(s)}`;
+      for (const s of sources)
+        if (typeof s !== 'string' || !ids.has(s)) return `merge_stages: unknown source ${String(s)}`;
       const into = change.into;
       if (typeof into !== 'string') return 'merge_stages: missing into';
       if (!ids.has(into) && !sources.includes(into)) return 'merge_stages: unknown target';
       // A merge whose only sources are the target itself moves nothing — apply
       // would no-op yet count as progress, wasting a normalize/reassign round.
-      if (sources.every((s) => s === into)) return 'merge_stages: nothing to merge (sources equal the target)';
+      if (sources.every((s) => s === into))
+        return 'merge_stages: nothing to merge (sources equal the target)';
       return null;
     }
     case 'split_stage': {
@@ -166,7 +176,8 @@ export function validateChange(
         }
         const files = Array.isArray(ns.files) ? ns.files : [];
         for (const f of files) {
-          if (typeof f !== 'string' || !bucket.has(f)) return `split_stage: ${String(f)} not in source bucket`;
+          if (typeof f !== 'string' || !bucket.has(f))
+            return `split_stage: ${String(f)} not in source bucket`;
         }
         if (ns.id !== source && files.length > 0) movesSomething = true;
       }
@@ -196,7 +207,9 @@ export function applyChange(skeleton: Skeleton, change: DoctorChange, assignment
       });
       const moves = Array.isArray(change.move_files) ? change.move_files : [];
       return moves
-        .map((m) => (typeof m === 'object' && m !== null ? String((m as Record<string, unknown>).file ?? '') : ''))
+        .map((m) =>
+          typeof m === 'object' && m !== null ? String((m as Record<string, unknown>).file ?? '') : '',
+        )
         .filter(Boolean);
     }
     case 'remove_stage': {

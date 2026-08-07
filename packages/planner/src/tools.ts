@@ -160,9 +160,9 @@ export class ReadOnlyTools {
     try {
       const base = this.resolveInside(dirOrFile);
       const files = statSync(base).isDirectory()
-        ? listFilesRecursive(base, { skipDirs: new Set(['.git', 'node_modules', 'target', 'dist', '__pycache__']) }).map(
-            (rel) => join(dirOrFile, rel),
-          )
+        ? listFilesRecursive(base, {
+            skipDirs: new Set(['.git', 'node_modules', 'target', 'dist', '__pycache__']),
+          }).map((rel) => join(dirOrFile, rel))
         : [dirOrFile];
       const hits: string[] = [];
       outer: for (const file of files) {

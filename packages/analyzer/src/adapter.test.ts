@@ -9,9 +9,23 @@ import { registerBuiltinAdapters } from './index.js';
 function fn(id: string, overrides: Partial<FunctionNode> = {}): FunctionNode {
   const name = id.split(/[.:]/).at(-1) ?? id;
   return {
-    id, name, qualname: name, file: 'a.py', lineStart: 1, lineEnd: 2, signature: `${name}()`,
-    isAsync: false, isMethod: false, className: null, decorators: [], kind: 'internal',
-    synthetic: false, selfAttrsRead: [], selfAttrsWritten: [], paramTypes: {}, ...overrides,
+    id,
+    name,
+    qualname: name,
+    file: 'a.py',
+    lineStart: 1,
+    lineEnd: 2,
+    signature: `${name}()`,
+    isAsync: false,
+    isMethod: false,
+    className: null,
+    decorators: [],
+    kind: 'internal',
+    synthetic: false,
+    selfAttrsRead: [],
+    selfAttrsWritten: [],
+    paramTypes: {},
+    ...overrides,
   };
 }
 

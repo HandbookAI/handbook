@@ -5,5 +5,13 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../llm" }]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test-helper.ts"],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../llm"
+    }
+  ]
 }

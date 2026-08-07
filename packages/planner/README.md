@@ -16,6 +16,7 @@ A handbook-guided, read-only planning agent. Given a natural-language change req
 ## Public API
 
 Planner (`planner.ts`):
+
 - `runPlanner(options: PlannerOptions): Promise<PlannerResult>` — the agent loop.
   - `PlannerOptions` — `{ client, sourceRoot, handbookDir?, request, promptVars?, maxTurns? (default 30), logger? }`.
   - `PlannerResult` — `{ plan, declarations?, turns, trace }` (`trace` is one line per tool call).
@@ -24,9 +25,11 @@ Planner (`planner.ts`):
 - `handbookDirFromSkill(skillDir)` — mount a skill's `references/` directory as the planner handbook.
 
 Tools (`tools.ts`):
+
 - `ReadOnlyTools` — `new ReadOnlyTools(root)`; `listDir(relPath?)`, `readFile(relPath, startLine?, endLine?)`, `grep(pattern, dirOrFile?)`, each returning `ToolResult` (`{ ok, content }`). Reads are capped (60k chars, 100 grep hits, 5 MB file limit) and `.git`/build dirs are skipped.
 
 Prompt (`prompt.ts`):
+
 - `buildPlannerSystemPrompt(vars: PlannerPromptVars)` — the planning rules: route with the handbook, read real source, emit byte-exact EDIT blocks and declarations.
 - `PlannerPromptVars` / `DEFAULT_PROMPT_VARS` — project-specific substitutions (`projectIntro`, `pathExample`, `whereExample`, `qualnameNote`, `declExample`).
 - `TOOL_PROTOCOL` — the JSON-action protocol appended to the system prompt (`list_dir` / `read_file` / `grep` / `finish`).
@@ -45,9 +48,9 @@ const result = await runPlanner({
   maxTurns: 30,
 });
 
-console.log(result.plan);          // summary + EDIT blocks + declarations JSON
+console.log(result.plan); // summary + EDIT blocks + declarations JSON
 console.log(result.declarations); // { willModify, willAdd, willRemove }
-console.log(result.trace);        // e.g. ['read_file(__handbook__/index.md)', 'grep(BACKOFF)']
+console.log(result.trace); // e.g. ['read_file(__handbook__/index.md)', 'grep(BACKOFF)']
 ```
 
 ## Design notes
@@ -60,6 +63,7 @@ console.log(result.trace);        // e.g. ['read_file(__handbook__/index.md)', '
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — `listFilesRecursive`, `toPosix`, `truncate`, `Logger`.
 - `@handbook/llm` — the `ChatClient` seam the agent loop drives.
 

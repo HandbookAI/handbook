@@ -74,7 +74,14 @@ const NON_STAGE_PAGES = new Set([
 interface SkillCopy {
   header: (project: string) => string;
   /** Unnumbered routing steps; `agent` is spliced in before `source` when the locator pages ship. */
-  steps: { overview: string; index: string; stages: string; registers: string; agent: string; source: string };
+  steps: {
+    overview: string;
+    index: string;
+    stages: string;
+    registers: string;
+    agent: string;
+    source: string;
+  };
   coverage: string;
   /** The corrections protocol: how a consuming agent reports handbook↔source contradictions. */
   corrections: string;

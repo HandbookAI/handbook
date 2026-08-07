@@ -21,6 +21,7 @@ Multi-language static call-graph extraction, entirely LLM-free. Language adapter
 ## Public API
 
 Adapter contract and registry (`adapter.ts`):
+
 - `LanguageAdapter` — `{ name, extensions, discover(sourceRoot), analyze(files, sourceRoot), statementSpans?(filePath, qualname) }`.
 - `COMMON_SKIP_DIRS` — directory names every adapter's discovery skips.
 - `discoverByExtension(sourceRoot, extensions, extraSkipDirs?, filter?)` — default discovery helper.
@@ -36,6 +37,7 @@ come from `generic.ts` plus a declarative spec. Only `PythonAdapter` implements
 authoritative list — the CLI derives it from the registry.
 
 Graph building (`graph.ts`):
+
 - `buildGraph(analysis, options): BuildGraphResult` — with `BuildGraphOptions` (`sourceRoot`, `scannedFiles`, `language`, `defaultExt?`, `now?`) and `BuildGraphResult` (`graph`, `dropped`, `stats`).
 - `writeGraphArtifacts(result, outDir)` — persist all four artifacts.
 - `functionsCsv(graph)` / `graphDot(graph)` — CSV inventory and Graphviz rendering.
@@ -43,17 +45,26 @@ Graph building (`graph.ts`):
 - `categorizeDropped(calleeId)` — bucket an unresolved callee (`builtin`, `self_attr_unknown`, `local_var_method`, …).
 
 Navigation pack (`navpack.ts`):
+
 - `buildNavPack(graph, options?): NavPack` — directory map, entry-point candidates, fan-out top-K, external subsystems; `NavPackOptions` (`fanOutTopK?`, `sampleFnsPerFile?`), `NavFileDescriptor`.
 - `allFileDescriptors(graph, nav)` — nav files widened with function-less scanned files (the 1:1 file set for cards/assignment).
 - `renderOrientation(nav, options?)` — bounded plain-text orientation block for prompts; `OrientationOptions`.
 
 tree-sitter runtime (`languages.ts`):
+
 - `loadLanguage(grammar)` / `createParser(grammar)` — lazy, cached WASM grammar loading by `tree-sitter-wasms` name.
 
 ## Usage
 
 ```ts
-import { registerBuiltinAdapters, getAdapter, buildGraph, writeGraphArtifacts, buildNavPack, renderOrientation } from '@handbook/analyzer';
+import {
+  registerBuiltinAdapters,
+  getAdapter,
+  buildGraph,
+  writeGraphArtifacts,
+  buildNavPack,
+  renderOrientation,
+} from '@handbook/analyzer';
 
 registerBuiltinAdapters();
 const adapter = getAdapter('typescript');
@@ -80,8 +91,10 @@ console.log(result.stats); // { functions, edgesKept, edgesDropped, internalNode
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — the IR types/schemas, `listFilesRecursive`, `truncate`, atomic JSON writes.
 
 External:
+
 - `web-tree-sitter` — the tree-sitter runtime (parser + language loading) compiled to WASM.
 - `tree-sitter-wasms` — prebuilt grammar `.wasm` binaries for python/typescript/tsx/go/rust/bash.

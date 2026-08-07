@@ -20,6 +20,7 @@ OpenAI 兼容的 `/chat/completions` 端点（托管 API、vLLM、代理），�
 ## 公开 API
 
 **客户端**（`client.ts`）
+
 - `ChatClient` —— `{ complete(prompt, options?): Promise<ChatResult>; readonly model: string }`。
 - `ChatOptions` —— `{ temperature?, maxTokens? }`；`ChatResult` —— `{ text, json, elapsedSec }`。
 - `OpenAiChatClient` —— `new OpenAiChatClient(options?)`；`complete(...)`、
@@ -33,15 +34,17 @@ OpenAI 兼容的 `/chat/completions` 端点（托管 API、vLLM、代理），�
 - `looksLikeGatewayPage(body)` —— 判断错误响应体是边缘网关的 HTML 页，而不是 API 的回答。
 
 **Mock**（`mock.ts`）
+
 - `MockChatClient` —— `new MockChatClient(rules: MockRule[], fallback?)`；每次调用都记进 `calls: RecordedCall[]`。
 - `MockRule` —— `{ match: string | RegExp | (prompt) => boolean; respond: MockResponse }`；
   `MockResponse` 可以是字符串、对象（自动包成 JSON 栅栏块）或 `(prompt, callIndex) => …`。
 
 **Actor–critic**（`critic.ts`）
+
 - `actorCriticLoop(client, actorPrompt, options): Promise<ActorCriticResult>` ——
   一个 actor 提案交给并行评审团审查，修改轮数有上限。
 - `ActorCriticOptions` —— `{ roles?, taskContext, schemaHint?, evidence?, maxReviseRounds?（默认 1）,
-  criticConcurrency?, temperature?, logger? }`。
+criticConcurrency?, temperature?, logger? }`。
 - `ActorCriticResult` —— `{ proposal, accepted, rounds, verdicts }`。
 - `CriticRole`（`'engineer' | 'architect' | 'reader' | 'editor'`）、`ROLE_PROMPTS` ——
   每个角色对应一类失败模式的角色扮演框架。
@@ -101,6 +104,7 @@ console.log(review.accepted, review.proposal);
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— `PermanentError`、`retry`、`pLimit`、`mapLimit`、`extractJsonBlock`、`Logger`
   以及形状容忍工具（`describeJsonShape`、`replyExcerpt`）。
 

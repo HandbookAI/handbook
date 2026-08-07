@@ -43,7 +43,10 @@ program
   .version('0.1.0')
   .option('-v, --verbose', 'debug logging')
   .option('-q, --quiet', 'errors only')
-  .option('--env-file <path>', 'load KEY=VALUE pairs from a file (default: ./.env if present; shell env wins)');
+  .option(
+    '--env-file <path>',
+    'load KEY=VALUE pairs from a file (default: ./.env if present; shell env wins)',
+  );
 
 // .env loading runs before every subcommand action, so OPENAI_* and
 // HANDBOOK_* can live in a project-local file instead of the shell.
@@ -103,7 +106,7 @@ program
   .requiredOption('--source <dir>', 'source root')
   .requiredOption('--work <dir>', 'work directory')
   .option('--phase <spec>', 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list', 'all')
-  .option('--strategy <s>', 'file | member (default: file, or the work dir\'s recorded strategy)')
+  .option('--strategy <s>', "file | member (default: file, or the work dir's recorded strategy)")
   .option('--skeleton <path>', 'user-authored skeleton.yaml (required for member strategy)')
   .option('--lang <lang>', `source language, auto-detects (${languageChoices()})`, 'auto')
   .option('--narrate-lang <l>', 'prose language: en | zh', 'en')
@@ -113,7 +116,10 @@ program
   .option('--read-workers <n>', 'concurrent card batches', '12')
   .option('--resume', 'skip files that already have a completed card')
   .option('--refresh', 'ignore phase-3 caches')
-  .option('--llm-cache', 'cache raw LLM replies under <work>/phase3/cache (prompt-hash; disabled by --refresh)')
+  .option(
+    '--llm-cache',
+    'cache raw LLM replies under <work>/phase3/cache (prompt-hash; disabled by --refresh)',
+  )
   .action(async (opts: Record<string, string | boolean>) => {
     const phase = String(opts.phase);
     // Build the client opportunistically: some selections need no LLM at all
@@ -168,7 +174,10 @@ program
     const outDir = resolve(String(opts.out ?? `${workDir}/handbook`));
     const model = loadHandbookModel(workDir, resolveTitle(opts.title));
     const languages = graphFidelity(workDir);
-    const render = { languages, ...(opts.sourceBaseUrl ? { sourceBaseUrl: String(opts.sourceBaseUrl) } : {}) };
+    const render = {
+      languages,
+      ...(opts.sourceBaseUrl ? { sourceBaseUrl: String(opts.sourceBaseUrl) } : {}),
+    };
     const md = renderMarkdownHandbook(model, outDir, render);
     const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
     if (opts.agentSite) {
@@ -272,11 +281,17 @@ program
   .requiredOption('--case <dir>', 'case directory')
   .requiredOption('--work <dir>', 'work directory holding the handbook artifacts')
   .option('--no-llm', 'structural refresh only (no LLM; prose marked stale)')
-  .option('--detail <d>', 'card depth for regenerated cards: brief | deep (default: match the existing handbook)')
+  .option(
+    '--detail <d>',
+    'card depth for regenerated cards: brief | deep (default: match the existing handbook)',
+  )
   .option('--narrate-lang <l>', 'prose language: en | zh')
   .option('--corrections <file>', 'agent-reported corrections.jsonl — its files widen the refresh set')
   .option('--no-render', 'skip refreshing already-rendered outputs under <work>/handbook')
-  .option('--title <title>', 'handbook title for refreshed outputs (default: $HANDBOOK_TITLE or "System Handbook")')
+  .option(
+    '--title <title>',
+    'handbook title for refreshed outputs (default: $HANDBOOK_TITLE or "System Handbook")',
+  )
   .action(async (opts: Record<string, string | boolean | undefined>) => {
     const noLlm = opts.llm === false; // commander maps --no-llm to llm:false
     const workDir = resolve(String(opts.work));
@@ -299,7 +314,7 @@ program
 
 program
   .command('apply')
-  .description('Apply a plan\'s EDIT blocks to a source tree (byte-exact, all-or-nothing, with backups)')
+  .description("Apply a plan's EDIT blocks to a source tree (byte-exact, all-or-nothing, with backups)")
   .requiredOption('--source <dir>', 'source tree to edit')
   .requiredOption('--plan <file>', 'plan file produced by `handbook plan`')
   .option('--dry-run', 'verify only — never write')
@@ -338,7 +353,11 @@ program
   .command('studio')
   .description('Launch the local web UI (repos · generate · browse · evolve); binds to 127.0.0.1')
   .option('--port <n>', 'port to listen on', '4860')
-  .option('--state-dir <dir>', 'where studio.json and managed work dirs live', `${process.env.HOME ?? '.'}/.handbook-studio`)
+  .option(
+    '--state-dir <dir>',
+    'where studio.json and managed work dirs live',
+    `${process.env.HOME ?? '.'}/.handbook-studio`,
+  )
   .action(async (opts: { port: string; stateDir: string }) => {
     const { startStudio } = await import('@handbook/studio');
     const port = toInt(opts.port, '--port', 1);

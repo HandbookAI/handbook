@@ -82,7 +82,12 @@ export function loadCase(caseDir: string): ResyncCase | undefined {
   }
   const planPath = join(caseDir, 'plan.md');
   const planText = fileExists(planPath) ? readFileSync(planPath, 'utf8') : undefined;
-  return { editedRoot, planText, declarations: planText ? parsePlanDeclarations(planText) : undefined, diffText };
+  return {
+    editedRoot,
+    planText,
+    declarations: planText ? parsePlanDeclarations(planText) : undefined,
+    diffText,
+  };
 }
 
 export function parsePlanDeclarations(
@@ -393,7 +398,9 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
       for (const file of refreshTargets) {
         const old = oldCards[file];
         const stalePurpose =
-          old && old.purpose && !old.purpose.endsWith(STALE_SUFFIX) ? `${old.purpose}${STALE_SUFFIX}` : (old?.purpose ?? '');
+          old && old.purpose && !old.purpose.endsWith(STALE_SUFFIX)
+            ? `${old.purpose}${STALE_SUFFIX}`
+            : (old?.purpose ?? '');
         const card = old
           ? { ...old, purpose: stalePurpose }
           : { version: 1 as const, file, purpose: '', role: 'other' as const, lifecycle: 'none' };
@@ -465,10 +472,18 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
         version: 1,
         memberStage,
         buckets,
-        coverage: { nMembers: liveIds.size, nAssigned: liveIds.size - unassigned.length, unassigned: unassigned.sort() },
+        coverage: {
+          nMembers: liveIds.size,
+          nAssigned: liveIds.size - unassigned.length,
+          unassigned: unassigned.sort(),
+        },
       };
     } else {
-      members = await classifyMembers(options.client as ChatClient, after, skeleton, { cards: cardsNow, signal, logger });
+      members = await classifyMembers(options.client as ChatClient, after, skeleton, {
+        cards: cardsNow,
+        signal,
+        logger,
+      });
     }
     saveMemberAssignment(work, members);
     const derived = deriveFileArtifacts(after, skeleton, members, cardsNow);
@@ -480,10 +495,17 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
     for (const file of delta.added) fileStage[file] ??= { stage: 'unassigned', also: [] };
     assignment = rebuildAssignment(fileStage, skeleton);
     if (delta.added.length > 0 && !noLlm) {
-      assignment = await reassignSubset(options.client as ChatClient, after, skeleton, delta.added, assignment, {
-        cards: work.loadCards(),
-        logger,
-      });
+      assignment = await reassignSubset(
+        options.client as ChatClient,
+        after,
+        skeleton,
+        delta.added,
+        assignment,
+        {
+          cards: work.loadCards(),
+          logger,
+        },
+      );
     }
   }
   work.saveAssignment(assignment);
@@ -506,73 +528,76 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
   if (memberOrganization) {
     work.saveOrganization(memberOrganization);
   } else {
-  const fileEntry = (file: string) => ({
-    file,
-    purpose: cards[file]?.purpose ?? '',
-    role: cards[file]?.role ?? 'other',
-    nFunctions: cards[file]?.functions?.length ?? 0,
-  });
-  for (const sid of Object.keys(organization.stages)) {
-    const bucket = assignment.buckets[sid] ?? [];
-    const entry = organization.stages[sid];
-    if (!entry) continue;
-    const known = new Set(entry.orderedFiles);
-    const bucketSet = new Set(bucket);
-    const gained = bucket.filter((f) => !known.has(f));
-    const lostAny = entry.orderedFiles.some((f) => !bucketSet.has(f));
-    if (!affectedStages.has(sid) && gained.length === 0 && !lostAny) continue;
-    // Minimal mechanical edit: prune files that left the bucket, refresh the
-    // per-file facts from the current cards, and append newcomers in one
-    // deterministic group — the LLM's surviving grouping is never discarded.
-    const groups = entry.groups
-      .map((group) => ({
-        ...group,
-        files: group.files.filter((f) => bucketSet.has(f.file)).map((f) => fileEntry(f.file)),
-      }))
-      .filter((group) => group.files.length > 0);
-    const grouped = new Set(groups.flatMap((g) => g.files.map((f) => f.file)));
-    const newcomers = suggestOrder(bucket.filter((f) => !grouped.has(f)), adjacency);
-    if (newcomers.length > 0) {
-      groups.push({
-        title: '(resynced)',
-        summary: 'Files added by a code change (deterministic call order).',
-        files: newcomers.map(fileEntry),
-      });
-    }
-    organization.stages[sid] = {
-      title: entry.title,
-      groups,
-      orderedFiles: [...entry.orderedFiles.filter((f) => bucketSet.has(f)), ...newcomers],
-    };
-  }
-  // Stages that appeared in the assignment but never organized (new stages) get entries too.
-  for (const sid of Object.keys(assignment.buckets)) {
-    if (!organization.stages[sid]) {
+    const fileEntry = (file: string) => ({
+      file,
+      purpose: cards[file]?.purpose ?? '',
+      role: cards[file]?.role ?? 'other',
+      nFunctions: cards[file]?.functions?.length ?? 0,
+    });
+    for (const sid of Object.keys(organization.stages)) {
       const bucket = assignment.buckets[sid] ?? [];
-      const ordered = suggestOrder(bucket, adjacency);
+      const entry = organization.stages[sid];
+      if (!entry) continue;
+      const known = new Set(entry.orderedFiles);
+      const bucketSet = new Set(bucket);
+      const gained = bucket.filter((f) => !known.has(f));
+      const lostAny = entry.orderedFiles.some((f) => !bucketSet.has(f));
+      if (!affectedStages.has(sid) && gained.length === 0 && !lostAny) continue;
+      // Minimal mechanical edit: prune files that left the bucket, refresh the
+      // per-file facts from the current cards, and append newcomers in one
+      // deterministic group — the LLM's surviving grouping is never discarded.
+      const groups = entry.groups
+        .map((group) => ({
+          ...group,
+          files: group.files.filter((f) => bucketSet.has(f.file)).map((f) => fileEntry(f.file)),
+        }))
+        .filter((group) => group.files.length > 0);
+      const grouped = new Set(groups.flatMap((g) => g.files.map((f) => f.file)));
+      const newcomers = suggestOrder(
+        bucket.filter((f) => !grouped.has(f)),
+        adjacency,
+      );
+      if (newcomers.length > 0) {
+        groups.push({
+          title: '(resynced)',
+          summary: 'Files added by a code change (deterministic call order).',
+          files: newcomers.map(fileEntry),
+        });
+      }
       organization.stages[sid] = {
-        title: skeleton.stages.find((s) => s.id === sid)?.title ?? sid,
-        groups: [
-          {
-            title: '(resynced)',
-            summary: 'New stage content after a code change.',
-            files: ordered.map((file) => ({
-              file,
-              purpose: cards[file]?.purpose ?? '',
-              role: cards[file]?.role ?? 'other',
-              nFunctions: cards[file]?.functions?.length ?? 0,
-            })),
-          },
-        ],
-        orderedFiles: ordered,
+        title: entry.title,
+        groups,
+        orderedFiles: [...entry.orderedFiles.filter((f) => bucketSet.has(f)), ...newcomers],
       };
     }
-  }
-  organization.coverage = {
-    nFiles: new Set(Object.values(assignment.buckets).flat()).size,
-    nOrganized: Object.values(organization.stages).reduce((sum, s) => sum + s.orderedFiles.length, 0),
-  };
-  work.saveOrganization(organization);
+    // Stages that appeared in the assignment but never organized (new stages) get entries too.
+    for (const sid of Object.keys(assignment.buckets)) {
+      if (!organization.stages[sid]) {
+        const bucket = assignment.buckets[sid] ?? [];
+        const ordered = suggestOrder(bucket, adjacency);
+        organization.stages[sid] = {
+          title: skeleton.stages.find((s) => s.id === sid)?.title ?? sid,
+          groups: [
+            {
+              title: '(resynced)',
+              summary: 'New stage content after a code change.',
+              files: ordered.map((file) => ({
+                file,
+                purpose: cards[file]?.purpose ?? '',
+                role: cards[file]?.role ?? 'other',
+                nFunctions: cards[file]?.functions?.length ?? 0,
+              })),
+            },
+          ],
+          orderedFiles: ordered,
+        };
+      }
+    }
+    organization.coverage = {
+      nFiles: new Set(Object.values(assignment.buckets).flat()).size,
+      nOrganized: Object.values(organization.stages).reduce((sum, s) => sum + s.orderedFiles.length, 0),
+    };
+    work.saveOrganization(organization);
   }
 
   signal?.throwIfAborted();

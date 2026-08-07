@@ -20,6 +20,7 @@
 ## 公开 API
 
 **调用图 IR**（`ir.ts`）
+
 - `CALL_TYPES` / `CallType` —— 一个调用点是**怎么被解析出来的**（`self_method`、`internal_func`、`boundary`、`unresolved`……）。
 - `functionNodeSchema` / `FunctionNode`、`boundaryNodeSchema` / `BoundaryNode`、`callEdgeSchema` / `CallEdge` —— IR 的三种成分。
 - `ModuleAnalysis` —— `{ functions, edges }`，语言适配器的返回类型。
@@ -28,6 +29,7 @@
 - `isInternalNode(node)` —— 内部函数节点的类型守卫。
 
 **手册模型**（`model.ts`）
+
 - `NARRATE_LANGS` / `NarrateLang`（`'en' | 'zh'`）、`FILE_ROLES` / `FileRole`、`coerceRole(value)` —— 受约束的词表。
   模型答出词表以外的值一律归到 `other`，而不是让脏值进入产物。
 - `functionNoteSchema` / `FunctionNote`、`fileCardSchema` / `FileCard`、`cardCoverageSchema` / `CardCoverage` —— 文件级叶子内容。
@@ -38,10 +40,12 @@
 - `StageTree` —— 阶段查询：`title` / `description` / `isCrosscut` / `children` / `depth` / `subtree`，以及 `byId`、`order`、`topLevel`。
 
 **错误与日志**
+
 - `HandbookError(code, message)`、`MissingArtifactError(what, hint?)`、`ArtifactValidationError(path, detail)`、`PermanentError(message)`。
 - `Logger`、`LogLevel`、`createLogger(prefix?, level?)`（只写 stderr）、`silentLogger`。
 
 **工具**
+
 - `pLimit(concurrency): LimitFn`、`mapLimit(items, concurrency, fn)` —— 有界并发，保持顺序。
 - `retry(fn, options?)` / `RetryOptions` —— 线性退避加抖动；遇到 `PermanentError` 立刻放弃。
 - `sha1Hex(text)`、`sha256Hex(data)`、`shortHash(text)` —— 摘要（12 位短哈希用于缓存键）。
@@ -101,4 +105,5 @@ log.info(`summarized ${summaries.length} functions`);
 内部：无——它是依赖图的根。
 
 外部：
+
 - `zod` —— 运行时校验每一种落盘产物，并从单一事实源推导 TypeScript 类型。

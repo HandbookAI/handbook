@@ -44,9 +44,7 @@ describe('extractRegisters — id coercion (real-endpoint feedback)', () => {
     const client = new MockChatClient([
       {
         match: 'STATE REGISTERS',
-        respond: [
-          { name: 'reg-parser-cache', description: 'cached parsers', stages: ['stage-1'] },
-        ],
+        respond: [{ name: 'reg-parser-cache', description: 'cached parsers', stages: ['stage-1'] }],
       },
       { match: 'COMPLETING a list', respond: [] },
     ]);
@@ -133,12 +131,24 @@ describe('extractRegisters caching', () => {
   it('never remembers an empty result as an answer', async () => {
     const cacheDir = mkdtempSync(join(tmpdir(), 'hb-reg-'));
     const empty = client('nothing usable here');
-    const first = await extractRegisters(empty.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    const first = await extractRegisters(
+      empty.client,
+      skeleton,
+      cacheNarration,
+      {},
+      { cacheDir, maxRounds: 1 },
+    );
     expect(first).toEqual([]);
 
     // A later run must ASK AGAIN rather than replay the failure.
     const good = client('```json\n{"registers":[{"id":"reg-a","semantics":"holds the queue"}]}\n```');
-    const second = await extractRegisters(good.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    const second = await extractRegisters(
+      good.client,
+      skeleton,
+      cacheNarration,
+      {},
+      { cacheDir, maxRounds: 1 },
+    );
     expect(second).toHaveLength(1);
     expect(good.calls()).toBeGreaterThan(0);
   });
@@ -148,7 +158,13 @@ describe('extractRegisters caching', () => {
     const good = client('```json\n{"registers":[{"id":"reg-a","semantics":"holds the queue"}]}\n```');
     await extractRegisters(good.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
     const before = good.calls();
-    const again = await extractRegisters(good.client, skeleton, cacheNarration, {}, { cacheDir, maxRounds: 1 });
+    const again = await extractRegisters(
+      good.client,
+      skeleton,
+      cacheNarration,
+      {},
+      { cacheDir, maxRounds: 1 },
+    );
     expect(again).toHaveLength(1);
     expect(good.calls()).toBe(before); // served from cache
   });
@@ -172,7 +188,11 @@ describe('extractRegisters field-name tolerance', () => {
   }
 
   it('reads `semantic` (singular) — the shape a live endpoint actually sent', async () => {
-    const reply = ['```json', '[{"id":"reg-env-config","semantic":"环境配置与运行参数","stages":[]}]', '```'].join('\n');
+    const reply = [
+      '```json',
+      '[{"id":"reg-env-config","semantic":"环境配置与运行参数","stages":[]}]',
+      '```',
+    ].join('\n');
     const out = await extractRegisters(client(reply), skeleton, narration, {}, { maxRounds: 1, lang: 'zh' });
     expect(out).toEqual([{ id: 'reg-env-config', semantics: '环境配置与运行参数', stages: [] }]);
   });

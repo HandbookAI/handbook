@@ -23,7 +23,15 @@ afterAll(() => {
 describe('renderAgentSite', () => {
   it('writes the protocol pages and one locator page per content stage', () => {
     expect(result.nStagePages).toBe(4);
-    for (const name of ['how_to_use.md', 'index.md', 'disambiguation.md', 'stage-1.md', 'stage-1.1.md', 'stage-2.md', 'crosscut-1.md']) {
+    for (const name of [
+      'how_to_use.md',
+      'index.md',
+      'disambiguation.md',
+      'stage-1.md',
+      'stage-1.1.md',
+      'stage-2.md',
+      'crosscut-1.md',
+    ]) {
       expect(existsSync(join(dir, name)), name).toBe(true);
     }
   });
@@ -69,7 +77,9 @@ describe('renderAgentSite', () => {
 
   it('emits Related sub-groups and role-ranked Core files', () => {
     const page = read('stage-2.md');
-    expect(page).toContain('**Related (same sub-group — topical, verify before editing)**:\n- Execution (1 files)');
+    expect(page).toContain(
+      '**Related (same sub-group — topical, verify before editing)**:\n- Execution (1 files)',
+    );
     expect(page).toContain('**Core files**:\n- `src/query/engine.ts` `entrypoint` (1 fns)');
   });
 
@@ -125,7 +135,7 @@ describe('renderAgentSite', () => {
   });
 });
 
-describe('strongTwins — every shipped language\'s test-naming convention', () => {
+describe("strongTwins — every shipped language's test-naming convention", () => {
   /** The bug this covers: TS/JS name tests `x.test.ts`, and only `x_test.*` was
    *  matched, so the whole Strong co-change field rendered nowhere on a
    *  TypeScript repo — including this one. */
@@ -166,8 +176,18 @@ describe('strongTwins — every shipped language\'s test-naming convention', () 
 
 describe('renderAgentSite — fidelity disclosure in how_to_use', () => {
   const caps = {
-    kotlin: { tier: 'generic' as const, callTypes: ['internal_func' as const], selfAttrs: false, statementSpans: false },
-    python: { tier: 'full' as const, callTypes: ['internal_func' as const], selfAttrs: true, statementSpans: true },
+    kotlin: {
+      tier: 'generic' as const,
+      callTypes: ['internal_func' as const],
+      selfAttrs: false,
+      statementSpans: false,
+    },
+    python: {
+      tier: 'full' as const,
+      callTypes: ['internal_func' as const],
+      selfAttrs: true,
+      statementSpans: true,
+    },
   };
 
   it('stays silent when no option is given (byte-identical default)', () => {

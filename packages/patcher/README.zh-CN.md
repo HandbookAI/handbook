@@ -16,21 +16,21 @@
 
 ## 安全契约
 
-| 情况 | 结果 |
-|---|---|
-| `old` 恰好匹配一次 | 在该偏移处应用（报告行号） |
-| `old` 找不到 | `no-match` —— 计划做出之后代码变过了 |
-| `old` 匹配 2 次以上 | `ambiguous` —— 锚点需要更多上下文 |
-| `old` 为空且文件不存在 | `created` |
-| `old` 为空但文件有内容 | `no-match`（绝不静默覆盖；判定依据是文件**磁盘上的状态**，所以同一份计划里更早的编辑无法「解锁」它） |
-| 路径逃出源码根——直接逃出，或创建时经由软链接的父目录 | `unsafe-path` |
-| 目标是软链接 / 目录 / 非合法 UTF-8 | `unsafe-path` / `not-a-file` / `undecodable` |
-| 任一编辑核对失败 | **一个字节都不写**；已通过的那些报 `skipped` |
-| 写入过程中发生 `fs` 错误 | 已 rename 的文件用刚才的备份还原，然后把错误重新抛出 |
-| 目标文件超过 8 MiB，或字节无法 UTF-8 往返 | `undecodable` —— 绝不打补丁 |
-| 目标的父目录不可写 | `permission` —— 在核对阶段就拦下，落盘前不会发生任何事 |
-| 计划围栏格式坏了（无标签块、未闭合围栏、`new` 在 `old` 之前、编号重复/降序） | 解析按 EDIT 逐条拒绝并报 problem；这份计划的任何编辑都不会执行 |
-| 另一个 `apply` 持有这棵树的锁 | 本次运行**抛错**（`another patch run is writing to this tree (pid … on … , started …)`）；记录的 owner 是本机已死 pid 则回收锁，异机或不可读的 owner 一律视为存活——确认对方进程已消失后可手动删除 `.handbook-patches/apply.lock` |
+| 情况                                                                         | 结果                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old` 恰好匹配一次                                                           | 在该偏移处应用（报告行号）                                                                                                                                                                                                       |
+| `old` 找不到                                                                 | `no-match` —— 计划做出之后代码变过了                                                                                                                                                                                             |
+| `old` 匹配 2 次以上                                                          | `ambiguous` —— 锚点需要更多上下文                                                                                                                                                                                                |
+| `old` 为空且文件不存在                                                       | `created`                                                                                                                                                                                                                        |
+| `old` 为空但文件有内容                                                       | `no-match`（绝不静默覆盖；判定依据是文件**磁盘上的状态**，所以同一份计划里更早的编辑无法「解锁」它）                                                                                                                             |
+| 路径逃出源码根——直接逃出，或创建时经由软链接的父目录                         | `unsafe-path`                                                                                                                                                                                                                    |
+| 目标是软链接 / 目录 / 非合法 UTF-8                                           | `unsafe-path` / `not-a-file` / `undecodable`                                                                                                                                                                                     |
+| 任一编辑核对失败                                                             | **一个字节都不写**；已通过的那些报 `skipped`                                                                                                                                                                                     |
+| 写入过程中发生 `fs` 错误                                                     | 已 rename 的文件用刚才的备份还原，然后把错误重新抛出                                                                                                                                                                             |
+| 目标文件超过 8 MiB，或字节无法 UTF-8 往返                                    | `undecodable` —— 绝不打补丁                                                                                                                                                                                                      |
+| 目标的父目录不可写                                                           | `permission` —— 在核对阶段就拦下，落盘前不会发生任何事                                                                                                                                                                           |
+| 计划围栏格式坏了（无标签块、未闭合围栏、`new` 在 `old` 之前、编号重复/降序） | 解析按 EDIT 逐条拒绝并报 problem；这份计划的任何编辑都不会执行                                                                                                                                                                   |
+| 另一个 `apply` 持有这棵树的锁                                                | 本次运行**抛错**（`another patch run is writing to this tree (pid … on … , started …)`）；记录的 owner 是本机已死 pid 则回收锁，异机或不可读的 owner 一律视为存活——确认对方进程已消失后可手动删除 `.handbook-patches/apply.lock` |
 
 同一个文件的多个编辑按计划顺序在**累积内容**上叠加，
 所以一份计划可以多次触碰同一文件，只要每个锚点在**轮到它时**是唯一的。
@@ -41,12 +41,12 @@
 
 ## 公开 API
 
-| 导出 | 用途 |
-|---|---|
-| `parsePlan(plan): ParsedPlan` | `{ edits: EditBlock[], problems: string[] }` |
-| `applyPlan(options): ApplyResult` | 核对 +（除非 `dryRun`）写入；返回逐编辑 `outcomes`、`changedFiles`、`backupDir` |
-| `rollback(backupDir, options?)` | 还原备份文件、删除补丁新建的文件；**补丁之后**被改过的文件报进 `skipped`，除非传 `{force:true}` |
-| `listBackups(backupRoot)` | 备份时间戳，最新在前 |
+| 导出                              | 用途                                                                                            |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `parsePlan(plan): ParsedPlan`     | `{ edits: EditBlock[], problems: string[] }`                                                    |
+| `applyPlan(options): ApplyResult` | 核对 +（除非 `dryRun`）写入；返回逐编辑 `outcomes`、`changedFiles`、`backupDir`                 |
+| `rollback(backupDir, options?)`   | 还原备份文件、删除补丁新建的文件；**补丁之后**被改过的文件报进 `skipped`，除非传 `{force:true}` |
+| `listBackups(backupRoot)`         | 备份时间戳，最新在前                                                                            |
 
 `ApplyOptions`：`{ sourceRoot, plan, dryRun?, backupRoot?, logger? }` ——
 备份默认落在 `<sourceRoot>/.handbook-patches/<时间戳>/`

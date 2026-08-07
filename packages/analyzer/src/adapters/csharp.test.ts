@@ -183,10 +183,7 @@ describe('CSharpAdapter', () => {
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, source);
     }
-    analysis = await adapter.analyze(
-      ['src/Motor.cs', 'src/App.cs', 'src/Broken.cs', 'tools/Text.cs'],
-      root,
-    );
+    analysis = await adapter.analyze(['src/Motor.cs', 'src/App.cs', 'src/Broken.cs', 'tools/Text.cs'], root);
   });
 
   const fn = (id: string) => analysis.functions.find((f) => f.id === id);

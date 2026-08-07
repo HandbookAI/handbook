@@ -21,6 +21,7 @@
 ## 公开 API
 
 **规划器**（`planner.ts`）
+
 - `runPlanner(options: PlannerOptions): Promise<PlannerResult>` —— agent 循环。
   - `PlannerOptions` —— `{ client, sourceRoot, handbookDir?, request, promptVars?, maxTurns?（默认 30）, logger? }`。
   - `PlannerResult` —— `{ plan, declarations?, turns, trace }`（`trace` 每次工具调用一行）。
@@ -30,12 +31,14 @@
 - `handbookDirFromSkill(skillDir)` —— 把一个 skill 的 `references/` 目录挂载为规划器的手册。
 
 **工具**（`tools.ts`）
+
 - `ReadOnlyTools` —— `new ReadOnlyTools(root)`；`listDir(relPath?)`、
   `readFile(relPath, startLine?, endLine?)`、`grep(pattern, dirOrFile?)`，
   各自返回 `ToolResult`（`{ ok, content }`）。读取有上限（6 万字符、100 条 grep 命中、5 MB 文件），
   并跳过 `.git` 与构建目录。
 
 **提示词**（`prompt.ts`）
+
 - `buildPlannerSystemPrompt(vars: PlannerPromptVars)` —— 规划规则：
   用手册路由、读真实源码、产出逐字精确的 EDIT 块与 declarations。
 - `PlannerPromptVars` / `DEFAULT_PROMPT_VARS` —— 项目相关的替换项
@@ -57,9 +60,9 @@ const result = await runPlanner({
   maxTurns: 30,
 });
 
-console.log(result.plan);         // 摘要 + EDIT 块 + declarations JSON
+console.log(result.plan); // 摘要 + EDIT 块 + declarations JSON
 console.log(result.declarations); // { willModify, willAdd, willRemove }
-console.log(result.trace);        // 例如 ['read_file(__handbook__/index.md)', 'grep(BACKOFF)']
+console.log(result.trace); // 例如 ['read_file(__handbook__/index.md)', 'grep(BACKOFF)']
 ```
 
 ## 设计说明
@@ -79,6 +82,7 @@ console.log(result.trace);        // 例如 ['read_file(__handbook__/index.md)',
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— `listFilesRecursive`、`toPosix`、`truncate`、`Logger`。
 - `@handbook/llm` —— agent 循环驱动的 `ChatClient` 接缝。
 

@@ -24,13 +24,14 @@
 ## 公开 API
 
 全部在 `resync.ts`：
+
 - `resyncHandbook(options: ResyncOptions): Promise<ResyncReport>` ——
   整个流程；就地更新 work 目录并写出 `<case>/resync-report.json`。
   - `ResyncOptions` —— `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, correctionsPath?, signal?, logger? }`；
     除非 `noLlm` 为真，否则 `client` 必填；`detail`（`'brief' | 'deep'`）默认探测现有卡片的粒度；
     `editedRoot`/`planText` 允许调用方（如 studio 的实时树流程）直接提供改动后的树和计划，绕过 case 文件。
   - `ResyncReport` —— `{ skipped, changedFiles, addedFiles, deletedFiles, affectedStages,
-    cardsRegenerated, narrated }`。
+cardsRegenerated, narrated }`。
 - `loadCase(caseDir): ResyncCase | undefined` —— 读取 case 目录；返回 `undefined` 表示空 diff（无需同步）。
   - `ResyncCase` —— `{ editedRoot, planText?, declarations?, diffText? }`。
 - `parsePlanDeclarations(planText)` —— 取最后一个可解析的、含
@@ -61,7 +62,7 @@ import { OpenAiChatClient } from '@handbook/llm';
 // case 目录布局：<case>/edited/（改动后的树）、plan.md?、change.diff?
 const report = await resyncHandbook({
   caseDir: '/path/to/case',
-  workDir: '/path/to/work',   // 存放待前滚的手册产物
+  workDir: '/path/to/work', // 存放待前滚的手册产物
   client: new OpenAiChatClient(),
   lang: 'zh', // detail 不传则自动探测现有卡片的粒度
 });
@@ -92,6 +93,7 @@ console.log(report.affectedStages, report.cardsRegenerated, report.narrated);
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— 产物类型、文件辅助、`isInternalNode`、错误类型。
 - `@handbook/analyzer` —— 间接经由阶段 1 使用（对修改后的树重建新图）。
 - `@handbook/pipeline` —— `WorkDir`、`runPhase1`、`generateCards`、`rebuildAssignment`/`reassignSubset`、

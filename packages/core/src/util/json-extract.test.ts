@@ -51,7 +51,8 @@ describe('extractJsonBlock — info strings and meta-fences (round-2 review)', (
   });
 
   it('keeps inner example fences of a four-backtick block literal', () => {
-    const text = '````md\nexample:\n```json\n{"inner": true}\n```\n````\nreal:\n```json\n{"outer": true}\n```';
+    const text =
+      '````md\nexample:\n```json\n{"inner": true}\n```\n````\nreal:\n```json\n{"outer": true}\n```';
     expect(extractJsonBlock(text)).toEqual({ outer: true });
   });
 });
@@ -169,24 +170,63 @@ describe('extractJsonBlock never returns a nested fragment (review R1 F1/F4)', (
   it('reports failure rather than a fragment when a fence cannot be repaired', () => {
     // Truncated mid-structure: the nested object parses on its own, and returning
     // it would let a function note masquerade as the answer.
-    const reply = ['```json', '{"purposes": [{"file": "a.ts", "functions": [{"qualname": "f"}]', '```'].join('\n');
+    const reply = ['```json', '{"purposes": [{"file": "a.ts", "functions": [{"qualname": "f"}]', '```'].join(
+      '\n',
+    );
     expect(extractJsonBlock(reply)).toBeUndefined();
   });
 });
 
 describe('extractJsonBlock — algorithmic-complexity hardening (adversarial pass 2)', () => {
-  const under = (ms: number, fn: () => void): void => {
-    const t0 = performance.now();
-    fn();
-    expect(performance.now() - t0).toBeLessThan(ms);
+  /**
+   * These are complexity guards: they exist to fail if the quadratic rescan is
+   * ever reintroduced. They assert growth, not a millisecond budget.
+   *
+   * An absolute budget encodes the speed of the machine that wrote it — the
+   * same correct implementation blows a 200ms budget under V8 coverage
+   * instrumentation, and again on a loaded CI runner, while nothing is wrong.
+   * The claim being made is "cost must not grow quadratically with the input",
+   * so measure that directly: quadruple the input and compare. Instrumentation
+   * and machine speed scale both measurements alike, so the ratio survives them.
+   */
+  const timeOf = (input: string): number => {
+    // Best of five: the fastest run is the one least disturbed by GC and by the
+    // scheduler, which is what makes this stable enough to assert on at all.
+    let best = Infinity;
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      extractJsonBlock(input);
+      best = Math.min(best, performance.now() - t0);
+    }
+    return best;
   };
+
+  const growthOverFourfoldInput = (build: (n: number) => string, n: number): number => {
+    const small = build(n);
+    const large = build(n * 4);
+    timeOf(small); // warm the JIT so the first real measurement is not the outlier
+    const smallMs = timeOf(small);
+    const largeMs = timeOf(large);
+    // Floor the denominator: a sub-0.05ms baseline is timer noise, not a signal.
+    return largeMs / Math.max(smallMs, 0.05);
+  };
+
+  // Quadratic growth over a 4x input is 16x. The fixed implementation measures
+  // between 1.3x and 4.1x, so 8x sits clear of both: far above the noise, far
+  // below a genuine regression.
+  const QUADRATIC_IS = 16;
+  const MAX_GROWTH = QUADRATIC_IS / 2;
 
   it('a long run of unbalanced openers scans in ~linear time (was O(n²))', () => {
     // A code-heavy reply full of `{`/`[` with no matching closers used to make the
     // per-opener rescan take seconds; the string-aware single pass keeps it bounded.
-    under(200, () => expect(extractJsonBlock('{'.repeat(50000))).toBeUndefined());
-    under(200, () => expect(extractJsonBlock('['.repeat(50000))).toBeUndefined());
-    under(200, () => expect(extractJsonBlock('{"'.repeat(50000))).toBeUndefined());
+    expect(extractJsonBlock('{'.repeat(50000))).toBeUndefined();
+    expect(extractJsonBlock('['.repeat(50000))).toBeUndefined();
+    expect(extractJsonBlock('{"'.repeat(50000))).toBeUndefined();
+
+    expect(growthOverFourfoldInput((n) => '{'.repeat(n), 20_000)).toBeLessThan(MAX_GROWTH);
+    expect(growthOverFourfoldInput((n) => '['.repeat(n), 20_000)).toBeLessThan(MAX_GROWTH);
+    expect(growthOverFourfoldInput((n) => '{"'.repeat(n), 20_000)).toBeLessThan(MAX_GROWTH);
   });
 
   it('still finds the object after a run of false openers', () => {
@@ -194,13 +234,19 @@ describe('extractJsonBlock — algorithmic-complexity hardening (adversarial pas
   });
 
   it('many opener-like fence lines with no valid closer stay bounded (was O(n²))', () => {
-    let s = '';
-    for (let i = 0; i < 20000; i++) s += '`'.repeat((i % 6) + 3) + 'json\n';
-    under(200, () => extractJsonBlock(s));
+    const fenceLines = (n: number): string => {
+      let s = '';
+      for (let i = 0; i < n; i++) s += '`'.repeat((i % 6) + 3) + 'json\n';
+      return s;
+    };
+
+    expect(extractJsonBlock(fenceLines(20_000))).toBeUndefined();
+    expect(growthOverFourfoldInput(fenceLines, 20_000)).toBeLessThan(MAX_GROWTH);
   });
 
-  it('a 1MB+ reply resolves quickly', () => {
-    under(500, () => expect(extractJsonBlock('x'.repeat(1_100_000) + ' {"ok":true}')).toEqual({ ok: true }));
+  it('a 1MB+ reply resolves in time proportional to its length', () => {
+    expect(extractJsonBlock('x'.repeat(1_100_000) + ' {"ok":true}')).toEqual({ ok: true });
+    expect(growthOverFourfoldInput((n) => 'x'.repeat(n) + ' {"ok":true}', 275_000)).toBeLessThan(MAX_GROWTH);
   });
 });
 

@@ -13,7 +13,9 @@ describe('extractEntryList', () => {
   });
 
   it('accepts an alternative container name', () => {
-    expect(extractEntryList({ files: [{ file: 'a.ts' }] }, ['assignments', 'files'])).toEqual([{ file: 'a.ts' }]);
+    expect(extractEntryList({ files: [{ file: 'a.ts' }] }, ['assignments', 'files'])).toEqual([
+      { file: 'a.ts' },
+    ]);
   });
 
   it('accepts a generic container the caller never asked for', () => {
@@ -21,7 +23,9 @@ describe('extractEntryList', () => {
   });
 
   it('unwraps one level of nesting', () => {
-    expect(extractEntryList({ result: { assignments: [{ file: 'a.ts' }] } }, keys)).toEqual([{ file: 'a.ts' }]);
+    expect(extractEntryList({ result: { assignments: [{ file: 'a.ts' }] } }, keys)).toEqual([
+      { file: 'a.ts' },
+    ]);
   });
 
   it('accepts a lone object only when it carries an expected field', () => {
@@ -42,7 +46,9 @@ describe('extractEntryList', () => {
   });
 
   it('drops non-objects inside the list and never invents entries', () => {
-    expect(extractEntryList({ assignments: ['nope', 3, null, { file: 'a.ts' }] }, keys)).toEqual([{ file: 'a.ts' }]);
+    expect(extractEntryList({ assignments: ['nope', 3, null, { file: 'a.ts' }] }, keys)).toEqual([
+      { file: 'a.ts' },
+    ]);
     expect(extractEntryList('a string', keys)).toEqual([]);
     expect(extractEntryList(undefined, keys)).toEqual([]);
   });

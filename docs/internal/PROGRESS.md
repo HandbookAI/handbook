@@ -417,3 +417,82 @@ Java 的 `id = com.demo.app.App.App.run` 看着像类名重复。查证后**是�
 **现支持 12 门**：python / typescript(+JavaScript) / go / rust / **java** / **csharp**（full）
 + kotlin / scala / zig / objc / ocaml / shell（generic）。
 下一步 **SP3：C + C++**（含脊梁作用域索引的决策）。
+
+## 2026-08-07：工程化与规范化整改（961 测试绿，覆盖率门禁落地）
+
+起因是一句评价：工程化和规范化都很差。查下来结论不是「没有规范」，而是
+**规范只存在于人的习惯里，一条都没有被机器强制**——于是它已经结出了两个真实缺陷。
+
+### 两个硬伤（不是风格问题，是缺陷）
+
+1. **`dist/` 里混进 192 个测试产物。** 测试放在 `src/**/*.test.ts`，而每个包
+   `include: ["src"]` + `files: ["dist"]`，于是 `.test.js` / `.test.d.ts` 全部进了发布面。
+2. **`packages/cli` 的 project references 已经和 `dependencies` 漂移。** 它依赖
+   `@handbook/patcher` 和 `@handbook/studio`，但 tsconfig 两个都没引。根 tsconfig 引了全部
+   11 个，所以根目录 `tsc -b` 一直把它盖住；单独 `tsc -b packages/cli` 会以错误顺序构建。
+
+修法：构建工程排除 `*.test.ts` / `*.test-helper.ts`，测试改由新增的 `tsconfig.tests.json`
+以 `noEmit` 检查（**不能因为不发布就不检查**）。补齐 cli 的两个引用。
+
+### 让它们回不来：`scripts/check-workspace.mjs`
+
+七条结构不变量，全部来自这个仓库真实违反过的事：references ⟺ workspace deps 双向一致、
+`workspace:` 协议、根 tsconfig 引全量、构建排除测试 + `dist/` 无测试产物、manifest 形状统一、
+可发布包不得依赖 private 包、三方版本必须走 catalog。
+
+**反向验证过**：植入 3 个缺陷（删一个 reference、写死一个版本、往 dist 塞一个 `.test.js`），
+三个全被报出、exit 1；恢复后 exit 0。检查器不是空转的。
+
+### 规范从「写了」变成「被强制」
+
+- `format:check` 原本既不在 `check` 里也不在 CI 里——**它自己就是红的**，窄 glob
+  `packages/*/src/**/*.ts` 下 71 个文件不合规。现在 prettier 覆盖全仓并进入门禁。
+- eslint 原本只扫 `packages/*/src`。`eslint.config.js`、`vitest.config.ts`、
+  `examples/mock-llm-server.mjs` 是无人区。现在 `eslint .` 覆盖 133 个文件。
+- shell 脚本此前无人检查，CI 加了 shellcheck（当前 0 findings）。
+- 三方版本收敛进 pnpm catalog：`zod` 原本手抄在 4 个包里。
+- husky + lint-staged + commitlint。历史 60 个 commit 用新规则跑，**0 error**——
+  说明 scope 白名单和既有习惯是对齐的，不是新加了一套没人遵守的规矩。
+
+### CI：从 1 个 job 到 4 个
+
+原来 `on: push` 不限分支 + `on: pull_request`，每个 PR commit 双跑；没有 concurrency
+取消、没有 `permissions`、没有 `timeout-minutes`。现在拆成 check（node 20/24 矩阵）、
+**e2e**、shellcheck、commitlint。
+
+**e2e 是这次最大的补口**：仓库一直有 `run-demo.sh` + 内置 mock LLM 这套完整离线端到端，
+但 CI 从来不跑它——一个 CLI 工具链的 CI 里没有一次真实调用。现在 analyze → generate →
+render → skill → validate 全程跑完并断言产物非空。
+
+### 覆盖率门禁，以及它顺手炸出的一个脆弱测试
+
+实测 statements 83.27% / branches 71.44% / functions 86.33% / lines 85.91%，阈值压在
+各自下方约 1 个点，形成棘轮。
+
+插桩立刻让 `json-extract.test.ts` 的一条复杂度守卫红了：268ms > 200ms 预算。
+**这不是插桩的错，是断言形式的错**——绝对墙钟预算编码的是写它那台机器的速度，在 V8 覆盖率
+插桩下和在负载高的 CI runner 上都会无故变红。改成断言**增长率**：输入放大 4 倍，
+线性是 ~4x、二次是 ~16x，实测 1.3–4.1x，阈值取 8x。插桩和机器速度对分子分母是同一个系数，
+比值不受影响。连续 3 次插桩运行稳定通过。**意图一分没变，只是换了一种机器无关的表达。**
+
+### 发布链路：从不存在到可用
+
+11 个包原本全是 `private: true` + `version: 0.1.0`，没有 changeset、没有 CHANGELOG、
+没有发布流水线——一个叫 `handbook` 的 CLI 没有任何人装得上。现在全部可发布
+（`publishConfig.access: public`；`@handbook` scope 在 npm 上是空的，unscoped `handbook`
+已被占），changesets 管版本和 changelog，Release 工作流在配 `NPM_TOKEN` 之前空转。
+
+**`pnpm pack` 验证过**：`catalog:` → `^4.0.0`、`workspace:*` → `0.1.0`、`private` 字段消失、
+tarball 内 0 个测试文件。
+
+### 一个我造成又回滚的破坏
+
+`prettier --write .` 把 `docs/internal/` 也格式化了，于是句中作续行的 `+ kotlin / scala…`
+被 CommonMark 当成列表项、归一化成 `- ` 并插入空行，**把句子劈成两半**。已回滚，并把
+`docs/internal/` 加进 `.prettierignore`：手写工程日志格式化收益为零、风险为真。
+**教训：全仓格式化对代码是安全的（基于 AST），对散文不是（基于文本）。**
+
+### 状态
+
+`pnpm check` 全绿：961 测试 / 49 文件，工作区不变量 11 包通过，eslint 133 文件零警告，
+prettier 全仓通过，覆盖率过阈值。离线 e2e 产物齐全。SP3（C/C++）的进行中改动未受影响。
