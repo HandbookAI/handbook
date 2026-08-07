@@ -1,12 +1,26 @@
 /** Filesystem helpers: atomic writes, validated JSON I/O, recursive discovery. */
 import { mkdirSync, renameSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, posix, relative, sep, win32 } from 'node:path';
 import type { z } from 'zod';
 import { ArtifactValidationError } from '../errors.js';
 
 /** Convert a path to POSIX separators (all artifact paths are POSIX). */
 export function toPosix(path: string): string {
   return sep === '/' ? path : path.split(sep).join('/');
+}
+
+/**
+ * True when `path` is absolute under **either** platform's rules.
+ *
+ * Untrusted paths — an EDIT block's filename, a manifest entry, a path scraped
+ * out of a diff — are validated on whatever machine happens to be running, but
+ * they can have been written anywhere. `isAbsolute` alone answers only for the
+ * host: on Linux it calls `C:/evil` relative, which then resolves outside the
+ * source root on a Windows machine. Asking both algorithms makes the answer the
+ * same everywhere, which is the only useful answer for a security check.
+ */
+export function isAbsoluteAnyPlatform(path: string): boolean {
+  return posix.isAbsolute(path) || win32.isAbsolute(path);
 }
 
 /** Create a directory (and parents) if it does not exist. */

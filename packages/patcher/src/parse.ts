@@ -204,6 +204,10 @@ function captureFences(lines: readonly string[]): {
 function pathProblem(path: string): string | undefined {
   if (path.startsWith('~')) return 'must not start with "~" (no home expansion)';
   if (path.startsWith('/')) return 'must be repo-relative, not absolute';
+  // `C:/src/x.ts` is absolute on Windows but has no leading slash and no
+  // backslash, so neither test above sees it. Checked inline rather than with
+  // core's helper to keep this module dependency-free, as it was written.
+  if (/^[a-zA-Z]:/.test(path)) return 'must be repo-relative, not a drive-absolute path';
   if (path.includes('\\')) return 'must use forward slashes';
   // NUL and other C0 control bytes are not whitespace, so `\s` misses them.
   // They can never name a real file and make node's fs throw deep in the write

@@ -213,6 +213,27 @@ describe('resync helpers', () => {
     expect(filesFromDiff('')).toEqual([]);
   });
 
+  it('drops paths that are absolute on EITHER platform, not just this one', () => {
+    // A leading-slash test answers only for the host. `C:/evil` and the UNC
+    // form have no leading slash, so they used to survive here and would then
+    // resolve outside the workspace on Windows. The check runs the same on
+    // every platform, so this test proves it everywhere rather than only there.
+    const diff = [
+      '--- a/app/ok.py',
+      '+++ b/app/ok.py',
+      '--- a/C:/evil.py',
+      '+++ b/C:/evil.py',
+      '--- a/C:\\evil2.py',
+      '+++ b/C:\\evil2.py',
+      '--- a//etc/passwd',
+      '+++ b//etc/passwd',
+      '--- a/\\\\server\\share\\evil3.py',
+      '+++ b/\\\\server\\share\\evil3.py',
+      '',
+    ].join('\n');
+    expect(filesFromDiff(diff)).toEqual(['app/ok.py']);
+  });
+
   it('drops diff paths that traverse out of the tree (.., absolute, backslash)', () => {
     // A unified diff can only legitimately name repo-relative paths. A hostile
     // diff naming `../../etc/passwd` or `/etc/passwd` must never survive into

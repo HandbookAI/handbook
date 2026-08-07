@@ -28,6 +28,7 @@ import type { ChatClient } from '@handbook/llm';
 import {
   MissingArtifactError,
   fileExists,
+  isAbsoluteAnyPlatform,
   isInternalNode,
   silentLogger,
   withDirLock,
@@ -122,7 +123,9 @@ export function filesFromDiff(diffText: string): string[] {
     // reference outside the tree. Drop it so the returned list can never steer
     // a caller (this one guards with scannedFiles, but the export is public)
     // to a path outside the workspace.
-    if (path.startsWith('/') || path.split(/[\\/]/).includes('..')) continue;
+    // `isAbsoluteAnyPlatform`, not a leading-slash test: `C:/evil` is absolute
+    // on Windows and would otherwise resolve outside the workspace there.
+    if (isAbsoluteAnyPlatform(path) || path.split(/[\\/]/).includes('..')) continue;
     files.add(path);
   }
   return [...files].sort();

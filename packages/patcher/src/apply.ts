@@ -33,8 +33,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { hostname } from 'node:os';
-import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
-import { sha256Hex, silentLogger, toPosix, writeJsonFile, type Logger } from '@handbook/core';
+import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import {
+  isAbsoluteAnyPlatform,
+  sha256Hex,
+  silentLogger,
+  toPosix,
+  writeJsonFile,
+  type Logger,
+} from '@handbook/core';
 import { parsePlan, type EditBlock } from './parse.js';
 
 export type EditStatus =
@@ -628,7 +635,10 @@ function readManifest(backupDir: string): Manifest {
   const raw: unknown = JSON.parse(readFileSync(join(backupDir, 'manifest.json'), 'utf8'));
   if (typeof raw !== 'object' || raw === null) throw new Error('backup manifest is not an object');
   const obj = raw as Record<string, unknown>;
-  if (typeof obj.sourceRoot !== 'string' || !obj.sourceRoot.startsWith('/')) {
+  // `isAbsolute`, not `startsWith('/')`: a Windows sourceRoot is `C:\...`, and
+  // testing for a leading slash rejected every backup ever taken there, making
+  // rollback impossible on that platform.
+  if (typeof obj.sourceRoot !== 'string' || !isAbsolute(obj.sourceRoot)) {
     throw new Error('backup manifest has no absolute sourceRoot');
   }
   if (!Array.isArray(obj.files)) throw new Error('backup manifest has no files array');
@@ -638,7 +648,7 @@ function readManifest(backupDir: string): Manifest {
     if (typeof entry !== 'object' || entry === null) throw new Error('malformed manifest entry');
     const e = entry as Record<string, unknown>;
     const file = typeof e.file === 'string' ? e.file : '';
-    if (!file || file.startsWith('/') || file.includes('\\'))
+    if (!file || isAbsoluteAnyPlatform(file) || file.includes('\\'))
       throw new Error(`unsafe manifest path: ${file}`);
     const target = resolve(rootAbs, normalize(file));
     if (target !== rootAbs && !target.startsWith(rootAbs + sep)) {
