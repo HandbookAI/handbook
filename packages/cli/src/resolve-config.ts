@@ -14,6 +14,12 @@ export function setConfigFile(file: ConfigFileData | undefined): void {
   configFile = file;
 }
 
+/** The file layer, for the `config` action — which inspects another command's
+ *  settings and so cannot go through `resolveOrThrow`'s throw-on-error path. */
+export function currentConfigFile(): ConfigFileData | undefined {
+  return configFile;
+}
+
 export function resolveOrThrow(command: string, flags: Record<string, unknown>): Record<string, unknown> {
   const result = resolveConfig({ command, flags, env: process.env, file: configFile });
   if (result.errors.length > 0) {

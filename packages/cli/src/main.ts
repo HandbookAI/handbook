@@ -22,8 +22,15 @@ import { join, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
-import { resolveOrThrow, setConfigFile } from './resolve-config.js';
-import { createLogger, discoverConfigFile, loadConfigFile, type LogLevel } from '@handbook/core';
+import { currentConfigFile, resolveOrThrow, setConfigFile } from './resolve-config.js';
+import {
+  createLogger,
+  discoverConfigFile,
+  loadConfigFile,
+  resolveConfig,
+  type LogLevel,
+} from '@handbook/core';
+import { renderConfigJson, renderConfigTable } from './config-command.js';
 import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbook/pipeline';
 import {
@@ -353,6 +360,31 @@ addSettings(
   await startStudio({ stateDir, port, logger: logger(cfg) });
   process.stderr.write(`handbook studio → http://127.0.0.1:${port}\n`);
   await new Promise(() => {}); // run until Ctrl-C
+});
+
+addSettings(
+  program.command('config').description('Print the resolved configuration and where each value came from'),
+  'config',
+).action((opts: Record<string, unknown>) => {
+  const cfg = resolveOrThrow('config', opts);
+  const target = (cfg.forCommand as string | undefined) ?? 'generate';
+  // Plain resolveConfig, not resolveOrThrow: this command's job is to show
+  // configuration, including when it is broken, so a missing --source on
+  // `generate` must render as a visible row (`— unset (required)`) rather
+  // than throw and take down the one tool for debugging that exact problem.
+  const result = resolveConfig({
+    command: target,
+    flags: opts,
+    env: process.env,
+    file: currentConfigFile(),
+  });
+  if (cfg.check) {
+    for (const error of result.errors) process.stderr.write(`config: ${error}\n`);
+    process.stderr.write(result.errors.length ? 'config: FAILED\n' : 'config: OK\n');
+    process.exitCode = result.errors.length ? 2 : 0;
+    return;
+  }
+  process.stdout.write(cfg.json ? renderConfigJson(result, target) : renderConfigTable(result, target));
 });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
