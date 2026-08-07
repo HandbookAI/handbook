@@ -4,11 +4,13 @@ import {
   boundaryOf,
   buildStandardIndexes,
   dirOf,
+  lookupScoped,
   resolveFieldType,
   resolveOwnMethod,
   resolveSameFileFree,
   resolveSiblingPackage,
   resolveViaImport,
+  scopedKey,
   unresolvedOf,
   type BaseScan,
   type StandardIndexes,
@@ -95,6 +97,98 @@ describe('buildStandardIndexes — typeToModule', () => {
   });
 });
 
+/**
+ * The scope-aware table. `typeToModule` is keyed by bare name and keeps the
+ * first `Config` it meets, which silently mis-picks in every language whose
+ * type names are only unique within a package or namespace.
+ */
+describe('buildStandardIndexes — scopedTypeToModule', () => {
+  const scopedScans = [
+    scanOf('src.alpha.config', { scopedTypes: new Map([['alpha', new Set(['Config'])]]) }),
+    scanOf('src.beta.config', { scopedTypes: new Map([['beta', new Set(['Config'])]]) }),
+    scanOf('src.engine', { scopedTypes: new Map([['', new Set(['Engine'])]]) }),
+  ];
+
+  it('keys a type by its scope where the bare-name table cannot', () => {
+    const std = buildStandardIndexes(scopedScans);
+    expect(std.scopedTypeToModule.get(scopedKey('alpha', 'Config'))).toBe('src.alpha.config');
+    expect(std.scopedTypeToModule.get(scopedKey('beta', 'Config'))).toBe('src.beta.config');
+    // What it exists to avoid: one winner standing in for two real types.
+    expect(std.typeToModule.get('Config')).toBeUndefined();
+  });
+
+  it('stays empty for a language that declares no scopes', () => {
+    expect(buildStandardIndexes([scanOf('app')]).scopedTypeToModule.size).toBe(0);
+  });
+
+  it('keeps the first declaration of a name within one scope', () => {
+    const std = buildStandardIndexes([
+      scanOf('a', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
+      scanOf('b', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
+    ]);
+    expect(std.scopedTypeToModule.get(scopedKey('ns', 'T'))).toBe('a');
+  });
+
+  it('honours typeModules as the owning module, like typeToModule does', () => {
+    const std = buildStandardIndexes([
+      scanOf('lib', {
+        scopedTypes: new Map([['outer', new Set(['S'])]]),
+        typeModules: new Map([['S', 'lib::outer']]),
+      }),
+    ]);
+    expect(std.scopedTypeToModule.get(scopedKey('outer', 'S'))).toBe('lib::outer');
+  });
+});
+
+describe('scopedKey / lookupScoped', () => {
+  const table = buildStandardIndexes([
+    scanOf('src.alpha.config', { scopedTypes: new Map([['alpha', new Set(['Config'])]]) }),
+    scanOf('src.beta.config', { scopedTypes: new Map([['beta', new Set(['Config'])]]) }),
+    scanOf('src.engine', { scopedTypes: new Map([['', new Set(['Engine'])]]) }),
+  ]).scopedTypeToModule;
+
+  it('cannot confuse scope and name across the separator', () => {
+    expect(scopedKey('a::b', 'C')).not.toBe(scopedKey('a', 'b::C'));
+  });
+
+  it('returns the first hit in the caller resolution order, with its scope', () => {
+    expect(lookupScoped(table, ['beta', 'alpha', ''], 'Config')).toEqual({
+      scope: 'beta',
+      value: 'src.beta.config',
+    });
+    expect(lookupScoped(table, ['alpha', 'beta', ''], 'Config')?.scope).toBe('alpha');
+  });
+
+  it('finds a global-scope type through the empty scope', () => {
+    expect(lookupScoped(table, ['alpha', ''], 'Engine')).toEqual({
+      scope: '',
+      value: 'src.engine',
+    });
+  });
+
+  it('misses when no scope in the order declares the name', () => {
+    expect(lookupScoped(table, ['alpha', 'beta'], 'Engine')).toBeUndefined();
+    expect(lookupScoped(table, [], 'Config')).toBeUndefined();
+  });
+
+  it('stops at the first hit rather than draining the scope order', () => {
+    const tried: string[] = [];
+    function* order(): Generator<string> {
+      for (const scope of ['alpha', 'beta']) {
+        tried.push(scope);
+        yield scope;
+      }
+    }
+    expect(lookupScoped(table, order(), 'Config')?.value).toBe('src.alpha.config');
+    expect(tried).toEqual(['alpha']);
+  });
+
+  it('works on any scope-keyed table, not only the spine one', () => {
+    const own = new Map([[scopedKey('demo', 'App::run'), 'src.app.App.run']]);
+    expect(lookupScoped(own, ['', 'demo'], 'App::run')?.value).toBe('src.app.App.run');
+  });
+});
+
 describe('buildStandardIndexes — typeMethods', () => {
   it('keys methods by owning module + owner and unions same-key scans', () => {
     const std = buildStandardIndexes([
@@ -131,7 +225,9 @@ describe('buildStandardIndexes — directoryFunctions', () => {
   });
 
   it('files at the root live under "."', () => {
-    const std = buildStandardIndexes([scanOf('main', { files: ['main.x'], freeFunctions: new Set(['run']) })]);
+    const std = buildStandardIndexes([
+      scanOf('main', { files: ['main.x'], freeFunctions: new Set(['run']) }),
+    ]);
     expect(std.directoryFunctions.get('.')?.get('run')).toBe('main');
   });
 
@@ -405,7 +501,12 @@ describe('resolveFieldType', () => {
   });
 
   it('uses the id separator on both hit and boundary paths', () => {
-    const rust = scanOf('src::app', { fieldTypes: new Map([['App.engine', 'Engine'], ['App.x', 'Ghost']]) });
+    const rust = scanOf('src::app', {
+      fieldTypes: new Map([
+        ['App.engine', 'Engine'],
+        ['App.x', 'Ghost'],
+      ]),
+    });
     const rustStd = buildStandardIndexes(
       [scanOf('src::engine', { ownerMethods: new Map([['Engine', new Set(['spin'])]]) })],
       '::',

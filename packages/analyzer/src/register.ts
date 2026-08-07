@@ -5,6 +5,7 @@ import { TypeScriptAdapter } from './adapters/typescript.js';
 import { GoAdapter } from './adapters/go.js';
 import { RustAdapter } from './adapters/rust.js';
 import { ShellAdapter } from './adapters/shell.js';
+import { CppAdapter } from './adapters/cpp.js';
 import { CSharpAdapter } from './adapters/csharp.js';
 import { JavaAdapter } from './adapters/java.js';
 import { createGenericAdapter, GENERIC_LANGUAGES } from './generic.js';
@@ -21,6 +22,9 @@ export function registerBuiltinAdapters(): void {
   registerAdapter('shell', () => new ShellAdapter());
   registerAdapter('java', () => new JavaAdapter());
   registerAdapter('csharp', () => new CSharpAdapter());
+  // One C-family adapter: the `cpp` grammar handles C too, the `c` one does not
+  // handle C++ at all.
+  registerAdapter('cpp', () => new CppAdapter());
   // The long tail: one config-driven engine, one declarative spec per language.
   for (const spec of GENERIC_LANGUAGES) {
     registerAdapter(spec.name, () => createGenericAdapter(spec));

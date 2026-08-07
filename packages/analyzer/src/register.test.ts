@@ -374,6 +374,78 @@ public static class Helpers
   analyze: ['src/App.cs', 'src/Motor.cs', 'tools/Text.cs'],
 };
 
+const CPP: Fixture = {
+  files: {
+    // `engine.h` declares, `engine.cpp` defines: one node per function, and the
+    // call from `app.cpp` must land on the definition.
+    'src/engine.h': `#pragma once
+
+namespace demo {
+
+class Engine {
+public:
+    Engine();
+    void spin();
+    static int describe();
+    int rpm_;
+};
+
+int ignite(Engine& e);
+
+}  // namespace demo
+`,
+    'src/engine.cpp': `#include "engine.h"
+
+namespace demo {
+
+Engine::Engine() { this->rpm_ = 0; }
+
+void Engine::spin() { this->rpm_ += 1; }
+
+int Engine::describe() { return 1; }
+
+int ignite(Engine& e) {
+    e.spin();
+    return 1;
+}
+
+}  // namespace demo
+`,
+    'src/app.cpp': `#include "engine.h"
+#include <cstdio>
+
+namespace demo {
+
+class App {
+public:
+    explicit App(Engine* engine) : engine_(engine) {}
+
+    void run(Engine& other) {
+        this->prepare();
+        this->engine_->spin();
+        other.spin();
+        Engine::describe();
+        ignite(other);
+        Engine* made = new Engine();
+        made->spin();
+        Widget* w = new Widget();
+        w->poke();
+        printf("x");
+        mystery.poke();
+    }
+
+    void prepare() { this->engine_ = nullptr; }
+
+private:
+    Engine* engine_;
+};
+
+}  // namespace demo
+`,
+  },
+  analyze: ['src/app.cpp', 'src/engine.cpp', 'src/engine.h'],
+};
+
 /**
  * Generic-tier fixtures. Smaller than the full-tier ones above because a generic
  * adapter declares less — but held to the same bidirectional standard: whatever
@@ -500,6 +572,7 @@ const FIXTURES: Record<string, Fixture> = {
   shell: SHELL,
   java: JAVA,
   csharp: CSHARP,
+  cpp: CPP,
   kotlin: KOTLIN,
   scala: SCALA,
   zig: ZIG,
