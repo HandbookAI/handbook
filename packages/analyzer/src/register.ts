@@ -8,6 +8,11 @@ import { ShellAdapter } from './adapters/shell.js';
 import { CppAdapter } from './adapters/cpp.js';
 import { CSharpAdapter } from './adapters/csharp.js';
 import { JavaAdapter } from './adapters/java.js';
+import { RubyAdapter } from './adapters/ruby.js';
+import { PhpAdapter } from './adapters/php.js';
+import { SwiftAdapter } from './adapters/swift.js';
+import { DartAdapter } from './adapters/dart.js';
+import { SolidityAdapter } from './adapters/solidity.js';
 import { createGenericAdapter, GENERIC_LANGUAGES } from './generic.js';
 
 let done = false;
@@ -25,6 +30,13 @@ export function registerBuiltinAdapters(): void {
   // One C-family adapter: the `cpp` grammar handles C too, the `c` one does not
   // handle C++ at all.
   registerAdapter('cpp', () => new CppAdapter());
+  registerAdapter('ruby', () => new RubyAdapter());
+  registerAdapter('php', () => new PhpAdapter());
+  registerAdapter('dart', () => new DartAdapter());
+  registerAdapter('solidity', () => new SolidityAdapter());
+  // Swift's grammar aborts the process on V8 >= 13; the adapter refuses at
+  // discovery there rather than taking the whole run down (see swift.ts).
+  registerAdapter('swift', () => new SwiftAdapter());
   // The long tail: one config-driven engine, one declarative spec per language.
   for (const spec of GENERIC_LANGUAGES) {
     registerAdapter(spec.name, () => createGenericAdapter(spec));

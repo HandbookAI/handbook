@@ -87,7 +87,7 @@ async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
     for (const [name, files] of Object.entries(byLanguage)) {
       logger.info(`[scan] ${name}: ${files.length} files`);
       const adapter = getAdapter(name);
-      analyses.push(await adapter.analyze(files, options.sourceRoot));
+      analyses.push(await adapter.analyze(files, options.sourceRoot, { logger }));
       const capabilities = declaredCapabilities(adapter);
       if (capabilities) languages[name] = capabilities;
       scannedFiles.push(...files);
@@ -102,7 +102,7 @@ async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
     }
     logger.info(`[scan] lang=${lang} root=${options.sourceRoot}`);
     logger.info(`[scan] ${scannedFiles.length} files`);
-    analyses.push(await adapter.analyze(scannedFiles, options.sourceRoot));
+    analyses.push(await adapter.analyze(scannedFiles, options.sourceRoot, { logger }));
     const capabilities = declaredCapabilities(adapter);
     if (capabilities) languages[lang] = capabilities;
     language = lang;

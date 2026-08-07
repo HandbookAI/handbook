@@ -6,7 +6,7 @@
  * Adding a language = implementing this interface and registering it.
  */
 import type { AdapterCapabilities, FunctionNode, ModuleAnalysis } from '@handbook/core';
-import { listFilesRecursive } from '@handbook/core';
+import { listFilesRecursive, type Logger } from '@handbook/core';
 
 /** Directory names skipped by every adapter's discovery. */
 export const COMMON_SKIP_DIRS: ReadonlySet<string> = new Set([
@@ -48,7 +48,16 @@ export interface LanguageAdapter {
   /** Find analyzable files under `sourceRoot` (relative POSIX paths, sorted). */
   discover(sourceRoot: string): string[];
   /** Parse `files` (relative POSIX paths) into the IR. */
-  analyze(files: readonly string[], sourceRoot: string): Promise<ModuleAnalysis>;
+  /**
+   * Parse `files` into the IR. The optional logger lets a driver report files
+   * it had to skip — a grammar can fail, and a silently shorter handbook is
+   * worse than one that says what it could not read.
+   */
+  analyze(
+    files: readonly string[],
+    sourceRoot: string,
+    options?: { logger?: Logger },
+  ): Promise<ModuleAnalysis>;
   /**
    * 1-based inclusive statement spans inside the named function — legal snap
    * boundaries for resync. Undefined = unsupported for this language.

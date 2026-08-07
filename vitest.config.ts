@@ -3,6 +3,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['packages/*/src/**/*.test.ts', 'packages/*/test/**/*.test.ts'],
+    // tree-sitter-swift ABORTS the process (`Fatal process out of memory: Zone`,
+    // exit 133) once V8 >= 13 tiers the wasm module up — measured fatal 5/5 on
+    // Node 24, fine on Node 21, and unique to that one grammar among nineteen.
+    // Liftoff-only compilation skips the tier-up, so the Swift tests can run for
+    // real instead of being skipped. The adapter itself refuses at discovery on
+    // an unflagged runtime, so production never hits the abort either.
+    execArgv: ['--liftoff-only'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
