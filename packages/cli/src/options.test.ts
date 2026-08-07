@@ -98,5 +98,18 @@ describe('addSettings', () => {
       expect(result.values.useLlm).toBe(false);
       expect(result.sources.useLlm).toEqual({ kind: 'env', name: 'HANDBOOK_RESYNC_USE_LLM' });
     });
+
+    it('keeps the positive half of a negated flag out of the help text', () => {
+      // The positive option exists only to stop commander attaching an implicit
+      // `true` to --no-llm; publishing it would offer users a flag we do not mean.
+      // The lookahead requires the flag name to END there (whitespace or EOL) —
+      // a bare `\b` would also match `--llm-retries`/`--llm-concurrency`, which
+      // are real, intentionally-visible flags this task added.
+      const cmd = addSettings(new Command('resync'), 'resync');
+      const help = cmd.helpInformation();
+      expect(help).toContain('--no-llm');
+      expect(help).not.toMatch(/^\s+--llm(?=\s|$)/m);
+      expect(help).not.toMatch(/^\s+--render(?=\s|$)/m);
+    });
   });
 });

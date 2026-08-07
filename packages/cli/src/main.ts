@@ -24,7 +24,7 @@ import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
 import { resolveOrThrow } from './resolve-config.js';
 import { createLogger, type LogLevel } from '@handbook/core';
-import { CachedChatClient, OpenAiChatClient, type ChatClient } from '@handbook/llm';
+import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbook/pipeline';
 import {
   renderAgentSite,
@@ -75,8 +75,13 @@ function logger(cfg?: Record<string, unknown>): ReturnType<typeof createLogger> 
   return createLogger('', level);
 }
 
-function llmClient(): ChatClient {
-  return new OpenAiChatClient({ logger: logger() });
+/** LLM settings come from the resolved config, so --model/--base-url/etc reach the client. */
+function llmClient(cfg: Record<string, unknown>): ChatClient {
+  return new OpenAiChatClient({
+    config: llmConfigFromValues(cfg),
+    concurrency: cfg.llmConcurrency as number | undefined,
+    logger: logger(cfg),
+  });
 }
 
 function printJson(value: unknown): void {
@@ -111,7 +116,7 @@ addSettings(
   let client: ChatClient | undefined;
   if (phase !== '1') {
     try {
-      client = llmClient();
+      client = llmClient(cfg);
     } catch {
       client = undefined;
     }
@@ -187,10 +192,14 @@ addSettings(
   let coverage;
   if (cfg.work) {
     const work = new WorkDir(cfg.work as string);
-    coverage = {
-      assignment: work.loadAssignment(),
-      sourceRoot: cfg.source as string | undefined,
-    };
+    // `work` is env-reachable, so a project .env with HANDBOOK_WORK must not turn
+    // an unrelated skill build into a failure. Coverage is an enrichment; a work
+    // dir without a phase-2 assignment simply has nothing to contribute.
+    if (existsSync(join(cfg.work as string, 'phase2', 'assignment.json'))) {
+      coverage = { assignment: work.loadAssignment(), sourceRoot: cfg.source as string | undefined };
+    } else {
+      logger(cfg).debug(`[skill] no phase-2 assignment under ${String(cfg.work)} — skipping coverage.json`);
+    }
   }
   const result = buildSkill({
     handbookDir: cfg.handbook as string,
@@ -229,7 +238,7 @@ addSettings(
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('plan', opts);
   const result = await runPlanner({
-    client: llmClient(),
+    client: llmClient(cfg),
     sourceRoot: cfg.source as string,
     handbookDir: cfg.handbook as string | undefined,
     request: cfg.request as string,
@@ -263,7 +272,7 @@ addSettings(
   const report = await resyncHandbook({
     caseDir: cfg.case as string,
     workDir,
-    client: useLlm ? llmClient() : undefined,
+    client: useLlm ? llmClient(cfg) : undefined,
     noLlm: !useLlm,
     detail: cfg.cardDetail as 'brief' | 'deep' | undefined,
     correctionsPath: cfg.corrections as string | undefined,

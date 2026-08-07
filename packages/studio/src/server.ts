@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ensureDir,
   fileExists,
+  PIPELINE_DEFAULTS,
   readJsonFile,
   silentLogger,
   truncate,
@@ -399,8 +400,8 @@ function parseGenerateParams(body: Record<string, unknown>): GenerateParams {
     narrateLang: body.narrateLang === 'zh' ? 'zh' : 'en',
     detail: body.detail === 'deep' ? 'deep' : 'brief',
     synthMode: body.synthMode === 'doctor' ? 'doctor' : 'oneshot',
-    maxDoctorRounds: toInt(body.maxDoctorRounds, 'maxDoctorRounds', 1, 6),
-    readWorkers: toInt(body.readWorkers, 'readWorkers', 1, 12),
+    maxDoctorRounds: toInt(body.maxDoctorRounds, 'maxDoctorRounds', 1, PIPELINE_DEFAULTS.maxDoctorRounds),
+    readWorkers: toInt(body.readWorkers, 'readWorkers', 1, PIPELINE_DEFAULTS.readWorkers),
     resume: body.resume === true,
     refresh: body.refresh === true,
     title: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : undefined,
