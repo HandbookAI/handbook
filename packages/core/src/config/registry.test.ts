@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest';
+import { SETTINGS, settingsFor, settingByKey } from './registry.js';
+import { envName, scopedEnvName } from './names.js';
+
+describe('registry integrity', () => {
+  // Each of these is a declaration mistake that would otherwise surface as a
+  // confusing runtime failure or a silently unreachable setting.
+  it('has no duplicate keys', () => {
+    const keys = SETTINGS.map((s) => s.key);
+    expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
+  });
+
+  it('gives every int a min and every enum its choices', () => {
+    expect(SETTINGS.filter((s) => s.type === 'int' && s.min === undefined).map((s) => s.key)).toEqual([]);
+    expect(SETTINGS.filter((s) => s.type === 'enum' && !s.choices?.length).map((s) => s.key)).toEqual([]);
+  });
+
+  it('keeps an enum default inside its own choices', () => {
+    const bad = SETTINGS.filter(
+      (s) => s.type === 'enum' && s.default !== undefined && !s.choices?.includes(String(s.default)),
+    );
+    expect(bad.map((s) => s.key)).toEqual([]);
+  });
+
+  it('never puts a secret on the command line', () => {
+    // A flag would put the key in shell history and in `ps` output.
+    expect(SETTINGS.filter((s) => s.secret && s.flag).map((s) => s.key)).toEqual([]);
+  });
+
+  it('declares at least one command per setting', () => {
+    expect(SETTINGS.filter((s) => s.commands.length === 0).map((s) => s.key)).toEqual([]);
+  });
+
+  it('has no flag collision within any one command', () => {
+    for (const command of [...new Set(SETTINGS.flatMap((s) => s.commands))]) {
+      const flags = settingsFor(command)
+        .map((s) => s.flag?.split(/[ ,]/)[0])
+        .filter((f): f is string => Boolean(f));
+      expect(
+        flags.filter((f, i) => flags.indexOf(f) !== i),
+        `command ${command}`,
+      ).toEqual([]);
+    }
+  });
+
+  it('has no env-name collision across the whole table', () => {
+    const names = SETTINGS.flatMap((s) => [
+      ...(s.scopedOnly ? [] : [envName(s.key)]),
+      ...s.commands.map((c) => scopedEnvName(c, s.key)),
+      ...(s.envAliases ?? []),
+    ]);
+    expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
+  });
+
+  it('exposes the vendor env aliases the toolchain already documented', () => {
+    // These are load-bearing: existing .env files and both READMEs use them.
+    expect(settingByKey('llmApiKey')?.envAliases).toContain('OPENAI_API_KEY');
+    expect(settingByKey('llmModel')?.envAliases).toContain('OPENAI_MODEL');
+    expect(settingByKey('llmBaseUrl')?.envAliases).toContain('OPENAI_BASE_URL');
+  });
+});
+
+describe('settingsFor', () => {
+  it('returns only the settings that declare the command', () => {
+    expect(settingsFor('generate').every((s) => s.commands.includes('generate'))).toBe(true);
+  });
+
+  it('is empty for an unknown command rather than throwing', () => {
+    expect(settingsFor('nope')).toEqual([]);
+  });
+});
