@@ -19,13 +19,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Node, Parser } from 'web-tree-sitter';
-import type {
-  AdapterCapabilities,
-  CallEdge,
-  CallType,
-  FunctionNode,
-  ModuleAnalysis,
-} from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { createParser } from './languages.js';
 import { discoverByExtension, type LanguageAdapter } from './adapter.js';
@@ -54,6 +48,17 @@ export interface BaseScan {
   /** top-level / free function names. */
   freeFunctions: Set<string>;
   /**
+   * Scope-qualified type declarations: scope (namespace / package, '' = the
+   * global or default one) → the type names this scan declares in it.
+   *
+   * Optional, and empty for languages that have no scopes. Languages whose type
+   * names are unique only WITHIN a scope fill it in addition to
+   * `ownerMethods`, and get {@link StandardIndexes.scopedTypeToModule} in
+   * return — the table `typeToModule` cannot be, since that one is keyed by
+   * bare name and silently keeps the first `Config` it meets.
+   */
+  scopedTypes?: Map<string, Set<string>>;
+  /**
    * Declared type → the module that owns it, for languages where that is not
    * simply `moduleId`: Rust's inline `mod` blocks nest a module inside a file.
    *
@@ -67,13 +72,27 @@ export interface BaseScan {
 }
 
 /**
- * The four cross-module tables every object-oriented language needs, built once
- * for all of them. `moduleFunctions` is the one whose absence was audit finding
+ * The cross-module tables every object-oriented language needs, built once for
+ * all of them. `moduleFunctions` is the one whose absence was audit finding
  * A1 — it exists here whether a given language happens to consult it or not.
+ *
+ * `scopedTypeToModule` is the answer to the opposite failure: Java, C# and C++
+ * each hit the point where a BARE type name is not a unique key, and the first
+ * two each grew a private scope-aware index of their own before the shape was
+ * clear. It lives here now so the fourth language does not write a third one.
  */
 export interface StandardIndexes {
   /** bare type name → owning moduleId (first declaration wins). */
   typeToModule: Map<string, string>;
+  /**
+   * {@link scopedKey}(scope, Type) → owning moduleId (first declaration wins
+   * within a scope). Built from {@link BaseScan.scopedTypes}, so it is empty
+   * for languages that declare no scopes — and non-empty ones should prefer it
+   * to `typeToModule`, which cannot tell `alpha::Config` from `beta::Config`.
+   * Read it with {@link lookupScoped}, passing the language's own visibility
+   * order.
+   */
+  scopedTypeToModule: Map<string, string>;
   /** `<owning module><sep><Type>` → method names. */
   typeMethods: Map<string, Set<string>>;
   /** moduleId → free function names. */
@@ -124,6 +143,47 @@ export function dirOf(file: string): string {
 }
 
 /**
+ * Key for a scope-qualified table: `<scope>\0<name>`, where '' is the global
+ * scope. NUL is the separator because it is legal in no language's scope
+ * syntax, so `a::b` + `C` can never collide with `a` + `b::C`.
+ */
+export function scopedKey(scope: string, name: string): string {
+  return `${scope}\u0000${name}`;
+}
+
+/** What {@link lookupScoped} found, plus the scope that produced the hit. */
+export interface ScopedHit<T> {
+  scope: string;
+  value: T;
+}
+
+/**
+ * First hit for `name` among `scopes`, tried in order.
+ *
+ * `scopes` IS the language's resolution order, which the spine deliberately
+ * does not model: Java's is "this file → declared package → single-type import
+ * → on-demand import", C++'s is "innermost namespace outward → global →
+ * using-directives". Pass a generator to compute that order lazily when later
+ * candidates are expensive.
+ *
+ * The matched scope comes back with the value because a caller almost always
+ * needs it next — to build the qualified id of what it just found. Generic over
+ * the value type so a language can use it on its own scoped tables too, not
+ * only on {@link StandardIndexes.scopedTypeToModule}.
+ */
+export function lookupScoped<T>(
+  table: ReadonlyMap<string, T>,
+  scopes: Iterable<string>,
+  name: string,
+): ScopedHit<T> | undefined {
+  for (const scope of scopes) {
+    const value = table.get(scopedKey(scope, name));
+    if (value !== undefined) return { scope, value };
+  }
+  return undefined;
+}
+
+/**
  * Build the standard cross-module tables. First declaration wins for
  * type→module and directory→function; method and free-function SETS are unioned
  * so two scans that collapse to one moduleId cannot silently drop one another.
@@ -133,6 +193,7 @@ export function buildStandardIndexes<S extends BaseScan>(
   separator: string = DEFAULT_SEPARATOR,
 ): StandardIndexes {
   const typeToModule = new Map<string, string>();
+  const scopedTypeToModule = new Map<string, string>();
   const typeMethods = new Map<string, Set<string>>();
   const moduleFunctions = new Map<string, Set<string>>();
   const directoryFunctions = new Map<string, Map<string, string>>();
@@ -147,6 +208,15 @@ export function buildStandardIndexes<S extends BaseScan>(
       moduleFunctions.set(scan.moduleId, free);
     }
     for (const name of scan.freeFunctions) free.add(name);
+
+    for (const [scope, types] of scan.scopedTypes ?? []) {
+      for (const type of types) {
+        const key = scopedKey(scope, type);
+        if (!scopedTypeToModule.has(key)) {
+          scopedTypeToModule.set(key, scan.typeModules?.get(type) ?? scan.moduleId);
+        }
+      }
+    }
 
     for (const [owner, methods] of scan.ownerMethods) {
       const ownerModule = scan.typeModules?.get(owner) ?? scan.moduleId;
@@ -176,7 +246,14 @@ export function buildStandardIndexes<S extends BaseScan>(
     }
   }
 
-  return { typeToModule, typeMethods, moduleFunctions, directoryFunctions, moduleIds };
+  return {
+    typeToModule,
+    scopedTypeToModule,
+    typeMethods,
+    moduleFunctions,
+    directoryFunctions,
+    moduleIds,
+  };
 }
 
 /** `unresolved:<hint>` — the one shape the graph builder diverts to dropped calls. */
@@ -210,9 +287,7 @@ export function resolveSameFileFree(
   opts: { separator?: string; idOf?: (name: string) => string | undefined } = {},
 ): Resolved | undefined {
   if (!scan.freeFunctions.has(name)) return undefined;
-  const id = opts.idOf
-    ? opts.idOf(name)
-    : `${scan.moduleId}${opts.separator ?? DEFAULT_SEPARATOR}${name}`;
+  const id = opts.idOf ? opts.idOf(name) : `${scan.moduleId}${opts.separator ?? DEFAULT_SEPARATOR}${name}`;
   return id ? { calleeId: id, callType: 'internal_func' } : undefined;
 }
 
@@ -451,8 +526,6 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
 }
 
 /** Object form of {@link SpineAdapter} — what the generic engine builds. */
-export function createAdapter<S extends BaseScan, I = unknown>(
-  spec: LanguageSpec<S, I>,
-): LanguageAdapter {
+export function createAdapter<S extends BaseScan, I = unknown>(spec: LanguageSpec<S, I>): LanguageAdapter {
   return new SpineAdapter(spec);
 }
