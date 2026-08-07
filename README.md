@@ -212,7 +212,7 @@ pnpm format           # prettier over the whole repo
 pnpm test:coverage    # vitest with per-package coverage floors
 pnpm check:workspace  # the monorepo's structural invariants
 pnpm check:packaging  # publint + are-the-types-wrong, per package
-pnpm smoke:install    # pack, install with plain npm, drive the CLI
+pnpm run check:install # pack, install with plain npm, drive the CLI
 ```
 
 `pnpm check` runs, in order: type-check (sources, then tests) → workspace
@@ -241,7 +241,7 @@ Conventions the tooling enforces rather than documents:
 - **Tests resolve `@handbook/*` to source, not `dist`.** Otherwise coverage of
   anything consumed across a package boundary is attributed nowhere —
   `core/src/util/hash.ts` read as 0% while the pipeline called it on every run.
-  The real `dist` is verified by `tsc -b` and by `pnpm smoke:install`, which
+  The real `dist` is verified by `tsc -b` and by `pnpm run check:install`, which
   installs the packed tarballs with plain npm and runs the CLI against them.
 
 ## Releasing
