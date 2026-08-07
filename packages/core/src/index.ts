@@ -15,3 +15,4 @@ export * from './util/lock.js';
 export * from './config/types.js';
 export * from './config/names.js';
 export * from './config/registry.js';
+export * from './config/coerce.js';
