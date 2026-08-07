@@ -10,7 +10,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map"
   ],
   "scripts": {
     "build": "tsc -b",
@@ -22,5 +23,8 @@
   "license": "MIT",
   "publishConfig": {
     "access": "public"
+  },
+  "engines": {
+    "node": ">=20.11"
   }
 }
