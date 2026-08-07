@@ -192,8 +192,10 @@ cli  +  11 个薄委托   demo  demo:self  demo:self:real  mock-llm  prepare
 - `clean:all` 需要给 `clean.mjs` 加一个 `--node-modules` 开关，保持它跨平台的初衷，不用 `rm -rf`
 - 不做 `test:ui`：要为一个此处没人用的流程引入 `@vitest/ui` 新依赖
 
-**重命名的调用方必须同步改**：`.github/workflows/ci.yml`（`pnpm smoke:install`）、
-`release.yml`（`pnpm release`、`pnpm version-packages`）、以及两个 README 共 4 处引用。
+**直接重命名，不保留旧名别名**（用户 2026-08-07 明确决定）。旧名一个都不留，调用方同步改完：
+`.github/workflows/ci.yml`（`pnpm smoke:install`）、`release.yml`（`pnpm release`、
+`pnpm version-packages`）、以及两个 README 共 4 处引用。第 7 节的脚本名漂移测试正是这类
+遗漏的兜底——留别名反而会让漂移测试失去意义。
 
 ## 实施分期
 
