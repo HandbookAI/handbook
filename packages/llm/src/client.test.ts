@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { OpenAiChatClient, extractAssistantText, looksLikeGatewayPage, resolveLlmEnv } from './client.js';
-import { PermanentError, silentLogger } from '@handbook/core';
+import {
+  OpenAiChatClient,
+  extractAssistantText,
+  llmConfigFromValues,
+  looksLikeGatewayPage,
+  resolveLlmEnv,
+} from './client.js';
+import { PermanentError, settingByKey, silentLogger } from '@handbook/core';
 
 function fakeFetch(handler: (calls: number) => { status: number; body: unknown }): typeof fetch {
   let calls = 0;
@@ -50,6 +56,29 @@ describe('resolveLlmEnv', () => {
   it('falls back to HANDBOOK_LLM_*', () => {
     const env = resolveLlmEnv({ HANDBOOK_LLM_MODEL: 'm1' } as NodeJS.ProcessEnv);
     expect(env.model).toBe('m1');
+  });
+});
+
+describe('llmConfigFromValues', () => {
+  it('falls back to the registry default for every field when values is empty', () => {
+    // No hand-built `values` object standing in for a real resolveConfig()
+    // output: the point is that the client's own fallbacks and the registry's
+    // declared defaults are the same values, read from the registry itself so
+    // this test cannot drift from it either.
+    const config = llmConfigFromValues({});
+    expect(config.apiKey).toBe(settingByKey('llmApiKey')?.default);
+    expect(config.model).toBe(settingByKey('llmModel')?.default);
+    expect(config.baseUrl).toBe(settingByKey('llmBaseUrl')?.default);
+    expect(config.maxTokens).toBe(settingByKey('llmMaxTokens')?.default);
+    // maxRetries default is 6, already >= 1, so the clamp is a no-op here —
+    // the clamp's own behaviour (0 -> 1) is covered separately below.
+    expect(config.maxRetries).toBe(settingByKey('llmMaxRetries')?.default);
+    expect(config.retryBackoffMs).toBe(Number(settingByKey('llmRetryBackoff')?.default) * 1000);
+    expect(config.timeoutMs).toBe(Number(settingByKey('llmTimeout')?.default) * 1000);
+    // llmExtraBody is a pass-through with no registry default; its absence
+    // must still produce an empty object, not undefined.
+    expect(settingByKey('llmExtraBody')?.default).toBeUndefined();
+    expect(config.extraBody).toEqual({});
   });
 });
 
