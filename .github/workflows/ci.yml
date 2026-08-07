@@ -2,7 +2,7 @@
 #
 # Six independent gates, so a failure names its own cause. Everything they run
 # is a script that also runs locally — `pnpm check`, `pnpm check:packaging`,
-# `pnpm smoke:install` — so a red job can be reproduced on a laptop instead of
+# `pnpm run check:install` — so a red job can be reproduced on a laptop instead of
 # debugged by pushing commits.
 name: CI
 
@@ -110,7 +110,7 @@ jobs:
       # with plain npm — no workspace, no symlinks — and drives the CLI through
       # analyze → generate → render → skill → validate against the offline mock.
       # The only gate here that tests what users actually receive.
-      - run: pnpm smoke:install
+      - run: pnpm run check:install
 
   demo:
     name: demo (offline, via the shell entry point)

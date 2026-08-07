@@ -190,7 +190,7 @@ pnpm format           # prettier，覆盖整个仓库
 pnpm test:coverage    # 带分包覆盖率下限的 vitest
 pnpm check:workspace  # monorepo 结构不变量
 pnpm check:packaging  # 逐包跑 publint + are-the-types-wrong
-pnpm smoke:install    # 打包、用原生 npm 安装、驱动 CLI 跑全链路
+pnpm run check:install # 打包、用原生 npm 安装、驱动 CLI 跑全链路
 ```
 
 `pnpm check` 顺序为：类型检查（先源码后测试）→ 工作区不变量 → eslint 零警告 → prettier →
@@ -213,7 +213,7 @@ pnpm smoke:install    # 打包、用原生 npm 安装、驱动 CLI 跑全链路
   `@handbook/cli` 只有 23%。每个包有各自的下限，压在实测值下方一点，形成棘轮。
 - **测试把 `@handbook/*` 解析到源码，而不是 `dist`。** 否则跨包被消费的代码在覆盖率里
   无处归因——`core/src/util/hash.ts` 明明每轮都被 pipeline 调用，却读作 0%。真正的
-  `dist` 由 `tsc -b` 和 `pnpm smoke:install` 验证，后者用原生 npm 装上打好的 tarball 再跑 CLI。
+  `dist` 由 `tsc -b` 和 `pnpm run check:install` 验证，后者用原生 npm 装上打好的 tarball 再跑 CLI。
 
 ## 发布
 

@@ -5,7 +5,7 @@
  * derived). Prose cannot be derived, so it is pinned here instead: adding an
  * adapter and forgetting the docs fails the build.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -64,4 +64,65 @@ describe('documented language support matches the registry', () => {
       /\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(built-in\s+)?adapters\b/i,
     );
   });
+});
+
+describe('documented pnpm scripts exist', () => {
+  const scripts = Object.keys(
+    (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts,
+  );
+  // `pnpm <x>` may legitimately be a pnpm builtin (`pnpm install`) or a local
+  // binary (`pnpm commitlint`), neither of which is a script in this manifest.
+  // Reading .bin keeps that allowlist self-maintaining instead of hand-listed.
+  const binDir = join(repoRoot, 'node_modules', '.bin');
+  const bins = existsSync(binDir) ? readdirSync(binDir) : [];
+  const BUILTINS = new Set([
+    'install',
+    'add',
+    'remove',
+    'update',
+    'why',
+    'store',
+    'dlx',
+    'exec',
+    'run',
+    'test',
+    'list',
+    'ls',
+    'outdated',
+    'licenses',
+    'publish',
+    'pack',
+    'config',
+    'env',
+    'setup',
+    'link',
+    'unlink',
+    'import',
+    'rebuild',
+    'prune',
+    'fetch',
+    'deploy',
+    'patch',
+    'audit',
+    'bin',
+    'root',
+    'recursive',
+    'dedupe',
+    'up',
+    'init',
+    'create',
+    'doctor',
+    'start',
+    'version',
+  ]);
+
+  for (const doc of ['README.md', 'README.zh-CN.md']) {
+    it(`${doc} names no nonexistent pnpm script`, () => {
+      const named = [...read(doc).matchAll(/\bpnpm (?:run )?([a-z][a-z0-9:-]*)/g)].map((m) => m[1] as string);
+      const missing = [...new Set(named)].filter(
+        (name) => !scripts.includes(name) && !BUILTINS.has(name) && !bins.includes(name),
+      );
+      expect(missing, `${doc} references missing script(s): ${missing.join(', ')}`).toEqual([]);
+    });
+  }
 });
