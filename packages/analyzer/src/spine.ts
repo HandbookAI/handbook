@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import type { Node, Parser } from 'web-tree-sitter';
 import type { AdapterCapabilities, CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { truncate } from '@handbook/core';
+import type { Logger } from '@handbook/core';
 import { createParser } from './languages.js';
 import { discoverByExtension, type LanguageAdapter } from './adapter.js';
 
@@ -483,9 +484,15 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
     );
   }
 
-  async analyze(files: readonly string[], sourceRoot: string): Promise<ModuleAnalysis> {
+  async analyze(
+    files: readonly string[],
+    sourceRoot: string,
+    options: { logger?: Logger } = {},
+  ): Promise<ModuleAnalysis> {
     const { spec } = this;
+    const logger = options.logger;
     const parsers = new Map<string, Parser>();
+    const unparsable: string[] = [];
     const scans: S[] = [];
     const byModule = new Map<string, S>();
 
@@ -502,7 +509,21 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
         parser = await createParser(grammar);
         parsers.set(grammar, parser);
       }
-      const tree = parser.parse(source);
+      // A grammar can THROW, not merely fail: tree-sitter-bash's external
+      // scanner imports a symbol web-tree-sitter does not resolve, so any
+      // `case` statement throws — and the throw escapes the whole run, taking
+      // every other file with it. Catching is not enough: the parser instance
+      // stays poisoned and fails every subsequent parse, so it is discarded
+      // and rebuilt for the files that follow.
+      let tree;
+      try {
+        tree = parser.parse(source);
+      } catch (error) {
+        parsers.delete(grammar);
+        unparsable.push(file);
+        logger?.debug(`[scan] ${file}: parser failed (${(error as Error).message})`);
+        continue;
+      }
       if (!tree) continue;
 
       const moduleId = spec.moduleIdForFile(file);
@@ -514,6 +535,16 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
       }
       scan.files.push(file);
       spec.scan(scan, tree.rootNode, file);
+    }
+
+    // Skipped files are stated, not swallowed: a handbook that silently omits
+    // part of a codebase is worse than one that admits the gap.
+    if (unparsable.length > 0) {
+      const shown = unparsable.slice(0, 5).join(', ');
+      const more = unparsable.length > 5 ? ` (+${unparsable.length - 5} more)` : '';
+      logger?.warn(
+        `[scan] ${spec.name}: ${unparsable.length} file(s) the grammar could not parse — ${shown}${more}`,
+      );
     }
 
     const std = buildStandardIndexes(scans, spec.idSeparator ?? DEFAULT_SEPARATOR);

@@ -29,6 +29,11 @@ const DISPLAY: Record<string, string> = {
   zig: 'Zig',
   objc: 'Objective-C',
   ocaml: 'OCaml',
+  ruby: 'Ruby',
+  php: 'PHP',
+  swift: 'Swift',
+  dart: 'Dart',
+  solidity: 'Solidity',
 };
 
 describe('documented language support matches the registry', () => {

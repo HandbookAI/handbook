@@ -41,10 +41,15 @@ export OPENAI_BASE_URL=https://api.openai.com/v1    # 也可以是 vLLM / 代理
 `--lang auto` 一趟探测并合并所有语言。
 
 **全保真**（手写适配器：类型驱动的调用解析、继承成员、逐属性状态追踪）：
-Python、TypeScript（同时覆盖 JavaScript：`.js`/`.jsx`/`.mjs`/`.cjs`）、Go、Rust、Java、C#、C/C++。
+Python、TypeScript（同时覆盖 JavaScript：`.js`/`.jsx`/`.mjs`/`.cjs`）、Go、Rust、Java、C#、
+C/C++、Ruby、PHP、Swift、Dart、Solidity、Shell。
 **通用档**（配置驱动：文件与函数清单精确，调用关系尽力而为）：
-Kotlin、Scala、Zig、Objective-C、OCaml、Shell。
+Kotlin、Scala、Zig、Objective-C、OCaml。
 分析档位混用时手册会在概览里写明——见 [docs/architecture.md](docs/architecture.md)。
+
+两点需要事先说明：Swift 的语法在 V8 ≥ 13 上会让进程崩溃，所以适配器在发现阶段就明确拒绝并
+给出解法（`node --liftoff-only`），而不是让整轮分析猝死；含 `case` 语句的 shell 脚本会被跳过，
+因为那个语法会抛异常——两者都会写进扫描日志，绝不静默丢弃。
 
 不想每次 export？CLI 会自动加载运行目录下的 `./.env`（shell 变量优先；模板见
 [.env.example](.env.example)），也可用 `--env-file <path>` 显式指定。

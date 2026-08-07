@@ -46,10 +46,16 @@ needs a key. `--lang auto` detects and merges every language in one pass.
 
 **Full fidelity** (hand-written adapters: type-driven call resolution, inherited members,
 per-attribute state tracking): Python, TypeScript — which also covers JavaScript
-(`.js`/`.jsx`/`.mjs`/`.cjs`) — Go, Rust, Java, C#, C/C++.
+(`.js`/`.jsx`/`.mjs`/`.cjs`) — Go, Rust, Java, C#, C/C++, Ruby, PHP, Swift, Dart, Solidity,
+and Shell.
 **Generic tier** (config-driven: exact file and function inventory, best-effort call
-relations): Kotlin, Scala, Zig, Objective-C, OCaml, Shell. A handbook whose analysis mixes
-tiers says so in its overview — see [docs/architecture.md](docs/architecture.md).
+relations): Kotlin, Scala, Zig, Objective-C, OCaml. A handbook whose analysis mixes tiers says
+so in its overview — see [docs/architecture.md](docs/architecture.md).
+
+Two caveats worth stating up front: Swift's grammar aborts the process on V8 ≥ 13, so the
+adapter refuses at discovery there and names the remedy (`node --liftoff-only`) instead of
+crashing; and a shell script containing a `case` statement is skipped, because that grammar
+throws — both are reported in the scan log rather than silently dropped.
 
 Prefer a file over shell exports? The CLI auto-loads `./.env` from the directory you run
 it in (shell variables win; see [.env.example](.env.example)), or pass an explicit
