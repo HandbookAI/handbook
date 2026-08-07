@@ -42,8 +42,14 @@ export OPENAI_BASE_URL=https://api.openai.com/v1    # or vLLM / a proxy / any co
 ```
 
 Use `OPENAI_API_KEY=EMPTY` for keyless local endpoints. Phase 1 (static analysis) never
-needs a key. Supported languages: Python, TypeScript, Go, Rust, Shell — detected and
-merged automatically with `--lang auto`.
+needs a key. `--lang auto` detects and merges every language in one pass.
+
+**Full fidelity** (hand-written adapters: type-driven call resolution, inherited members,
+per-attribute state tracking): Python, TypeScript — which also covers JavaScript
+(`.js`/`.jsx`/`.mjs`/`.cjs`) — Go, Rust, Java, C#, C/C++.
+**Generic tier** (config-driven: exact file and function inventory, best-effort call
+relations): Kotlin, Scala, Zig, Objective-C, OCaml, Shell. A handbook whose analysis mixes
+tiers says so in its overview — see [docs/architecture.md](docs/architecture.md).
 
 Prefer a file over shell exports? The CLI auto-loads `./.env` from the directory you run
 it in (shell variables win; see [.env.example](.env.example)), or pass an explicit
@@ -191,7 +197,7 @@ pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
 
 ```bash
 pnpm build          # tsc -b (composite project references)
-pnpm test           # build + vitest (361 tests, all offline)
+pnpm test           # build + vitest (every test runs offline)
 pnpm check          # build + lint (zero warnings) + tests — run before committing
 pnpm lint           # eslint
 pnpm format         # prettier

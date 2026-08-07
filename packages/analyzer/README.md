@@ -7,7 +7,11 @@ Multi-language static call-graph extraction, entirely LLM-free. Language adapter
 ## Responsibilities
 
 - Define the `LanguageAdapter` contract and the adapter registry (`registerAdapter`, `getAdapter`, `adapterForFile`, `discoverAll`).
-- Ship five built-in adapters: Python, TypeScript (`.ts`/`.tsx`), Go, Rust, and Shell (`.sh`/`.bash`).
+- Ship the built-in adapters. Hand-written, full fidelity: Python, TypeScript (`.ts`/`.tsx` plus
+  JavaScript `.js`/`.jsx`/`.mjs`/`.cjs`), Go, Rust, Java, C#, C/C++ (`.c`/`.h`/`.cpp`/… — one
+  adapter, since the C++ grammar parses C while the C grammar fails on C++). Config-driven,
+  generic tier: Kotlin, Scala, Zig, Objective-C, OCaml, plus Shell. Each declares an
+  `AdapterCapabilities` saying which call types it can actually produce.
 - Build the degree-annotated `CodeGraph` from adapter output, synthesizing nodes referenced by edges but never defined (implicit constructors, boundary symbols).
 - Partition unresolved edges out of the graph into a categorized `dropped-calls.json` instead of polluting it.
 - Emit the four phase-1 artifacts (`graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`) and the `NavPack` orientation summary.
@@ -23,9 +27,13 @@ Adapter contract and registry (`adapter.ts`):
 - `registerAdapter(name, factory)` / `getAdapter(name)` / `availableLanguages()` — lazy-instantiating registry.
 - `adapterForFile(relPath)` — owning adapter by longest-extension match.
 - `discoverAll(sourceRoot)` — per-language file lists; each file claimed by at most one adapter.
-- `registerBuiltinAdapters()` — register all five built-ins once at startup.
+- `registerBuiltinAdapters()` — register every built-in once at startup.
 
-Adapters: `PythonAdapter`, `TypeScriptAdapter`, `GoAdapter`, `RustAdapter`, `ShellAdapter` — each implements `LanguageAdapter`; only `PythonAdapter` implements `statementSpans` (legal snap boundaries for resync).
+Adapters implement `LanguageAdapter`; the hand-written ones are built on `spine.ts` (shared
+driver, standard cross-module indexes, stateless resolution helpers) and the generic-tier ones
+come from `generic.ts` plus a declarative spec. Only `PythonAdapter` implements
+`statementSpans` (legal snap boundaries for resync). Run `handbook analyze --help` for the
+authoritative list — the CLI derives it from the registry.
 
 Graph building (`graph.ts`):
 - `buildGraph(analysis, options): BuildGraphResult` — with `BuildGraphOptions` (`sourceRoot`, `scannedFiles`, `language`, `defaultExt?`, `now?`) and `BuildGraphResult` (`graph`, `dropped`, `stats`).
