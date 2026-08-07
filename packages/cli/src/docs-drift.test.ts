@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
+import { renderConfigDocs, renderConfigExampleYaml, renderEnvExample } from '@handbook/core';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), 'utf8');
@@ -123,6 +124,20 @@ describe('documented pnpm scripts exist', () => {
         (name) => !scripts.includes(name) && !BUILTINS.has(name) && !bins.includes(name),
       );
       expect(missing, `${doc} references missing script(s): ${missing.join(', ')}`).toEqual([]);
+    });
+  }
+});
+
+describe('generated configuration surfaces are current', () => {
+  // Hand-editing any of these is the drift this catches: the registry is the
+  // source, `pnpm run config:docs` is the regeneration.
+  for (const [rel, render] of [
+    ['.env.example', renderEnvExample],
+    ['docs/configuration.md', renderConfigDocs],
+    ['handbook.config.example.yaml', renderConfigExampleYaml],
+  ] as const) {
+    it(`${rel} matches the registry byte for byte`, () => {
+      expect(read(rel), `${rel} is stale — run: pnpm run config:docs`).toBe(render());
     });
   }
 });

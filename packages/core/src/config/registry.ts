@@ -550,7 +550,7 @@ export const SETTINGS: readonly Setting[] = [
     type: 'string',
     flag: '--command <name>',
     commands: ['config'],
-    doc: 'show only the settings that apply to this subcommand',
+    doc: "show only the settings that apply to this subcommand; its env/file/default layers are inspectable here, but that command's own flags are not (pass them to the command itself)",
   },
   {
     key: 'json',
