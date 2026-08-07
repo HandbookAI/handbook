@@ -1,8 +1,9 @@
 # Monorepo CI.
 #
-# Four independent gates, so a failure names its own cause: static correctness,
-# an offline end-to-end run of the actual CLI, shell scripts, and commit
-# messages. They run in parallel; nothing here depends on anything else here.
+# Six independent gates, so a failure names its own cause. Everything they run
+# is a script that also runs locally — `pnpm check`, `pnpm check:packaging`,
+# `pnpm smoke:install` — so a red job can be reproduced on a laptop instead of
+# debugged by pushing commits.
 name: CI
 
 on:
@@ -21,14 +22,24 @@ permissions:
 
 jobs:
   check:
-    name: check (node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: check (${{ matrix.os }}, node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        # package.json engines requires node >=20.11.
+        # Linux carries the supported Node range; the other two platforms run
+        # the current version. This is not box-ticking: the patcher's
+        # symlink-escape guard (lstat/realpath), core's mkdir-based directory
+        # lock, and every path the analyzer normalises behave differently on
+        # Windows, and nothing in this repo branches on `process.platform`.
+        os: [ubuntu-latest]
         node-version: [20, 24]
+        include:
+          - os: macos-latest
+            node-version: 24
+          - os: windows-latest
+            node-version: 24
     steps:
       - uses: actions/checkout@v4
 
@@ -44,20 +55,65 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # tsc -b + tsconfig.tests.json + workspace invariants + eslint + prettier
-      # + vitest with coverage thresholds.
+      # + vitest with per-package coverage floors.
       - run: pnpm check
 
       - name: Upload coverage report
-        if: ${{ always() && matrix.node-version == 24 }}
+        # Vitest writes the report only when the run passes, so this is a
+        # no-op on a red build — `ignore` keeps that from adding a second,
+        # meaningless annotation on top of the real failure.
+        if: ${{ always() && matrix.os == 'ubuntu-latest' && matrix.node-version == 24 }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage
           path: coverage/
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: ignore
 
-  e2e:
-    name: e2e (offline demo)
+  packaging:
+    name: packaging (publint + attw)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Packs each package and checks what a consumer would actually receive:
+      # manifest/tarball agreement, and whether the type declarations resolve.
+      - run: pnpm check:packaging
+
+  smoke:
+    name: smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # Runs on Windows too: this is the job that would catch a path or an
+        # asset that only resolves on a POSIX filesystem.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Packs all eleven packages, installs the tarballs into an empty project
+      # with plain npm — no workspace, no symlinks — and drives the CLI through
+      # analyze → generate → render → skill → validate against the offline mock.
+      # The only gate here that tests what users actually receive.
+      - run: pnpm smoke:install
+
+  demo:
+    name: demo (offline, via the shell entry point)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -69,12 +125,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # analyze → generate → render → skill → validate against the bundled
-      # fixture repo and the bundled mock LLM. No network, no API key. The unit
-      # suite never exercises the CLI end to end; this does.
+      # The smoke job covers the same pipeline through the published packages.
+      # This one covers examples/run-demo.sh itself — the entry point the README
+      # tells a new user to run first, which nothing else exercises.
       - run: pnpm demo
 
-      - name: Assert the run produced a handbook, a site and a SKILL
+      - name: Assert the demo produced its artefacts
         run: |
           set -euo pipefail
           work=examples/work/demo
@@ -86,13 +142,13 @@ jobs:
           do
             test -s "$artefact" || { echo "missing or empty: $artefact"; exit 1; }
           done
-          echo "e2e artefacts OK"
+          echo "demo artefacts OK"
 
       - name: Upload the generated handbook
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-output
+          name: demo-output
           path: examples/work/demo/
           retention-days: 7
           if-no-files-found: ignore

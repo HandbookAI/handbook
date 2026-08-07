@@ -182,28 +182,38 @@ pnpm mock-llm         # 单独起内置 mock LLM 服务（端口 8099）
 ```bash
 pnpm build            # tsc -b（composite 引用，增量构建）
 pnpm test             # 构建 + vitest（全部离线）
-pnpm check            # 完整门禁，提交前跑这个（见下）
+pnpm check            # 日常门禁，提交前跑这个（见下）
+pnpm check:all        # check + 打包检查 + 装包冒烟；CI 跑的就是它
 pnpm typecheck        # 先 tsc -b，再用 tsconfig.tests.json 检查测试
 pnpm lint             # eslint，覆盖整个仓库
 pnpm format           # prettier，覆盖整个仓库
-pnpm test:coverage    # 带覆盖率阈值的 vitest
+pnpm test:coverage    # 带分包覆盖率下限的 vitest
 pnpm check:workspace  # monorepo 结构不变量
+pnpm check:packaging  # 逐包跑 publint + are-the-types-wrong
+pnpm smoke:install    # 打包、用原生 npm 安装、驱动 CLI 跑全链路
 ```
 
-`pnpm check` 就是 CI 跑的东西，顺序为：类型检查（先源码后测试）→ 工作区不变量 →
-eslint 零警告 → prettier → 带覆盖率阈值的测试。pre-commit 钩子只对暂存文件跑格式化和
-lint，commit-msg 钩子强制 Conventional Commits。
+`pnpm check` 顺序为：类型检查（先源码后测试）→ 工作区不变量 → eslint 零警告 → prettier →
+带分包覆盖率下限的测试。它刻意做得快。`pnpm check:all` 再加上两个面向发布的门禁——它们要
+打十一个 tarball 两遍，属于 CI 和发版前，而不是每次本地循环。pre-commit 钩子只对暂存文件跑
+格式化和 lint，commit-msg 钩子强制 Conventional Commits。
 
 测试哲学：一切离线。LLM 相关流程用 `MockChatClient`（规则脚本）与内置 mock HTTP 端点测试；
 确定性包直接测试。任何测试都不需要 API key。
 
-两条由工具强制、而非仅写在文档里的约定：
+由工具强制、而非仅写在文档里的约定：
 
 - **版本只有一处。** 所有三方依赖的版本声明在 `pnpm-workspace.yaml` 的 catalog 里，
   各包一律依赖 `"catalog:"`，不重复写版本区间。manifest 里出现字面版本会让
   `pnpm check:workspace` 失败。
-- **`dist/` 就是发布面。** 构建工程排除 `*.test.ts` 与 `*.test-helper.ts`，
-  改由 `tsconfig.tests.json` 以 `noEmit` 做类型检查。`dist/` 下出现测试产物同样会让上面那条检查失败。
+- **`dist/` 就是发布面。** 构建工程排除 `*.test.ts` 与 `*.test-helper.ts`，改由
+  `tsconfig.tests.json` 以 `noEmit` 做类型检查；source map 不进 tarball，因为它们指向
+  永远不会被发布的源文件。`dist/` 下出现测试产物同样会让上面那条检查失败。
+- **覆盖率下限是分包的。** 一个全仓数字掩盖的正是要紧的东西：整体 86% 时
+  `@handbook/cli` 只有 23%。每个包有各自的下限，压在实测值下方一点，形成棘轮。
+- **测试把 `@handbook/*` 解析到源码，而不是 `dist`。** 否则跨包被消费的代码在覆盖率里
+  无处归因——`core/src/util/hash.ts` 明明每轮都被 pipeline 调用，却读作 0%。真正的
+  `dist` 由 `tsc -b` 和 `pnpm smoke:install` 验证，后者用原生 npm 装上打好的 tarball 再跑 CLI。
 
 ## 发布
 
