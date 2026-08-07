@@ -12,6 +12,7 @@ import {
   extractJsonBlock,
   pLimit,
   resolveConfig,
+  settingByKey,
   type Logger,
   silentLogger,
   type LimitFn,
@@ -111,12 +112,31 @@ export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfi
  * Map resolved registry values onto the client's own shape. Seconds become
  * milliseconds here, and `maxRetries` is clamped to at least one attempt: 0 is
  * a legitimate "no retries" request, not "never try".
+ *
+ * Every field below falls back to `settingByKey(...)?.default` rather than a
+ * literal. Every `llm*` setting except `llmExtraBody` already declares a
+ * default in the registry (see `registry.ts`), so restating it here — e.g.
+ * `?? 'gpt-4o-mini'` — would just give that value a second home, one the
+ * registry's whole point was to eliminate: a setting is declared exactly
+ * once. Those literals were also *dead*: `resolveConfig`'s output always
+ * carries these keys, so the `??` side never ran — which is exactly what the
+ * coverage gate was reporting. `num`/`str` below fall back to `0`/`''` only as
+ * a type guard for a registry entry that lost its default outright (a
+ * registry bug, not a value this function owns); that is not a restatement of
+ * any setting's actual default.
  */
 export function llmConfigFromValues(values: Record<string, unknown>): Partial<LlmEnvConfig> {
-  const num = (key: string): number | undefined =>
-    typeof values[key] === 'number' ? (values[key] as number) : undefined;
-  const str = (key: string): string | undefined =>
-    typeof values[key] === 'string' ? (values[key] as string) : undefined;
+  const registryDefault = (key: string): unknown => settingByKey(key)?.default;
+  const resolved = (key: string): unknown => (values[key] !== undefined ? values[key] : registryDefault(key));
+
+  const num = (key: string): number => {
+    const v = resolved(key);
+    return typeof v === 'number' ? v : 0;
+  };
+  const str = (key: string): string => {
+    const v = resolved(key);
+    return typeof v === 'string' ? v : '';
+  };
 
   const maxRetries = num('llmMaxRetries');
   const backoffSec = num('llmRetryBackoff');
@@ -124,13 +144,13 @@ export function llmConfigFromValues(values: Record<string, unknown>): Partial<Ll
   const extra = values.llmExtraBody;
 
   return {
-    apiKey: str('llmApiKey') ?? '',
-    model: str('llmModel') ?? 'gpt-4o-mini',
-    baseUrl: (str('llmBaseUrl') ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
-    maxTokens: num('llmMaxTokens') ?? 16_000,
-    maxRetries: Math.max(1, maxRetries ?? 6),
-    retryBackoffMs: Math.round((backoffSec ?? 3) * 1000),
-    timeoutMs: Math.round((timeoutSec ?? 300) * 1000),
+    apiKey: str('llmApiKey'),
+    model: str('llmModel'),
+    baseUrl: str('llmBaseUrl').replace(/\/+$/, ''),
+    maxTokens: num('llmMaxTokens'),
+    maxRetries: Math.max(1, maxRetries),
+    retryBackoffMs: Math.round(backoffSec * 1000),
+    timeoutMs: Math.round(timeoutSec * 1000),
     extraBody: stripReservedBodyFields(extra),
   };
 }
