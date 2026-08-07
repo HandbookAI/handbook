@@ -496,3 +496,60 @@ tarball 内 0 个测试文件。
 
 `pnpm check` 全绿：961 测试 / 49 文件，工作区不变量 11 包通过，eslint 133 文件零警告，
 prettier 全仓通过，覆盖率过阈值。离线 e2e 产物齐全。SP3（C/C++）的进行中改动未受影响。
+
+## 2026-08-07：SP4–SP6 — Ruby / PHP / Swift / Dart / Solidity + Shell 升级（18 门语言，1200 测试绿）
+
+五个 agent 并行实现，注册与 fixture 由主线统一落（五个 agent 同时改 `register.ts` 必然打架）。
+现在 **18 门语言、13 门全保真**：python / typescript(+JS) / go / rust / java / csharp / cpp /
+**ruby / php / swift / dart / solidity / shell**（full）+ kotlin / scala / zig / objc / ocaml（generic）。
+
+### 两个已发布语法的运行时缺陷 —— 都靠"真实输入探针"而非 fixture 发现，都做了结构性修复
+
+1. **tree-sitter-bash 遇到 `case` 会抛异常，并且污染 parser。**
+   外部扫描器 import 了 `env.isalpha`，web-tree-sitter 解析不了。亲自复现确认：
+   普通脚本 ok → 含 `case` 抛错 → **同一 parser 再解析普通脚本仍然抛错** → 换新 parser 才恢复。
+   这意味着**任何仓库里只要有一个 `case`，整轮分析就崩**（不是跳过一个文件）。
+   修在脊梁而非单个适配器：驱动器 catch + **丢弃被污染的 parser** + 把跳过的文件写进日志；
+   shell 适配器里那个"预先双重解析"的本地补丁随之删除。**所有语言都受益。**
+2. **tree-sitter-swift 在 V8 ≥ 13 上让进程致命崩溃**（`Fatal process out of memory: Zone`，
+   退出码 133），一旦 wasm 被分层编译就死。亲测 Node 24 必崩、Node 21 正常、19 个语法里独此一家。
+   `--liftoff-only` 可绕过，但那是启动参数，库无法替调用方决定。
+   处理：**适配器在 discover 阶段明确拒绝并给出解法**，`discoverAll` 记录警告后继续——
+   混合语言仓库里其他语言照常分析。测试则用 `execArgv: ['--liftoff-only']` 真跑（43 个 Swift 测试
+   从"跳过 42 个"变成全部真实执行）。**进程被杀什么也不告诉用户，一条点名的跳过才有用。**
+
+### 适配器契约加宽
+
+`analyze()` 新增可选 logger，驱动器得以说出"哪些文件读不了"。
+**静默变短的手册比承认缺口的手册更糟。**
+
+### 各语言的关键点（以及它们自己探针抓到的 bug）
+
+- **Ruby**：不带括号的 `foo` 解析成 `identifier` 而非 `call`（靠近似局部变量绑定表区分）；
+  mixin/MRO；探针抓到自身两处错——`class << self` 里的 `attr_reader` 记成了实例方法、
+  `class << self; include M` 当成 include 而非 extend。`attr_accessor` 每属性只出**一个**节点
+  （否则 Rails model 的函数数翻三倍而读者无收益）。
+- **PHP**：探针抓到 **`use` 导入按文件记而非按 namespace 块**——同文件两个 namespace 各
+  `use` 不同的 `Tool` 会都解析到第一个。这与 C++ 那个 bug 是同一形状的变体。
+  `parent::__construct()` 在父类未被扫描时给出 `boundary:<完整基类>.<成员>`（`parent` 精确
+  指向唯一一个类，是事实不是猜测）。
+- **Swift**：`extension` 跨文件给类型加成员（Swift 的定义性特征）；探针确认 `#if` **不会**
+  破坏解析；三处语法缺陷（`#"raw"#`、宏展开、typed throws）都只**局部**降级，不像 `extern "C"`。
+- **Dart**：探针抓到 `Foo<T>(...)`（恰好一个类型参数）被**静默**误解析成比较运算
+  `Foo < T > (record)`，而 `hasError` 仍是 false——干净 fixture 永远看不到，但会让 Flutter
+  组件树的大部分构造边消失。做了恢复。先验语法顺序无关性（lua 的教训）后才动手。
+- **Solidity**：状态变量读写追踪是重点（≈ 手册的"状态寄存器"概念）；modifier 调用计为
+  `self_method`（编译器内联其函数体，省略等于隐藏了外部函数最要紧的事实）。
+- **Shell 升级为 full**，但只声明 3 种 callType 并**论证**了为什么：其余五种命名的是 shell
+  没有的构造，`register.test.ts` 的"声明 ⊆ 产出"方向本来就禁止注水。
+  `tier` 描述事实有多硬，不是能凑出几个常量。
+
+### 验收
+
+`tsc -b` + `tsc -p tsconfig.tests.json` + `eslint packages/ --max-warnings 0` + prettier 全通过；
+**1200 测试绿**（54 文件）；文档漂移测试按设计逼我把新语言写进两份 README（先红后绿）；
+真实项目端到端：Ruby（`@e.spin` → self_attr_method、`Engine.new` → internal_constructor）、
+Solidity（跨文件 import + 状态变量类型驱动的调用）均正确。
+
+**注**：`pnpm check` 当前会红在 `scripts/smoke-install.mjs` 的一个未用变量——那是并发会话
+尚未提交的在写文件，不在本次提交范围内。
