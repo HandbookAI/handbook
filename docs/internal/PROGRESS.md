@@ -376,3 +376,44 @@ analyzer 90 → 257 测试；全仓 484 → **809**。`pnpm check` 全绿，demo
 现支持 10 门：python/typescript(+JS)/go/rust/shell(full 档，shell 声明 generic 待 SP6 升级)
 + kotlin/scala/zig/objc/ocaml(generic 档)。
 下一步 **SP2：Java + C#**（全保真，含静态方法这个 IR 决策）。
+
+## 2026-08-07：SP2 — Java + C# 全保真适配器（898 测试绿，现支持 12 门语言）
+
+两门并行实现，均 `tier: 'full'`、8 种 callType 全产出、`selfAttrs: true`，
+`register.test.ts` 双向校验（产出 ⊆ 声明 **且** 声明 ⊆ 产出）。
+
+- **Java**（898 行 / 37 测试）：完整祖先链 BFS（含 interface，非仅直接父类）、`super.m()`、
+  继承字段的 `this.field.m()`、同包兄弟免 import、static 单成员与 on-demand import、
+  嵌套类型、`this()/super()`、静态/实例初始化块（否则其调用会丢失）、注解→decorators。
+- **C#**（~1030 行 / 34 测试）：完整祖先链（含接口，带环保护）、`base.M()` 正确跳过 override、
+  **`partial` 类跨文件**（真实压测中发现并修复）、**`var x = new T()` 推断**、`using` 别名、
+  `using static`、局部函数独立成节点、属性访问器 → `get_X`/`set_X`（**仅在有函数体时**，
+  自动属性没有代码可描述）、`x?.M()`。
+
+### 一个差点被我误"修"的东西
+
+Java 的 `id = com.demo.app.App.App.run` 看着像类名重复。查证后**是符合既有约定的**：
+`id = <路径推导 moduleId>.<qualname>`，Python 同形（`app.queue.TaskQueue.push` / `TaskQueue.push`），
+只是 Java 文件按类名命名让重复显眼。改用 package 作 moduleId 会破坏
+`<module>.<Type>.<member>` 的可分解性，而 `graph.ts:synthesizeConstructor` 依赖它。
+**教训：动手前先查约定，别凭观感判断。**
+
+### 脊梁局限：两个适配器**独立**撞上同一处
+
+`StandardIndexes` 的 `typeToModule` 是**裸名全局表**，无法表达包/命名空间作用域
+（真实项目里 `Config`/`Service` 在多个包重复，裸名匹配会静默选错）；`typeMethods` 按
+`<module>.<Type>` 建键，表达不了 C# 的 `partial`；`directoryFunctions`/`moduleFunctions`
+对无自由函数的语言结构性为空。Java 与 C# 各自建了私有索引绕开。
+**C++ 有命名空间，SP3 会第三次撞上**——届时正式评估给脊梁加作用域版。
+现在不动：两个样本不足以定形状，三个才够。
+
+### 端到端验收
+
+`pnpm check` 898 测试绿；真实 Java/C# 项目走完整管线：Java 3 函数 3 边
+（`self_attr_method`/`self_method`/`boundary` 各就位），C# 3 函数 5 边
+（`internal_constructor` + **`var` 推断出的 `param_method`** + `self_attr_method`
++ `self_method` + `boundary`）；Java 项目经 mock 端点产出完整中文手册。
+
+**现支持 12 门**：python / typescript(+JavaScript) / go / rust / **java** / **csharp**（full）
++ kotlin / scala / zig / objc / ocaml / shell（generic）。
+下一步 **SP3：C + C++**（含脊梁作用域索引的决策）。
