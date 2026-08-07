@@ -5,6 +5,7 @@
 import { allFileDescriptors, buildNavPack, type NavFileDescriptor } from '@handbook/analyzer';
 import type { ChatClient } from '@handbook/llm';
 import {
+  PIPELINE_DEFAULTS,
   Progress,
   mapLimit,
   silentLogger,
@@ -148,7 +149,12 @@ export async function assignFiles(
   skeleton: Skeleton,
   options: AssignOptions = {},
 ): Promise<Assignment> {
-  const { batchSize = 25, maxWorkers = 12, cards = {}, signal } = options;
+  const {
+    batchSize = PIPELINE_DEFAULTS.assignBatchSize,
+    maxWorkers = PIPELINE_DEFAULTS.assignWorkers,
+    cards = {},
+    signal,
+  } = options;
   const logger = options.logger ?? silentLogger;
   const nav = buildNavPack(graph);
   const files = allFileDescriptors(graph, nav);
@@ -184,7 +190,12 @@ export async function reassignSubset(
   previous: Assignment,
   options: AssignOptions = {},
 ): Promise<Assignment> {
-  const { batchSize = 25, maxWorkers = 12, cards = {}, signal } = options;
+  const {
+    batchSize = PIPELINE_DEFAULTS.assignBatchSize,
+    maxWorkers = PIPELINE_DEFAULTS.assignWorkers,
+    cards = {},
+    signal,
+  } = options;
   const logger = options.logger ?? silentLogger;
   const nav = buildNavPack(graph);
   const files = allFileDescriptors(graph, nav).filter((d) => subset.includes(d.file));

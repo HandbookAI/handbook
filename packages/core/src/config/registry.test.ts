@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SETTINGS, settingsFor, settingByKey } from './registry.js';
 import { envName, scopedEnvName } from './names.js';
+import { PIPELINE_DEFAULTS } from './defaults.js';
 
 describe('registry integrity', () => {
   // Each of these is a declaration mistake that would otherwise surface as a
@@ -12,7 +13,12 @@ describe('registry integrity', () => {
 
   it('gives every int a min and every enum its choices', () => {
     expect(SETTINGS.filter((s) => s.type === 'int' && s.min === undefined).map((s) => s.key)).toEqual([]);
-    expect(SETTINGS.filter((s) => s.type === 'enum' && !s.choices?.length).map((s) => s.key)).toEqual([]);
+    // `dynamicChoices` entries carry only a fallback `choices` (e.g. `lang`'s
+    // `['auto']`); their real choices come from a runtime registry, so they are
+    // exempt from this check.
+    expect(
+      SETTINGS.filter((s) => s.type === 'enum' && !s.dynamicChoices && !s.choices?.length).map((s) => s.key),
+    ).toEqual([]);
   });
 
   it('keeps an enum default inside its own choices', () => {
@@ -57,6 +63,57 @@ describe('registry integrity', () => {
     expect(settingByKey('llmApiKey')?.envAliases).toContain('OPENAI_API_KEY');
     expect(settingByKey('llmModel')?.envAliases).toContain('OPENAI_MODEL');
     expect(settingByKey('llmBaseUrl')?.envAliases).toContain('OPENAI_BASE_URL');
+  });
+
+  it('never derives a doubled scoped env name', () => {
+    // `rollbackSource` on the rollback command produced
+    // HANDBOOK_ROLLBACK_ROLLBACK_SOURCE. When a key already carries its
+    // command, the scoped name repeats it.
+    const doubled = SETTINGS.flatMap((s) =>
+      s.commands
+        .filter((c) => s.key.toLowerCase().startsWith(c.toLowerCase()))
+        .map((c) => `${s.key} on ${c}`),
+    );
+    expect(doubled).toEqual([]);
+  });
+});
+
+describe('registry agrees with the pipeline defaults', () => {
+  // If these drifted, the generated docs would promise a number the pipeline
+  // does not use.
+  it('declares the tuning defaults by reference, not by copy', () => {
+    expect(settingByKey('readWorkers')?.default).toBe(PIPELINE_DEFAULTS.readWorkers);
+    expect(settingByKey('assignBatchSize')?.default).toBe(PIPELINE_DEFAULTS.assignBatchSize);
+    expect(settingByKey('assignWorkers')?.default).toBe(PIPELINE_DEFAULTS.assignWorkers);
+    expect(settingByKey('organizeWorkers')?.default).toBe(PIPELINE_DEFAULTS.organizeWorkers);
+    expect(settingByKey('narrateWorkers')?.default).toBe(PIPELINE_DEFAULTS.narrateWorkers);
+    expect(settingByKey('maxDoctorRounds')?.default).toBe(PIPELINE_DEFAULTS.maxDoctorRounds);
+    expect(settingByKey('maxCharsPerFile')?.default).toBe(PIPELINE_DEFAULTS.maxCharsPerFile);
+  });
+
+  it('leaves readBatchSize a pass-through, because its default depends on --detail', () => {
+    expect(settingByKey('readBatchSize')?.default).toBeUndefined();
+  });
+});
+
+describe('every command the CLI ships is represented', () => {
+  it('covers all eleven subcommands plus config', () => {
+    const commands = new Set(SETTINGS.flatMap((s) => s.commands));
+    for (const c of [
+      'analyze',
+      'generate',
+      'render',
+      'skill',
+      'validate',
+      'plan',
+      'apply',
+      'rollback',
+      'resync',
+      'studio',
+      'config',
+    ]) {
+      expect([...commands], `missing ${c}`).toContain(c);
+    }
   });
 });
 

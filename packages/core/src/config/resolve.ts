@@ -45,12 +45,22 @@ function flagName(setting: Setting): string {
   return setting.flag?.split(/[ ,]/)[0] ?? `(${setting.key})`;
 }
 
+/** `--card-detail <n>` → `cardDetail`: the property commander puts the value on. */
+function flagOptionName(flag: string): string {
+  const long = flag.split(/[ ,]/).find((part) => part.startsWith('--')) ?? '';
+  return long.replace(/^--(no-)?/, '').replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 function supplyRoutes(command: string, setting: Setting): string {
   const routes: string[] = [];
   if (setting.flag) routes.push(`pass ${flagName(setting)}`);
   routes.push(`set ${envCandidates(command, setting)[0] as string}`);
   if (!setting.secret) routes.push('add it to handbook.config.yaml');
-  return routes.join(', or ');
+  // Oxford-comma list: "A, B, or C" — not "A, or B, or C". A lone route (a
+  // secret, which gets neither a flag nor a config-file route) must read
+  // plainly, with no stray leading comma.
+  const last = routes[routes.length - 1] as string;
+  return routes.length === 1 ? last : `${routes.slice(0, -1).join(', ')}, or ${last}`;
 }
 
 export function resolveConfig(input: ResolveInput): ResolveResult {
@@ -72,7 +82,8 @@ export function resolveConfig(input: ResolveInput): ResolveResult {
     };
 
     // 1. flag
-    const fromFlag = flags[setting.key];
+    const flagProp = setting.flag ? flagOptionName(setting.flag) : setting.key;
+    const fromFlag = flags[setting.key] ?? flags[flagProp];
     if (fromFlag !== undefined) {
       attempt(fromFlag, `flag ${flagName(setting)}`, { kind: 'flag', name: flagName(setting) }, cwd);
       continue;
@@ -108,7 +119,7 @@ export function resolveConfig(input: ResolveInput): ResolveResult {
     if (setting.default !== undefined) {
       values[setting.key] = setting.default;
       sources[setting.key] = { kind: 'default' };
-    } else if (setting.required) {
+    } else if (setting.required || setting.requiredFor?.includes(command)) {
       errors.push(`${setting.key} is required: ${supplyRoutes(command, setting)}`);
     }
   }

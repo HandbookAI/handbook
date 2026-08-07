@@ -40,8 +40,21 @@ export interface Setting {
   readonly negated?: boolean;
   /** Must have a value after resolution; the error names all supply routes. */
   readonly required?: boolean;
+  /**
+   * Commands where this setting is required, when it is not required for all of
+   * them. `source` is mandatory for analyze/generate/plan/apply and optional
+   * for validate/skill/rollback — one setting, because it is one concept.
+   */
+  readonly requiredFor?: readonly string[];
   /** Placeholder shown in `.env.example` when there is no default to show. */
   readonly example?: string;
+  /**
+   * Choices that cannot be written down here because they come from a registry
+   * at runtime — `languages` means "auto plus every registered adapter". The
+   * `--lang` help text had already drifted five languages behind by being
+   * hand-written once.
+   */
+  readonly dynamicChoices?: 'languages';
 }
 
 /** Where a resolved value came from. Surfaced by `handbook config`. */

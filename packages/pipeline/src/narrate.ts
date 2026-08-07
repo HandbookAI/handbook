@@ -9,6 +9,7 @@
 import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
 import {
+  PIPELINE_DEFAULTS,
   StageTree,
   ensureDir,
   fileExists,
@@ -117,7 +118,7 @@ export async function narrate(
   inputs: NarrateInputs,
   options: NarrateOptions = {},
 ): Promise<Narration> {
-  const { workers = 8, refresh = false, lang = 'en', signal } = options;
+  const { workers = PIPELINE_DEFAULTS.narrateWorkers, refresh = false, lang = 'en', signal } = options;
   const logger = options.logger ?? silentLogger;
   const tree = new StageTree(inputs.skeleton);
   const rules = lang === 'zh' ? STAGE_RULES_ZH : STAGE_RULES_EN;

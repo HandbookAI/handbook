@@ -6,6 +6,7 @@
  */
 import type { ChatClient } from '@handbook/llm';
 import {
+  PIPELINE_DEFAULTS,
   Progress,
   isInternalNode,
   mapLimit,
@@ -226,7 +227,7 @@ export async function organizeStages(
   cards: Record<string, FileCard>,
   options: OrganizeOptions = {},
 ): Promise<Organization> {
-  const { workers = 8, lang = 'en', signal } = options;
+  const { workers = PIPELINE_DEFAULTS.organizeWorkers, lang = 'en', signal } = options;
   const logger = options.logger ?? silentLogger;
   const adjacency = fileCallAdjacency(graph);
 
