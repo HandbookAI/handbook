@@ -61,6 +61,9 @@ Prefer a file over shell exports? The CLI auto-loads `./.env` from the directory
 it in (shell variables win; see [.env.example](.env.example)), or pass an explicit
 `--env-file <path>`.
 
+Every setting is also a flag and a config-file key — see [docs/configuration.md](docs/configuration.md)
+for the full reference, or run `handbook config` to see what is set and where it came from.
+
 ## Quick start
 
 ```bash
@@ -160,6 +163,8 @@ boundary, so the analyzer, renderer and skill packages are reusable with no LLM 
 - [docs/prompts.md](docs/prompts.md) — the complete prompt catalogue
 - [examples/](examples/) — offline end-to-end demo (mock LLM server included)
 - Per-package READMEs under [packages/](packages/)
+- [CONTRIBUTING.md](CONTRIBUTING.md) — what a change is expected to look like before it merges
+- [SECURITY.md](SECURITY.md) — the threat model, and how to report a vulnerability
 
 ## Command cheatsheet (no global CLI install needed)
 

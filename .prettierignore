@@ -34,3 +34,10 @@ examples/demo-project/
 docs/handbook-deck.html
 docs/index.html
 packages/studio/public/index.html
+
+# Generated from the config registry by `pnpm run config:docs`; the drift test in
+# packages/cli compares them byte for byte against the generator's output, so a
+# formatter rewriting them would make that comparison unsatisfiable.
+.env.example
+docs/configuration.md
+handbook.config.example.yaml
