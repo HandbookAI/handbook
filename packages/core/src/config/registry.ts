@@ -577,3 +577,9 @@ export function settingsFor(command: string): readonly Setting[] {
 export function settingByKey(key: string): Setting | undefined {
   return SETTINGS.find((s) => s.key === key);
 }
+
+/** Every key that applies to a command, in declaration order — including the
+ *  pass-through ones that resolved to nothing, whose absence is information. */
+export function keysFor(command: string): string[] {
+  return settingsFor(command).map((s) => s.key);
+}
