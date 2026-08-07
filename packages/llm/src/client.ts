@@ -70,6 +70,22 @@ export interface LlmEnvConfig {
 const RESERVED_BODY_FIELDS = new Set(['model', 'messages', 'max_tokens', 'max_completion_tokens', 'stream']);
 
 /**
+ * Every field `LlmEnvConfig` declares. A caller's `options.config` is
+ * "complete" when it supplies every one of these — only then can the
+ * environment be skipped entirely (see the constructor).
+ */
+const REQUIRED_CONFIG_FIELDS: readonly (keyof LlmEnvConfig)[] = [
+  'apiKey',
+  'model',
+  'baseUrl',
+  'maxTokens',
+  'maxRetries',
+  'retryBackoffMs',
+  'timeoutMs',
+  'extraBody',
+];
+
+/**
  * Resolve client configuration through the shared config registry, so the LLM
  * settings obey exactly the same precedence, naming and validation as every
  * other setting — and are reachable from flags, which they never were.
@@ -191,8 +207,14 @@ export class OpenAiChatClient implements ChatClient {
   };
 
   constructor(options: OpenAiChatClientOptions = {}) {
-    const env = resolveLlmEnv();
-    this.config = { ...env, ...options.config };
+    // Only ask the environment for what the caller did not supply. A caller
+    // that passed a complete config must not be broken by an unrelated
+    // malformed OPENAI_* var it never intended to use — resolveLlmEnv() is
+    // strict, and a stray `OPENAI_TIMEOUT=abc` in the shell has nothing to do
+    // with a request whose every field was already given explicitly.
+    const supplied = options.config ?? {};
+    const needsEnv = REQUIRED_CONFIG_FIELDS.some((field) => supplied[field] === undefined);
+    this.config = needsEnv ? { ...resolveLlmEnv(), ...supplied } : (supplied as LlmEnvConfig);
     if (!this.config.apiKey) {
       throw new PermanentError(
         'no API key: set OPENAI_API_KEY (use OPENAI_API_KEY=EMPTY for a keyless local endpoint)',

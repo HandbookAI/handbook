@@ -22,8 +22,8 @@ import { join, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
-import { resolveOrThrow } from './resolve-config.js';
-import { createLogger, type LogLevel } from '@handbook/core';
+import { resolveOrThrow, setConfigFile } from './resolve-config.js';
+import { createLogger, discoverConfigFile, loadConfigFile, type LogLevel } from '@handbook/core';
 import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbook/pipeline';
 import {
@@ -49,10 +49,15 @@ program
   .option(
     '--env-file <path>',
     'load KEY=VALUE pairs from a file (default: ./.env if present; shell env wins)',
-  );
+  )
+  .option('--config <path>', 'project config file (default: nearest handbook.config.yaml)');
 
 // .env loading runs before every subcommand action, so OPENAI_* and
-// HANDBOOK_* can live in a project-local file instead of the shell.
+// HANDBOOK_* can live in a project-local file instead of the shell. The
+// config file is discovered/loaded AFTER the env file on purpose: it sits
+// below the environment in precedence, so HANDBOOK_* values from .env must
+// already be in process.env before anything reads them, and loading the
+// config file later cannot and must not override what .env supplied.
 program.hook('preAction', () => {
   const explicit = program.opts<{ envFile?: string }>().envFile;
   if (explicit) {
@@ -61,6 +66,18 @@ program.hook('preAction', () => {
   } else if (existsSync('.env')) {
     const applied = applyEnvFile(resolve('.env'));
     if (applied.length > 0) logger().debug(`[env] loaded ${applied.length} vars from ./.env`);
+  }
+
+  const explicitConfig = program.opts<{ config?: string }>().config;
+  if (explicitConfig) {
+    // An explicitly named file that is missing is a mistake, not a fallback.
+    setConfigFile(loadConfigFile(resolve(explicitConfig)));
+  } else {
+    const found = discoverConfigFile(process.cwd());
+    if (found) {
+      setConfigFile(loadConfigFile(found));
+      logger().debug(`[config] loaded ${found}`);
+    }
   }
 });
 
