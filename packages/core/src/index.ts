@@ -12,3 +12,6 @@ export * from './util/reply-shape.js';
 export * from './util/progress.js';
 export * from './util/env-file.js';
 export * from './util/lock.js';
+export * from './config/types.js';
+export * from './config/names.js';
+export * from './config/registry.js';
