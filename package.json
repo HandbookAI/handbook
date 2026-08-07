@@ -11,7 +11,7 @@
   "packageManager": "pnpm@10.18.1",
   "scripts": {
     "build": "tsc -b",
-    "clean": "tsc -b --clean && rm -rf packages/*/dist coverage",
+    "clean": "tsc -b --clean && node scripts/clean.mjs",
     "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "tsc -b && vitest run",
     "test:watch": "vitest",
@@ -21,7 +21,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:workspace": "node scripts/check-workspace.mjs",
+    "check:packaging": "tsc -b && node scripts/check-packaging.mjs",
+    "smoke:install": "tsc -b && node scripts/smoke-install.mjs",
     "check": "pnpm typecheck && pnpm check:workspace && eslint . --max-warnings 0 && pnpm format:check && vitest run --coverage",
+    "check:all": "pnpm check && pnpm check:packaging && pnpm smoke:install",
     "prepare": "husky",
     "changeset": "changeset",
     "version-packages": "changeset version && pnpm install --lockfile-only",
@@ -47,6 +50,7 @@
     "*.{ts,mjs,js}": "eslint --fix --max-warnings 0"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "catalog:",
     "@changesets/cli": "catalog:",
     "@commitlint/cli": "catalog:",
     "@commitlint/config-conventional": "catalog:",
@@ -58,6 +62,7 @@
     "husky": "catalog:",
     "lint-staged": "catalog:",
     "prettier": "catalog:",
+    "publint": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:"

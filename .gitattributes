@@ -1,0 +1,17 @@
+# Line endings are LF in the repository and LF in every working tree.
+#
+# Without this, a Windows checkout converts text files to CRLF (Git for Windows
+# defaults core.autocrlf to true), which makes `prettier --check` fail on every
+# file, breaks the renderer's byte-exact HTML assertions, and corrupts the
+# shebang handling of the shell scripts. CI runs on Windows, so this is load
+# bearing rather than tidiness.
+* text=auto eol=lf
+
+# Never touched: these are binary regardless of what Git guesses.
+*.wasm binary
+*.png binary
+*.jpg binary
+*.gz binary
+
+# Generated. Collapsed in diffs and reviews, and never merged by hand.
+pnpm-lock.yaml linguist-generated=true -diff

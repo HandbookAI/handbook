@@ -204,31 +204,45 @@ pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
 ```bash
 pnpm build            # tsc -b (composite project references)
 pnpm test             # build + vitest (every test runs offline)
-pnpm check            # the full gate — run before committing (see below)
+pnpm check            # the everyday gate — run before committing (see below)
+pnpm check:all        # check + packaging + install smoke; what CI runs
 pnpm typecheck        # tsc -b, then the tests against tsconfig.tests.json
 pnpm lint             # eslint over the whole repo
 pnpm format           # prettier over the whole repo
-pnpm test:coverage    # vitest with coverage thresholds
+pnpm test:coverage    # vitest with per-package coverage floors
 pnpm check:workspace  # the monorepo's structural invariants
+pnpm check:packaging  # publint + are-the-types-wrong, per package
+pnpm smoke:install    # pack, install with plain npm, drive the CLI
 ```
 
-`pnpm check` is what CI runs, in this order: type-check (sources, then tests) →
-workspace invariants → eslint with zero warnings → prettier → tests with
-coverage thresholds. A pre-commit hook runs the formatter and linter over staged
-files only, and `commit-msg` enforces Conventional Commits.
+`pnpm check` runs, in order: type-check (sources, then tests) → workspace
+invariants → eslint with zero warnings → prettier → tests with per-package
+coverage floors. It is deliberately the fast one. `pnpm check:all` adds the two
+publish-facing gates, which pack eleven tarballs and belong in CI and before a
+release rather than in every local loop. A pre-commit hook runs the formatter and
+linter over staged files only, and `commit-msg` enforces Conventional Commits.
 
 Testing philosophy: everything runs offline. LLM-dependent flows are tested against
 `MockChatClient` (scripted rules) and the bundled mock HTTP endpoint; deterministic
 packages are tested directly. No test ever needs an API key.
 
-Two conventions the tooling enforces rather than documents:
+Conventions the tooling enforces rather than documents:
 
 - **Versions live in one place.** Every third-party version is declared in
   `pnpm-workspace.yaml`'s catalog; packages depend on `"catalog:"` and never
   restate a range. A literal range in a manifest fails `pnpm check:workspace`.
 - **`dist/` is the published surface.** Build projects exclude `*.test.ts` and
-  `*.test-helper.ts`; `tsconfig.tests.json` type-checks them with `noEmit`. A
-  test artifact appearing under `dist/` fails the same check.
+  `*.test-helper.ts`; `tsconfig.tests.json` type-checks them with `noEmit`, and
+  source maps are excluded from the tarball because they name sources that are
+  never published. A test artifact under `dist/` fails the same check.
+- **Coverage floors are per package.** A single repo-wide number hides what
+  matters: at 86% overall, `@handbook/cli` sits at 23%. Each package has its own
+  floor, set just under what it measures, so it ratchets.
+- **Tests resolve `@handbook/*` to source, not `dist`.** Otherwise coverage of
+  anything consumed across a package boundary is attributed nowhere —
+  `core/src/util/hash.ts` read as 0% while the pipeline called it on every run.
+  The real `dist` is verified by `tsc -b` and by `pnpm smoke:install`, which
+  installs the packed tarballs with plain npm and runs the CLI against them.
 
 ## Releasing
 
