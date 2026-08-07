@@ -38,7 +38,13 @@ export OPENAI_BASE_URL=https://api.openai.com/v1    # 也可以是 vLLM / 代理
 ```
 
 无鉴权的本地端点用 `OPENAI_API_KEY=EMPTY`。阶段 1（静态分析）永远不需要 key。
-支持语言：Python、TypeScript、Go、Rust、Shell——`--lang auto` 自动探测并合并。
+`--lang auto` 一趟探测并合并所有语言。
+
+**全保真**（手写适配器：类型驱动的调用解析、继承成员、逐属性状态追踪）：
+Python、TypeScript（同时覆盖 JavaScript：`.js`/`.jsx`/`.mjs`/`.cjs`）、Go、Rust、Java、C#、C/C++。
+**通用档**（配置驱动：文件与函数清单精确，调用关系尽力而为）：
+Kotlin、Scala、Zig、Objective-C、OCaml、Shell。
+分析档位混用时手册会在概览里写明——见 [docs/architecture.md](docs/architecture.md)。
 
 不想每次 export？CLI 会自动加载运行目录下的 `./.env`（shell 变量优先；模板见
 [.env.example](.env.example)），也可用 `--env-file <path>` 显式指定。
@@ -170,7 +176,7 @@ pnpm mock-llm         # 单独起内置 mock LLM 服务（端口 8099）
 
 ```bash
 pnpm build          # tsc -b（composite 引用，增量构建）
-pnpm test           # 构建 + vitest（361 个测试，全部离线）
+pnpm test           # 构建 + vitest（全部离线）
 pnpm check          # 构建 + lint（零警告）+ 全部测试，提交前跑这个
 pnpm lint           # eslint
 pnpm format         # prettier
