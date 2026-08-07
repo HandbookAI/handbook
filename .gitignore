@@ -14,3 +14,7 @@ runs/
 # contributor's prompts on clone. Share a team config only by un-ignoring a
 # deliberately written file — never by committing whatever happens to be here.
 .claude/
+
+# Subagent-driven-development scratch: ledger, task briefs, review packages.
+# Session-local coordination state, never part of the product.
+.superpowers/
