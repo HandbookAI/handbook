@@ -27,6 +27,7 @@
 ## 公开 API
 
 **构建**（`build.ts`）
+
 - `buildSkill(options: BuildSkillOptions): BuildSkillResult` —— 组装 skill 包（输出目录会被从零重建；
   唯一的例外是输出根目录里已存在的 `corrections.jsonl` —— 它会被逐字节保留，且构建器永远不会主动创建它）。
   - `BuildSkillOptions` —— `{ handbookDir, outDir, name, project?, coverage?: { assignment, sourceRoot? }, agentDir?, lang? }`；
@@ -40,6 +41,7 @@
   - `BuildSkillResult` —— `{ outDir, nStagePages, references }`（打包了定位页时 `references` 会列出 `agent/*.md` 条目）。
 
 **校验**（`validate.ts`）
+
 - `validateSkill(options: ValidateSkillOptions): ValidationResult` —— 检查这个包。
   - `ValidateSkillOptions` —— `{ skillDir, sourceRoot? }`；传了 `sourceRoot` 就会重新计算源文件哈希
     并与 `coverage.json` 比对，找出过期条目与已删除文件。
@@ -64,13 +66,13 @@ import { WorkDir } from '@handbook/pipeline';
 
 const work = new WorkDir('/path/to/work');
 const result = buildSkill({
-  handbookDir: '/path/to/out',          // 渲染好的 markdown 手册
+  handbookDir: '/path/to/out', // 渲染好的 markdown 手册
   outDir: '/path/to/skills/myproject',
   name: 'myproject',
   project: 'MyProject',
   coverage: { assignment: work.loadAssignment(), sourceRoot: '/path/to/project' },
-  agentDir: '/path/to/out/agent',       // 可选：随包发布 agent 定位页
-  lang: 'zh',                           // 可选：中文正文，英文 frontmatter
+  agentDir: '/path/to/out/agent', // 可选：随包发布 agent 定位页
+  lang: 'zh', // 可选：中文正文，英文 frontmatter
 });
 console.log(result.nStagePages, result.references);
 
@@ -109,6 +111,7 @@ if (!check.ok) console.error(check.errors);
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— 文件 I/O 辅助（`writeFileAtomic`、`writeJsonFile`、`listFilesRecursive`）、
   `sha256Hex`、`Assignment` 类型。
 

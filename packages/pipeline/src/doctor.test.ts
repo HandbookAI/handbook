@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { MockChatClient, type MockRule } from '@handbook/llm';
 import type { Assignment, Skeleton, Stage } from '@handbook/core';
-import { applyChange, computeStageStats, runDoctorRound, validateChange, type DoctorChange } from './doctor.js';
+import {
+  applyChange,
+  computeStageStats,
+  runDoctorRound,
+  validateChange,
+  type DoctorChange,
+} from './doctor.js';
 
 function stage(id: string, overrides: Partial<Stage> = {}): Stage {
-  return { id, title: id.toUpperCase(), description: `${id} work.`, parent: null, children: [], crosscut: false, ...overrides };
+  return {
+    id,
+    title: id.toUpperCase(),
+    description: `${id} work.`,
+    parent: null,
+    children: [],
+    crosscut: false,
+    ...overrides,
+  };
 }
 
 function makeSkeleton(stages: Stage[]): Skeleton {
@@ -50,8 +64,12 @@ describe('validateChange — illegal proposals are rejected', () => {
 
   it('rejects add_stage moves that misstate where a file currently lives', () => {
     const base = { action: 'add_stage', new_stage: { id: 'c' } };
-    expect(reject({ ...base, move_files: [{ file: 'a1.py', from_stage: 'unassigned' }] })).toMatch(/not unassigned/);
-    expect(reject({ ...base, move_files: [{ file: 'loose.py', from_stage: 'a' }] })).toMatch(/not in stage a/);
+    expect(reject({ ...base, move_files: [{ file: 'a1.py', from_stage: 'unassigned' }] })).toMatch(
+      /not unassigned/,
+    );
+    expect(reject({ ...base, move_files: [{ file: 'loose.py', from_stage: 'a' }] })).toMatch(
+      /not in stage a/,
+    );
     expect(reject({ ...base, move_files: [{ from_stage: 'a' }] })).toMatch(/missing file/);
     expect(reject({ ...base, move_files: ['a1.py'] })).toMatch(/malformed/);
   });
@@ -59,15 +77,23 @@ describe('validateChange — illegal proposals are rejected', () => {
   it('rejects remove_stage with an unknown id, or a populated stage without a landing spot', () => {
     expect(reject({ action: 'remove_stage', stage_id: 'nope' })).toMatch(/unknown stage_id/);
     expect(reject({ action: 'remove_stage', stage_id: 'a' })).toMatch(/needs a valid move_to/);
-    expect(reject({ action: 'remove_stage', stage_id: 'a', move_to: 'gone' })).toMatch(/needs a valid move_to/);
-    expect(reject({ action: 'remove_stage', stage_id: 'a', move_to: 'a' })).toMatch(/move_to equals stage_id/);
+    expect(reject({ action: 'remove_stage', stage_id: 'a', move_to: 'gone' })).toMatch(
+      /needs a valid move_to/,
+    );
+    expect(reject({ action: 'remove_stage', stage_id: 'a', move_to: 'a' })).toMatch(
+      /move_to equals stage_id/,
+    );
   });
 
   it('rejects malformed merge_stages', () => {
     expect(reject({ action: 'merge_stages' })).toMatch(/empty stages_to_merge/);
-    expect(reject({ action: 'merge_stages', stages_to_merge: ['nope'], into: 'a' })).toMatch(/unknown source/);
+    expect(reject({ action: 'merge_stages', stages_to_merge: ['nope'], into: 'a' })).toMatch(
+      /unknown source/,
+    );
     expect(reject({ action: 'merge_stages', stages_to_merge: ['b'] })).toMatch(/missing into/);
-    expect(reject({ action: 'merge_stages', stages_to_merge: ['b'], into: 'nope' })).toMatch(/unknown target/);
+    expect(reject({ action: 'merge_stages', stages_to_merge: ['b'], into: 'nope' })).toMatch(
+      /unknown target/,
+    );
   });
 
   // Actual behavior: {stages_to_merge:['a'], into:'a'} validates as null and applyChange
@@ -79,11 +105,13 @@ describe('validateChange — illegal proposals are rejected', () => {
   });
 
   it('rejects malformed split_stage', () => {
-    expect(reject({ action: 'split_stage', source_stage: 'nope', new_stages: [] })).toMatch(/unknown source_stage/);
-    expect(reject({ action: 'split_stage', source_stage: 'a', new_stages: [] })).toMatch(/no new_stages/);
-    expect(reject({ action: 'split_stage', source_stage: 'a', new_stages: [{ id: 'b', files: ['a1.py'] }] })).toMatch(
-      /id collision b/,
+    expect(reject({ action: 'split_stage', source_stage: 'nope', new_stages: [] })).toMatch(
+      /unknown source_stage/,
     );
+    expect(reject({ action: 'split_stage', source_stage: 'a', new_stages: [] })).toMatch(/no new_stages/);
+    expect(
+      reject({ action: 'split_stage', source_stage: 'a', new_stages: [{ id: 'b', files: ['a1.py'] }] }),
+    ).toMatch(/id collision b/);
     expect(
       reject({
         action: 'split_stage',
@@ -94,16 +122,18 @@ describe('validateChange — illegal proposals are rejected', () => {
         ],
       }),
     ).toMatch(/id collision a-1/);
-    expect(reject({ action: 'split_stage', source_stage: 'a', new_stages: [{ id: 'a-1', files: ['b1.py'] }] })).toMatch(
-      /not in source bucket/,
-    );
-    expect(reject({ action: 'split_stage', source_stage: 'a', new_stages: [{ id: 'a-1', files: [] }] })).toMatch(
-      /no non-source stage moves any files/,
-    );
+    expect(
+      reject({ action: 'split_stage', source_stage: 'a', new_stages: [{ id: 'a-1', files: ['b1.py'] }] }),
+    ).toMatch(/not in source bucket/);
+    expect(
+      reject({ action: 'split_stage', source_stage: 'a', new_stages: [{ id: 'a-1', files: [] }] }),
+    ).toMatch(/no non-source stage moves any files/);
   });
 
   it('accepts well-formed changes', () => {
-    expect(reject({ action: 'add_stage', new_stage: { id: 'c' }, move_files: [{ file: 'loose.py' }] })).toBeNull();
+    expect(
+      reject({ action: 'add_stage', new_stage: { id: 'c' }, move_files: [{ file: 'loose.py' }] }),
+    ).toBeNull();
     expect(reject({ action: 'remove_stage', stage_id: 'a', move_to: 'b' })).toBeNull();
     expect(reject({ action: 'merge_stages', stages_to_merge: ['b'], into: 'a' })).toBeNull();
     expect(
@@ -131,9 +161,17 @@ describe('applyChange — legal changes are applied mechanically', () => {
   });
 
   it('remove_stage deletes the stage, re-parents its children, and returns its bucket', () => {
-    const skeleton = makeSkeleton([stage('root'), stage('mid', { parent: 'root' }), stage('leaf', { parent: 'mid' })]);
+    const skeleton = makeSkeleton([
+      stage('root'),
+      stage('mid', { parent: 'root' }),
+      stage('leaf', { parent: 'mid' }),
+    ]);
     const assignment = makeAssignment({ root: [], mid: ['m1.py', 'm2.py'], leaf: [] });
-    const affected = applyChange(skeleton, { action: 'remove_stage', stage_id: 'mid', move_to: 'root' }, assignment);
+    const affected = applyChange(
+      skeleton,
+      { action: 'remove_stage', stage_id: 'mid', move_to: 'root' },
+      assignment,
+    );
     expect(affected.sort()).toEqual(['m1.py', 'm2.py']);
     expect(skeleton.stages.map((s) => s.id)).toEqual(['root', 'leaf']);
     expect(skeleton.stages.find((s) => s.id === 'leaf')?.parent).toBe('root');
@@ -168,13 +206,18 @@ describe('applyChange — legal changes are applied mechanically', () => {
     );
     expect(affected.sort()).toEqual(['a1.py', 'a2.py']);
     expect(skeleton.stages.find((s) => s.id === 'a')?.description).toBe('Narrowed to the core.');
-    expect(skeleton.stages.find((s) => s.id === 'a-io')).toMatchObject({ title: 'IO', parent: 'a', crosscut: false });
+    expect(skeleton.stages.find((s) => s.id === 'a-io')).toMatchObject({
+      title: 'IO',
+      parent: 'a',
+      crosscut: false,
+    });
   });
 });
 
 describe('computeStageStats', () => {
   it('counts per-stage files, flags overload, and lists unassigned files', () => {
-    const files = (prefix: string, n: number): string[] => Array.from({ length: n }, (_, i) => `${prefix}${i}.py`);
+    const files = (prefix: string, n: number): string[] =>
+      Array.from({ length: n }, (_, i) => `${prefix}${i}.py`);
     const stages = [stage('big'), ...Array.from({ length: 9 }, (_, i) => stage(`s${i}`))];
     const buckets: Record<string, string[]> = { big: files('big/', 30) };
     for (let i = 0; i < 9; i += 1) buckets[`s${i}`] = files(`s${i}/`, 1);
@@ -206,7 +249,12 @@ describe('runDoctorRound — mechanical validate/apply/normalize interplay (mock
               action: 'add_stage',
               // 'overview' collides with a fixed page name — validateChange accepts it,
               // normalizeSkeleton must rename it after apply.
-              new_stage: { id: 'overview', title: 'Loose ends', description: 'Home for strays.', parent: null },
+              new_stage: {
+                id: 'overview',
+                title: 'Loose ends',
+                description: 'Home for strays.',
+                parent: null,
+              },
               move_files: [{ file: 'loose.py', from_stage: 'unassigned' }],
             },
             { action: 'remove_stage', stage_id: 'does-not-exist' },
@@ -243,7 +291,13 @@ describe('runDoctorRound — mechanical validate/apply/normalize interplay (mock
       },
     ];
     const result = await runDoctorRound(new MockChatClient(rules), skeleton, assignment, {});
-    expect(result).toEqual({ skeletonChanged: false, affectedFiles: [], nApplied: 0, nProposed: 0, nRejected: 0 });
+    expect(result).toEqual({
+      skeletonChanged: false,
+      affectedFiles: [],
+      nApplied: 0,
+      nProposed: 0,
+      nRejected: 0,
+    });
     expect(skeleton.stages.map((s) => s.id)).toEqual(before);
   });
 });

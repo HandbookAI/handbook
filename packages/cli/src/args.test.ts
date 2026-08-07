@@ -58,7 +58,9 @@ describe('parseEnum', () => {
   });
 
   it('treats an explicitly empty value as invalid (not as "unset")', () => {
-    expect(() => parseEnum('', '--detail', ['brief', 'deep'] as const)).toThrow(/must be one of brief \| deep/);
+    expect(() => parseEnum('', '--detail', ['brief', 'deep'] as const)).toThrow(
+      /must be one of brief \| deep/,
+    );
   });
 
   it('rejects non-string supplied values', () => {

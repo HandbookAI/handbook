@@ -47,7 +47,16 @@ function isPrompt(prompt, ...markers) {
 
 function respond(prompt) {
   // 2a — file cards (brief or deep)
-  if (isPrompt(prompt, 'Files to describe', 'processing a CHUNK', '你在逐个阅读源码文件', '你在完整阅读源码文件', '正在处理一个超长文件')) {
+  if (
+    isPrompt(
+      prompt,
+      'Files to describe',
+      'processing a CHUNK',
+      '你在逐个阅读源码文件',
+      '你在完整阅读源码文件',
+      '正在处理一个超长文件',
+    )
+  ) {
     const files = [...prompt.matchAll(/### FILE: (\S+)/g)].map((m) => m[1]);
     const purposes = files.map((file) => {
       const stem = file.split('/').pop();
@@ -85,16 +94,22 @@ function respond(prompt) {
       crosscut: false,
     }));
     if (stages.length === 0) {
-      stages.push({ id: 'stage-1', title: 'Codebase', description: 'All files.', parent: null, crosscut: false });
+      stages.push({
+        id: 'stage-1',
+        title: 'Codebase',
+        description: 'All files.',
+        parent: null,
+        crosscut: false,
+      });
     }
     return { metadata: { archetype: 'software codebase' }, stages };
   }
 
   // 2b — file assignment: match a file's directory group against the stage menu.
   if (prompt.includes('assigning whole SOURCE FILES')) {
-    const menu = [...prompt.matchAll(/^- (stage-\d+|crosscut-\d+|\S+) — .*?Everything under (\S+?)\.?$/gm)].map(
-      (m) => ({ id: m[1], dir: m[2].replace(/\/$/, '') }),
-    );
+    const menu = [
+      ...prompt.matchAll(/^- (stage-\d+|crosscut-\d+|\S+) — .*?Everything under (\S+?)\.?$/gm),
+    ].map((m) => ({ id: m[1], dir: m[2].replace(/\/$/, '') }));
     const files = [...prompt.matchAll(/^- (\S+) {2}\(/gm)].map((m) => m[1]);
     const fallback = [...prompt.matchAll(/^- (stage-\d+)/gm)][0]?.[1] ?? 'unassigned';
     return {
@@ -113,7 +128,10 @@ function respond(prompt) {
     const menuIds = [...prompt.matchAll(/^- (\S+) — /gm)].map((m) => m[1]);
     const members = [...prompt.matchAll(/^- (\S+)$/gm)].map((m) => m[1]);
     return {
-      assignments: members.map((member, i) => ({ member, stage: menuIds[i % Math.max(1, menuIds.length)] ?? 'unassigned' })),
+      assignments: members.map((member, i) => ({
+        member,
+        stage: menuIds[i % Math.max(1, menuIds.length)] ?? 'unassigned',
+      })),
     };
   }
 
@@ -126,7 +144,9 @@ function respond(prompt) {
   // 2c — organization: one group, given order.
   if (isPrompt(prompt, 'organizing the files of ONE stage', '你在把系统手册中一个阶段的文件组织成可读结构')) {
     const files = [...prompt.matchAll(/^- (\S+?)(?: {2}\[|\n)/gm)].map((m) => m[1]);
-    return { groups: [{ title: 'Core flow', summary: 'Everything this stage owns, in execution order.', files }] };
+    return {
+      groups: [{ title: 'Core flow', summary: 'Everything this stage owns, in execution order.', files }],
+    };
   }
 
   // 3 — registers: one generic shared-state register over the first two stages.
@@ -135,16 +155,24 @@ function respond(prompt) {
     return {
       registers:
         stageIds.length > 0
-          ? [{ id: 'reg-shared-config', semantics: 'Configuration shared across the main stages (placeholder from the offline mock).', stages: stageIds }]
+          ? [
+              {
+                id: 'reg-shared-config',
+                semantics: 'Configuration shared across the main stages (placeholder from the offline mock).',
+                stages: stageIds,
+              },
+            ]
           : [],
     };
   }
-  if (isPrompt(prompt, 'COMPLETING a list of state registers', '你在补全状态寄存器清单')) return { registers: [] };
+  if (isPrompt(prompt, 'COMPLETING a list of state registers', '你在补全状态寄存器清单'))
+    return { registers: [] };
   if (isPrompt(prompt, '为下面每个状态寄存器标注')) return { registers: [] };
 
   // 3 — narration (prose, not JSON)
   if (isPrompt(prompt, 'writing the OVERVIEW for one stage', '现在写其中一个阶段的')) {
-    const title = (prompt.match(/## Stage title: (.+)/) ?? prompt.match(/## 阶段标题[:：] *(.+)/))?.[1] ?? 'this stage';
+    const title =
+      (prompt.match(/## Stage title: (.+)/) ?? prompt.match(/## 阶段标题[:：] *(.+)/))?.[1] ?? 'this stage';
     return (
       `The ${title} stage is one station on this system's assembly line: work arrives from the previous ` +
       `station, this stage does its one job, and the result moves on. Its files cooperate through the call ` +
@@ -182,7 +210,8 @@ const server = createServer((req, res) => {
       return;
     }
     const answer = respond(prompt);
-    const content = typeof answer === 'string' ? answer : '```json\n' + JSON.stringify(answer, null, 2) + '\n```';
+    const content =
+      typeof answer === 'string' ? answer : '```json\n' + JSON.stringify(answer, null, 2) + '\n```';
     const send = () => {
       if (res.writableEnded) return;
       res.writeHead(200, { 'content-type': 'application/json' });

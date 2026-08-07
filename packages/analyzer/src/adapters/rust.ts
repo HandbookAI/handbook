@@ -35,11 +35,38 @@ import {
 const SEP = '::';
 
 const GENERIC_TYPES = new Set([
-  'i8', 'i16', 'i32', 'i64', 'i128', 'isize',
-  'u8', 'u16', 'u32', 'u64', 'u128', 'usize',
-  'f32', 'f64', 'bool', 'char', 'str', 'String',
-  'Vec', 'Box', 'Option', 'Result', 'HashMap', 'HashSet', 'BTreeMap',
-  'Rc', 'Arc', 'RefCell', 'Cell', 'Mutex', 'RwLock', 'Cow',
+  'i8',
+  'i16',
+  'i32',
+  'i64',
+  'i128',
+  'isize',
+  'u8',
+  'u16',
+  'u32',
+  'u64',
+  'u128',
+  'usize',
+  'f32',
+  'f64',
+  'bool',
+  'char',
+  'str',
+  'String',
+  'Vec',
+  'Box',
+  'Option',
+  'Result',
+  'HashMap',
+  'HashSet',
+  'BTreeMap',
+  'Rc',
+  'Arc',
+  'RefCell',
+  'Cell',
+  'Mutex',
+  'RwLock',
+  'Cow',
 ]);
 
 /** Method names treated as constructors in `A::b()` resolution. */
@@ -172,7 +199,8 @@ function scanInto(scan: ModuleScan, container: Node, file: string, prefix: strin
         break;
       }
       case 'impl_item': {
-        const owner = coreTypeName(child.childForFieldName('type')) || (child.childForFieldName('type')?.text ?? '');
+        const owner =
+          coreTypeName(child.childForFieldName('type')) || (child.childForFieldName('type')?.text ?? '');
         const body = child.childForFieldName('body');
         if (owner && body) scanImplBody(scan, body, owner, file, childPrefix);
         break;
@@ -454,12 +482,7 @@ function uniqueFreeFn(own: RustIndexes, tail: string, name: string): string | un
   return [...ids][0] ?? '';
 }
 
-function resolveBareName(
-  name: string,
-  scan: ModuleScan,
-  std: StandardIndexes,
-  own: RustIndexes,
-): Resolved {
+function resolveBareName(name: string, scan: ModuleScan, std: StandardIndexes, own: RustIndexes): Resolved {
   return (
     resolveSameFileFree(name, scan, { separator: SEP, idOf: (n) => scan.freeFnIds.get(n) }) ??
     resolveViaImport(name, scan, std, {
@@ -481,12 +504,7 @@ function resolveBareName(
   );
 }
 
-function resolveScoped(
-  callee: Node,
-  scan: ModuleScan,
-  std: StandardIndexes,
-  own: RustIndexes,
-): Resolved {
+function resolveScoped(callee: Node, scan: ModuleScan, std: StandardIndexes, own: RustIndexes): Resolved {
   const pathText = callee.childForFieldName('path')?.text ?? '';
   const leaf = fieldText(callee, 'name');
   if (!pathText || !leaf) return unresolvedOf(callee.text);

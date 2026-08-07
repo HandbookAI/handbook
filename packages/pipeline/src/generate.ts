@@ -35,7 +35,11 @@ const ALL_PHASES: readonly Phase[] = ['1', '2a', '2b', '2c', '3'];
 /** `all` | `1` | `2` (= 2a+2b+2c) | `2a` … | comma list (e.g. `2c,3`). */
 export function expandPhases(spec: string): Set<Phase> {
   const out = new Set<Phase>();
-  for (const token of spec.toLowerCase().split(',').map((t) => t.trim()).filter(Boolean)) {
+  for (const token of spec
+    .toLowerCase()
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)) {
     if (token === 'all') for (const p of ALL_PHASES) out.add(p);
     else if (token === '2') for (const p of ['2a', '2b', '2c'] as const) out.add(p);
     else if ((ALL_PHASES as readonly string[]).includes(token)) out.add(token as Phase);

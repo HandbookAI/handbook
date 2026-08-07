@@ -32,10 +32,27 @@ import {
 } from '../spine.js';
 
 const GENERIC_TYPES = new Set([
-  'int', 'int8', 'int16', 'int32', 'int64',
-  'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'uintptr',
-  'float32', 'float64', 'complex64', 'complex128',
-  'byte', 'rune', 'string', 'bool', 'error', 'any',
+  'int',
+  'int8',
+  'int16',
+  'int32',
+  'int64',
+  'uint',
+  'uint8',
+  'uint16',
+  'uint32',
+  'uint64',
+  'uintptr',
+  'float32',
+  'float64',
+  'complex64',
+  'complex128',
+  'byte',
+  'rune',
+  'string',
+  'bool',
+  'error',
+  'any',
 ]);
 
 /** Nested function scopes are skipped while walking a body. */
@@ -155,9 +172,8 @@ function recordFunction(scan: ModuleScan, node: Node, receiver: Receiver | null,
 
   const headerEnd = body ? body.startIndex : node.endIndex;
   const header = node.text.slice(0, Math.max(0, headerEnd - node.startIndex));
-  const { reads, writes } = body && receiver?.varName
-    ? trackReceiverAttrs(body, receiver.varName)
-    : { reads: [], writes: [] };
+  const { reads, writes } =
+    body && receiver?.varName ? trackReceiverAttrs(body, receiver.varName) : { reads: [], writes: [] };
 
   scan.functions.push({
     id,
@@ -217,12 +233,7 @@ function trackReceiverAttrs(body: Node, recv: string): { reads: string[]; writes
   return { reads: [...reads].sort(), writes: [...writes].sort() };
 }
 
-function resolveCall(
-  callee: Node,
-  scan: ModuleScan,
-  context: FnContext,
-  std: StandardIndexes,
-): Resolved {
+function resolveCall(callee: Node, scan: ModuleScan, context: FnContext, std: StandardIndexes): Resolved {
   // A. bare `f(...)` — same file first, then any sibling file of the package.
   if (callee.type === 'identifier') {
     return (
@@ -287,11 +298,7 @@ function resolveCall(
  * Owning moduleId when `importPath` ends with a scanned package directory that
  * defines `fn`. Longest directory match wins (`internal/util` over `util`).
  */
-function scannedPackageFunction(
-  importPath: string,
-  fn: string,
-  std: StandardIndexes,
-): string | undefined {
+function scannedPackageFunction(importPath: string, fn: string, std: StandardIndexes): string | undefined {
   let bestDir = '';
   let owner: string | undefined;
   for (const [dir, fns] of std.directoryFunctions) {
@@ -310,14 +317,7 @@ const CAPABILITIES: AdapterCapabilities = {
   tier: 'full',
   // Go constructors are ordinary functions (`NewX`), so nothing here can be
   // typed as a constructor call.
-  callTypes: [
-    'self_method',
-    'self_attr_method',
-    'param_method',
-    'internal_func',
-    'boundary',
-    'unresolved',
-  ],
+  callTypes: ['self_method', 'self_attr_method', 'param_method', 'internal_func', 'boundary', 'unresolved'],
   selfAttrs: true,
   statementSpans: false,
 };

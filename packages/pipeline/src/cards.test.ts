@@ -80,7 +80,12 @@ describe('extractCardEntries', () => {
   });
 
   it('refuses a function note masquerading as a file card (R1 F1)', () => {
-    const note = { qualname: 'Queue.push', purpose: 'Adds a job.', data_flow: 'job in', relations: 'producer' };
+    const note = {
+      qualname: 'Queue.push',
+      purpose: 'Adds a job.',
+      data_flow: 'job in',
+      relations: 'producer',
+    };
     expect(extractCardEntries([note])).toEqual([]);
     expect(extractCardEntries(note)).toEqual([]);
   });
@@ -94,7 +99,9 @@ describe('generateCards attribution', () => {
   it('does not attribute a card to a file the reply never named (R1 F7 case 2)', async () => {
     const { sourceRoot, graph } = fixture(['src/core/index.ts']);
     const { client } = replyClient(
-      fence({ purposes: [{ file: 'packages/llm/src/client.ts', purpose: 'The chat client.', role: 'io_transport' }] }),
+      fence({
+        purposes: [{ file: 'packages/llm/src/client.ts', purpose: 'The chat client.', role: 'io_transport' }],
+      }),
     );
     const warnings: string[] = [];
     const work = new WorkDir(mkdtempSync(join(tmpdir(), 'hb-work-')));

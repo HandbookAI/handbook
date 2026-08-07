@@ -41,7 +41,11 @@ function makeGraph(nodes: GraphNode[], edges: CallEdge[]): CodeGraph {
       generatedAt: '2026-01-01T00:00:00.000Z',
       language: 'test',
       sourceRoot: '/repo',
-      scannedFiles: [...new Set(nodes.filter((n) => n.kind === 'internal').map((n) => (n.kind === 'internal' ? n.file : '')))],
+      scannedFiles: [
+        ...new Set(
+          nodes.filter((n) => n.kind === 'internal').map((n) => (n.kind === 'internal' ? n.file : '')),
+        ),
+      ],
       nInternalFunctions: nodes.filter((n) => n.kind === 'internal').length,
       nBoundaryNodes: nodes.filter((n) => n.kind === 'boundary').length,
       nEdges: edges.length,
@@ -104,7 +108,12 @@ describe('suggestOrder', () => {
       ['z.py', ['m.py', 'n.py']],
       ['a.py', ['m.py']],
     ]);
-    expect(suggestOrder(['a.py', 'z.py', 'm.py', 'n.py'], adjacency)).toEqual(['z.py', 'a.py', 'm.py', 'n.py']);
+    expect(suggestOrder(['a.py', 'z.py', 'm.py', 'n.py'], adjacency)).toEqual([
+      'z.py',
+      'a.py',
+      'm.py',
+      'n.py',
+    ]);
   });
 
   it('ignores adjacency targets outside the stage', () => {

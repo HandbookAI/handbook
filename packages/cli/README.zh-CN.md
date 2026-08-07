@@ -80,6 +80,7 @@ handbook studio --port 4860 --state-dir ~/.handbook-studio
 ```
 
 各命令的关键参数：
+
 - `analyze`：`--source`、`--work`（必填）；`--lang auto|python|typescript|go|rust|shell`。
 - `generate`：`--source`、`--work`（必填）；`--phase all|1|2|2a|2b|2c|3|<逗号列表>`、
   `--strategy file|member`、`--skeleton <path>`、`--detail brief|deep`、`--synth-mode oneshot|doctor`、
@@ -110,6 +111,7 @@ handbook studio --port 4860 --state-dir ~/.handbook-studio
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— 日志器创建与日志级别类型、`.env` 解析。
 - `@handbook/llm` —— 需要 LLM 的命令所用的 `OpenAiChatClient`。
 - `@handbook/pipeline` —— `runPhase1`、`generateHandbook`、`loadHandbookModel`、`WorkDir`。
@@ -122,4 +124,5 @@ handbook studio --port 4860 --state-dir ~/.handbook-studio
 - `@handbook/analyzer` —— 分析栈（经由 pipeline 使用）。
 
 外部：
+
 - `commander` —— 声明式的子命令、参数解析与帮助文本。

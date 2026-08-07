@@ -55,10 +55,7 @@ describe('withDirLock', () => {
 
   it('reclaims a lock whose local owner is provably dead', async () => {
     const d = dir();
-    writeFileSync(
-      join(d, '.lock'),
-      JSON.stringify({ pid: 2147483646, host: hostname(), startedAt: 'x' }),
-    );
+    writeFileSync(join(d, '.lock'), JSON.stringify({ pid: 2147483646, host: hostname(), startedAt: 'x' }));
     const result = await withDirLock(d, 'handbook', silentLogger, async () => 'reclaimed');
     expect(result).toBe('reclaimed');
     expect(existsSync(join(d, '.lock'))).toBe(false);

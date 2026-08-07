@@ -20,6 +20,7 @@
 ## 公开 API
 
 **适配器契约与注册表**（`adapter.ts`）
+
 - `LanguageAdapter` —— `{ name, extensions, discover(sourceRoot), analyze(files, sourceRoot), statementSpans?(filePath, qualname) }`。
 - `COMMON_SKIP_DIRS` —— 所有适配器发现文件时都跳过的目录名。
 - `discoverByExtension(sourceRoot, extensions, extraSkipDirs?, filter?)` —— 默认的发现辅助函数。
@@ -32,6 +33,7 @@
 各自实现 `LanguageAdapter`；只有 `PythonAdapter` 实现了 `statementSpans`（供 resync 使用的合法切分边界）。
 
 **图构建**（`graph.ts`）
+
 - `buildGraph(analysis, options): BuildGraphResult` —— `BuildGraphOptions`（`sourceRoot`、`scannedFiles`、`language`、
   `defaultExt?`、`now?`），`BuildGraphResult`（`graph`、`dropped`、`stats`）。
 - `writeGraphArtifacts(result, outDir)` —— 落盘全部四份产物。
@@ -40,6 +42,7 @@
 - `categorizeDropped(calleeId)` —— 给一条解析不出的被调方归类（`builtin`、`self_attr_unknown`、`local_var_method`……）。
 
 **导航包**（`navpack.ts`）
+
 - `buildNavPack(graph, options?): NavPack` —— 目录地图、入口点候选、扇出 Top-K、外部子系统；
   `NavPackOptions`（`fanOutTopK?`、`sampleFnsPerFile?`）、`NavFileDescriptor`。
 - `allFileDescriptors(graph, nav)` —— 在 nav 文件之外补上「一个函数都没有」的已扫描文件，
@@ -47,12 +50,20 @@
 - `renderOrientation(nav, options?)` —— 给提示词用的、长度有界的纯文本定位块；`OrientationOptions`。
 
 **tree-sitter 运行时**（`languages.ts`）
+
 - `loadLanguage(grammar)` / `createParser(grammar)` —— 按 `tree-sitter-wasms` 里的名字懒加载并缓存 WASM 语法。
 
 ## 用法
 
 ```ts
-import { registerBuiltinAdapters, getAdapter, buildGraph, writeGraphArtifacts, buildNavPack, renderOrientation } from '@handbook/analyzer';
+import {
+  registerBuiltinAdapters,
+  getAdapter,
+  buildGraph,
+  writeGraphArtifacts,
+  buildNavPack,
+  renderOrientation,
+} from '@handbook/analyzer';
 
 registerBuiltinAdapters();
 const adapter = getAdapter('typescript');
@@ -83,8 +94,10 @@ console.log(result.stats); // { functions, edgesKept, edgesDropped, internalNode
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— IR 类型与 schema、`listFilesRecursive`、`truncate`、原子 JSON 写入。
 
 外部：
+
 - `web-tree-sitter` —— 编译成 WASM 的 tree-sitter 运行时（解析器 + 语法加载）。
 - `tree-sitter-wasms` —— python / typescript / tsx / go / rust / bash 的预编译语法 `.wasm`。

@@ -44,7 +44,7 @@ node packages/cli/dist/main.js generate --source <repo> --work work/x --phase 2,
 
 The mock recognizes each pipeline prompt by its instruction header and answers with
 schema-correct, prompt-derived JSON — useful for CI and for developing new pipeline
-passes without spending tokens. It is intentionally *not* a language model: prose
+passes without spending tokens. It is intentionally _not_ a language model: prose
 quality in its output is canned.
 
 ## Running the examples against YOUR endpoint (`--real`)

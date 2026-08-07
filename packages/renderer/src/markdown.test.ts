@@ -26,7 +26,15 @@ afterAll(() => {
 describe('renderMarkdownHandbook', () => {
   it('writes one page per content-bearing stage plus the top-level pages', () => {
     expect(result.nStagePages).toBe(4);
-    for (const name of ['overview.md', 'register.md', 'index.md', 'stage-1.md', 'stage-1.1.md', 'stage-2.md', 'crosscut-1.md']) {
+    for (const name of [
+      'overview.md',
+      'register.md',
+      'index.md',
+      'stage-1.md',
+      'stage-1.1.md',
+      'stage-2.md',
+      'crosscut-1.md',
+    ]) {
       expect(existsSync(join(dir, name)), name).toBe(true);
     }
   });
@@ -63,7 +71,9 @@ describe('renderMarkdownHandbook', () => {
     expect(register).toContain('# Fixture Handbook — State Flow');
     expect(register).toContain('## 🔄 State Flow Overview');
     expect(register).toContain('| State register | Semantics | Stages touched |');
-    expect(register).toContain('| `reg-parser-cache` | Parsed AST cache shared between load \\| query paths. | [Ingestion Pipeline](stage-1.md) |');
+    expect(register).toContain(
+      '| `reg-parser-cache` | Parsed AST cache shared between load \\| query paths. | [Ingestion Pipeline](stage-1.md) |',
+    );
     expect(register).toContain('[Query Pipeline](stage-2.md)');
   });
 
@@ -158,7 +168,10 @@ describe('renderMarkdownHandbook — mermaid stage map', () => {
     try {
       renderMarkdownHandbook(dirty, out);
       const overview = readFileSync(join(out, 'overview.md'), 'utf8');
-      const fence = overview.slice(overview.indexOf('```mermaid'), overview.indexOf('```', overview.indexOf('```mermaid') + 3));
+      const fence = overview.slice(
+        overview.indexOf('```mermaid'),
+        overview.indexOf('```', overview.indexOf('```mermaid') + 3),
+      );
       // Invariant: any line that opens a node label also closes it.
       for (const line of fence.split('\n')) {
         if (line.includes('["')) expect(line, line).toContain('"]');
@@ -192,9 +205,7 @@ describe('renderMarkdownHandbook — source links (opt-in)', () => {
     try {
       renderMarkdownHandbook(model, out, { sourceBaseUrl: 'https://example.com/repo/' });
       const page = readFileSync(join(out, 'stage-1.md'), 'utf8');
-      expect(page).toContain(
-        '### [`src/ingest/loader.ts`](https://example.com/repo/src/ingest/loader.ts)',
-      );
+      expect(page).toContain('### [`src/ingest/loader.ts`](https://example.com/repo/src/ingest/loader.ts)');
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
@@ -281,12 +292,25 @@ describe('renderMarkdownHandbook — orphan-page cleanup (manifest)', () => {
 
     // Second generation renames every stage.
     const modelB = structuredClone(modelA);
-    modelB.skeleton.stages = modelB.skeleton.stages.map((s, i) => ({ ...s, id: `renamed-${i + 1}`, parent: null, children: [] }));
+    modelB.skeleton.stages = modelB.skeleton.stages.map((s, i) => ({
+      ...s,
+      id: `renamed-${i + 1}`,
+      parent: null,
+      children: [],
+    }));
     modelB.assignment.buckets = Object.fromEntries(
       Object.values(modelB.assignment.buckets).map((files, i) => [`renamed-${i + 1}`, files]),
     );
     modelB.assignment.fileStage = Object.fromEntries(
-      Object.entries(modelB.assignment.fileStage).map(([f], i) => [f, { stage: Object.keys(modelB.assignment.buckets)[i % Object.keys(modelB.assignment.buckets).length] as string, also: [] }]),
+      Object.entries(modelB.assignment.fileStage).map(([f], i) => [
+        f,
+        {
+          stage: Object.keys(modelB.assignment.buckets)[
+            i % Object.keys(modelB.assignment.buckets).length
+          ] as string,
+          also: [],
+        },
+      ]),
     );
     modelB.organization.stages = {};
     modelB.narration.stageSummaries = Object.fromEntries(

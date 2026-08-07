@@ -87,7 +87,10 @@ export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfi
   return {
     apiKey: pick('OPENAI_API_KEY', 'HANDBOOK_LLM_API_KEY', ''),
     model: pick('OPENAI_MODEL', 'HANDBOOK_LLM_MODEL', 'gpt-4o-mini'),
-    baseUrl: pick('OPENAI_BASE_URL', 'HANDBOOK_LLM_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''),
+    baseUrl: pick('OPENAI_BASE_URL', 'HANDBOOK_LLM_BASE_URL', 'https://api.openai.com/v1').replace(
+      /\/+$/,
+      '',
+    ),
     maxTokens: num(pick('OPENAI_MAX_TOKENS', 'HANDBOOK_LLM_MAX_TOKENS', '16000'), 16_000, 1),
     // 0 is a legitimate "no retries" request — clamp to 1 attempt, don't
     // silently replace it with the default.
@@ -329,7 +332,9 @@ export class OpenAiChatClient implements ChatClient {
             reasoningTokens ? ` (${String(reasoningTokens)} reasoning tokens)` : ''
           }; raise OPENAI_MAX_TOKENS or pick a non-reasoning model`
         : '';
-      throw new Error(`LLM returned empty content (finish_reason=${finishReason}, max_tokens=${maxTokens})${hint}`);
+      throw new Error(
+        `LLM returned empty content (finish_reason=${finishReason}, max_tokens=${maxTokens})${hint}`,
+      );
     }
     return text;
   }

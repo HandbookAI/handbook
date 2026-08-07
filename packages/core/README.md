@@ -17,6 +17,7 @@ Shared foundation for the whole toolchain: the language-agnostic call-graph IR, 
 ## Public API
 
 Call-graph IR (`ir.ts`):
+
 - `CALL_TYPES` / `CallType` — how a call site was resolved (`self_method`, `internal_func`, `boundary`, `unresolved`, …).
 - `functionNodeSchema` / `FunctionNode`, `boundaryNodeSchema` / `BoundaryNode`, `callEdgeSchema` / `CallEdge` — the three IR kinds.
 - `ModuleAnalysis` — `{ functions, edges }`, what a language adapter returns.
@@ -24,6 +25,7 @@ Call-graph IR (`ir.ts`):
 - `isInternalNode(node)` — type guard for internal function nodes.
 
 Handbook model (`model.ts`):
+
 - `NARRATE_LANGS` / `NarrateLang` (`'en' | 'zh'`), `FILE_ROLES` / `FileRole`, `coerceRole(value)` — constrained vocabularies.
 - `functionNoteSchema` / `FunctionNote`, `fileCardSchema` / `FileCard`, `cardCoverageSchema` / `CardCoverage` — per-file leaf content.
 - `stageSchema` / `Stage`, `skeletonSchema` / `Skeleton`, `assignmentSchema` / `Assignment`, `organizedFileSchema` / `OrganizedFile`, `organizationSchema` / `Organization` — structure artifacts.
@@ -32,10 +34,12 @@ Handbook model (`model.ts`):
 - `StageTree` — stage lookups: `title/description/isCrosscut/children/depth/subtree`, plus `byId`, `order`, `topLevel`.
 
 Errors and logging:
+
 - `HandbookError(code, message)`, `MissingArtifactError(what, hint?)`, `ArtifactValidationError(path, detail)`, `PermanentError(message)`.
 - `Logger`, `LogLevel`, `createLogger(prefix?, level?)` (stderr only), `silentLogger`.
 
 Utilities:
+
 - `pLimit(concurrency): LimitFn`, `mapLimit(items, concurrency, fn)` — bounded concurrency, order-preserving.
 - `retry(fn, options?)` / `RetryOptions` — linear backoff + jitter; `PermanentError` aborts immediately.
 - `sha1Hex(text)`, `sha256Hex(data)`, `shortHash(text)` — digests (12-char short hash for cache keys).
@@ -82,4 +86,5 @@ log.info(`summarized ${summaries.length} functions`);
 Internal: none — this is the root of the dependency graph.
 
 External:
+
 - `zod` — runtime validation of every persisted artifact plus inferred TypeScript types from a single source of truth.

@@ -23,6 +23,7 @@
 ## 公开 API
 
 **Markdown 手册**（`markdown.ts`）
+
 - `renderMarkdownHandbook(model, outDir, options?): { nStagePages, files }` ——
   为每个有内容的阶段写 `<sid>.md`，外加 `overview.md`（含 mermaid 阶段地图）、`index.md`，
   以及（存在寄存器时）`register.md`；逐阶段的寄存器小节以幂等方式追加。
@@ -30,6 +31,7 @@
 - `stageSectionMarker(lang)` —— 上述幂等追加所用的标记标题。
 
 **llms.txt 入口文件**（`llms-txt.ts`）
+
 - `renderLlmsTxt(model, outDir): { files }` —— 向 `outDir` 写出 `llms.txt` 与 `llms-full.txt`
   （应与 Markdown 手册渲染进同一目录，`llms.txt` 里的链接才能解析）。
   `llms.txt` 遵循 llms.txt 约定：`# 标题`、由系统总览叙述推导的 `>` 摘要引用块、
@@ -38,10 +40,12 @@
   按组织排序的文件清单（含 purpose）、寄存器——纯 Markdown，不含链接。
 
 **agent 定位站点**（`agent-site.ts`）
+
 - `renderAgentSite(model, outDir): { nStagePages, nCollisions }` ——
   写出 `how_to_use.md`、`index.md`、`disambiguation.md`，以及每个有内容阶段的一张定位页。
 
 **HTML**（`html.ts`）
+
 - `renderHtmlSite(model, outDir, options?): { nPages }` —— 多页站点（`index.html` 跳转页、`overview.html`、
   `register.html`、`<sid>.html`），共用一套外壳（吸顶侧栏、面包屑、记忆主题切换、全部展开/收起）。
   `options: { sourceBaseUrl? }` 见下文。
@@ -49,12 +53,14 @@
   `<details>` 区块。
 
 **源码链接**（`SourceLinkOptions`）
+
 - `renderMarkdownHandbook` 与 `renderHtmlSite` 接受可选的 `{ sourceBaseUrl }`。
   设置后，每张文件卡片的路径都变成指向 `<base>/<path>` 的超链接
   （base 末尾的 `/` 会剥掉，路径分段做 URL 编码、保留 `/` 分隔符），例如代码托管平台的 blob URL。
   不设置时，输出与该选项出现之前逐字节一致，且不含任何外部 URL。
 
 **文件卡片**（`file-card.ts`）
+
 - `renderFileCardMd(rel, card, lang, options?)` —— 单个文件的完整 Markdown 卡片：
   role / lifecycle 徽标、描述（缺失时回退到 purpose）、逐函数细节；
   `options: { sourceBaseUrl? }` 会把标题里的路径链接到源码文件。
@@ -65,7 +71,13 @@
 ## 用法
 
 ```ts
-import { renderMarkdownHandbook, renderAgentSite, renderHtmlSite, renderSinglePageHtml, renderLlmsTxt } from '@handbook/renderer';
+import {
+  renderMarkdownHandbook,
+  renderAgentSite,
+  renderHtmlSite,
+  renderSinglePageHtml,
+  renderLlmsTxt,
+} from '@handbook/renderer';
 import { loadHandbookModel } from '@handbook/pipeline';
 
 const model = loadHandbookModel('/path/to/work', '我的项目手册');
@@ -103,8 +115,10 @@ console.log(md.nStagePages, llms.files, agent.nCollisions, html.nPages, single.b
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— `HandbookModel` 及相关类型、`StageTree`、原子写、文本辅助。
 
 外部：
+
 - `markdown-it` —— 把叙述/描述的 Markdown 渲染成 HTML，供两种 HTML 产物使用
   （Markdown 产物本身不需要任何依赖）。

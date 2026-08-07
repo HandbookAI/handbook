@@ -17,34 +17,41 @@ The handbook generation pipeline: from a static call graph to a fully narrated h
 ## Public API
 
 Orchestration (`generate.ts`):
+
 - `generateHandbook(options: GenerateOptions): Promise<GenerateStats>` — run selected phases; `GenerateOptions` covers `sourceRoot`, `workDir`, `client?`, `phase?`, `strategy?` (`'file' | 'member'`), `skeletonPath?`, `lang?`, `narrateLang?`, `detail?`, `synthMode?` (`'oneshot' | 'doctor'`), worker/batch knobs, `resume?`, `refresh?`.
 - `expandPhases(spec)` / `Phase` — parse `all | 1 | 2 | 2a | 2b | 2c | 3` or comma lists.
 - `loadHandbookModel(workDir, title): HandbookModel` — load a completed work directory for the renderer.
 
 Work directory (`workdir.ts`):
+
 - `WorkDir` — path getters (`graphPath`, `cardsDir`, `skeletonPath`, `assignmentPath`, `organizationPath`, `narrationPath`, `registersPath`, `cacheDir`) plus validated `load*`/`save*` for every artifact and `parseSkeletonYaml`.
 
 Phase 1 and facts:
+
 - `runPhase1(options: Phase1Options): Promise<Phase1Stats>` — scan (`lang: 'auto'` merges all registered languages), build and persist the graph.
 - `buildInventory(graph): Record<string, FunctionNote[]>` — deterministic per-file function facts (calls/calledBy/extCalls, capped).
 
 Cards (`cards.ts`):
+
 - `generateCards(options: CardsOptions): Promise<CardsResult>` — brief or deep cards; `CardDetail` (`'brief' | 'deep'`), options for batching, workers, truncation, chunking, `resume`, `onlyFiles`.
 - `mergeFunctionNotes(graphFns, llmFns)` — LLM prose merged onto the complete structural inventory.
 - `isCardDone(card, detail)` — resume filter.
 
 Skeleton, assignment, doctor:
+
 - `synthesizeSkeleton(client, nav, cards, lang?)`, `dirRollups(cards, examplesPerDir?)` / `DirRollup`, `buildSynthPrompt(nav, rollups, lang)`, `normalizeSkeleton(raw, draftedBy?)`, `stageShortDescriptions(skeleton)`.
 - `assignFiles(client, graph, skeleton, options?)`, `reassignSubset(client, graph, skeleton, subset, previous, options?)`, `rebuildAssignment(fileStage, skeleton)` / `AssignOptions`.
 - `synthesizeWithDoctor(client, graph, cards, options?)` / `SynthLoopOptions` — draft → assign → doctor rounds until convergence.
 - `runDoctorRound(client, skeleton, assignment, cards, logger?)` / `DoctorRoundResult`, `computeStageStats` / `StageStats`, `renderStats`, `validateChange`, `applyChange`, `DoctorChange`.
 
 Organization and narration:
+
 - `organizeStages(client, graph, skeleton, assignment, cards, options?)` / `OrganizeOptions`; `fileCallAdjacency(graph)`, `suggestOrder(files, adjacency)` (Kahn's topological order, callers first).
 - `narrate(client, inputs, options?)` / `NarrateOptions` — deepest-first stage summaries plus the system overview.
 - `extractRegisters(client, skeleton, narration, cards, options?)` / `RegistersOptions` — loop-until-dry register extraction.
 
 Member strategy (`member.ts`):
+
 - `classifyMembers(client, graph, skeleton, options?)` / `ClassifyMembersOptions`, `memberAssignmentSchema` / `MemberAssignment`.
 - `deriveFileArtifacts(graph, skeleton, memberAssignment, cards)` — file-level assignment + organization by member majority vote.
 - `saveMemberAssignment(work, memberAssignment)`.
@@ -82,10 +89,12 @@ const model = loadHandbookModel('/path/to/work', 'My Project Handbook');
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — model types/schemas, work-dir I/O primitives, concurrency, progress, hashing.
 - `@handbook/analyzer` — phase 1 adapters/graph building and the `NavPack` orientation inputs.
 - `@handbook/llm` — the `ChatClient` seam and the actor–critic loop used by the doctor.
 
 External:
+
 - `yaml` — human-editable `skeleton.yaml` / `organization.yaml` serialization.
 - `zod` — the package-local `memberAssignmentSchema` (all other schemas come from core).

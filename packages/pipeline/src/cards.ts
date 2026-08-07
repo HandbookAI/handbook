@@ -154,10 +154,14 @@ function fileBlock(
     for (const fn of inventory) {
       lines.push(`  - ${fn.qualname}  (lines ${fn.lineRange[0]}-${fn.lineRange[1]})`);
       if (fn.calls.length > 0) {
-        lines.push(`      calls: ${fn.calls.slice(0, 8).map(leafName).join(', ')}${fn.calls.length > 8 ? ` (+${fn.calls.length - 8} more)` : ''}`);
+        lines.push(
+          `      calls: ${fn.calls.slice(0, 8).map(leafName).join(', ')}${fn.calls.length > 8 ? ` (+${fn.calls.length - 8} more)` : ''}`,
+        );
       }
       if (fn.calledBy.length > 0) {
-        lines.push(`      called by: ${fn.calledBy.slice(0, 8).map(leafName).join(', ')}${fn.calledBy.length > 8 ? ` (+${fn.calledBy.length - 8} more)` : ''}`);
+        lines.push(
+          `      called by: ${fn.calledBy.slice(0, 8).map(leafName).join(', ')}${fn.calledBy.length > 8 ? ` (+${fn.calledBy.length - 8} more)` : ''}`,
+        );
       }
     }
   }
@@ -177,7 +181,10 @@ function fileBlock(
  * `src/a/config.ts` and overwrite a correct card with prose about another file.
  */
 function matchLoosely(named: string, valid: ReadonlySet<string>): string | undefined {
-  const cleaned = named.trim().replace(/^\.\/+/, '').replace(/^`+|`+$/g, '');
+  const cleaned = named
+    .trim()
+    .replace(/^\.\/+/, '')
+    .replace(/^`+|`+$/g, '');
   if (valid.has(cleaned)) return cleaned;
   const suffixHits = [...valid].filter((f) => f === cleaned || f.endsWith(`/${cleaned}`));
   return suffixHits.length === 1 ? suffixHits[0] : undefined;
@@ -352,7 +359,12 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   const describeBatch = async (batch: NavFileDescriptor[]): Promise<Record<string, FileCard>> => {
     attempted += 1;
     const blocks = batch.map((d) => fileBlock(d, readSource(d.file), maxCharsPerFile, inventory[d.file]));
-    const prompt = [rules, `## Files to describe (${batch.length})`, ...blocks, 'Return the JSON block only — no commentary.'].join('\n\n');
+    const prompt = [
+      rules,
+      `## Files to describe (${batch.length})`,
+      ...blocks,
+      'Return the JSON block only — no commentary.',
+    ].join('\n\n');
     const result: Record<string, FileCard> = {};
     try {
       const response = await client.complete(prompt, { temperature: 0, signal });
@@ -424,7 +436,12 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     for (const chunk of chunks) {
       const chunkBlocks = chunk.map((fn) => {
         const body = sourceLines.slice(fn.lineRange[0] - 1, fn.lineRange[1]).join('\n');
-        return [`#### ${fn.qualname} (lines ${fn.lineRange[0]}-${fn.lineRange[1]})`, '```', truncate(body, chunkChars), '```'].join('\n');
+        return [
+          `#### ${fn.qualname} (lines ${fn.lineRange[0]}-${fn.lineRange[1]})`,
+          '```',
+          truncate(body, chunkChars),
+          '```',
+        ].join('\n');
       });
       const prompt = [
         rules,

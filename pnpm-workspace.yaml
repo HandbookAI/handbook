@@ -1,2 +1,44 @@
 packages:
   - packages/*
+
+# Single source of truth for every third-party version in the repo.
+#
+# Packages depend on these as `"zod": "catalog:"` and never restate a range, so
+# a version can only be changed in one place and can never drift between the
+# eleven packages. `scripts/check-workspace.mjs` enforces that: any non-workspace
+# dependency written as a literal range is a build failure.
+#
+# pnpm rewrites `catalog:` to the resolved range when packing or publishing, so
+# consumers never see the protocol.
+catalog:
+  # --- runtime ---
+  commander: ^15.0.0
+  markdown-it: ^15.0.0
+  # 0.1.13 already ships the java/c#/c/c++/ruby/php/swift/dart/solidity/kotlin/
+  # scala grammars, so adding a language needs no new dependency. Its bundled
+  # tree-sitter-lua grammar is broken (order-dependent results) — do not adopt it.
+  tree-sitter-wasms: ^0.1.13
+  # Must stay on 0.25.x: 0.26 changed the WASM ABI and fails to load the
+  # grammars above. Pinned with ~ so a minor bump cannot slip in.
+  web-tree-sitter: ~0.25.10
+  yaml: ^2.9.0
+  zod: ^4.0.0
+
+  # --- types ---
+  '@types/markdown-it': ^14.0.0
+  '@types/node': ^24.0.0
+
+  # --- toolchain ---
+  '@changesets/cli': ^2.29.0
+  '@commitlint/cli': ^20.0.0
+  '@commitlint/config-conventional': ^20.0.0
+  '@eslint/js': ^9.0.0
+  '@vitest/coverage-v8': ^4.0.0
+  eslint: ^9.0.0
+  globals: ^16.0.0
+  husky: ^9.1.0
+  lint-staged: ^16.0.0
+  prettier: ^3.3.0
+  typescript: ^5.7.0
+  typescript-eslint: ^8.0.0
+  vitest: ^4.0.0

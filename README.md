@@ -3,7 +3,7 @@
 **English** | [中文](README.zh-CN.md)
 
 Turn any codebase into a navigable **handbook** — then use that handbook to help a code
-agent find *every* place a change needs to touch, and keep the handbook current as the
+agent find _every_ place a change needs to touch, and keep the handbook current as the
 code evolves.
 
 ```
@@ -116,32 +116,32 @@ member = you author `skeleton.yaml`, functions are classified individually),
 
 ## How generation works
 
-| Phase | What happens | LLM |
-|---|---|---|
-| 1 | Language adapters (tree-sitter, WASM) parse every file into a typed call graph: functions, methods, resolved call edges (`self`/attribute/parameter/import), boundary calls, unresolved calls quarantined into `dropped-calls.json`. | no |
-| 2a | Every file gets a **card**: purpose, role, lifecycle — and in deep mode a 120–300-word walkthrough plus per-function purpose / data flow / relations merged onto graph facts. Batched, three-tier degradation, crash-safe, resumable. | yes |
-| 2b | A stage **skeleton** (the narrative spine, ordered by execution lifecycle) is synthesized from directory rollups + entry points, then every file is assigned to exactly one stage. `--synth-mode doctor` runs an actor–critic repair loop (engineer / architect / reader critics) until nothing is unassigned and no structural change survives review. | yes |
-| 2c | Each stage's files are ordered by call-graph topology and grouped into 2–8 titled sub-groups; every failure degrades to a deterministic flat order — files are never dropped. | yes |
-| 3 | Bottom-up narration: stage overviews (children before parents), a system overview, and cross-stage **state registers** extracted with a loop-until-dry gap pass. Everything is content-hash cached. | yes |
+| Phase | What happens                                                                                                                                                                                                                                                                                                                                            | LLM |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 1     | Language adapters (tree-sitter, WASM) parse every file into a typed call graph: functions, methods, resolved call edges (`self`/attribute/parameter/import), boundary calls, unresolved calls quarantined into `dropped-calls.json`.                                                                                                                    | no  |
+| 2a    | Every file gets a **card**: purpose, role, lifecycle — and in deep mode a 120–300-word walkthrough plus per-function purpose / data flow / relations merged onto graph facts. Batched, three-tier degradation, crash-safe, resumable.                                                                                                                   | yes |
+| 2b    | A stage **skeleton** (the narrative spine, ordered by execution lifecycle) is synthesized from directory rollups + entry points, then every file is assigned to exactly one stage. `--synth-mode doctor` runs an actor–critic repair loop (engineer / architect / reader critics) until nothing is unassigned and no structural change survives review. | yes |
+| 2c    | Each stage's files are ordered by call-graph topology and grouped into 2–8 titled sub-groups; every failure degrades to a deterministic flat order — files are never dropped.                                                                                                                                                                           | yes |
+| 3     | Bottom-up narration: stage overviews (children before parents), a system overview, and cross-stage **state registers** extracted with a loop-until-dry gap pass. Everything is content-hash cached.                                                                                                                                                     | yes |
 
 Every artifact is schema-validated JSON/YAML under the work dir; any phase can be re-run
 independently and a crashed run resumes where it stopped.
 
 ## Monorepo layout
 
-| Package | Role |
-|---|---|
-| [`@handbook/core`](packages/core/README.md) | Data model (call-graph IR + handbook model), zod schemas, dependency-free utilities |
-| [`@handbook/analyzer`](packages/analyzer/README.md) | Multi-language static call-graph extraction (tree-sitter WASM) — no LLM |
-| [`@handbook/llm`](packages/llm/README.md) | OpenAI-compatible chat client + actor–critic orchestration + offline mock |
-| [`@handbook/pipeline`](packages/pipeline/README.md) | The generation pipeline (phases 1–3, file & member strategies) |
-| [`@handbook/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, self-contained HTML site — no LLM |
-| [`@handbook/skill`](packages/skill/README.md) | SKILL packaging + validation + coverage drift detection — no LLM |
-| [`@handbook/planner`](packages/planner/README.md) | Handbook-guided read-only planning agent |
-| [`@handbook/patcher`](packages/patcher/README.md) | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback |
-| [`@handbook/resync`](packages/resync/README.md) | Incremental handbook roll-forward after code changes |
-| [`@handbook/studio`](packages/studio/README.md) | Local web UI: repos · generate · browse · evolve (127.0.0.1) |
-| [`@handbook/cli`](packages/cli/README.md) | The `handbook` command |
+| Package                                             | Role                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [`@handbook/core`](packages/core/README.md)         | Data model (call-graph IR + handbook model), zod schemas, dependency-free utilities |
+| [`@handbook/analyzer`](packages/analyzer/README.md) | Multi-language static call-graph extraction (tree-sitter WASM) — no LLM             |
+| [`@handbook/llm`](packages/llm/README.md)           | OpenAI-compatible chat client + actor–critic orchestration + offline mock           |
+| [`@handbook/pipeline`](packages/pipeline/README.md) | The generation pipeline (phases 1–3, file & member strategies)                      |
+| [`@handbook/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, self-contained HTML site — no LLM              |
+| [`@handbook/skill`](packages/skill/README.md)       | SKILL packaging + validation + coverage drift detection — no LLM                    |
+| [`@handbook/planner`](packages/planner/README.md)   | Handbook-guided read-only planning agent                                            |
+| [`@handbook/patcher`](packages/patcher/README.md)   | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback         |
+| [`@handbook/resync`](packages/resync/README.md)     | Incremental handbook roll-forward after code changes                                |
+| [`@handbook/studio`](packages/studio/README.md)     | Local web UI: repos · generate · browse · evolve (127.0.0.1)                        |
+| [`@handbook/cli`](packages/cli/README.md)           | The `handbook` command                                                              |
 
 Dependency direction is strictly one-way (`cli → pipeline/renderer/skill/planner/resync →
 analyzer/llm → core`); LLM-touching code and deterministic code are separated by package
@@ -196,16 +196,47 @@ pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
 ## Development
 
 ```bash
-pnpm build          # tsc -b (composite project references)
-pnpm test           # build + vitest (every test runs offline)
-pnpm check          # build + lint (zero warnings) + tests — run before committing
-pnpm lint           # eslint
-pnpm format         # prettier
+pnpm build            # tsc -b (composite project references)
+pnpm test             # build + vitest (every test runs offline)
+pnpm check            # the full gate — run before committing (see below)
+pnpm typecheck        # tsc -b, then the tests against tsconfig.tests.json
+pnpm lint             # eslint over the whole repo
+pnpm format           # prettier over the whole repo
+pnpm test:coverage    # vitest with coverage thresholds
+pnpm check:workspace  # the monorepo's structural invariants
 ```
+
+`pnpm check` is what CI runs, in this order: type-check (sources, then tests) →
+workspace invariants → eslint with zero warnings → prettier → tests with
+coverage thresholds. A pre-commit hook runs the formatter and linter over staged
+files only, and `commit-msg` enforces Conventional Commits.
 
 Testing philosophy: everything runs offline. LLM-dependent flows are tested against
 `MockChatClient` (scripted rules) and the bundled mock HTTP endpoint; deterministic
 packages are tested directly. No test ever needs an API key.
+
+Two conventions the tooling enforces rather than documents:
+
+- **Versions live in one place.** Every third-party version is declared in
+  `pnpm-workspace.yaml`'s catalog; packages depend on `"catalog:"` and never
+  restate a range. A literal range in a manifest fails `pnpm check:workspace`.
+- **`dist/` is the published surface.** Build projects exclude `*.test.ts` and
+  `*.test-helper.ts`; `tsconfig.tests.json` type-checks them with `noEmit`. A
+  test artifact appearing under `dist/` fails the same check.
+
+## Releasing
+
+Releases are driven by [changesets](https://github.com/changesets/changesets):
+
+```bash
+pnpm changeset        # describe the change and pick the version bumps
+```
+
+Commit that file with the code. On merge to `main`, the Release workflow opens a
+"Version Packages" PR that applies pending changesets, bumps versions and writes
+each package's `CHANGELOG.md`. Merging that PR publishes to npm — which stays
+inert until an `NPM_TOKEN` secret is configured, so versioning and changelogs are
+correct whether or not the packages are being published yet.
 
 ## License
 

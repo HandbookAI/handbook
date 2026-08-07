@@ -62,7 +62,13 @@ function pipelineMock(): MockChatClient {
     {
       match: 'organizing the files of ONE stage',
       respond: (prompt) => ({
-        groups: [{ title: 'Core', summary: '', files: [...prompt.matchAll(/^- (\S+?)(?:  \[|\n)/gm)].map((m) => m[1]) }],
+        groups: [
+          {
+            title: 'Core',
+            summary: '',
+            files: [...prompt.matchAll(/^- (\S+?)(?:  \[|\n)/gm)].map((m) => m[1]),
+          },
+        ],
       }),
     },
     { match: 'STATE REGISTERS', respond: { registers: [] } },
@@ -151,7 +157,10 @@ describe('diffGraphs — per-file hash fallback (audit A3)', () => {
 
   it('reports genuinely new scan-set entries as added', () => {
     const before = graphOf([{ file: 'a.py', hash: 'h1' }]);
-    const after = graphOf([{ file: 'a.py', hash: 'h1' }, { file: 'b.py', hash: 'h2' }]);
+    const after = graphOf([
+      { file: 'a.py', hash: 'h1' },
+      { file: 'b.py', hash: 'h2' },
+    ]);
     expect(diffGraphs(before, after).added).toEqual(['b.py']);
   });
 });
@@ -182,7 +191,8 @@ describe('detectCardDetail (audit A5)', () => {
 
 describe('resync helpers', () => {
   it('parses declarations from the last matching json block', () => {
-    const plan = 'blah\n```json\n{"will_modify": ["Engine.spin"], "will_add": ["Engine.report"], "will_remove": []}\n```';
+    const plan =
+      'blah\n```json\n{"will_modify": ["Engine.spin"], "will_add": ["Engine.report"], "will_remove": []}\n```';
     const decl = parsePlanDeclarations(plan);
     expect(decl?.willModify).toEqual(['Engine.spin']);
     expect(decl?.willAdd).toEqual(['Engine.report']);
@@ -328,7 +338,12 @@ describe('resyncHandbook', () => {
       ].join('\n') + '\n',
     );
 
-    const report = await resyncHandbook({ caseDir: case5, workDir: work5, client: pipelineMock(), correctionsPath });
+    const report = await resyncHandbook({
+      caseDir: case5,
+      workDir: work5,
+      client: pipelineMock(),
+      correctionsPath,
+    });
     expect(report.changedFiles).toContain('app/main.py');
     expect(report.corrections?.applied).toBe(1);
     expect(report.corrections?.files).toEqual(['app/main.py']);
@@ -426,13 +441,23 @@ describe('resyncHandbook', () => {
       'class Engine:\n    def __init__(self):\n        self.rpm = 0\n\n    def spin(self):\n        self.rpm += 2\n        return self.rpm\n',
     );
 
-    const first = await resyncHandbook({ caseDir: case6, workDir: work6, client: pipelineMock(), detail: 'brief' });
+    const first = await resyncHandbook({
+      caseDir: case6,
+      workDir: work6,
+      client: pipelineMock(),
+      detail: 'brief',
+    });
     expect(first.changedFiles).toContain('app/engine.py');
     const orgAfterFirst = JSON.stringify(new WorkDir(work6).loadOrganization());
 
     // The first resync promoted the new graph as the baseline; re-running against
     // the unchanged tree must detect nothing and leave the artifacts untouched.
-    const second = await resyncHandbook({ caseDir: case6, workDir: work6, client: pipelineMock(), detail: 'brief' });
+    const second = await resyncHandbook({
+      caseDir: case6,
+      workDir: work6,
+      client: pipelineMock(),
+      detail: 'brief',
+    });
     expect(second.changedFiles).toEqual([]);
     expect(second.addedFiles).toEqual([]);
     expect(second.deletedFiles).toEqual([]);
@@ -453,9 +478,17 @@ describe('resyncHandbook', () => {
       join(edited, 'app', 'motor.py'),
       'class Engine:\n    def __init__(self):\n        self.rpm = 0\n\n    def spin(self):\n        self.rpm += 1\n        return self.rpm\n',
     );
-    writeFileSync(join(edited, 'app', 'main.py'), 'from app.motor import Engine\n\ndef main():\n    e = Engine()\n    e.spin()\n');
+    writeFileSync(
+      join(edited, 'app', 'main.py'),
+      'from app.motor import Engine\n\ndef main():\n    e = Engine()\n    e.spin()\n',
+    );
 
-    const report = await resyncHandbook({ caseDir: case7, workDir: work7, client: pipelineMock(), detail: 'brief' });
+    const report = await resyncHandbook({
+      caseDir: case7,
+      workDir: work7,
+      client: pipelineMock(),
+      detail: 'brief',
+    });
     expect(report.deletedFiles).toContain('app/engine.py');
     expect(report.addedFiles).toContain('app/motor.py');
     const work = new WorkDir(work7);

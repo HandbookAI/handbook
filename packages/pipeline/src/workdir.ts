@@ -180,7 +180,10 @@ export class WorkDir {
     try {
       const dir = join(this.cardsDir, '_rejected');
       ensureDir(dir);
-      const stem = file.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80);
+      const stem = file
+        .replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 80);
       const name = `${stem || 'reply'}-${sha256Hex(file).slice(0, 8)}.txt`;
       writeFileAtomic(join(dir, name), text);
       this.rejectedReplies += 1;

@@ -13,7 +13,10 @@ function writeRenderedHandbook(dir: string): void {
     join(dir, 'index.md'),
     '# Demo — Stage Index\n\n## [Boot](stage-1.md) `stage-1` — 1 files\n\nBoots.\n\n## [Run](stage-2.md) `stage-2` — 1 files\n\nRuns.\n',
   );
-  writeFileSync(join(dir, 'register.md'), '# Demo — State Flow\n\n| State register | Semantics | Stages touched |\n|---|---|---|\n');
+  writeFileSync(
+    join(dir, 'register.md'),
+    '# Demo — State Flow\n\n| State register | Semantics | Stages touched |\n|---|---|---|\n',
+  );
   writeFileSync(join(dir, 'stage-1.md'), '# Boot `stage-1`\n\nBoot page.\n');
   writeFileSync(join(dir, 'stage-2.md'), '# Run `stage-2`\n\nRun page.\n');
 }
@@ -86,7 +89,14 @@ describe('buildSkill + validateSkill', () => {
       coverage: { assignment, sourceRoot },
     });
     expect(result.nStagePages).toBe(2);
-    for (const rel of ['SKILL.md', 'references/overview.md', 'references/index.md', 'references/registers.md', 'references/stages/stage-1.md', 'references/coverage.json']) {
+    for (const rel of [
+      'SKILL.md',
+      'references/overview.md',
+      'references/index.md',
+      'references/registers.md',
+      'references/stages/stage-1.md',
+      'references/coverage.json',
+    ]) {
       expect(fileExists(join(outDir, rel)), rel).toBe(true);
     }
   });
@@ -137,7 +147,9 @@ describe('buildSkill + validateSkill', () => {
 
   it('rejects a directory that is not a rendered handbook', () => {
     const empty = mkdtempSync(join(tmpdir(), 'hb-empty-'));
-    expect(() => buildSkill({ handbookDir: empty, outDir: join(empty, 'out'), name: 'x' })).toThrow(/index\.md/);
+    expect(() => buildSkill({ handbookDir: empty, outDir: join(empty, 'out'), name: 'x' })).toThrow(
+      /index\.md/,
+    );
   });
 });
 
@@ -177,10 +189,18 @@ describe('buildSkill with agentDir', () => {
   });
 
   it('copies the locator pages into references/agent/ and keeps stage discovery untouched', () => {
-    const result = buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo', agentDir: join(hb, 'agent') });
+    const result = buildSkill({
+      handbookDir: hb,
+      outDir: out,
+      name: 'demo',
+      project: 'Demo',
+      agentDir: join(hb, 'agent'),
+    });
     expect(result.nStagePages).toBe(2);
     expect(readFileSync(join(out, 'references', 'agent', 'how_to_use.md'), 'utf8')).toContain('duty line');
-    expect(readFileSync(join(out, 'references', 'agent', 'disambiguation.md'), 'utf8')).toContain('Disambiguation');
+    expect(readFileSync(join(out, 'references', 'agent', 'disambiguation.md'), 'utf8')).toContain(
+      'Disambiguation',
+    );
     // Only the two locator pages ship — never the agent site's index/stage copies.
     expect(fileExists(join(out, 'references', 'agent', 'index.md'))).toBe(false);
     expect(fileExists(join(out, 'references', 'agent', 'stage-1.md'))).toBe(false);
@@ -218,7 +238,14 @@ describe('buildSkill lang: zh', () => {
     rmSync(join(hb, 'register.md'));
     writeAgentSite(join(hb, 'agent'));
     out = join(hb, 'out');
-    buildSkill({ handbookDir: hb, outDir: out, name: 'demo', project: 'Demo', agentDir: join(hb, 'agent'), lang: 'zh' });
+    buildSkill({
+      handbookDir: hb,
+      outDir: out,
+      name: 'demo',
+      project: 'Demo',
+      agentDir: join(hb, 'agent'),
+      lang: 'zh',
+    });
   });
 
   it('localizes the body but keeps the English frontmatter byte-for-byte', () => {
@@ -287,7 +314,9 @@ describe('corrections channel', () => {
     );
     const result = validateSkill({ skillDir: out });
     expect(result.errors).toEqual([]);
-    expect(result.warnings).toContain('2 unprocessed correction(s) — resync with --corrections to fold them in');
+    expect(result.warnings).toContain(
+      '2 unprocessed correction(s) — resync with --corrections to fold them in',
+    );
   });
 
   it('errors on malformed lines, naming the line number', () => {
@@ -302,7 +331,9 @@ describe('corrections channel', () => {
     expect(result.errors.join('\n')).toMatch(/corrections\.jsonl line 3/);
     expect(result.errors.join('\n')).toMatch(/corrections\.jsonl line 4/);
     // The one valid record still counts as pending work.
-    expect(result.warnings).toContain('1 unprocessed correction(s) — resync with --corrections to fold them in');
+    expect(result.warnings).toContain(
+      '1 unprocessed correction(s) — resync with --corrections to fold them in',
+    );
   });
 });
 
@@ -417,7 +448,9 @@ describe('deep adversarial pass 2', () => {
     const src = mkdtempSync(join(tmpdir(), 'hb-a2-src-'));
     writeFileSync(
       join(out, 'references', 'coverage.json'),
-      JSON.stringify({ files: [{ path: '../../../../../../etc/passwd', stage: 'stage-1', sha256: 'deadbeef' }] }),
+      JSON.stringify({
+        files: [{ path: '../../../../../../etc/passwd', stage: 'stage-1', sha256: 'deadbeef' }],
+      }),
     );
     const result = validateSkill({ skillDir: out, sourceRoot: src });
     expect(result.ok).toBe(false);
@@ -437,7 +470,12 @@ describe('deep adversarial pass 2', () => {
     writeFileSync(
       join(out, 'references', 'coverage.json'),
       JSON.stringify({
-        files: [null, 'a-string', { path: 'src/present.py', sha256: sha256Hex('ok\n') }, { path: 'src/gone.py', sha256: 'abc123' }],
+        files: [
+          null,
+          'a-string',
+          { path: 'src/present.py', sha256: sha256Hex('ok\n') },
+          { path: 'src/gone.py', sha256: 'abc123' },
+        ],
       }),
     );
     const result = validateSkill({ skillDir: out, sourceRoot: src });

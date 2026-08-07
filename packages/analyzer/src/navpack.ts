@@ -20,14 +20,32 @@ export interface NavPack {
   totals: { nFiles: number; nFunctions: number; nDirs: number; nExternalSubsystems: number };
   dirMap: Record<string, { nFiles: number; nFunctions: number }>;
   files: NavFileDescriptor[];
-  entryPoints: Array<{ qualname: string; file: string; lineStart: number; nCallees: number; isRoot: boolean }>;
+  entryPoints: Array<{
+    qualname: string;
+    file: string;
+    lineStart: number;
+    nCallees: number;
+    isRoot: boolean;
+  }>;
   fanOutTop: Array<{ file: string; outDegree: number }>;
   externalSubsystems: Array<{ module: string; nCallsInto: number; sample: string[] }>;
 }
 
 const ENTRY_HINTS = [
-  'main', 'run', 'serve', 'start', 'execute', 'exec', 'dispatch', 'handle', 'handler',
-  'cmd', 'command', 'app', 'loop', 'bootstrap',
+  'main',
+  'run',
+  'serve',
+  'start',
+  'execute',
+  'exec',
+  'dispatch',
+  'handle',
+  'handler',
+  'cmd',
+  'command',
+  'app',
+  'loop',
+  'bootstrap',
 ];
 
 function dirOf(file: string): string {
@@ -44,9 +62,9 @@ export function buildNavPack(graph: CodeGraph, options: NavPackOptions = {}): Na
   const fanOutTopK = options.fanOutTopK ?? 40;
   const samplePerFile = options.sampleFnsPerFile ?? 8;
 
-  const internal = Object.values(graph.nodes).filter(
-    (n) => isInternalNode(n) && !n.synthetic,
-  ) as Array<Extract<(typeof graph.nodes)[string], { kind: 'internal' }>>;
+  const internal = Object.values(graph.nodes).filter((n) => isInternalNode(n) && !n.synthetic) as Array<
+    Extract<(typeof graph.nodes)[string], { kind: 'internal' }>
+  >;
 
   const byFile = new Map<string, typeof internal>();
   for (const node of internal) {
@@ -74,7 +92,11 @@ export function buildNavPack(graph: CodeGraph, options: NavPackOptions = {}): Na
         .slice()
         .sort((a, b) => a.lineStart - b.lineStart)
         .slice(0, samplePerFile)
-        .map((f) => ({ qualname: f.qualname, signature: truncate(f.signature, 120), lineStart: f.lineStart })),
+        .map((f) => ({
+          qualname: f.qualname,
+          signature: truncate(f.signature, 120),
+          lineStart: f.lineStart,
+        })),
     }));
 
   // Entry points: roots (no internal callers) ∪ name-heuristic hits.
@@ -172,7 +194,9 @@ export function renderOrientation(nav: NavPack, options: OrientationOptions = {}
   }
   lines.push('', '## Entry-point candidates');
   for (const e of nav.entryPoints.slice(0, maxEntries)) {
-    lines.push(`- [${e.isRoot ? 'root' : 'hint'}] ${e.qualname}  ${e.file}:${e.lineStart}  →${e.nCallees} callees`);
+    lines.push(
+      `- [${e.isRoot ? 'root' : 'hint'}] ${e.qualname}  ${e.file}:${e.lineStart}  →${e.nCallees} callees`,
+    );
   }
   lines.push('', '## Highest fan-out files');
   for (const f of nav.fanOutTop.slice(0, 15)) {

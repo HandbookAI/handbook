@@ -1,0 +1,22 @@
+// Type-checks the test suite.
+//
+// The per-package build projects deliberately exclude `*.test.ts` and
+// `*.test-helper.ts` so that dist/ — the published surface — carries no tests.
+// Excluding them from the build must not mean excluding them from type
+// checking, so this project picks them back up with `noEmit`.
+//
+// It is intentionally NOT composite and NOT referenced by tsconfig.json: it
+// consumes the packages the same way the tests do at runtime, through the
+// workspace's node_modules symlinks into each package's dist. Run it AFTER
+// `tsc -b` (the `check` script does).
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test-helper.ts"]
+}

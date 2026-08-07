@@ -54,7 +54,13 @@ function mockRules(): MockRule[] {
     {
       match: 'organizing the files of ONE stage',
       respond: (prompt) => ({
-        groups: [{ title: 'Core', summary: '', files: [...prompt.matchAll(/^- (\S+?)(?: {2}\[|\n)/gm)].map((m) => m[1]) }],
+        groups: [
+          {
+            title: 'Core',
+            summary: '',
+            files: [...prompt.matchAll(/^- (\S+?)(?: {2}\[|\n)/gm)].map((m) => m[1]),
+          },
+        ],
       }),
     },
     { match: 'STATE REGISTERS', respond: { registers: [] } },
@@ -73,7 +79,10 @@ const base = `http://127.0.0.1:${PORT}`;
 let llmDelayMs = 0;
 
 async function api(path: string, init?: RequestInit): Promise<any> {
-  const res = await fetch(`${base}${path}`, init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined);
+  const res = await fetch(
+    `${base}${path}`,
+    init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined,
+  );
   const body = (await res.json().catch(() => ({}))) as any;
   if (!res.ok && res.status !== 202 && res.status !== 201) {
     throw new Error(`${res.status}: ${body.error ?? 'unknown'}`);
@@ -130,7 +139,10 @@ describe('studio server (integration, mock LLM)', () => {
   });
 
   it('registers a repo and reports empty status', async () => {
-    const repo = await api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'demo', sourceRoot }) });
+    const repo = await api('/api/repos', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'demo', sourceRoot }),
+    });
     expect(repo.name).toBe('demo');
     expect(repo.hasGraph).toBe(false);
     // No render has happened, so none of the three outputs can exist yet.
@@ -144,14 +156,22 @@ describe('studio server (integration, mock LLM)', () => {
   });
 
   it('rejects duplicate names and bad paths', async () => {
-    await expect(api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'demo', sourceRoot }) })).rejects.toThrow(/exists/);
     await expect(
-      api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'ghost', sourceRoot: '/nope/nope' }) }),
+      api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'demo', sourceRoot }) }),
+    ).rejects.toThrow(/exists/);
+    await expect(
+      api('/api/repos', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'ghost', sourceRoot: '/nope/nope' }),
+      }),
     ).rejects.toThrow(/not a directory/);
   });
 
   it('runs the full generate job and exposes overview + handbook site', async () => {
-    const job = await api('/api/repos/demo/generate', { method: 'POST', body: JSON.stringify({ narrateLang: 'en' }) });
+    const job = await api('/api/repos/demo/generate', {
+      method: 'POST',
+      body: JSON.stringify({ narrateLang: 'en' }),
+    });
     const done = await waitJob(job.id);
     expect(done.status).toBe('succeeded');
 
@@ -176,7 +196,10 @@ describe('studio server (integration, mock LLM)', () => {
     expect(done.log.join('\n')).toContain('[llm] client attached');
 
     // Described coverage is reported alongside assignment coverage.
-    expect(overview.cardCoverage).toMatchObject({ nFiles: expect.any(Number), nDescribed: expect.any(Number) });
+    expect(overview.cardCoverage).toMatchObject({
+      nFiles: expect.any(Number),
+      nDescribed: expect.any(Number),
+    });
     expect(overview.cardCoverage.nDescribed).toBe(overview.cardCoverage.nFiles);
   });
 
@@ -195,7 +218,12 @@ describe('studio server (integration, mock LLM)', () => {
 
     const languages = {
       kotlin: { tier: 'generic', callTypes: ['internal_func'], selfAttrs: false, statementSpans: false },
-      python: { tier: 'full', callTypes: ['self_method', 'internal_func'], selfAttrs: true, statementSpans: true },
+      python: {
+        tier: 'full',
+        callTypes: ['self_method', 'internal_func'],
+        selfAttrs: true,
+        statementSpans: true,
+      },
     };
     graph.metadata.languages = languages;
     writeFileSync(graphPath, JSON.stringify(graph));
@@ -265,10 +293,7 @@ describe('studio server (integration, mock LLM)', () => {
   });
 
   it('resyncs against the live tree and records an evolution', async () => {
-    writeFileSync(
-      join(sourceRoot, 'app', 'report.py'),
-      'def report(rpm):\n    return f"rpm={rpm}"\n',
-    );
+    writeFileSync(join(sourceRoot, 'app', 'report.py'), 'def report(rpm):\n    return f"rpm={rpm}"\n');
     const job = await api('/api/repos/demo/resync', {
       method: 'POST',
       body: JSON.stringify({ description: 'add report helper', noLlm: false }),
@@ -319,7 +344,6 @@ describe('studio server (integration, mock LLM)', () => {
     expect(done.result.description).toBe('手写的说明');
     expect(done.result.descriptionSource).toBe('user');
   });
-
 
   it('streams job logs over SSE', async () => {
     const job = await api('/api/repos/demo/analyze', { method: 'POST', body: '{}' });
@@ -373,7 +397,9 @@ describe('studio server (integration, mock LLM)', () => {
     const graph = await api('/api/repos/demo/graph');
     expect(graph.totalFiles).toBeGreaterThan(0);
     expect(Array.isArray(graph.nodes)).toBe(true);
-    expect(graph.nodes.every((n: any) => typeof n.file === 'string' && typeof n.degree === 'number')).toBe(true);
+    expect(graph.nodes.every((n: any) => typeof n.file === 'string' && typeof n.degree === 'number')).toBe(
+      true,
+    );
     const scoped = await api('/api/repos/demo/graph?stage=stage-2&limit=10');
     expect(scoped.stage).toBe('stage-2');
   });
@@ -451,19 +477,26 @@ describe('studio server (integration, mock LLM)', () => {
     ].join('\n');
 
     // dry-run writes nothing
-    const dry = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan, dryRun: true }) })).id);
+    const dry = await waitJob(
+      (await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan, dryRun: true }) }))
+        .id,
+    );
     expect(dry.status).toBe('succeeded');
     expect(dry.result.changedFiles).toEqual([]);
     expect(readFileSync(engine, 'utf8')).toBe(before);
 
     // real apply
-    const applied = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id);
+    const applied = await waitJob(
+      (await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id,
+    );
     expect(applied.status).toBe('succeeded');
     expect(applied.result.changedFiles).toEqual(['app/engine.py']);
     expect(readFileSync(engine, 'utf8')).toContain('self.rpm += 11');
 
     // a stale plan fails the job and changes nothing
-    const stale = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id);
+    const stale = await waitJob(
+      (await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id,
+    );
     expect(stale.status).toBe('failed');
     expect(readFileSync(engine, 'utf8')).toContain('self.rpm += 11');
 
@@ -490,7 +523,9 @@ describe('studio server (integration, mock LLM)', () => {
       anchor.replace(/\d+$/, '42'),
       '```',
     ].join('\n');
-    const applied = await waitJob((await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id);
+    const applied = await waitJob(
+      (await api('/api/repos/demo/apply', { method: 'POST', body: JSON.stringify({ plan }) })).id,
+    );
     expect(applied.status).toBe('succeeded');
 
     // Someone edits the file after the patch: rollback must skip, not clobber.
@@ -512,7 +547,10 @@ describe('studio server (integration, mock LLM)', () => {
   it('cancels a running job cooperatively and frees the per-repo mutex', async () => {
     llmDelayMs = 120; // every mock LLM call now takes long enough to abort mid-run
     try {
-      const job = await api('/api/repos/demo/generate', { method: 'POST', body: JSON.stringify({ narrateLang: 'en' }) });
+      const job = await api('/api/repos/demo/generate', {
+        method: 'POST',
+        body: JSON.stringify({ narrateLang: 'en' }),
+      });
       const res = await fetch(`${base}/api/jobs/${job.id}/cancel`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -726,10 +764,18 @@ describe('registering a repo adopts an existing handbook', () => {
       JSON.stringify({
         version: 1,
         metadata: {
-          generatedAt: 't', language: 'python', sourceRoot: builtFrom, scannedFiles: [],
-          nInternalFunctions: 0, nBoundaryNodes: 0, nEdges: 0, policy: 'test',
+          generatedAt: 't',
+          language: 'python',
+          sourceRoot: builtFrom,
+          scannedFiles: [],
+          nInternalFunctions: 0,
+          nBoundaryNodes: 0,
+          nEdges: 0,
+          policy: 'test',
         },
-        nodes: {}, edges: [], selfAttrs: {},
+        nodes: {},
+        edges: [],
+        selfAttrs: {},
       }),
     );
     mkdirSync(join(dir, 'phase3'), { recursive: true });

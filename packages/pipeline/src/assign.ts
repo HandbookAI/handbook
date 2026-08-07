@@ -48,14 +48,18 @@ function fileDescriptorLine(descriptor: NavFileDescriptor, card: FileCard | unde
   if (card?.purpose) {
     lines.push(`    purpose: ${card.purpose}  [role=${card.role}, lifecycle=${card.lifecycle}]`);
   }
-  const samples = descriptor.sampleFunctions.slice(0, 8).map((f) => truncate(`${f.qualname} ${f.signature}`, 90));
+  const samples = descriptor.sampleFunctions
+    .slice(0, 8)
+    .map((f) => truncate(`${f.qualname} ${f.signature}`, 90));
   lines.push(`    fns: ${samples.length ? samples.join('; ') : '(none sampled)'}`);
   return lines.join('\n');
 }
 
 function buildMenuBlock(skeleton: Skeleton): string {
   const menu = stageShortDescriptions(skeleton);
-  return ['## Stage menu (valid IDs)', ...[...menu.entries()].map(([id, text]) => `- ${id} — ${text}`)].join('\n');
+  return ['## Stage menu (valid IDs)', ...[...menu.entries()].map(([id, text]) => `- ${id} — ${text}`)].join(
+    '\n',
+  );
 }
 
 async function assignBatch(
@@ -89,7 +93,9 @@ async function assignBatch(
       if (!file) continue;
       const stage = typeof entry.stage === 'string' && validIds.has(entry.stage) ? entry.stage : 'unassigned';
       const also = Array.isArray(entry.also)
-        ? entry.also.filter((a): a is string => typeof a === 'string' && validIds.has(a) && a !== stage).slice(0, 2)
+        ? entry.also
+            .filter((a): a is string => typeof a === 'string' && validIds.has(a) && a !== stage)
+            .slice(0, 2)
         : [];
       out[file] = { stage, also };
     }

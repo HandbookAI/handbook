@@ -19,40 +19,40 @@
 
 ## 接口
 
-| 方法与路径 | 用途 |
-|---|---|
-| `GET /` | 仪表盘界面 |
-| `GET/POST /api/repos`、`GET/DELETE /api/repos/:name` | 登记表 + 状态（章节数、策略、演化次数） |
-| `POST /api/repos/:name/analyze` | 阶段 1 静态分析作业（免费，不用 LLM） |
-| `POST /api/repos/:name/generate` | 完整管线 + 渲染作业——接受 CLI 的全部生成选项（见下表） |
-| `POST /api/repos/:name/plan` | 规划器作业（`{request}` → 计划 + declarations） |
-| `POST /api/repos/:name/resync` | 对**活的源码树**做前滚作业（`{description, noLlm, narrateLang}`）并重渲染 |
-| `GET /api/repos/:name/overview` | 阶段 / 摘要 / 寄存器 / 覆盖率 JSON（含**已描述覆盖率**） |
-| `GET /api/repos/:name/history` | 演化时间线 |
-| `GET /api/repos/:name/graph?stage=&limit=` | 文件级影响图（节点带度数与阶段，边带权重） |
-| `GET /api/repos/:name/source?path=` | 文件内容 + 函数锚点（行区间） |
-| `POST /api/repos/:name/apply` | 补丁作业（`{plan, dryRun}`）→ 逐编辑结果、changedFiles、backupDir |
-| `POST /api/repos/:name/rollback` | 回滚作业（`{backup?, force?}`）→ restored / removed / skipped |
-| `GET /api/repos/:name/patches` | 备份时间戳，最新在前 |
-| `GET /api/history` | 跨全部仓库的演化，最新在前 |
-| `GET /api/repos/:name/handbook/*` | 渲染好的手册静态托管（防路径穿越） |
-| `GET /api/jobs?repo=` | `{jobs: [...]}` —— 近期作业摘要（id/repo/kind/status/startedAt，不含原始日志），最新在前 |
-| `GET /api/jobs/:id`、`GET /api/jobs/:id/stream` | 作业状态 / SSE 日志流 |
-| `POST /api/jobs/:id/cancel` | 请求取消：运行中 → `202 {ok:true}`；已结束 → `409`；未知 → `404` |
+| 方法与路径                                           | 用途                                                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GET /`                                              | 仪表盘界面                                                                               |
+| `GET/POST /api/repos`、`GET/DELETE /api/repos/:name` | 登记表 + 状态（章节数、策略、演化次数）                                                  |
+| `POST /api/repos/:name/analyze`                      | 阶段 1 静态分析作业（免费，不用 LLM）                                                    |
+| `POST /api/repos/:name/generate`                     | 完整管线 + 渲染作业——接受 CLI 的全部生成选项（见下表）                                   |
+| `POST /api/repos/:name/plan`                         | 规划器作业（`{request}` → 计划 + declarations）                                          |
+| `POST /api/repos/:name/resync`                       | 对**活的源码树**做前滚作业（`{description, noLlm, narrateLang}`）并重渲染                |
+| `GET /api/repos/:name/overview`                      | 阶段 / 摘要 / 寄存器 / 覆盖率 JSON（含**已描述覆盖率**）                                 |
+| `GET /api/repos/:name/history`                       | 演化时间线                                                                               |
+| `GET /api/repos/:name/graph?stage=&limit=`           | 文件级影响图（节点带度数与阶段，边带权重）                                               |
+| `GET /api/repos/:name/source?path=`                  | 文件内容 + 函数锚点（行区间）                                                            |
+| `POST /api/repos/:name/apply`                        | 补丁作业（`{plan, dryRun}`）→ 逐编辑结果、changedFiles、backupDir                        |
+| `POST /api/repos/:name/rollback`                     | 回滚作业（`{backup?, force?}`）→ restored / removed / skipped                            |
+| `GET /api/repos/:name/patches`                       | 备份时间戳，最新在前                                                                     |
+| `GET /api/history`                                   | 跨全部仓库的演化，最新在前                                                               |
+| `GET /api/repos/:name/handbook/*`                    | 渲染好的手册静态托管（防路径穿越）                                                       |
+| `GET /api/jobs?repo=`                                | `{jobs: [...]}` —— 近期作业摘要（id/repo/kind/status/startedAt，不含原始日志），最新在前 |
+| `GET /api/jobs/:id`、`GET /api/jobs/:id/stream`      | 作业状态 / SSE 日志流                                                                    |
+| `POST /api/jobs/:id/cancel`                          | 请求取消：运行中 → `202 {ok:true}`；已结束 → `409`；未知 → `404`                         |
 
 ### 生成选项
 
 `POST /api/repos/:name/generate` 接受 CLI 的全部选项；默认值与 CLI 一致。
 
-| 字段 | 含义 |
-|---|---|
-| `narrateLang`（`en`\|`zh`）、`detail`（`brief`\|`deep`）、`synthMode`（`oneshot`\|`doctor`）、`title` | 最常用的四项，对话框顶部直接给出 |
-| `phase` | `all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3` 或逗号列表（默认 `all`） |
-| `strategy` | `file` \| `member`；不传 = 沿用 work 目录已记录的策略 |
-| `skeleton` | 手写 `skeleton.yaml` 的路径——`member` 策略必填 |
-| `lang` | 源码语言：`auto \| python \| typescript \| go \| rust \| shell` |
-| `resume`、`refresh` | 布尔：跳过已完成卡片 / 忽略阶段 3 缓存 |
-| `readWorkers`（默认 12）、`maxDoctorRounds`（默认 6，仅 doctor 模式） | 数值在服务端校验：传垃圾值当场 `400`，绝不让 NaN 混进作业 |
+| 字段                                                                                                  | 含义                                                            |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `narrateLang`（`en`\|`zh`）、`detail`（`brief`\|`deep`）、`synthMode`（`oneshot`\|`doctor`）、`title` | 最常用的四项，对话框顶部直接给出                                |
+| `phase`                                                                                               | `all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3` 或逗号列表（默认 `all`） |
+| `strategy`                                                                                            | `file` \| `member`；不传 = 沿用 work 目录已记录的策略           |
+| `skeleton`                                                                                            | 手写 `skeleton.yaml` 的路径——`member` 策略必填                  |
+| `lang`                                                                                                | 源码语言：`auto \| python \| typescript \| go \| rust \| shell` |
+| `resume`、`refresh`                                                                                   | 布尔：跳过已完成卡片 / 忽略阶段 3 缓存                          |
+| `readWorkers`（默认 12）、`maxDoctorRounds`（默认 6，仅 doctor 模式）                                 | 数值在服务端校验：传垃圾值当场 `400`，绝不让 NaN 混进作业       |
 
 ### 取消作业
 
@@ -66,16 +66,16 @@
 
 ## 视图
 
-| 视图 | 用来干什么 |
-|---|---|
-| 首页 | 产品的形状：Request → Handbook → Plan → Patch → Sync 这个闭环，加最近的仓库与演化 |
-| 使用说明 | 内置指南：五步闭环、每个按钮做什么、成本与数据边界 |
-| 总览 | 状态、带摘要的章节索引、覆盖率、状态寄存器 |
+| 视图     | 用来干什么                                                                                                                    |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 首页     | 产品的形状：Request → Handbook → Plan → Patch → Sync 这个闭环，加最近的仓库与演化                                             |
+| 使用说明 | 内置指南：五步闭环、每个按钮做什么、成本与数据边界                                                                            |
+| 总览     | 状态、带摘要的章节索引、覆盖率、状态寄存器                                                                                    |
 | 浏览手册 | 内嵌渲染好的手册——顶部切换器提供每个真实存在的产物：章节站点、单页版 `handbook.html`、agent 定位索引（`agent/how_to_use.md`） |
-| 影响图 | 文件级调用关系 SVG——节点大小按度数、颜色按阶段，可按阶段过滤，点击进源码 |
-| 源码 | 真实文件带行号，函数索引可跳转并高亮；带「← 文件列表」与「刚看过」 |
-| 演化 | 规划 → dry-run → 应用（逐编辑结果表）→ 回滚 → 前滚，附备份列表 |
-| 历史 | 单仓库的演化时间线，以及侧栏里的跨仓库总览 |
+| 影响图   | 文件级调用关系 SVG——节点大小按度数、颜色按阶段，可按阶段过滤，点击进源码                                                      |
+| 源码     | 真实文件带行号，函数索引可跳转并高亮；带「← 文件列表」与「刚看过」                                                            |
+| 演化     | 规划 → dry-run → 应用（逐编辑结果表）→ 回滚 → 前滚，附备份列表                                                                |
+| 历史     | 单仓库的演化时间线，以及侧栏里的跨仓库总览                                                                                    |
 
 中英切换与明暗主题都在顶栏，按浏览器持久化。
 

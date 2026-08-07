@@ -1,7 +1,6 @@
 {
   "name": "@handbook/llm",
   "version": "0.1.0",
-  "private": true,
   "description": "OpenAI-compatible chat client (retry, rate-limit, JSON extraction) and actor-critic orchestration",
   "type": "module",
   "exports": {
@@ -10,12 +9,18 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
     "@handbook/core": "workspace:*"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

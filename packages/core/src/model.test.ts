@@ -5,10 +5,24 @@ const skeleton: Skeleton = {
   metadata: { version: 1, archetype: 'test system' },
   stages: [
     { id: 'stage-1', title: 'Boot', description: 'Startup.', parent: null, children: [], crosscut: false },
-    { id: 'stage-1.1', title: 'Config', description: 'Load config.', parent: 'stage-1', children: [], crosscut: false },
+    {
+      id: 'stage-1.1',
+      title: 'Config',
+      description: 'Load config.',
+      parent: 'stage-1',
+      children: [],
+      crosscut: false,
+    },
     { id: 'stage-2', title: 'Run', description: 'Main loop.', parent: null, children: [], crosscut: false },
     { id: 'crosscut-1', title: 'Logging', description: 'Logs.', parent: null, children: [], crosscut: true },
-    { id: 'stage-9', title: 'Orphan', description: 'Dangling parent.', parent: 'ghost', children: [], crosscut: false },
+    {
+      id: 'stage-9',
+      title: 'Orphan',
+      description: 'Dangling parent.',
+      parent: 'ghost',
+      children: [],
+      crosscut: false,
+    },
   ],
 };
 
@@ -67,7 +81,14 @@ describe('StageTree — stack safety (adversarial pass 2)', () => {
     const n = 20000;
     const stages: Skeleton['stages'] = [];
     for (let i = 0; i < n; i += 1) {
-      stages.push({ id: `s${i}`, title: '', description: '', parent: i === 0 ? null : `s${i - 1}`, children: [], crosscut: false });
+      stages.push({
+        id: `s${i}`,
+        title: '',
+        description: '',
+        parent: i === 0 ? null : `s${i - 1}`,
+        children: [],
+        crosscut: false,
+      });
     }
     const tree = new StageTree({ metadata: { version: 1 }, stages });
     expect(() => tree.subtree('s0')).not.toThrow();

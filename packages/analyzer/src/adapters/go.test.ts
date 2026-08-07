@@ -135,8 +135,14 @@ describe('GoAdapter — cross-package calls through imports', () => {
       join(root, 'main.go'),
       'package main\n\nimport (\n\t"fmt"\n\t"example.com/demo/util"\n\tiu "example.com/demo/internal/util"\n)\n\nfunc doIt() {\n\tutil.Upper("x")\n\tiu.Trim("y")\n\tfmt.Println("hi")\n}\n',
     );
-    writeFileSync(join(root, 'util', 'strings.go'), 'package util\n\nfunc Upper(s string) string { return s }\n');
-    writeFileSync(join(root, 'internal', 'util', 'trim.go'), 'package util\n\nfunc Trim(s string) string { return s }\n');
+    writeFileSync(
+      join(root, 'util', 'strings.go'),
+      'package util\n\nfunc Upper(s string) string { return s }\n',
+    );
+    writeFileSync(
+      join(root, 'internal', 'util', 'trim.go'),
+      'package util\n\nfunc Trim(s string) string { return s }\n',
+    );
     analysis = await adapter.analyze(['main.go', 'util/strings.go', 'internal/util/trim.go'], root);
   });
 
@@ -183,7 +189,8 @@ describe('GoAdapter — duplicate-id defense (adversarial round)', () => {
     const root = mkdtempSync(join(tmpdir(), 'hb-go-dup-'));
     // Two `func (t *T) M()` in one file is invalid Go, but partial/broken
     // sources must still yield unique ids and un-multiplied edges.
-    const src = 'package main\ntype T struct{}\nfunc (t *T) M() { helper() }\nfunc (t *T) M() { helper(); helper() }\nfunc helper() {}\n';
+    const src =
+      'package main\ntype T struct{}\nfunc (t *T) M() { helper() }\nfunc (t *T) M() { helper(); helper() }\nfunc helper() {}\n';
     writeFileSync(join(root, 'a.go'), src);
     const result = await new GoAdapter().analyze(['a.go'], root);
     expect(result.functions.filter((n) => n.id === 'a.T.M')).toHaveLength(1);

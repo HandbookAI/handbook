@@ -84,7 +84,9 @@ function collectMembers(graph: CodeGraph): MemberDescriptor[] {
     const callee = graph.nodes[edge.calleeId];
     if (callee && isInternalNode(callee)) {
       (calls.get(edge.callerId) ?? calls.set(edge.callerId, []).get(edge.callerId))?.push(callee.qualname);
-      (calledBy.get(edge.calleeId) ?? calledBy.set(edge.calleeId, []).get(edge.calleeId))?.push(edge.callerId);
+      (calledBy.get(edge.calleeId) ?? calledBy.set(edge.calleeId, []).get(edge.calleeId))?.push(
+        edge.callerId,
+      );
     }
   }
   return Object.values(graph.nodes)
@@ -115,7 +117,10 @@ export async function classifyMembers(
   const members = collectMembers(graph);
   const validIds = new Set(skeleton.stages.map((s) => s.id));
   const menu = stageShortDescriptions(skeleton);
-  const menuBlock = ['## Stage menu (valid IDs)', ...[...menu.entries()].map(([id, t]) => `- ${id} — ${t}`)].join('\n');
+  const menuBlock = [
+    '## Stage menu (valid IDs)',
+    ...[...menu.entries()].map(([id, t]) => `- ${id} — ${t}`),
+  ].join('\n');
 
   const memberStage: Record<string, string> = {};
   const batches: MemberDescriptor[][] = [];
@@ -134,7 +139,9 @@ export async function classifyMembers(
         .join('; ');
       return `- ${m.id}\n    ${m.signature}  in ${m.file}${filePurpose}${rels ? `\n    ${rels}` : ''}`;
     });
-    const prompt = [CLASSIFY_RULES, menuBlock, `## Members to assign (${batch.length})`, ...rows].join('\n\n');
+    const prompt = [CLASSIFY_RULES, menuBlock, `## Members to assign (${batch.length})`, ...rows].join(
+      '\n\n',
+    );
     try {
       const response = await client.complete(prompt, { temperature: 0, signal });
       const entries = extractEntryList(response.json, ['assignments', 'members'], {

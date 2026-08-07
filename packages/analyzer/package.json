@@ -1,7 +1,6 @@
 {
   "name": "@handbook/analyzer",
   "version": "0.1.0",
-  "private": true,
   "description": "Multi-language static call-graph extraction via tree-sitter (WASM) — no LLM",
   "type": "module",
   "exports": {
@@ -10,14 +9,20 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
     "@handbook/core": "workspace:*",
-    "tree-sitter-wasms": "^0.1.13",
-    "web-tree-sitter": "~0.25.10"
+    "tree-sitter-wasms": "catalog:",
+    "web-tree-sitter": "catalog:"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

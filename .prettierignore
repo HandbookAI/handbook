@@ -1,0 +1,36 @@
+# Prettier now runs over the whole repo (`prettier --check .`), so what it must
+# NOT touch has to be stated here rather than encoded in a narrow glob that
+# quietly leaves most of the repo unformatted.
+
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Generated or run-local: handbook work dirs and demo output.
+work/
+runs/
+examples/work/
+
+# pnpm owns this file's formatting.
+pnpm-lock.yaml
+
+# The internal engineering journal, specs and review notes. Hand-written prose
+# where a leading `+` means "plus" mid-sentence — which CommonMark reads as a
+# list marker, so normalising it inserts a blank line and splits the sentence in
+# half. A formatter cannot tell that apart from a list, and there is nothing to
+# gain by reflowing a document nobody publishes. Left alone deliberately.
+docs/internal/
+
+# The analyzer's fixture repo. These files are deliberately written in the idiom
+# of the language being parsed — reformatting them would change what the
+# analyzer tests are asserting about real-world source.
+examples/demo-project/
+
+# Three hand-authored, self-contained HTML documents. Prettier's HTML printer
+# reflows inline elements, which is a rendering change we cannot verify from a
+# formatter run — and all three are verified by eye, not by a test. Reformatting
+# them is a deliberate, separately reviewed change, not a side effect of `pnpm format`.
+docs/handbook-deck.html
+docs/index.html
+packages/studio/public/index.html

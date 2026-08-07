@@ -26,7 +26,10 @@ interface ModuleScan extends BaseScan {
 type ShellIndexes = Map<string, string>;
 
 export function moduleIdForFile(file: string): string {
-  return file.replace(/\.(sh|bash)$/, '').split('/').join('.');
+  return file
+    .replace(/\.(sh|bash)$/, '')
+    .split('/')
+    .join('.');
 }
 
 const CAPABILITIES: AdapterCapabilities = {

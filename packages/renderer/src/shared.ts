@@ -27,7 +27,9 @@ export class HandbookView {
     const bucket = this.model.assignment.buckets[sid] ?? [];
     const ordered = this.model.organization.stages[sid]?.orderedFiles ?? [];
     const rank = new Map(ordered.map((f, i) => [f, i]));
-    return [...bucket].sort((a, b) => (rank.get(a) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b) ?? Number.MAX_SAFE_INTEGER));
+    return [...bucket].sort(
+      (a, b) => (rank.get(a) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b) ?? Number.MAX_SAFE_INTEGER),
+    );
   }
 
   /** Content rule: a stage gets a page/summary iff it has children or direct files. */
@@ -67,9 +69,7 @@ export class HandbookView {
 
   /** Card for a file, with a defensive stub when the card is missing. */
   card(rel: string): FileCard {
-    return (
-      this.model.cards[rel] ?? { version: 1, file: rel, purpose: '', role: 'other', lifecycle: 'none' }
-    );
+    return this.model.cards[rel] ?? { version: 1, file: rel, purpose: '', role: 'other', lifecycle: 'none' };
   }
 
   /**
@@ -109,7 +109,12 @@ export class HandbookView {
     const out: string[] = [];
     const seen = new Set<string>([sid]);
     let current = this.tree.byId.get(sid);
-    while (current && current.parent !== null && this.tree.byId.has(current.parent) && !seen.has(current.parent)) {
+    while (
+      current &&
+      current.parent !== null &&
+      this.tree.byId.has(current.parent) &&
+      !seen.has(current.parent)
+    ) {
       out.push(current.parent);
       seen.add(current.parent);
       current = this.tree.byId.get(current.parent);
@@ -210,7 +215,10 @@ export function stageMapMermaid(tree: StageTree): string {
  * keeps the bracket literal so the intended link always survives.
  */
 export function mdLinkText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().replace(/[\\[\]]/g, '\\$&');
+  return text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[\\[\]]/g, '\\$&');
 }
 
 /** POSIX basename without its final extension. */

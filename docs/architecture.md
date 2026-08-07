@@ -19,8 +19,8 @@ concerns end to end:
 
 - **Facts** come from static analysis (the call graph). They are deterministic and
   never invented by a model.
-- **Structure** (stages, assignment, ordering) is proposed by an LLM but *validated
-  mechanically* and repaired in an actor–critic loop.
+- **Structure** (stages, assignment, ordering) is proposed by an LLM but _validated
+  mechanically_ and repaired in an actor–critic loop.
 - **Prose** (cards, overviews) is written by an LLM around the facts, cached by content
   hash, and always degradable to deterministic fallbacks.
 
@@ -107,7 +107,7 @@ keeps that prompt small and grounded.
 
 - **Three-tier card degradation** (2a): whole batch → single file → per-function chunks
   for oversized files. Files that still fail get an honest empty card and are listed in
-  `_coverage.json` — coverage is complete *by construction*, and misses are visible
+  `_coverage.json` — coverage is complete _by construction_, and misses are visible
   rather than silent.
 - **Actor–critic skeleton doctor** (2b): the actor proposes ≤3 structural changes
   (add/remove/merge/split) against ground-truth stats; three role-played critics
@@ -130,7 +130,7 @@ The pipeline has one orchestrator and two granularities:
   skeleton is synthesized automatically; assignment is per file.
 - **member** (small repos, tight prose): you author `skeleton.yaml`; individual
   functions/methods are classified into your stages; file-level artifacts (assignment,
-  organization) are then *derived* from the member map (majority vote per file,
+  organization) are then _derived_ from the member map (majority vote per file,
   call-order within stages), so rendering, skill packaging and resync work identically
   for both strategies.
 
@@ -156,7 +156,7 @@ The pipeline has one orchestrator and two granularities:
   (`will_modify` / `will_add` / `will_remove`) that resync consumes.
 - **resync** rolls the derived layer forward from a case directory (`edited/` tree +
   optional `plan.md` declarations + optional diff): re-analyze, content-hash-diff the two
-  graphs (structural fingerprints as the fallback; declarations/diff can only *widen* the
+  graphs (structural fingerprints as the fallback; declarations/diff can only _widen_ the
   changed set, never narrow it), regenerate cards at the handbook's own depth, reconcile
   assignment, mechanically prune/append affected stages' organization, re-narrate through
   the cache. `--no-llm` refreshes the structural facts and marks prose stale instead of
@@ -174,12 +174,12 @@ The pipeline has one orchestrator and two granularities:
 
 ## 9. Decisions worth knowing (ADR digest)
 
-| # | Decision | Why |
-|---|---|---|
-| 1 | WASM-only tree-sitter | zero native builds; one loading path for every language; version-locked grammars |
-| 2 | Hand-rolled fetch LLM client | OpenAI-compatible endpoints vary; a thin client with explicit retry/fail-fast beats an SDK dependency; the interface seam matters more than the transport |
-| 3 | One pipeline, two strategies | the previous-generation approach of separate large/small pipelines duplicates adapters, critics, clients and renderers; a strategy flag removes ~40% surface area |
-| 4 | zod-validated artifacts with `version` | corrupted or hand-edited artifacts fail loudly at the boundary instead of poisoning later phases |
-| 5 | Facts/prose separation in cards | the model annotates a complete graph-derived inventory; prose can be empty, facts cannot be wrong |
-| 6 | Single-turn planner protocol | works on any endpoint, trivially mockable, transcript is inspectable; the cost (token re-send) is acceptable at planner scale |
-| 7 | ESM + `tsc -b`, no bundler | libraries ship type-checked `dist/` + `.d.ts`; composite references give incremental builds with zero extra tooling |
+| #   | Decision                               | Why                                                                                                                                                               |
+| --- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | WASM-only tree-sitter                  | zero native builds; one loading path for every language; version-locked grammars                                                                                  |
+| 2   | Hand-rolled fetch LLM client           | OpenAI-compatible endpoints vary; a thin client with explicit retry/fail-fast beats an SDK dependency; the interface seam matters more than the transport         |
+| 3   | One pipeline, two strategies           | the previous-generation approach of separate large/small pipelines duplicates adapters, critics, clients and renderers; a strategy flag removes ~40% surface area |
+| 4   | zod-validated artifacts with `version` | corrupted or hand-edited artifacts fail loudly at the boundary instead of poisoning later phases                                                                  |
+| 5   | Facts/prose separation in cards        | the model annotates a complete graph-derived inventory; prose can be empty, facts cannot be wrong                                                                 |
+| 6   | Single-turn planner protocol           | works on any endpoint, trivially mockable, transcript is inspectable; the cost (token re-send) is acceptable at planner scale                                     |
+| 7   | ESM + `tsc -b`, no bundler             | libraries ship type-checked `dist/` + `.d.ts`; composite references give incremental builds with zero extra tooling                                               |

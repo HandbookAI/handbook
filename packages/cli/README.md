@@ -66,6 +66,7 @@ handbook studio --port 4860 --state-dir ~/.handbook-studio
 ```
 
 Key flags per command:
+
 - `analyze`: `--source`, `--work` (required); `--lang auto|python|typescript|go|rust|shell`.
 - `generate`: `--source`, `--work` (required); `--phase all|1|2|2a|2b|2c|3|<comma list>`, `--strategy file|member`, `--skeleton <path>`, `--detail brief|deep`, `--synth-mode oneshot|doctor`, `--max-doctor-rounds <n>`, `--narrate-lang en|zh`, `--read-workers <n>`, `--resume`, `--refresh`.
 - `render`: `--work` (required); `--out`, `--title`, `--html`, `--html-single`, `--agent-site`.
@@ -87,6 +88,7 @@ Key flags per command:
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — logger creation, log-level types, `.env` parsing.
 - `@handbook/llm` — `OpenAiChatClient` for LLM-backed commands.
 - `@handbook/pipeline` — `runPhase1`, `generateHandbook`, `loadHandbookModel`, `WorkDir`.
@@ -99,4 +101,5 @@ Internal:
 - `@handbook/analyzer` — pulled in for the analysis stack (used via the pipeline).
 
 External:
+
 - `commander` — declarative subcommand/flag parsing and help text.

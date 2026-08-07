@@ -18,6 +18,7 @@ The toolchain's single seam to any LLM. It defines the `ChatClient` interface, a
 ## Public API
 
 Client (`client.ts`):
+
 - `ChatClient` — `{ complete(prompt, options?): Promise<ChatResult>; readonly model: string }`.
 - `ChatOptions` — `{ temperature?, maxTokens? }`; `ChatResult` — `{ text, json, elapsedSec }`.
 - `OpenAiChatClient` — `new OpenAiChatClient(options?: OpenAiChatClientOptions)`; `complete(...)`, `usage(): Readonly<LlmUsageStats>` (`calls`, `failures`, `totalElapsedSec`).
@@ -27,10 +28,12 @@ Client (`client.ts`):
 - `looksLikeGatewayPage(body)` — is this error body an edge/gateway HTML page rather than an API answer?
 
 Mock (`mock.ts`):
+
 - `MockChatClient` — `new MockChatClient(rules: MockRule[], fallback?)`; records every call in `calls: RecordedCall[]`.
 - `MockRule` — `{ match: string | RegExp | (prompt) => boolean; respond: MockResponse }`; `MockResponse` — string, object (auto-fenced as JSON), or `(prompt, callIndex) => …`.
 
 Actor–critic (`critic.ts`):
+
 - `actorCriticLoop(client, actorPrompt, options): Promise<ActorCriticResult>` — one actor proposal reviewed by a parallel critic panel with bounded revision rounds.
 - `ActorCriticOptions` — `{ roles?, taskContext, schemaHint?, evidence?, maxReviseRounds? (default 1), criticConcurrency?, temperature?, logger? }`.
 - `ActorCriticResult` — `{ proposal, accepted, rounds, verdicts }`.
@@ -73,6 +76,7 @@ console.log(review.accepted, review.proposal);
 ## Dependencies
 
 Internal:
+
 - `@handbook/core` — `PermanentError`, `retry`, `pLimit`, `mapLimit`, `extractJsonBlock`, `Logger`.
 
 External: none — HTTP goes through the global `fetch` (injectable for tests).

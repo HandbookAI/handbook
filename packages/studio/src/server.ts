@@ -20,7 +20,12 @@ import {
 import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
 import { isInternalNode } from '@handbook/core';
-import { renderAgentSite, renderHtmlSite, renderMarkdownHandbook, renderSinglePageHtml } from '@handbook/renderer';
+import {
+  renderAgentSite,
+  renderHtmlSite,
+  renderMarkdownHandbook,
+  renderSinglePageHtml,
+} from '@handbook/renderer';
 import { parseDeclarations, runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { applyPlan, listBackups, rollback } from '@handbook/patcher';
@@ -256,7 +261,7 @@ function impactGraph(repo: RepoEntry, stage: string | null, limit: number): Reco
     file,
     stage: stageOf(file),
     degree: degree.get(file) ?? 0,
-    functions: (fileOf.size > 0 ? [...fileOf.entries()].filter(([, f]) => f === file).length : 0),
+    functions: fileOf.size > 0 ? [...fileOf.entries()].filter(([, f]) => f === file).length : 0,
   }));
   const links = [...weights.entries()]
     .map(([key, weight]) => {
@@ -520,10 +525,13 @@ async function runApply(repo: RepoEntry, body: Record<string, unknown>, logger: 
   for (const problem of result.problems) logger.warn(`plan problem: ${problem}`);
   for (const outcome of result.outcomes) {
     const mark = outcome.status === 'applied' || outcome.status === 'created' ? '✓' : '✗';
-    logger.info(`${mark} EDIT ${outcome.index} ${outcome.file} — ${outcome.status}${outcome.detail ? `: ${outcome.detail}` : ''}`);
+    logger.info(
+      `${mark} EDIT ${outcome.index} ${outcome.file} — ${outcome.status}${outcome.detail ? `: ${outcome.detail}` : ''}`,
+    );
   }
   if (!result.ok) {
-    const why = result.problems.length > 0 ? `: ${result.problems.join('; ')}` : ' (see the per-edit results)';
+    const why =
+      result.problems.length > 0 ? `: ${result.problems.join('; ')}` : ' (see the per-edit results)';
     throw new Error(`plan did not verify — nothing was written${why}`);
   }
   return result;
@@ -611,7 +619,12 @@ async function summariseChange(
           ...lines,
         ].join('\n');
     const reply = await client.complete(prompt, { temperature: 0, maxTokens: 200 });
-    const text = reply.text.trim().split(/\r?\n/)[0]?.replace(/^["'「『]|["'」』。.]+$/g, '').trim() ?? '';
+    const text =
+      reply.text
+        .trim()
+        .split(/\r?\n/)[0]
+        ?.replace(/^["'「『]|["'」』。.]+$/g, '')
+        .trim() ?? '';
     if (text.length >= 4 && text.length <= 120) return { text, source: 'auto' };
     logger.warn(`[resync] auto-summary unusable (${text.length} chars) — falling back to the file list`);
   } catch (error) {
@@ -659,8 +672,7 @@ async function runResync(
   const model = loadHandbookModel(repo.workDir, repo.title ?? `${repo.name} Handbook`);
   // Same fidelity disclosure as a full generate: a resync re-renders the whole
   // handbook, so dropping it here would silently un-say it.
-  const languages =
-    readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
+  const languages = readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
   renderMarkdownHandbook(model, outDir, { languages });
   renderAgentSite(model, join(outDir, 'agent'));
   renderHtmlSite(model, join(outDir, 'html'), { languages });
@@ -702,7 +714,11 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   }
 
   if (path === '/api/repos' && method === 'GET') {
-    json(res, 200, ctx.store.list().map((r) => repoStatus(r, ctx.jobs)));
+    json(
+      res,
+      200,
+      ctx.store.list().map((r) => repoStatus(r, ctx.jobs)),
+    );
     return;
   }
 
@@ -718,7 +734,9 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     // .parse() throws a ZodError whose .message is a raw JSON array — which used to
     // land verbatim in the "Add repository" dialog.
     if (!REPO_NAME_RE.test(name)) {
-      json(res, 400, { error: 'name must be URL-safe: letters, digits, . _ - and start with a letter or digit' });
+      json(res, 400, {
+        error: 'name must be URL-safe: letters, digits, . _ - and start with a letter or digit',
+      });
       return;
     }
     const sourceRoot = resolve(rawSource);
@@ -736,7 +754,9 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   if (path === '/api/history' && method === 'GET') {
     const all: Array<Record<string, unknown>> = ctx.store
       .list()
-      .flatMap((repo) => listEvolutions(repo).map((e) => ({ repo: repo.name, ...(e as Record<string, unknown>) })));
+      .flatMap((repo) =>
+        listEvolutions(repo).map((e) => ({ repo: repo.name, ...(e as Record<string, unknown>) })),
+      );
     all.sort((a, b) => String(b.at ?? b.id ?? '').localeCompare(String(a.at ?? a.id ?? '')));
     json(res, 200, all);
     return;
@@ -766,7 +786,12 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     }
     if (
       method === 'POST' &&
-      (sub === '/generate' || sub === '/analyze' || sub === '/plan' || sub === '/resync' || sub === '/apply' || sub === '/rollback')
+      (sub === '/generate' ||
+        sub === '/analyze' ||
+        sub === '/plan' ||
+        sub === '/resync' ||
+        sub === '/apply' ||
+        sub === '/rollback')
     ) {
       const body = await readBody(req);
       const kind = sub.slice(1) as 'generate' | 'analyze' | 'plan' | 'resync' | 'apply' | 'rollback';
@@ -828,7 +853,9 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
           registers,
         });
       } catch (error) {
-        json(res, 409, { error: `handbook not generated yet: ${error instanceof Error ? error.message : error}` });
+        json(res, 409, {
+          error: `handbook not generated yet: ${error instanceof Error ? error.message : error}`,
+        });
       }
       return;
     }
@@ -856,7 +883,11 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
           json(res, 413, { error: 'file too large to display' });
           return;
         }
-        json(res, 200, { path: rel, content: readFileSync(full, 'utf8'), functions: fileFunctions(repo, rel) });
+        json(res, 200, {
+          path: rel,
+          content: readFileSync(full, 'utf8'),
+          functions: fileFunctions(repo, rel),
+        });
       } catch {
         json(res, 404, { error: `not found: ${rel}` });
       }

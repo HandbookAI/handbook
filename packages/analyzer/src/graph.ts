@@ -215,11 +215,49 @@ function buildSelfAttrsIndex(functions: readonly FunctionNode[]): SelfAttrsIndex
 
 /** Built-in-ish callee names that are noise rather than missing resolution. */
 const BUILTIN_NAMES = new Set([
-  'len', 'isinstance', 'print', 'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple',
-  'range', 'enumerate', 'zip', 'map', 'filter', 'sorted', 'min', 'max', 'sum', 'abs', 'open',
-  'repr', 'hasattr', 'getattr', 'setattr', 'super', 'type', 'vars', 'iter', 'next', 'format',
-  'ValueError', 'TypeError', 'KeyError', 'RuntimeError', 'Exception', 'StopIteration',
-  'NotImplementedError', 'FileNotFoundError', 'OSError', 'IndexError', 'AttributeError',
+  'len',
+  'isinstance',
+  'print',
+  'str',
+  'int',
+  'float',
+  'bool',
+  'list',
+  'dict',
+  'set',
+  'tuple',
+  'range',
+  'enumerate',
+  'zip',
+  'map',
+  'filter',
+  'sorted',
+  'min',
+  'max',
+  'sum',
+  'abs',
+  'open',
+  'repr',
+  'hasattr',
+  'getattr',
+  'setattr',
+  'super',
+  'type',
+  'vars',
+  'iter',
+  'next',
+  'format',
+  'ValueError',
+  'TypeError',
+  'KeyError',
+  'RuntimeError',
+  'Exception',
+  'StopIteration',
+  'NotImplementedError',
+  'FileNotFoundError',
+  'OSError',
+  'IndexError',
+  'AttributeError',
 ]);
 
 export function categorizeDropped(calleeId: string): string {
@@ -332,7 +370,9 @@ export function graphDot(graph: CodeGraph): string {
     const attrs: string[] = [];
     if (edge.isAwait) attrs.push('color="#1a73e8"');
     if (edge.callType === 'boundary' || edge.callType === 'boundary_constructor') attrs.push('style=dashed');
-    lines.push(`  ${quote(edge.callerId)} -> ${quote(edge.calleeId)}${attrs.length ? ` [${attrs.join(', ')}]` : ''};`);
+    lines.push(
+      `  ${quote(edge.callerId)} -> ${quote(edge.calleeId)}${attrs.length ? ` [${attrs.join(', ')}]` : ''};`,
+    );
   }
   lines.push('}');
   return `${lines.join('\n')}\n`;

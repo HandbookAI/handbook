@@ -23,6 +23,7 @@
 ## 公开 API
 
 **编排**（`generate.ts`）
+
 - `generateHandbook(options: GenerateOptions): Promise<GenerateStats>` —— 运行选定阶段。
   `GenerateOptions` 覆盖 `sourceRoot`、`workDir`、`client?`、`phase?`、`strategy?`（`'file' | 'member'`）、
   `skeletonPath?`、`lang?`、`narrateLang?`、`detail?`、`synthMode?`（`'oneshot' | 'doctor'`）、
@@ -31,6 +32,7 @@
 - `loadHandbookModel(workDir, title): HandbookModel` —— 加载一个已完成的 work 目录供渲染器使用。
 
 **work 目录**（`workdir.ts`）
+
 - `WorkDir` —— 路径读取器（`graphPath`、`cardsDir`、`skeletonPath`、`assignmentPath`、`organizationPath`、
   `narrationPath`、`registersPath`、`cacheDir`），每种产物的带校验 `load*`/`save*`，以及 `parseSkeletonYaml`。
 - 诊断留存：`saveRejectedReply(file, text)` / `rejectedReplyCount()` / `clearRejectedReplies()` ——
@@ -38,12 +40,14 @@
   文件名带哈希后缀（否则所有中文路径会撞成同一个名字）。
 
 **阶段 1 与事实层**
+
 - `runPhase1(options: Phase1Options): Promise<Phase1Stats>` —— 扫描（`lang: 'auto'` 合并所有已注册语言）、
   构建并落盘调用图。
 - `buildInventory(graph): Record<string, FunctionNote[]>` —— 逐文件的确定性函数事实
   （calls / calledBy / extCalls，有上限）。
 
 **卡片**（`cards.ts`）
+
 - `generateCards(options: CardsOptions): Promise<CardsResult>` —— brief 或 deep 卡片；
   `CardDetail`（`'brief' | 'deep'`），以及批量、并发、截断、分块、`resume`、`onlyFiles` 等选项。
 - `mergeFunctionNotes(graphFns, llmFns)` —— 把 LLM 的散文合并到**完整的**结构清单上
@@ -52,6 +56,7 @@
 - `isCardDone(card, detail)` —— resume 过滤器。
 
 **骨架、归档、医生**
+
 - `synthesizeSkeleton(client, nav, cards, lang?, onRejected?)`、`dirRollups(cards, examplesPerDir?)` / `DirRollup`、
   `buildSynthPrompt(nav, rollups, lang)`、`normalizeSkeleton(raw, draftedBy?)`、`stageShortDescriptions(skeleton)`。
 - `assignFiles(client, graph, skeleton, options?)`、
@@ -63,6 +68,7 @@
   `computeStageStats` / `StageStats`、`renderStats`、`validateChange`、`applyChange`、`DoctorChange`。
 
 **组织与叙述**
+
 - `organizeStages(client, graph, skeleton, assignment, cards, options?)` / `OrganizeOptions`；
   `fileCallAdjacency(graph)`、`suggestOrder(files, adjacency)`（Kahn 拓扑序，调用方在前）。
 - `narrate(client, inputs, options?)` / `NarrateOptions` —— 先深后浅生成阶段概述，最后写系统总览。
@@ -71,6 +77,7 @@
 - `parseRegisterLines(text)` —— 当模型改用 `- reg-x: 说明` 这种纯文本列表作答时的严格解析回退。
 
 **成员策略**（`member.ts`）
+
 - `classifyMembers(client, graph, skeleton, options?)` / `ClassifyMembersOptions`、
   `memberAssignmentSchema` / `MemberAssignment`。
 - `deriveFileArtifacts(graph, skeleton, memberAssignment, cards)` ——
@@ -122,10 +129,12 @@ const model = loadHandbookModel('/path/to/work', '我的项目手册');
 ## 依赖
 
 内部：
+
 - `@handbook/core` —— 模型类型与 schema、work 目录 I/O 原语、并发、进度、哈希、回复形状容忍工具。
 - `@handbook/analyzer` —— 阶段 1 的适配器与图构建，以及 `NavPack` 定位输入。
 - `@handbook/llm` —— `ChatClient` 接缝，以及医生所用的 actor–critic 循环。
 
 外部：
+
 - `yaml` —— 人可手改的 `skeleton.yaml` / `organization.yaml` 序列化。
 - `zod` —— 包内自有的 `memberAssignmentSchema`（其余 schema 都来自 core）。

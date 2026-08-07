@@ -93,9 +93,7 @@ describe('renderLlmsTxt — llms-full.txt', () => {
   });
 
   it('marks cross-cutting stages', () => {
-    expect(read('llms-full.txt')).toContain(
-      '## Test Harness (`crosscut-1`) (cross-cutting infrastructure)',
-    );
+    expect(read('llms-full.txt')).toContain('## Test Harness (`crosscut-1`) (cross-cutting infrastructure)');
   });
 
   it('ends with the state registers', () => {
@@ -142,8 +140,18 @@ describe('renderLlmsTxt — gating and languages', () => {
 
 describe('renderLlmsTxt — fidelity disclosure', () => {
   const generic = {
-    kotlin: { tier: 'generic' as const, callTypes: ['internal_func' as const], selfAttrs: false, statementSpans: false },
-    python: { tier: 'full' as const, callTypes: ['internal_func' as const], selfAttrs: true, statementSpans: true },
+    kotlin: {
+      tier: 'generic' as const,
+      callTypes: ['internal_func' as const],
+      selfAttrs: false,
+      statementSpans: false,
+    },
+    python: {
+      tier: 'full' as const,
+      callTypes: ['internal_func' as const],
+      selfAttrs: true,
+      statementSpans: true,
+    },
   };
 
   it('says nothing about fidelity when the option is omitted', () => {

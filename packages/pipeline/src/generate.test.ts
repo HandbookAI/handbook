@@ -54,7 +54,13 @@ function mockClient(): MockChatClient {
         metadata: { archetype: 'demo engine' },
         stages: [
           { id: 'stage-1', title: 'Boot', description: 'Entry point wiring.', parent: null, crosscut: false },
-          { id: 'stage-2', title: 'Engine', description: 'Core spinning work.', parent: null, crosscut: false },
+          {
+            id: 'stage-2',
+            title: 'Engine',
+            description: 'Core spinning work.',
+            parent: null,
+            crosscut: false,
+          },
         ],
       },
     },
@@ -78,10 +84,19 @@ function mockClient(): MockChatClient {
         return { groups: [{ title: 'Core', summary: 'The work.', files }] };
       },
     },
-    { match: 'STATE REGISTERS', respond: { registers: [{ id: 'reg-rpm', semantics: 'Current engine rpm.', stages: ['stage-2'] }] } },
+    {
+      match: 'STATE REGISTERS',
+      respond: { registers: [{ id: 'reg-rpm', semantics: 'Current engine rpm.', stages: ['stage-2'] }] },
+    },
     { match: 'COMPLETING a list of state registers', respond: { registers: [] } },
-    { match: 'writing the OVERVIEW for one stage', respond: 'This stage boots the demo and hands control to the engine.' },
-    { match: 'top-level overview of a system handbook', respond: 'The demo system spins an engine from a tiny entry point.' },
+    {
+      match: 'writing the OVERVIEW for one stage',
+      respond: 'This stage boots the demo and hands control to the engine.',
+    },
+    {
+      match: 'top-level overview of a system handbook',
+      respond: 'The demo system spins an engine from a tiny entry point.',
+    },
   ];
   return new MockChatClient(rules);
 }
@@ -198,14 +213,18 @@ describe('run manifest', () => {
       usage: () => ({ calls: 3, promptTokens: 120, completionTokens: 45 }),
     });
     await generateHandbook({ sourceRoot, workDir, client, phase: '1' });
-    const first = runManifestSchema.parse(JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')));
+    const first = runManifestSchema.parse(
+      JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')),
+    );
     expect(first.model).toBe('mock');
     expect(first.phases).toEqual(['1']);
     expect(first.usage).toEqual({ calls: 3, promptTokens: 120, completionTokens: 45 });
 
     // A later run replaces the manifest: it describes the LAST successful run.
     await generateHandbook({ sourceRoot, workDir, client: mockClient(), phase: '1' });
-    const second = runManifestSchema.parse(JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')));
+    const second = runManifestSchema.parse(
+      JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')),
+    );
     expect(second.usage).toBeNull();
   });
 
@@ -214,7 +233,9 @@ describe('run manifest', () => {
     const workDir = mkdtempSync(join(tmpdir(), 'hb-work-manifest2-'));
     writeFixtureRepo(sourceRoot);
     await generateHandbook({ sourceRoot, workDir, phase: '1' });
-    const manifest = runManifestSchema.parse(JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')));
+    const manifest = runManifestSchema.parse(
+      JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')),
+    );
     expect(manifest.model).toBeNull();
     expect(manifest.usage).toBeNull();
   });
@@ -263,7 +284,12 @@ describe('generateHandbook cooperative cancellation', () => {
           const files = [...prompt.matchAll(/### FILE: (\S+)/g)].map((m) => m[1]);
           controller.abort();
           return {
-            purposes: files.map((file) => ({ file, purpose: `Handles ${file}.`, role: 'other', lifecycle: 'none' })),
+            purposes: files.map((file) => ({
+              file,
+              purpose: `Handles ${file}.`,
+              role: 'other',
+              lifecycle: 'none',
+            })),
           };
         },
       },

@@ -154,7 +154,16 @@ export function repairJson(candidate: string): unknown {
       if (ch === '\\') {
         const next = text[j + 1];
         if (next === undefined) return;
-        const simple: Record<string, string> = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '"': '"', '\\': '\\', '/': '/' };
+        const simple: Record<string, string> = {
+          n: '\n',
+          t: '\t',
+          r: '\r',
+          b: '\b',
+          f: '\f',
+          '"': '"',
+          '\\': '\\',
+          '/': '/',
+        };
         if (next === 'u') {
           const hex = text.slice(j + 2, j + 6);
           if (!/^[0-9a-fA-F]{4}$/.test(hex)) return;

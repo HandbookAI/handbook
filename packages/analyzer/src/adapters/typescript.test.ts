@@ -313,10 +313,7 @@ describe('TypeScriptAdapter — JavaScript (.js/.mjs/.cjs/.jsx)', () => {
     writeFileSync(join(tsRoot, 'engine.ts'), ENGINE_JS);
     writeFileSync(join(tsRoot, 'helpers.ts'), HELPERS_JS);
     writeFileSync(join(tsRoot, 'widget.tsx'), withSpecifiers(WIDGET_JSX, 'js', 'js'));
-    const tsAnalysis = await adapter.analyze(
-      ['app.ts', 'engine.ts', 'helpers.ts', 'widget.tsx'],
-      tsRoot,
-    );
+    const tsAnalysis = await adapter.analyze(['app.ts', 'engine.ts', 'helpers.ts', 'widget.tsx'], tsRoot);
 
     const shape = (a: ModuleAnalysis) => ({
       functions: a.functions.map((f) => [f.id, f.isMethod, f.isAsync, f.className] as const),

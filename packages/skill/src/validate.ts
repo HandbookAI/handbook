@@ -61,10 +61,13 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
       const name = fields.get('name') ?? '';
       if (!NAME_RE.test(name)) errors.push(`SKILL.md name "${name}" is not a lowercase-hyphen slug`);
       const description = (fields.get('description') ?? '').toLowerCase();
-      if (!description.includes('use when')) errors.push('SKILL.md description must state when to USE it ("Use when …")');
-      if (!description.includes('do not use')) errors.push('SKILL.md description must state when NOT to use it ("Do not use …")');
+      if (!description.includes('use when'))
+        errors.push('SKILL.md description must state when to USE it ("Use when …")');
+      if (!description.includes('do not use'))
+        errors.push('SKILL.md description must state when NOT to use it ("Do not use …")');
     }
-    if (!text.includes('references/index.md')) errors.push('SKILL.md body must reference references/index.md');
+    if (!text.includes('references/index.md'))
+      errors.push('SKILL.md body must reference references/index.md');
     // The body may be localized (en/zh) — accept either phrasing. The
     // frontmatter contract above is language-independent: it stays English.
     if (!/actual source|real source|真实源码/i.test(text)) {
@@ -98,7 +101,9 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
       if (readFileSync(path, 'utf8').trim().length === 0) errors.push(`references/agent/${page} is empty`);
     }
     if (missing.length > 0) {
-      warnings.push(`references/agent/ is missing ${missing.join(' and ')} — the locator pair should ship together`);
+      warnings.push(
+        `references/agent/ is missing ${missing.join(' and ')} — the locator pair should ship together`,
+      );
     }
   }
 
@@ -119,7 +124,8 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     for (const match of index.matchAll(/\]\(([^)#\s]+\.md)\)/g)) {
       const target = basename(match[1] ?? '');
       if (!target || known.has(target.toLowerCase())) continue;
-      if (!pageSet.has(target)) errors.push(`index.md links ${target} but references/stages/${target} is missing`);
+      if (!pageSet.has(target))
+        errors.push(`index.md links ${target} but references/stages/${target} is missing`);
     }
   }
 
@@ -168,13 +174,19 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
           if (sha256Hex(readFileSync(full)) !== f.sha256) stale.push(f.path);
         }
         if (unsafe.length > 0) {
-          errors.push(`coverage.json lists path(s) that escape the source root: ${unsafe.slice(0, 20).join(', ')}`);
+          errors.push(
+            `coverage.json lists path(s) that escape the source root: ${unsafe.slice(0, 20).join(', ')}`,
+          );
         }
         if (deleted.length > 0) {
-          errors.push(`coverage lists deleted files: ${deleted.slice(0, 20).join(', ')}${deleted.length > 20 ? ` … and ${deleted.length - 20} more` : ''}`);
+          errors.push(
+            `coverage lists deleted files: ${deleted.slice(0, 20).join(', ')}${deleted.length > 20 ? ` … and ${deleted.length - 20} more` : ''}`,
+          );
         }
         if (stale.length > 0) {
-          errors.push(`coverage hashes are stale for: ${stale.slice(0, 20).join(', ')}${stale.length > 20 ? ` … and ${stale.length - 20} more` : ''}`);
+          errors.push(
+            `coverage hashes are stale for: ${stale.slice(0, 20).join(', ')}${stale.length > 20 ? ` … and ${stale.length - 20} more` : ''}`,
+          );
         }
       }
     } catch (error) {
@@ -204,7 +216,10 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
         errors.push(`corrections.jsonl line ${index + 1} is not valid JSON`);
         continue;
       }
-      const file = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { file?: unknown }).file : undefined;
+      const file =
+        raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as { file?: unknown }).file
+          : undefined;
       if (typeof file !== 'string' || file.length === 0) {
         errors.push(`corrections.jsonl line ${index + 1} has no non-empty "file" string`);
         continue;

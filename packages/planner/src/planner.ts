@@ -11,7 +11,12 @@ import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
 import { silentLogger, truncate, type Logger } from '@handbook/core';
 import { ReadOnlyTools } from './tools.js';
-import { DEFAULT_PROMPT_VARS, TOOL_PROTOCOL, buildPlannerSystemPrompt, type PlannerPromptVars } from './prompt.js';
+import {
+  DEFAULT_PROMPT_VARS,
+  TOOL_PROTOCOL,
+  buildPlannerSystemPrompt,
+  type PlannerPromptVars,
+} from './prompt.js';
 
 export interface PlannerOptions {
   client: ChatClient;
@@ -128,10 +133,7 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     ? `A handbook for this codebase is mounted at \`${HANDBOOK_MOUNT}/\` — start by listing it and reading its index.`
     : 'No handbook is available — explore the source directly.';
 
-  const transcript: string[] = [
-    systemPrompt,
-    `## Change request\n${options.request}\n\n${handbookNote}`,
-  ];
+  const transcript: string[] = [systemPrompt, `## Change request\n${options.request}\n\n${handbookNote}`];
   const trace: string[] = [];
   /** Replies that invented tool results; a few are recoverable, a stream is not. */
   let fabricated = 0;
@@ -223,13 +225,22 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
         // fabrication paths guard against. Signal the turn limit instead.
         if (isLast && !looksLikePlan) {
           logger.warn('[planner] turn limit reached with no usable plan — abandoning');
-          return { plan: '(planner reached the turn limit without producing a plan)', turns: turn, trace, aborted: 'turn-limit' };
+          return {
+            plan: '(planner reached the turn limit without producing a plan)',
+            turns: turn,
+            trace,
+            aborted: 'turn-limit',
+          };
         }
         const fixed = closeDanglingFence(response.text.trim());
-        if (fixed.repaired) logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
+        if (fixed.repaired)
+          logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
         return { plan: fixed.plan, declarations: parseDeclarations(fixed.plan), turns: turn, trace };
       }
-      transcript.push(response.text, 'Your reply was not a valid action block. Respond with exactly one JSON action.');
+      transcript.push(
+        response.text,
+        'Your reply was not a valid action block. Respond with exactly one JSON action.',
+      );
       continue;
     }
 
@@ -239,16 +250,24 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
       // carries edit blocks; otherwise say plainly that nothing usable came back.
       const declared = (action.plan ?? '').trim();
       const noPlan = !declared && !looksLikePlan;
-      const raw = declared || (looksLikePlan ? response.text.trim() : '(planner finished without producing a plan)');
+      const raw =
+        declared || (looksLikePlan ? response.text.trim() : '(planner finished without producing a plan)');
       const fixed = closeDanglingFence(raw);
-      if (fixed.repaired) logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
+      if (fixed.repaired)
+        logger.warn('[planner] the plan left a code fence unclosed — closed it before returning');
       const plan = fixed.plan;
       const nEdits = (plan.match(/^ {0,3}###\s+EDIT\s+\d+\s*$/gm) ?? []).length;
       logger.info(
         `[planner] finished after ${turn} turns — ${nEdits} edit block(s)` +
           (nEdits === 0 ? ' (the planner concluded no code change is needed)' : ''),
       );
-      return { plan, declarations: parseDeclarations(plan), turns: turn, trace, ...(noPlan ? { aborted: 'no-plan' as const } : {}) };
+      return {
+        plan,
+        declarations: parseDeclarations(plan),
+        turns: turn,
+        trace,
+        ...(noPlan ? { aborted: 'no-plan' as const } : {}),
+      };
     }
 
     const result = runTool(action);
@@ -266,7 +285,12 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     );
   }
 
-  return { plan: '(planner reached the turn limit without finishing)', turns: maxTurns, trace, aborted: 'turn-limit' };
+  return {
+    plan: '(planner reached the turn limit without finishing)',
+    turns: maxTurns,
+    trace,
+    aborted: 'turn-limit',
+  };
 }
 
 /** Convenience: mount a skill directory (references/) as the planner handbook. */

@@ -233,7 +233,9 @@ function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
 
 /** The first ancestor of `relPath` under `root` that exists but is not a directory. */
 function blockingAncestor(root: string, relPath: string): string | undefined {
-  const parts = normalize(relPath).split('/').filter((p) => p !== '' && p !== '.');
+  const parts = normalize(relPath)
+    .split('/')
+    .filter((p) => p !== '' && p !== '.');
   let probe = resolve(root);
   for (const part of parts.slice(0, -1)) {
     probe = join(probe, part);
@@ -316,7 +318,9 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
 
 function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
   const dryRun = options.dryRun ?? false;
-  const effectiveBackupRoot = resolve(options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches'));
+  const effectiveBackupRoot = resolve(
+    options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches'),
+  );
   const { edits, problems } = parsePlan(options.plan);
   const outcomes: EditOutcome[] = [];
   const resolvedByPath = new Map<string, ResolvedEdit>();
@@ -401,7 +405,9 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
         current = read.text;
         modeByPath.set(absolutePath, read.mode);
         if ((read.mode & 0o200) === 0) {
-          logger.warn(`[patch] ${edit.file} is read-only (mode ${(read.mode & 0o777).toString(8)}); its mode is preserved`);
+          logger.warn(
+            `[patch] ${edit.file} is read-only (mode ${(read.mode & 0o777).toString(8)}); its mode is preserved`,
+          );
         }
         originalContent.set(absolutePath, read.text);
       } else if (creates) {
@@ -632,7 +638,8 @@ function readManifest(backupDir: string): Manifest {
     if (typeof entry !== 'object' || entry === null) throw new Error('malformed manifest entry');
     const e = entry as Record<string, unknown>;
     const file = typeof e.file === 'string' ? e.file : '';
-    if (!file || file.startsWith('/') || file.includes('\\')) throw new Error(`unsafe manifest path: ${file}`);
+    if (!file || file.startsWith('/') || file.includes('\\'))
+      throw new Error(`unsafe manifest path: ${file}`);
     const target = resolve(rootAbs, normalize(file));
     if (target !== rootAbs && !target.startsWith(rootAbs + sep)) {
       throw new Error(`manifest path escapes its source root: ${file}`);
@@ -678,45 +685,51 @@ function rollbackInner(
   for (const entry of manifest.files) {
     const target = join(manifest.sourceRoot, entry.file);
     try {
-    const currentHash = existsSync(target) ? sha256Hex(readFileSync(target)) : undefined;
+      const currentHash = existsSync(target) ? sha256Hex(readFileSync(target)) : undefined;
 
-    if (!options.force && entry.sha256After && currentHash && currentHash !== entry.sha256After) {
-      const reason =
-        entry.sha256Before && currentHash === entry.sha256Before
-          ? 'already back at its pre-patch content — nothing to restore'
-          : 'changed after the patch — pass force to overwrite';
-      skipped.push({ file: entry.file, reason });
-      continue;
-    }
-    if (entry.existed) {
-      const backupPath = join(backupDir, 'files', entry.file);
-      if (!existsSync(backupPath)) {
-        skipped.push({ file: entry.file, reason: 'backup copy missing' });
+      if (!options.force && entry.sha256After && currentHash && currentHash !== entry.sha256After) {
+        const reason =
+          entry.sha256Before && currentHash === entry.sha256Before
+            ? 'already back at its pre-patch content — nothing to restore'
+            : 'changed after the patch — pass force to overwrite';
+        skipped.push({ file: entry.file, reason });
         continue;
       }
-      // Never trust the backup blindly: if its bytes no longer hash to the
-      // pre-patch content the manifest recorded, the backup was corrupted or
-      // tampered with, and restoring it would write WRONG bytes over the tree.
-      if (entry.sha256Before && sha256Hex(readFileSync(backupPath)) !== entry.sha256Before) {
-        skipped.push({ file: entry.file, reason: 'backup copy is corrupt (content hash mismatch) — refusing to restore' });
-        continue;
+      if (entry.existed) {
+        const backupPath = join(backupDir, 'files', entry.file);
+        if (!existsSync(backupPath)) {
+          skipped.push({ file: entry.file, reason: 'backup copy missing' });
+          continue;
+        }
+        // Never trust the backup blindly: if its bytes no longer hash to the
+        // pre-patch content the manifest recorded, the backup was corrupted or
+        // tampered with, and restoring it would write WRONG bytes over the tree.
+        if (entry.sha256Before && sha256Hex(readFileSync(backupPath)) !== entry.sha256Before) {
+          skipped.push({
+            file: entry.file,
+            reason: 'backup copy is corrupt (content hash mismatch) — refusing to restore',
+          });
+          continue;
+        }
+        mkdirSync(dirname(target), { recursive: true });
+        const tmp = `${target}.handbook-rollback-${process.pid}`;
+        copyFileSync(backupPath, tmp);
+        renameSync(tmp, target);
+        restored.push(entry.file);
+      } else {
+        if (currentHash === undefined) {
+          skipped.push({ file: entry.file, reason: 'already absent' });
+          continue;
+        }
+        rmSync(target, { force: true });
+        removed.push(entry.file);
       }
-      mkdirSync(dirname(target), { recursive: true });
-      const tmp = `${target}.handbook-rollback-${process.pid}`;
-      copyFileSync(backupPath, tmp);
-      renameSync(tmp, target);
-      restored.push(entry.file);
-    } else {
-      if (currentHash === undefined) {
-        skipped.push({ file: entry.file, reason: 'already absent' });
-        continue;
-      }
-      rmSync(target, { force: true });
-      removed.push(entry.file);
-    }
     } catch (error) {
       // One unwritable file must not abandon the rest of the rollback.
-      skipped.push({ file: entry.file, reason: `restore failed: ${error instanceof Error ? error.message : String(error)}` });
+      skipped.push({
+        file: entry.file,
+        reason: `restore failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
   logger.info(

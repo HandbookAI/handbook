@@ -50,7 +50,10 @@ export function parseEnvFile(content: string): Record<string, string> {
       // quoted value, so fall back to unquoted handling rather than reshaping it.
       const close = trimmed.indexOf(quote, 1);
       const tail = close >= 0 ? trimmed.slice(close + 1).trim() : '';
-      value = close >= 0 && (tail === '' || tail.startsWith('#')) ? trimmed.slice(1, close) : stripInlineComment(raw);
+      value =
+        close >= 0 && (tail === '' || tail.startsWith('#'))
+          ? trimmed.slice(1, close)
+          : stripInlineComment(raw);
     } else {
       value = stripInlineComment(raw);
     }

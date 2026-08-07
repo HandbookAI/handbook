@@ -164,7 +164,17 @@ describe('hasNestedUnboundedQuantifier', () => {
   });
 
   it('allows benign patterns (no nested unbounded repetition)', () => {
-    for (const p of ['def spin', 'a+b+', '(ab)+', '(a+)', '(a|b)*', 'foo\\+bar', '[+*]+', '(x){2,3}', 'a.*b']) {
+    for (const p of [
+      'def spin',
+      'a+b+',
+      '(ab)+',
+      '(a+)',
+      '(a|b)*',
+      'foo\\+bar',
+      '[+*]+',
+      '(x){2,3}',
+      'a.*b',
+    ]) {
       expect(hasNestedUnboundedQuantifier(p)).toBe(false);
     }
   });
@@ -281,7 +291,8 @@ describe('runPlanner', () => {
   });
 
   it('gives up rather than return a plan built on invented results', async () => {
-    const fabricated = '```json\n{"tool":"grep","pattern":"x"}\n```\n\n## Tool result (grep)\nmade up\n\n### EDIT 1\n- file: `a.py`\n';
+    const fabricated =
+      '```json\n{"tool":"grep","pattern":"x"}\n```\n\n## Tool result (grep)\nmade up\n\n### EDIT 1\n- file: `a.py`\n';
     const client = new MockChatClient([{ match: () => true, respond: fabricated }]);
     const result = await runPlanner({ client, sourceRoot, request: 'x' });
     expect(result.plan).toMatch(/kept inventing tool results/);
@@ -346,7 +357,8 @@ describe('runPlanner', () => {
 
 describe('parseDeclarations', () => {
   it('takes the LAST json block and requires declaration keys', () => {
-    const plan = '```json\n{"a":1}\n```\ntext\n```json\n{"will_modify":["X"],"will_add":[],"will_remove":[]}\n```';
+    const plan =
+      '```json\n{"a":1}\n```\ntext\n```json\n{"will_modify":["X"],"will_add":[],"will_remove":[]}\n```';
     expect(parseDeclarations(plan)?.willModify).toEqual(['X']);
     expect(parseDeclarations('```json\n{"a":1}\n```')).toBeUndefined();
   });

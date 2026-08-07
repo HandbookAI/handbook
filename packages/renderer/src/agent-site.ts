@@ -16,20 +16,65 @@ import type { FidelityOptions } from './shared.js';
 
 /** File stems too generic to serve as entry concepts. */
 const GENERIC_TOKENS = new Set([
-  'mod', 'lib', 'main', 'index', 'src', 'app', 'core', 'base', 'common', 'misc',
-  'error', 'errors', 'test', 'tests', 'testing', 'util', 'utils', 'helper', 'helpers',
-  'types', 'type', 'model', 'models', 'init', 'setup', 'shared', 'internal', 'impl',
+  'mod',
+  'lib',
+  'main',
+  'index',
+  'src',
+  'app',
+  'core',
+  'base',
+  'common',
+  'misc',
+  'error',
+  'errors',
+  'test',
+  'tests',
+  'testing',
+  'util',
+  'utils',
+  'helper',
+  'helpers',
+  'types',
+  'type',
+  'model',
+  'models',
+  'init',
+  'setup',
+  'shared',
+  'internal',
+  'impl',
 ]);
 
 /** Register-id words that carry no stage-matching signal. */
 const REGISTER_STOPWORDS = new Set([
-  'reg', 'state', 'status', 'stack', 'catalog', 'flags', 'flag', 'global', 'shared',
-  'current', 'active', 'live', 'main', 'info', 'data',
+  'reg',
+  'state',
+  'status',
+  'stack',
+  'catalog',
+  'flags',
+  'flag',
+  'global',
+  'shared',
+  'current',
+  'active',
+  'live',
+  'main',
+  'info',
+  'data',
 ]);
 
 /** Role priority for core-file ranking (unknown roles sort last). */
 const ROLE_PRIORITY: readonly FileRole[] = [
-  'entrypoint', 'orchestration', 'domain_logic', 'data_model', 'io_transport', 'config', 'util', 'test',
+  'entrypoint',
+  'orchestration',
+  'domain_logic',
+  'data_model',
+  'io_transport',
+  'config',
+  'util',
+  'test',
 ];
 
 const ENTRY_CONCEPTS_CAP = 8;
@@ -71,7 +116,8 @@ const LABELS: Record<NarrateLang, AgentLabels> = {
     files: (n) => `${n} files`,
     hits: (n) => `${n} hits`,
     indexTitle: 'Agent Locator Index',
-    indexIntro: 'Read [how_to_use.md](how_to_use.md) first: it defines the operating protocol for this index.',
+    indexIntro:
+      'Read [how_to_use.md](how_to_use.md) first: it defines the operating protocol for this index.',
     disambiguationTitle: 'Disambiguation',
     disambiguationIntro: 'Words whose search hits land in several stages. Pick by duty line.',
   },
@@ -229,7 +275,10 @@ export function buildCollisionIndex(view: HandbookView): Map<string, string[]> {
     if (sids.length < 2 || sids.length > MAX_COLLISION_DF) continue;
     if (isPureAncestorChain(view, sids)) continue;
     const order = new Map(view.tree.order.map((s, i) => [s, i]));
-    collisions.set(tok, [...sids].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)));
+    collisions.set(
+      tok,
+      [...sids].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+    );
   }
   return new Map(
     [...collisions.entries()].sort((a, b) => a[1].length - b[1].length || a[0].localeCompare(b[0])),
@@ -447,7 +496,10 @@ export function renderAgentSite(
   for (const sid of contentStages) {
     writeFileAtomic(join(outDir, `${sid}.md`), agentStagePageMd(ctx, sid));
   }
-  writeFileAtomic(join(outDir, 'how_to_use.md'), howToUseMd(model.lang, genericTierLanguages(options.languages)));
+  writeFileAtomic(
+    join(outDir, 'how_to_use.md'),
+    howToUseMd(model.lang, genericTierLanguages(options.languages)),
+  );
   writeFileAtomic(join(outDir, 'index.md'), agentIndexMd(ctx));
   writeFileAtomic(join(outDir, 'disambiguation.md'), disambiguationMd(ctx, written));
 

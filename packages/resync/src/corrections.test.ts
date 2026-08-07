@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fileExists } from '@handbook/core';
-import { archiveCorrections, correctionFiles, correctionSchema, loadCorrections, type Correction } from './corrections.js';
+import {
+  archiveCorrections,
+  correctionFiles,
+  correctionSchema,
+  loadCorrections,
+  type Correction,
+} from './corrections.js';
 
 function tmpFile(lines: string[]): string {
   const dir = mkdtempSync(join(tmpdir(), 'hb-corrections-'));

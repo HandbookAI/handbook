@@ -67,20 +67,13 @@ const TYPE_DECLS = new Set([
 ]);
 
 /** Declarations whose children are more declarations. */
-const NAMESPACE_DECLS = new Set([
-  'namespace_declaration',
-  'file_scoped_namespace_declaration',
-]);
+const NAMESPACE_DECLS = new Set(['namespace_declaration', 'file_scoped_namespace_declaration']);
 
 /** Members carrying a `variable_declaration` list of fields. */
 const FIELD_MEMBERS = new Set(['field_declaration', 'event_field_declaration']);
 
 /** Members carrying an `accessor_list` we can turn into functions. */
-const ACCESSOR_MEMBERS = new Set([
-  'property_declaration',
-  'event_declaration',
-  'indexer_declaration',
-]);
+const ACCESSOR_MEMBERS = new Set(['property_declaration', 'event_declaration', 'indexer_declaration']);
 
 /** Accessor keywords, used both to detect and to name the accessor function. */
 const ACCESSOR_KINDS = new Set(['get', 'set', 'init', 'add', 'remove']);
@@ -233,10 +226,7 @@ function headerOf(node: Node, stop: Node | null): string {
   const attrs = node.namedChildren.filter((c) => c?.type === 'attribute_list');
   const from = attrs.length > 0 ? (attrs.at(-1)?.endIndex ?? node.startIndex) : node.startIndex;
   const to = stop ? stop.startIndex : node.endIndex;
-  const text = node.text.slice(
-    Math.max(0, from - node.startIndex),
-    Math.max(0, to - node.startIndex),
-  );
+  const text = node.text.slice(Math.max(0, from - node.startIndex), Math.max(0, to - node.startIndex));
   // A bodiless declaration runs to its own `;`, which is not part of a signature.
   return truncate(text.replace(/\s+/g, ' ').trim().replace(/;$/, '').trim(), 200);
 }
@@ -345,9 +335,7 @@ function trackSelfAttrs(
   const reads = new Set<string>();
   const writes = new Set<string>();
   const bareField = (node: Node): string =>
-    node.type === 'identifier' && fields.has(node.text) && !shadowed.has(node.text)
-      ? node.text
-      : '';
+    node.type === 'identifier' && fields.has(node.text) && !shadowed.has(node.text) ? node.text : '';
   const attrTarget = (node: Node): string => selfProp(node) || bareField(node);
 
   const stack: Node[] = [body];
@@ -365,8 +353,7 @@ function trackSelfAttrs(
         break;
       case 'assignment_expression': {
         const left = node.childForFieldName('left');
-        const operator =
-          node.namedChildren.find((c) => c?.type === 'assignment_operator')?.text ?? '=';
+        const operator = node.namedChildren.find((c) => c?.type === 'assignment_operator')?.text ?? '=';
         const target = left ? attrTarget(left) : '';
         if (target) {
           writes.add(target);
@@ -455,9 +442,7 @@ function recordFunction(scan: ModuleScan, opts: RecordOptions): FnContext | unde
   if (body) collectLocals(body, scopeTypes, declaredNames);
 
   const fields = className ? (scan.ownerFields.get(className) ?? new Set<string>()) : new Set<string>();
-  const { reads, writes } = body
-    ? trackSelfAttrs(body, fields, declaredNames)
-    : { reads: [], writes: [] };
+  const { reads, writes } = body ? trackSelfAttrs(body, fields, declaredNames) : { reads: [], writes: [] };
 
   scan.functions.push({
     id,
@@ -629,8 +614,7 @@ function scanTypeDeclaration(scan: ModuleScan, node: Node, file: string): void {
     }
     // A destructor's declared name is the class name, which the constructor
     // already owns; `Finalize` is what it actually compiles to.
-    const name =
-      member.type === 'destructor_declaration' ? 'Finalize' : fieldText(member, 'name');
+    const name = member.type === 'destructor_declaration' ? 'Finalize' : fieldText(member, 'name');
     if (!name) continue;
     scan.ownerMethods.get(owner)?.add(name);
     const memberBody = member.childForFieldName('body');
@@ -665,11 +649,7 @@ function resolveSelfMethod(
 }
 
 /** `base.M()` — start above the caller's own type. */
-function resolveInherited(
-  type: string,
-  method: string,
-  own: CSharpIndexes,
-): Resolved | undefined {
+function resolveInherited(type: string, method: string, own: CSharpIndexes): Resolved | undefined {
   const base = inheritedIdBase(type, method, own);
   return base ? { calleeId: `${base}.${method}`, callType: 'self_method' } : undefined;
 }
@@ -733,11 +713,7 @@ function resolveAttrMethod(
 }
 
 /** A bare call made visible by `using static A.B.Type;`. */
-function resolveStaticUsing(
-  method: string,
-  scan: ModuleScan,
-  own: CSharpIndexes,
-): Resolved | undefined {
+function resolveStaticUsing(method: string, scan: ModuleScan, own: CSharpIndexes): Resolved | undefined {
   for (const path of scan.staticUsings) {
     const base = memberIdBase(tailOf(path), method, own);
     if (base) return { calleeId: `${base}.${method}`, callType: 'internal_func' };
@@ -823,8 +799,7 @@ function resolveMember(
       const viaField = resolveAttrMethod(className, base, method, scan, std, own);
       if (viaField) return viaField;
     }
-    const viaType =
-      resolveTypeMember(base, method, std, own) ?? resolveAlias(base, method, scan, std, own);
+    const viaType = resolveTypeMember(base, method, std, own) ?? resolveAlias(base, method, scan, std, own);
     if (viaType) return viaType;
     // A PascalCase receiver that names no value in scope is a type we do not
     // have. Saying "boundary" is true (it is outside the scanned set) and more
@@ -859,9 +834,7 @@ function resolveCall(
     if (!name) return unresolvedOf(callee.text);
     const local = context.localFns.get(name);
     if (local) return { calleeId: local, callType: 'internal_func' };
-    const hit = context.className
-      ? resolveSelfMethod(context.className, name, scan, std, own)
-      : undefined;
+    const hit = context.className ? resolveSelfMethod(context.className, name, scan, std, own) : undefined;
     return hit ?? resolveStaticUsing(name, scan, own) ?? unresolvedOf(name);
   }
 

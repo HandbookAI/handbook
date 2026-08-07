@@ -1,13 +1,29 @@
-# Monorepo CI: type-check, lint, and test on every push and pull request.
+# Monorepo CI.
+#
+# Four independent gates, so a failure names its own cause: static correctness,
+# an offline end-to-end run of the actual CLI, shell scripts, and commit
+# messages. They run in parallel; nothing here depends on anything else here.
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+# A pull request that gets a second push cancels the first run. Without this,
+# `on: push` + `on: pull_request` also meant every PR commit was built twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   check:
+    name: check (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -27,5 +43,88 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # tsc -b + eslint --max-warnings 0 + vitest run
+      # tsc -b + tsconfig.tests.json + workspace invariants + eslint + prettier
+      # + vitest with coverage thresholds.
       - run: pnpm check
+
+      - name: Upload coverage report
+        if: ${{ always() && matrix.node-version == 24 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: warn
+
+  e2e:
+    name: e2e (offline demo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # analyze → generate → render → skill → validate against the bundled
+      # fixture repo and the bundled mock LLM. No network, no API key. The unit
+      # suite never exercises the CLI end to end; this does.
+      - run: pnpm demo
+
+      - name: Assert the run produced a handbook, a site and a SKILL
+        run: |
+          set -euo pipefail
+          work=examples/work/demo
+          for artefact in \
+            "$work/handbook/overview.md" \
+            "$work/handbook/handbook.html" \
+            "$work/handbook/html/overview.html" \
+            "$work/skill/SKILL.md"
+          do
+            test -s "$artefact" || { echo "missing or empty: $artefact"; exit 1; }
+          done
+          echo "e2e artefacts OK"
+
+      - name: Upload the generated handbook
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: examples/work/demo/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  shell:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # shellcheck is preinstalled on the ubuntu runner image. These scripts are
+      # the demo entry points; they used to be linted by nothing at all.
+      - run: shellcheck examples/*.sh examples/demo-project/scripts/*.sh
+
+  commits:
+    name: commitlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # commitlint needs the full range of the PR's commits.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: >-
+          pnpm commitlint
+          --from ${{ github.event.pull_request.base.sha }}
+          --to ${{ github.event.pull_request.head.sha }}
+          --verbose

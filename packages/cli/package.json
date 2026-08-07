@@ -1,7 +1,6 @@
 {
   "name": "@handbook/cli",
   "version": "0.1.0",
-  "private": true,
   "description": "The handbook command-line interface",
   "type": "module",
   "exports": {
@@ -31,6 +30,10 @@
     "@handbook/resync": "workspace:*",
     "@handbook/skill": "workspace:*",
     "@handbook/studio": "workspace:*",
-    "commander": "^15.0.0"
+    "commander": "catalog:"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

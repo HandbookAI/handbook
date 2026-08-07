@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
-import { buildGraph, categorizeDropped, functionsCsv, synthesizeBoundary, type BuildGraphOptions } from './graph.js';
+import {
+  buildGraph,
+  categorizeDropped,
+  functionsCsv,
+  synthesizeBoundary,
+  type BuildGraphOptions,
+} from './graph.js';
 
 function fn(id: string, file: string, overrides: Partial<FunctionNode> = {}): FunctionNode {
   const name = id.split('.').at(-1) ?? id;
@@ -25,7 +31,12 @@ function fn(id: string, file: string, overrides: Partial<FunctionNode> = {}): Fu
   };
 }
 
-function edge(callerId: string, calleeId: string, callType: CallType, overrides: Partial<CallEdge> = {}): CallEdge {
+function edge(
+  callerId: string,
+  calleeId: string,
+  callType: CallType,
+  overrides: Partial<CallEdge> = {},
+): CallEdge {
   return { callerId, calleeId, isAwait: false, callType, line: 3, raw: `${calleeId}(…)`, ...overrides };
 }
 
@@ -72,7 +83,13 @@ describe('buildGraph — degree annotation', () => {
     expect(graph.metadata.nBoundaryNodes).toBe(0);
     expect(graph.metadata.nEdges).toBe(3);
     expect(graph.metadata.generatedAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(stats).toEqual({ functions: 3, edgesKept: 3, edgesDropped: 0, internalNodes: 3, boundaryNodes: 0 });
+    expect(stats).toEqual({
+      functions: 3,
+      edgesKept: 3,
+      edgesDropped: 0,
+      internalNodes: 3,
+      boundaryNodes: 0,
+    });
   });
 
   it('indexes self-attribute reads/writes by class', () => {
@@ -121,7 +138,10 @@ describe('buildGraph — selfAttrs index scale (pass 2)', () => {
 
   it('dedupes duplicate-id functions in the self-attr index (defensive)', () => {
     const dup = fn('m.C.m', 'm.py', { className: 'C', isMethod: true, selfAttrsRead: ['x'] });
-    const { graph } = buildGraph({ functions: [dup, dup, dup], edges: [] }, options({ scannedFiles: ['m.py'] }));
+    const { graph } = buildGraph(
+      { functions: [dup, dup, dup], edges: [] },
+      options({ scannedFiles: ['m.py'] }),
+    );
     expect(graph.selfAttrs['C']?.['x']?.readIn).toEqual(['m.C.m']); // not repeated 3×
   });
 });
@@ -156,9 +176,17 @@ describe('buildGraph — synthetic constructor synthesis', () => {
       functions: [fn('crate::app::run', 'app.rs', { name: 'run', qualname: 'run' })],
       edges: [edge('crate::app::run', 'crate::engine::Engine::new', 'internal_constructor')],
     };
-    const { graph } = buildGraph(analysis, options({ defaultExt: '.rs', language: 'rust', scannedFiles: ['app.rs'] }));
+    const { graph } = buildGraph(
+      analysis,
+      options({ defaultExt: '.rs', language: 'rust', scannedFiles: ['app.rs'] }),
+    );
     const node = graph.nodes['crate::engine::Engine::new'];
-    expect(node).toMatchObject({ synthetic: true, file: 'crate/engine.rs', className: 'Engine', name: 'new' });
+    expect(node).toMatchObject({
+      synthetic: true,
+      file: 'crate/engine.rs',
+      className: 'Engine',
+      name: 'new',
+    });
   });
 
   it('leaves the fabricated path extension-less when no defaultExt is given', () => {
@@ -205,7 +233,11 @@ describe('buildGraph — boundary node synthesis', () => {
   it('handles bare names, trailing class segments, and :: separators', () => {
     expect(synthesizeBoundary('boundary:sleep')).toMatchObject({ name: 'sleep', module: '', className: '' });
     // A trailing uppercase segment is the callee (a constructor), not a class prefix.
-    expect(synthesizeBoundary('boundary:pkg.Mod')).toMatchObject({ name: 'Mod', module: 'pkg', className: '' });
+    expect(synthesizeBoundary('boundary:pkg.Mod')).toMatchObject({
+      name: 'Mod',
+      module: 'pkg',
+      className: '',
+    });
     expect(synthesizeBoundary('boundary:tokio::task::spawn')).toMatchObject({
       name: 'spawn',
       module: 'tokio.task',

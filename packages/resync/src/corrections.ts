@@ -61,7 +61,9 @@ export function loadCorrections(path: string): LoadCorrectionsResult {
     }
     const parsed = correctionSchema.safeParse(raw);
     if (!parsed.success) {
-      const detail = parsed.error.issues.map((i) => `${i.path.join('.') || 'entry'}: ${i.message}`).join('; ');
+      const detail = parsed.error.issues
+        .map((i) => `${i.path.join('.') || 'entry'}: ${i.message}`)
+        .join('; ');
       problems.push(`line ${index + 1} is not a valid correction (${detail})`);
       continue;
     }

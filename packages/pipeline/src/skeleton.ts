@@ -39,8 +39,13 @@ export function dirRollups(cards: Record<string, FileCard>, examplesPerDir = 4):
       return {
         dir,
         nFiles: dirCards.length,
-        roles: [...roleCounts.entries()].sort((a, b) => b[1] - a[1]).map(([role, count]) => ({ role, count })),
-        lifecycles: [...lifecycleCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([l]) => l),
+        roles: [...roleCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([role, count]) => ({ role, count })),
+        lifecycles: [...lifecycleCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([l]) => l),
         examples: dirCards
           .map((c) => c.purpose)
           .filter(Boolean)
@@ -81,7 +86,9 @@ export function buildSynthPrompt(nav: NavPack, rollups: DirRollup[], lang: Narra
   );
   lines.push('## Entry-point candidates');
   for (const e of nav.entryPoints.slice(0, 25)) {
-    lines.push(`- [${e.isRoot ? 'root' : 'hint'}] ${e.qualname}  ${e.file}:${e.lineStart}  →${e.nCallees} callees`);
+    lines.push(
+      `- [${e.isRoot ? 'root' : 'hint'}] ${e.qualname}  ${e.file}:${e.lineStart}  →${e.nCallees} callees`,
+    );
   }
   lines.push(`## Directory rollup (${rollups.length} dirs)`);
   for (const r of rollups) {
@@ -153,9 +160,12 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
       id,
       title,
       description: typeof s.description === 'string' && s.description.trim() ? s.description.trim() : title,
-      parent: typeof s.parent === 'string' && s.parent.trim() && !['top', 'none', 'null'].includes(s.parent.trim().toLowerCase())
-        ? s.parent.trim()
-        : null,
+      parent:
+        typeof s.parent === 'string' &&
+        s.parent.trim() &&
+        !['top', 'none', 'null'].includes(s.parent.trim().toLowerCase())
+          ? s.parent.trim()
+          : null,
       children: [],
       crosscut,
     });
@@ -195,7 +205,9 @@ export function normalizeSkeleton(raw: unknown, draftedBy = 'skeleton-synth'): S
       byId.get(stage.parent)?.children.push(stage.id);
     }
   }
-  const metadata = (typeof rawObj.metadata === 'object' && rawObj.metadata !== null ? rawObj.metadata : {}) as Record<string, unknown>;
+  const metadata = (
+    typeof rawObj.metadata === 'object' && rawObj.metadata !== null ? rawObj.metadata : {}
+  ) as Record<string, unknown>;
   return {
     metadata: {
       version: 1,

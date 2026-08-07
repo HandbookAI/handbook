@@ -36,30 +36,56 @@ Paths are POSIX-relative to the analyzed source root unless stated otherwise.
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
     "scannedFiles": ["app/main.py", "…"],
-    "nInternalFunctions": 316, "nBoundaryNodes": 45, "nEdges": 903,
-    "policy": "Edges are emitted only when the callee resolves …"
+    "nInternalFunctions": 316,
+    "nBoundaryNodes": 45,
+    "nEdges": 903,
+    "policy": "Edges are emitted only when the callee resolves …",
   },
   "nodes": {
-    "app.main.main": {              // internal node (kind: "internal")
-      "id": "app.main.main", "name": "main", "qualname": "main",
-      "file": "app/main.py", "lineStart": 4, "lineEnd": 9,
-      "signature": "def main()", "isAsync": false, "isMethod": false,
-      "className": null, "decorators": [], "kind": "internal",
-      "synthetic": false,           // true = implied node (e.g. implicit constructor)
-      "selfAttrsRead": [], "selfAttrsWritten": [], "paramTypes": {},
-      "nCallees": 3, "nCallers": 0
+    "app.main.main": {
+      // internal node (kind: "internal")
+      "id": "app.main.main",
+      "name": "main",
+      "qualname": "main",
+      "file": "app/main.py",
+      "lineStart": 4,
+      "lineEnd": 9,
+      "signature": "def main()",
+      "isAsync": false,
+      "isMethod": false,
+      "className": null,
+      "decorators": [],
+      "kind": "internal",
+      "synthetic": false, // true = implied node (e.g. implicit constructor)
+      "selfAttrsRead": [],
+      "selfAttrsWritten": [],
+      "paramTypes": {},
+      "nCallees": 3,
+      "nCallers": 0,
     },
-    "boundary:os.getpid": {         // boundary node (kind: "boundary")
-      "id": "boundary:os.getpid", "name": "getpid", "qualname": "os.getpid",
-      "module": "os", "className": "", "kind": "boundary",
-      "nCallees": 0, "nCallers": 1
-    }
+    "boundary:os.getpid": {
+      // boundary node (kind: "boundary")
+      "id": "boundary:os.getpid",
+      "name": "getpid",
+      "qualname": "os.getpid",
+      "module": "os",
+      "className": "",
+      "kind": "boundary",
+      "nCallees": 0,
+      "nCallers": 1,
+    },
   },
   "edges": [
-    { "callerId": "app.main.main", "calleeId": "app.queue.TaskQueue.__init__",
-      "isAwait": false, "callType": "internal_constructor", "line": 6, "raw": "TaskQueue" }
+    {
+      "callerId": "app.main.main",
+      "calleeId": "app.queue.TaskQueue.__init__",
+      "isAwait": false,
+      "callType": "internal_constructor",
+      "line": 6,
+      "raw": "TaskQueue",
+    },
   ],
-  "selfAttrs": { "TaskQueue": { "items": { "readIn": ["…"], "writtenIn": ["…"] } } }
+  "selfAttrs": { "TaskQueue": { "items": { "readIn": ["…"], "writtenIn": ["…"] } } },
 }
 ```
 
@@ -72,12 +98,16 @@ in dropped-calls.json).
 ```jsonc
 {
   "version": 1,
-  "metadata": { "generatedAt": "…", "totalDropped": 12,
-                "byCategory": { "builtin": 7, "bare_name": 3, "local_var_method": 2 } },
+  "metadata": {
+    "generatedAt": "…",
+    "totalDropped": 12,
+    "byCategory": { "builtin": 7, "bare_name": 3, "local_var_method": 2 },
+  },
   "edgesByCategory": {
-    "builtin": [ { "caller": "app.main.main", "calleeRaw": "print",
-                    "isAwait": false, "line": 9, "raw": "print" } ]
-  }
+    "builtin": [
+      { "caller": "app.main.main", "calleeRaw": "print", "isAwait": false, "line": 9, "raw": "print" },
+    ],
+  },
 }
 ```
 
@@ -90,19 +120,30 @@ Categories: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `b
 {
   "version": 1,
   "file": "app/worker.py",
-  "purpose": "Drains the queue and executes each task.",   // "" = generation failed (backfilled)
-  "role": "domain_logic",   // entrypoint|orchestration|domain_logic|io_transport|data_model|config|util|test|generated|other
+  "purpose": "Drains the queue and executes each task.", // "" = generation failed (backfilled)
+  "role": "domain_logic", // entrypoint|orchestration|domain_logic|io_transport|data_model|config|util|test|generated|other
   "lifecycle": "main loop", // free-form short hint; "none" when not meaningful
-  "description": "…120-300 words…",          // deep mode only
-  "functions": [                              // deep mode only; facts from the graph, prose from the LLM
+  "description": "…120-300 words…", // deep mode only
+  "functions": [
+    // deep mode only; facts from the graph, prose from the LLM
     {
-      "id": "app.worker.Worker.run", "qualname": "Worker.run", "name": "run",
-      "className": "Worker", "lineRange": [10, 13], "signature": "def run(self)",
-      "calls": ["app.queue.TaskQueue.pop"], "calledBy": ["app.main.main"], "extCalls": [],
-      "nCalls": 3, "nCalledBy": 1, "nExtCalls": 0,
-      "purpose": "…", "dataFlow": "…", "relations": "…"   // may be empty; facts never are
-    }
-  ]
+      "id": "app.worker.Worker.run",
+      "qualname": "Worker.run",
+      "name": "run",
+      "className": "Worker",
+      "lineRange": [10, 13],
+      "signature": "def run(self)",
+      "calls": ["app.queue.TaskQueue.pop"],
+      "calledBy": ["app.main.main"],
+      "extCalls": [],
+      "nCalls": 3,
+      "nCalledBy": 1,
+      "nExtCalls": 0,
+      "purpose": "…",
+      "dataFlow": "…",
+      "relations": "…", // may be empty; facts never are
+    },
+  ],
 }
 ```
 
@@ -111,18 +152,19 @@ Categories: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `b
 ```yaml
 metadata:
   version: 1
-  archetype: demo task runner        # one-phrase system shape
-  draftedBy: skeleton-synth          # skeleton-synth | skeleton-doctor | user
+  archetype: demo task runner # one-phrase system shape
+  draftedBy: skeleton-synth # skeleton-synth | skeleton-doctor | user
 stages:
-  - id: stage-1                      # any filename-safe id (^[A-Za-z0-9][A-Za-z0-9._-]*$);
-                                     # conventionally stage-N / stage-N.M / crosscut-N.
-                                     # Reserved page names (overview, index, register(s), …)
-                                     # are auto-suffixed by the normalizer.
+  - id:
+      stage-1 # any filename-safe id (^[A-Za-z0-9][A-Za-z0-9._-]*$);
+      # conventionally stage-N / stage-N.M / crosscut-N.
+      # Reserved page names (overview, index, register(s), …)
+      # are auto-suffixed by the normalizer.
     title: Startup
     description: Entry point wiring…
-    parent: null                     # substages point at their parent id
-    children: [stage-1.1]            # derived; always rebuilt from parent on load
-    crosscut: false                  # true = cross-cutting infrastructure
+    parent: null # substages point at their parent id
+    children: [stage-1.1] # derived; always rebuilt from parent on load
+    crosscut: false # true = cross-cutting infrastructure
 ```
 
 This same schema is what you author by hand for `--strategy member` / `--skeleton`.
@@ -133,9 +175,9 @@ This same schema is what you author by hand for `--strategy member` / `--skeleto
 ```jsonc
 {
   "version": 1,
-  "fileStage": { "app/main.py": { "stage": "stage-1", "also": [] } },  // "unassigned" allowed
-  "buckets":   { "stage-1": ["app/main.py"] },                          // primary stage only; disjoint
-  "coverage":  { "nFiles": 5, "nAssigned": 5, "unassigned": [] }
+  "fileStage": { "app/main.py": { "stage": "stage-1", "also": [] } }, // "unassigned" allowed
+  "buckets": { "stage-1": ["app/main.py"] }, // primary stage only; disjoint
+  "coverage": { "nFiles": 5, "nAssigned": 5, "unassigned": [] },
 }
 ```
 
@@ -150,8 +192,8 @@ stages:
       - title: Core flow
         summary: Everything this stage owns, in execution order.
         files:
-          - { file: app/queue.py, purpose: "…", role: domain_logic, nFunctions: 4 }
-    orderedFiles: [app/queue.py, app/worker.py]   # flat reading order across groups
+          - { file: app/queue.py, purpose: '…', role: domain_logic, nFunctions: 4 }
+    orderedFiles: [app/queue.py, app/worker.py] # flat reading order across groups
 coverage: { nFiles: 5, nOrganized: 5 }
 ```
 
@@ -160,9 +202,9 @@ coverage: { nFiles: 5, nOrganized: 5 }
 ```jsonc
 {
   "version": 1,
-  "lang": "en",                                  // en | zh
+  "lang": "en", // en | zh
   "systemOverview": "…200-350 words…",
-  "stageSummaries": { "stage-1": "…100-200 words…" }
+  "stageSummaries": { "stage-1": "…100-200 words…" },
 }
 ```
 
@@ -172,10 +214,12 @@ coverage: { nFiles: 5, nOrganized: 5 }
 {
   "version": 1,
   "registers": [
-    { "id": "reg-task-queue",                     // ^reg-[a-z0-9-]+$
+    {
+      "id": "reg-task-queue", // ^reg-[a-z0-9-]+$
       "semantics": "The FIFO list of pending tasks…",
-      "stages": ["stage-1", "stage-2"] }          // only real stage ids
-  ]
+      "stages": ["stage-1", "stage-2"],
+    }, // only real stage ids
+  ],
 }
 ```
 
@@ -217,23 +261,26 @@ A markdown plan: prose summary → EDIT blocks → one declarations JSON block.
 
 ````markdown
 ### EDIT 1
+
 - file: `app/engine.py`
 - where: `Engine.spin (~5)` — add retry
+
 ```old
 <byte-exact current text, ≥3 context lines each side, unique in the file>
 ```
+
 ```new
 <replacement text>
 ```
 
 ```json
-{"will_modify": ["Engine.spin"], "will_add": [], "will_remove": []}
+{ "will_modify": ["Engine.spin"], "will_add": [], "will_remove": [] }
 ```
 ````
 
 ## Resync case directory (`handbook resync --case`)
 
-```
+````
 <case>/
   edited/               the changed source tree            (required)
   plan.md               change description; its ```json declarations block
@@ -241,4 +288,4 @@ A markdown plan: prose summary → EDIT blocks → one declarations JSON block.
   change.diff           unified diff; PRESENT AND EMPTY = "nothing to resync" (optional)
   resync-report.json    written by resync: {skipped, changedFiles, addedFiles,
                         deletedFiles, affectedStages, cardsRegenerated, narrated}
-```
+````
