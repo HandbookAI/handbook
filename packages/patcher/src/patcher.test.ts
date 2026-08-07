@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parsePlan } from './parse.js';
 import { applyPlan, listBackups, rollback } from './apply.js';
@@ -157,6 +157,43 @@ describe('applyPlan', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.outcomes[0]?.status).toBe('unsafe-path');
+  });
+
+  it('rejects a drive-absolute path, which has no leading slash to catch it', () => {
+    // `C:/evil.py` is absolute on Windows but looks relative to a leading-slash
+    // test, and it carries no backslash for the forward-slash rule to catch.
+    // The parser refuses it on every platform, so the plan is rejected with a
+    // precise reason rather than surviving to be caught by safeResolve.
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'C:/evil.py', old: '', next: 'boom' }]),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.problems.join(' ')).toContain('drive-absolute');
+  });
+
+  it('rolls back from a manifest whose sourceRoot is absolute in THIS platform’s form', () => {
+    // Regression guard for a Windows-only break: the manifest validator tested
+    // `sourceRoot.startsWith('/')` as a stand-in for "is absolute", so every
+    // backup taken on Windows — where an absolute path is `C:\...` — was
+    // rejected and rollback was impossible there. Asserting against whatever
+    // `resolve()` produces on the running platform makes this fail on Windows
+    // with the old code and pass with the fix, without hardcoding either form.
+    const root = repo();
+    expect(isAbsolute(resolve(root))).toBe(true);
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 9' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(applied.ok).toBe(true);
+
+    const manifest = JSON.parse(readFileSync(join(applied.backupDir as string, 'manifest.json'), 'utf8')) as {
+      sourceRoot: string;
+    };
+    expect(isAbsolute(manifest.sourceRoot)).toBe(true);
+    expect(rollback(applied.backupDir as string).restored).toEqual(['app/engine.py']);
   });
 
   it('rolls back to the exact prior bytes, removing created files', () => {
