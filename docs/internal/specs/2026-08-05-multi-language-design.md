@@ -242,6 +242,36 @@ SP1 暴露的"限定调用无 callType"问题,在 SP2 前先查证再决策,结�
 因此 Java/C# 的静态方法调用 → `internal_func`(`new` → `internal_constructor`),
 指向 `<module>.<Type>.<method>`。IR schema 不变,旧 work-dir 不受影响,不新增无人消费的区分。
 
+## SP2 交付与暴露的脊梁局限(2026-08-07)
+
+Java(898 行 / 37 测试)与 C#(~1030 行 / 34 测试)均为 `tier: 'full'`,8 种 callType 全产出,
+`selfAttrs: true`。两者都做到了**完整祖先链解析**(不止直接父类,含接口,带环保护),
+C# 额外解决了 `partial` 类跨文件、`var x = new T()` 推断、属性访问器(`get_X`/`set_X`,仅有函数体时)。
+
+### id / qualname 约定确认(差点被我误"修")
+
+Java 的 `id = com.demo.app.App.App.run` 看似类名重复,实为**符合既有约定**:
+`id = <路径推导 moduleId>.<qualname>`,而 `qualname = <Class>.<member>`。Python 同形
+(`app.queue.TaskQueue.push` / `TaskQueue.push`),只是 Java 文件按类名命名让重复变得显眼。
+改成"用 package 作 moduleId"会破坏 `<module>.<Type>.<member>` 的可分解性,
+而 `graph.ts:synthesizeConstructor` 依赖它为隐式构造函数推导 file。**维持现状。**
+
+### 脊梁局限:两个适配器独立撞上同一处(SP3 前需决策)
+
+`StandardIndexes` 的三张表对"命名空间/包作用域"的语言力不从心,Java 与 C# **各自**建了私有索引:
+
+1. **`typeToModule` 是裸名全局表**(首个声明胜出)。真实 Java/C# 树里 `Config`/`Handler`/`Service`
+   在多个包重复,裸名匹配会静默选错。→ Java 建了 package 感知索引,按 Java 自身次序解析
+   (本文件 → 声明的 package → 单类型 import → on-demand import)。
+2. **`typeMethods` 按 `<module>.<Type>` 建键**,无法表达 C# 的 `partial` 类跨文件拆分,
+   也答不出"哪个文件声明了这个成员"。→ C# 建了 `Type.member → 声明模块` 索引。
+3. **`directoryFunctions` / `moduleFunctions` 对 Java/C# 结构性为空**——这两门语言没有自由函数,
+   而这两张表由 `freeFunctions` 构建。同包/同命名空间的兄弟类型解析用不上它们。
+
+**C++ 有命名空间,SP3 会第三次撞上。** 届时正式评估:给脊梁加一个作用域版
+(`typeToModule` 改按 `<namespace>.<Type>` 建键 + 一个解析钩子),让各语言不必各建一份。
+现在不动——两个样本还不足以定形状,三个才够。
+
 ## 非目标(本子项目不做)
 
 - 不做 Java/C#/C/C++/Ruby/PHP/Swift/Dart/Solidity 的全保真适配器 —— 那是 SP2–SP6。

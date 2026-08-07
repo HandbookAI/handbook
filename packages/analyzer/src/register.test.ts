@@ -247,6 +247,133 @@ function lint {
   analyze: ['scripts/deploy.sh', 'lib/util.bash'],
 };
 
+const JAVA: Fixture = {
+  files: {
+    'app/App.java': `package app;
+
+import engine.Engine;
+import vendor.Widget;
+
+public class App {
+    private Engine engine;
+
+    public App(Engine engine) {
+        this.engine = engine;
+    }
+
+    public void run() {
+        this.prepare();
+        this.engine.spin();
+        Helpers.greet("x");
+        Engine local = new Engine();
+        local.spin();
+        Widget w = new Widget();
+        w.poke();
+        mystery();
+    }
+
+    private void prepare() {}
+}
+`,
+    'app/Helpers.java': `package app;
+
+public class Helpers {
+    public static String greet(String text) {
+        return text;
+    }
+}
+`,
+    'engine/Engine.java': `package engine;
+
+public class Engine {
+    private int rpm;
+
+    public void spin() {
+        this.rpm += 1;
+    }
+}
+`,
+  },
+  analyze: ['app/App.java', 'app/Helpers.java', 'engine/Engine.java'],
+};
+
+const CSHARP: Fixture = {
+  files: {
+    // No `using` names Demo.Engines: App.cs already lives in it, and C# resolves
+    // same-namespace types without one.
+    'src/App.cs': `using System;
+using Demo.Tools;
+
+namespace Demo.Engines
+{
+    public class App : EngineBase
+    {
+        private Engine engine;
+
+        public App(Engine engine)
+        {
+            this.engine = engine;
+        }
+
+        public async Task Run(Engine other)
+        {
+            this.Prepare();
+            this.engine.Spin();
+            other.Spin();
+            var made = new Engine();
+            made.Spin();
+            Helpers.Shout("x");
+            this.Reset();
+            var widget = new Widget();
+            Console.WriteLine("hi");
+            mystery.Poke();
+        }
+
+        private void Prepare()
+        {
+            this.engine = null;
+        }
+    }
+}
+`,
+    'src/Motor.cs': `namespace Demo.Engines;
+
+public class EngineBase
+{
+    protected int cycles;
+
+    public void Reset()
+    {
+        this.cycles = 0;
+    }
+}
+
+public class Engine : EngineBase
+{
+    public int Rpm { get; set; }
+
+    public Engine()
+    {
+        this.Rpm = 0;
+    }
+
+    public void Spin()
+    {
+        this.Rpm = this.Rpm + 1;
+    }
+}
+`,
+    'tools/Text.cs': `namespace Demo.Tools;
+
+public static class Helpers
+{
+    public static string Shout(string text) => text;
+}
+`,
+  },
+  analyze: ['src/App.cs', 'src/Motor.cs', 'tools/Text.cs'],
+};
+
 /**
  * Generic-tier fixtures. Smaller than the full-tier ones above because a generic
  * adapter declares less — but held to the same bidirectional standard: whatever
@@ -371,6 +498,8 @@ const FIXTURES: Record<string, Fixture> = {
   go: GO,
   rust: RUST,
   shell: SHELL,
+  java: JAVA,
+  csharp: CSHARP,
   kotlin: KOTLIN,
   scala: SCALA,
   zig: ZIG,
