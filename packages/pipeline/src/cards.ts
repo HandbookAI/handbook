@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { allFileDescriptors, buildNavPack, type NavFileDescriptor } from '@handbook/analyzer';
 import type { ChatClient } from '@handbook/llm';
 import {
+  PIPELINE_DEFAULTS,
   Progress,
   coerceRole,
   describeJsonShape,
@@ -306,9 +307,9 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     graph,
     sourceRoot,
     work,
-    batchSize = 8,
-    maxWorkers = 12,
-    maxCharsPerFile = 0,
+    batchSize = PIPELINE_DEFAULTS.readBatchSize,
+    maxWorkers = PIPELINE_DEFAULTS.readWorkers,
+    maxCharsPerFile = PIPELINE_DEFAULTS.maxCharsPerFile,
     detail = 'brief',
     chunkChars = 60_000,
     resume = false,

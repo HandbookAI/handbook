@@ -11,6 +11,7 @@
  */
 import { actorCriticLoop, type ChatClient, type CriticRole } from '@handbook/llm';
 import {
+  PIPELINE_DEFAULTS,
   silentLogger,
   type Assignment,
   type CodeGraph,
@@ -344,7 +345,7 @@ export async function synthesizeWithDoctor(
   cards: Record<string, FileCard>,
   options: SynthLoopOptions = {},
 ): Promise<{ skeleton: Skeleton; assignment: Assignment; rounds: number }> {
-  const { maxRounds = 6, lang = 'en', signal } = options;
+  const { maxRounds = PIPELINE_DEFAULTS.maxDoctorRounds, lang = 'en', signal } = options;
   const logger = options.logger ?? silentLogger;
   const assignOptions = {
     batchSize: options.assignBatchSize,

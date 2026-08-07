@@ -6,6 +6,7 @@
 import type { ChatClient } from '@handbook/llm';
 import {
   MissingArtifactError,
+  PIPELINE_DEFAULTS,
   silentLogger,
   withDirLock,
   writeJsonFile,
@@ -200,7 +201,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       graph,
       sourceRoot: options.sourceRoot,
       work,
-      batchSize: options.readBatchSize ?? (options.detail === 'deep' ? 1 : 8),
+      batchSize: options.readBatchSize ?? (options.detail === 'deep' ? 1 : PIPELINE_DEFAULTS.readBatchSize),
       maxWorkers: options.readWorkers,
       maxCharsPerFile: options.maxCharsPerFile,
       detail: options.detail,
