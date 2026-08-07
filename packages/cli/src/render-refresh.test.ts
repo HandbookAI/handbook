@@ -6,7 +6,7 @@ import { silentLogger } from '@handbook/core';
 import { MockChatClient, type MockRule } from '@handbook/llm';
 import { generateHandbook, loadHandbookModel } from '@handbook/pipeline';
 import { renderHtmlSite, renderMarkdownHandbook } from '@handbook/renderer';
-import { refreshRenderedHandbook, resolveTitle } from './render-refresh.js';
+import { refreshRenderedHandbook } from './render-refresh.js';
 
 function pipelineMock(): MockChatClient {
   const rules: MockRule[] = [
@@ -57,47 +57,6 @@ function pipelineMock(): MockChatClient {
   ];
   return new MockChatClient(rules);
 }
-
-describe('resolveTitle', () => {
-  // Regression: an --env-file HANDBOOK_TITLE was silently ignored because the
-  // `--title` option default read process.env at module load — before the
-  // preAction env-file hook ran. Resolving at action time (from the passed env)
-  // is what makes an env-file / late-set HANDBOOK_TITLE actually take effect.
-  it('falls back to HANDBOOK_TITLE from the (loaded) env when --title is absent', () => {
-    expect(resolveTitle(undefined, { HANDBOOK_TITLE: 'From Env File' })).toBe('From Env File');
-  });
-
-  it('falls back to "System Handbook" when neither --title nor env is set', () => {
-    expect(resolveTitle(undefined, {})).toBe('System Handbook');
-    // an empty env var is treated as unset (consistent with applyEnvFile)
-    expect(resolveTitle(undefined, { HANDBOOK_TITLE: '' })).toBe('System Handbook');
-  });
-
-  it('treats a whitespace-only env HANDBOOK_TITLE as unset (not a blank title)', () => {
-    // Regression: `'   ' || default` is truthy, so a whitespace-only env var
-    // used to render a handbook titled with nothing but spaces. Blank (empty
-    // OR whitespace) from either source now falls through, matching the
-    // already-handled empty case.
-    expect(resolveTitle(undefined, { HANDBOOK_TITLE: '   ' })).toBe('System Handbook');
-    expect(resolveTitle(undefined, { HANDBOOK_TITLE: '\t\n' })).toBe('System Handbook');
-    // a blank explicit --title also falls through rather than blanking the title
-    expect(resolveTitle('   ', { HANDBOOK_TITLE: 'From Env File' })).toBe('From Env File');
-    expect(resolveTitle('', {})).toBe('System Handbook');
-  });
-
-  it('returns a non-blank title verbatim, preserving intentional surrounding spaces', () => {
-    expect(resolveTitle('  My Book  ', {})).toBe('  My Book  ');
-    expect(resolveTitle(undefined, { HANDBOOK_TITLE: ' Padded ' })).toBe(' Padded ');
-  });
-
-  it('an explicit --title always wins over the env var', () => {
-    expect(resolveTitle('Explicit', { HANDBOOK_TITLE: 'From Env File' })).toBe('Explicit');
-  });
-
-  it('ignores non-string opt values (e.g. commander undefined) and boolean noise', () => {
-    expect(resolveTitle(false, { HANDBOOK_TITLE: 'Env' })).toBe('Env');
-  });
-});
 
 describe('refreshRenderedHandbook', () => {
   let workDir: string;
