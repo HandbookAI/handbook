@@ -139,7 +139,11 @@ the whole point.
   **refuses at discovery** on such a runtime and names the remedy — `node --liftoff-only`
   — instead of taking your whole run down with it.
 - **Shell**: a script containing a `case` statement is skipped, because that grammar
-  throws.
+  throws — its external scanner imports `env.isalpha`, which the pinned
+  `web-tree-sitter` dynamic linker does not provide. `case` is ubiquitous, so in practice
+  this is most non-trivial scripts: measured on `nvm`, all 6 files and all 122 functions.
+  The adapter is full tier; **shell coverage is not**, until that grammar is fixed
+  upstream. The scan log names the cause rather than leaving you to infer it.
 
 Both are reported through the logger during the scan. Nothing is ever silently dropped.
 

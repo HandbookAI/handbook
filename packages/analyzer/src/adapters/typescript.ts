@@ -208,6 +208,107 @@ function mineParameterProperties(scan: ModuleScan, ctor: Node, className: string
   }
 }
 
+/**
+ * Owner for an assignment-style definition, from the left side's object node.
+ *
+ * `undefined` means "a free function of this module": `exports.f` and
+ * `module.exports.f` are the module's own surface, and callers reach them as
+ * `require('./m').f()` — exactly how a `function f()` declaration is reached.
+ *
+ * `null` means "not something we are willing to name". Deliberately narrow:
+ * a computed key (`obj[k] = fn`), a call result (`factory().f = fn`) or any
+ * deeper expression gets skipped rather than guessed at, because an owner
+ * invented here becomes a call edge that looks exactly as solid as a real one.
+ */
+function assignmentOwner(object: Node): string | undefined | null {
+  if (object.type === 'identifier') {
+    return object.text === 'exports' ? undefined : object.text;
+  }
+  if (object.type === 'member_expression') {
+    const inner = object.childForFieldName('object');
+    const property = object.childForFieldName('property')?.text;
+    if (!inner || !property) return null;
+    // `module.exports.f = fn` — the module's surface, same as `exports.f`.
+    if (inner.type === 'identifier' && inner.text === 'module' && property === 'exports') return undefined;
+    // `Thing.prototype.f = fn` — a method on Thing, which is what every
+    // pre-class JavaScript codebase means by it.
+    if (property === 'prototype' && inner.type === 'identifier') return inner.text;
+  }
+  return null;
+}
+
+/**
+ * Assignment-style function definitions — the dominant shape in JavaScript, and
+ * invisible until now.
+ *
+ * ```js
+ * res.status  = function status(code) {}      // → method `status` on `res`
+ * exports.foo = function foo() {}             // → free function `foo`
+ * module.exports.bar = () => {}               // → free function `bar`
+ * Thing.prototype.baz = function baz() {}     // → method `baz` on `Thing`
+ * ```
+ *
+ * Measured on Express, whose entire public API is written this way: the adapter
+ * found 11 of ~78 functions in `lib/` before this existed, including 2 of the 22
+ * methods in `lib/response.js`. A JavaScript codebase documented from that graph
+ * is not wrong so much as absent.
+ */
+function scanAssignedFunction(scan: ModuleScan, statement: Node, file: string): void {
+  const assignment = statement.namedChildren.find((c) => c?.type === 'assignment_expression');
+  if (!assignment) return;
+  const left = assignment.childForFieldName('left');
+  const right = assignment.childForFieldName('right');
+  if (!left || !right) return;
+  if (right.type !== 'function_expression' && right.type !== 'arrow_function') return;
+  if (left.type !== 'member_expression') return;
+
+  const name = left.childForFieldName('property')?.text;
+  const object = left.childForFieldName('object');
+  if (!name || !object) return;
+
+  const owner = assignmentOwner(object);
+  if (owner === null) return; // not nameable — skipped, never guessed
+
+  if (owner === undefined) {
+    scan.freeFunctions.add(name);
+    recordFunction(scan, { name, className: null, defNode: assignment, fnNode: right, file });
+    return;
+  }
+  if (!scan.ownerMethods.has(owner)) scan.ownerMethods.set(owner, new Set());
+  scan.ownerMethods.get(owner)?.add(name);
+  recordFunction(scan, { name, className: owner, defNode: assignment, fnNode: right, file });
+}
+
+/**
+ * Methods on an object literal bound to a name: `const api = { run() {}, stop: () => {} }`.
+ *
+ * The binding name is the owner, which is both the honest reading and the one a
+ * reader would search for — `api.run` is how every call site spells it.
+ */
+function scanObjectLiteralMethods(scan: ModuleScan, owner: string, object: Node, file: string): void {
+  for (const member of object.namedChildren) {
+    if (!member) continue;
+    let name: string | undefined;
+    let fnNode: Node | undefined;
+    if (member.type === 'method_definition') {
+      name = fieldText(member, 'name');
+      fnNode = member;
+    } else if (member.type === 'pair') {
+      const value = member.childForFieldName('value');
+      if (value && (value.type === 'arrow_function' || value.type === 'function_expression')) {
+        name = member.childForFieldName('key')?.text;
+        fnNode = value;
+      }
+    }
+    if (!name || !fnNode) continue;
+    // A quoted key (`'run': () => {}`) is still that method's name.
+    name = name.replace(/^['"`]|['"`]$/g, '');
+    if (!scan.ownerMethods.has(owner)) scan.ownerMethods.set(owner, new Set());
+    scan.ownerMethods.get(owner)?.add(name);
+    recordFunction(scan, { name, className: owner, defNode: member, fnNode, file });
+  }
+}
+
 /** Core class-ish type from a `type_annotation`, resolved through imports; '' if generic. */
 function typeFromAnnotation(annotation: Node | null, imports: Map<string, string>): string {
   const typeNode = annotation?.namedChildren.find((c) => c !== null);
@@ -476,8 +577,12 @@ const TYPESCRIPT_SPEC: LanguageSpec<ModuleScan> = {
               fnNode: value,
               file,
             });
+          } else if (value.type === 'object') {
+            scanObjectLiteralMethods(scan, nameNode.text, value, file);
           }
         }
+      } else if (decl.type === 'expression_statement') {
+        scanAssignedFunction(scan, decl, file);
       }
     }
     // A `get x()`/`set x()` pair (or any same-name member) shares an id; keep the

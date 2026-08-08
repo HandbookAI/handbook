@@ -78,8 +78,25 @@ passes the same flag for exactly this reason.
 
 ### Shell scripts containing `case` are skipped
 
-That grammar throws on a `case` statement. The affected file is skipped and **reported in
-the scan log** — run with `-v` to see which ones.
+The pinned bash grammar's external scanner imports `env.isalpha`, which
+`web-tree-sitter@0.25.10`'s dynamic linker does not provide, so `parse()` throws on any
+`case` statement — and leaves the parser poisoned, so the adapter discards it and moves on.
+
+<Callout type="warn" title="This is bigger than it sounds">
+  `case` is ubiquitous in shell. Measured on [`nvm`](https://github.com/nvm-sh/nvm): **all
+  6 files and all 122 functions** were skipped. Shell is listed as full tier because the
+  adapter is full tier, but **treat shell coverage as partial** until that grammar is
+  fixed upstream.
+
+The scan log says so explicitly, and names the reason:
+
+```text
+[scan] shell: 5 file(s) the grammar could not parse — the pinned bash grammar throws on
+`case`, which most real scripts use; their functions are absent from this graph, not
+merely unresolved — install.sh, nvm.sh, …
+```
+
+</Callout>
 
 ## What is skipped everywhere
 

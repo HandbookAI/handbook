@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import type { Node } from 'web-tree-sitter';
 import type { AdapterCapabilities, CallEdge } from '@handbook/core';
 import { truncate } from '@handbook/core';
-import { createParser } from '../languages.js';
+import { createParser, freeParsers } from '../languages.js';
 import { dedupeFunctionsById } from '../adapter.js';
 import { collectLineSpans, fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
@@ -499,25 +499,37 @@ const PYTHON_SPEC: LanguageSpec<ModuleScan> = {
   },
 
   async statementSpans(filePath, qualname) {
+    // One parser and one tree per call, both freed in the `finally`. Resync calls
+    // this once per changed function, so a leak here is not theoretical: parsers
+    // reserve slots in a shared WASM function table that the JS garbage
+    // collector cannot reclaim, and enough of them exhaust it outright
+    // (`RuntimeError: table index is out of bounds`). See `freeParsers`.
     const parser = await createParser('python');
     let tree;
     try {
-      tree = parser.parse(readFileSync(filePath, 'utf8'));
-    } catch {
-      return undefined;
-    }
-    if (!tree) return undefined;
-    const leaf = qualname.split('.').pop() ?? qualname;
-    let found: Node | undefined;
-    walk(tree.rootNode, (node) => {
-      if (found) return false;
-      if (node.type === 'function_definition' && fieldText(node, 'name') === leaf) {
-        found = node.childForFieldName('body') ?? undefined;
-        return false;
+      try {
+        tree = parser.parse(readFileSync(filePath, 'utf8'));
+      } catch {
+        return undefined;
       }
-      return undefined;
-    });
-    return found ? collectLineSpans(found) : undefined;
+      if (!tree) return undefined;
+      const leaf = qualname.split('.').pop() ?? qualname;
+      let found: Node | undefined;
+      walk(tree.rootNode, (node) => {
+        if (found) return false;
+        if (node.type === 'function_definition' && fieldText(node, 'name') === leaf) {
+          found = node.childForFieldName('body') ?? undefined;
+          return false;
+        }
+        return undefined;
+      });
+      // Collected BEFORE the tree is freed: the spans are plain numbers, but
+      // `found` points into WASM memory and reading it afterwards is undefined.
+      return found ? collectLineSpans(found) : undefined;
+    } finally {
+      tree?.delete();
+      freeParsers([parser]);
+    }
   },
 };
 

@@ -3,6 +3,13 @@
  * A tiny OpenAI-compatible mock endpoint so the full CLI pipeline can run
  * offline against ANY repository. It answers every pipeline prompt with
  * deterministic, prompt-derived JSON — stages come from the directory rollup,
+ * Every path is captured up to its DOUBLE-SPACE separator, never with `\S+`: a
+ * repository with a space in a path (`Example/iOS Example/AppDelegate.m` — real,
+ * from AFNetworking) otherwise came back truncated at the space, the card no
+ * longer matched a requested file, and the pipeline correctly rejected it. The
+ * visible result was an offline demo reporting 62/80 card coverage on a
+ * repository the real pipeline handles completely — the mock libelling the tool.
+ *
  * assignments from directory matching, so the structure always mirrors the
  * analyzed codebase.
  *
@@ -57,7 +64,7 @@ function respond(prompt) {
       '正在处理一个超长文件',
     )
   ) {
-    const files = [...prompt.matchAll(/### FILE: (\S+)/g)].map((m) => m[1]);
+    const files = [...prompt.matchAll(/^### FILE: (.+?) {2}\(/gm)].map((m) => m[1]);
     const purposes = files.map((file) => {
       const stem = file.split('/').pop();
       const role = /main|index|cli/.test(file) ? 'entrypoint' : /test/.test(file) ? 'test' : 'domain_logic';
@@ -68,7 +75,7 @@ function respond(prompt) {
           `This file (${file}) is one moving part of the system. ` +
           `It cooperates with its neighbors through direct calls and keeps its own state small. ` +
           `(Placeholder prose from the offline mock — use a real LLM endpoint for real narration.)`,
-        functions: [...prompt.matchAll(/^ {2}- (\S+) {2}\(lines \d+-\d+\)/gm)].map((f) => ({
+        functions: [...prompt.matchAll(/^ {2}- (.+?) {2}\(lines \d+-\d+\)/gm)].map((f) => ({
           qualname: f[1],
           purpose: `Performs the ${f[1]} step.`,
           data_flow: 'Takes its inputs, transforms them, returns the result.',
@@ -83,7 +90,7 @@ function respond(prompt) {
 
   // 2b — skeleton synthesis: one stage per directory group from the rollup.
   if (isPrompt(prompt, 'dividing a large codebase into the STAGES', '你在为一个代码库划分系统手册的')) {
-    const dirs = [...prompt.matchAll(/^- (\S+) {2}\(\d+f\)/gm)].map((m) => m[1]);
+    const dirs = [...prompt.matchAll(/^- (.+?) {2}\(\d+f\)/gm)].map((m) => m[1]);
     const groups = [...new Set(dirs.map(groupOfDir))].slice(0, 20);
     const stages = groups.map((dir, i) => ({
       id: `stage-${i + 1}`,
@@ -108,9 +115,9 @@ function respond(prompt) {
   // 2b — file assignment: match a file's directory group against the stage menu.
   if (prompt.includes('assigning whole SOURCE FILES')) {
     const menu = [
-      ...prompt.matchAll(/^- (stage-\d+|crosscut-\d+|\S+) — .*?Everything under (\S+?)\.?$/gm),
+      ...prompt.matchAll(/^- (stage-\d+|crosscut-\d+|\S+) — .*?Everything under (.+?)\.?$/gm),
     ].map((m) => ({ id: m[1], dir: m[2].replace(/\/$/, '') }));
-    const files = [...prompt.matchAll(/^- (\S+) {2}\(/gm)].map((m) => m[1]);
+    const files = [...prompt.matchAll(/^- (.+?) {2}\(/gm)].map((m) => m[1]);
     const fallback = [...prompt.matchAll(/^- (stage-\d+)/gm)][0]?.[1] ?? 'unassigned';
     return {
       assignments: files.map((file) => {
@@ -143,7 +150,7 @@ function respond(prompt) {
 
   // 2c — organization: one group, given order.
   if (isPrompt(prompt, 'organizing the files of ONE stage', '你在把系统手册中一个阶段的文件组织成可读结构')) {
-    const files = [...prompt.matchAll(/^- (\S+?)(?: {2}\[|\n)/gm)].map((m) => m[1]);
+    const files = [...prompt.matchAll(/^- (.+?)(?: {2}\[|$)/gm)].map((m) => m[1]);
     return {
       groups: [{ title: 'Core flow', summary: 'Everything this stage owns, in execution order.', files }],
     };
