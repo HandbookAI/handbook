@@ -1,0 +1,77 @@
+name: Feature request or change proposal
+description: Propose new behaviour, or a change to existing behaviour
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Open this **before** writing a large PR. Anything that changes an artifact schema, a prompt,
+        a CLI flag or a package boundary is a design decision, and the reasoning belongs somewhere it
+        can be read later — see [docs/architecture.md](../blob/main/docs/architecture.md),
+        [docs/formats.md](../blob/main/docs/formats.md) and
+        [docs/prompts.md](../blob/main/docs/prompts.md).
+
+        Requests to support a new language have their own form.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        What are you unable to do today? Describe the situation, not the solution — a well-stated
+        problem often has a better answer than the one you arrived with.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: 'Concretely: the command, flag, artifact field or output you have in mind.'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the toolchain
+      multiple: true
+      options:
+        - 'analyzer — static analysis, call graph, language adapters'
+        - 'pipeline — the generation phases (cards, skeleton, assignment, organization, narration)'
+        - 'llm — client, retries, prompt plumbing'
+        - 'renderer — markdown, HTML site, agent locator index'
+        - 'skill — SKILL.md packaging, coverage hashes, validation'
+        - 'planner — change localization, edit plans'
+        - 'patcher — apply, backups, rollback'
+        - 'resync — incremental roll-forward'
+        - 'studio — the local server'
+        - 'cli — flags, config, env resolution'
+        - 'core — data model, schemas, shared utilities'
+        - 'repo tooling, CI, docs'
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, and what it costs you.
+
+  - type: textarea
+    id: compat
+    attributes:
+      label: Compatibility
+      description: |
+        Would this change an existing artifact's shape, a prompt's output, a CLI default, or a
+        package's exports? Existing work directories and generated skills should keep working, or the
+        proposal needs to say how they migrate.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and discussions
+          required: true
+        - label: I'd be willing to implement this (optional, and not a condition of acceptance)

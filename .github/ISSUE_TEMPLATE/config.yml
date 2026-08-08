@@ -1,0 +1,16 @@
+# Blank issues are off because every field on the forms below exists to save a
+# round trip — the language, the phase and the offline-reproducibility answer are
+# what make a report actionable at all. Questions go to Discussions, and
+# vulnerabilities go to a private advisory, not to the tracker.
+#
+# MAINTAINER: `contact_links` only accepts absolute URLs, so the owner/repo below
+# is a placeholder — replace `ylmin/handbook` with the real slug once the remote
+# exists, and enable Discussions, or GitHub renders these as dead links.
+blank_issues_enabled: false
+contact_links:
+  - name: Question, or "how do I …"
+    url: https://github.com/ylmin/handbook/discussions
+    about: Usage questions and design discussion. Read docs/architecture.md first — it explains why the boundaries sit where they do.
+  - name: Report a security vulnerability
+    url: https://github.com/ylmin/handbook/security/advisories/new
+    about: Private advisory, never a public issue. See SECURITY.md for what is in scope.

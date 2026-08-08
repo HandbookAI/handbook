@@ -1,118 +1,212 @@
 # @handbook/skill
 
-把渲染好的手册目录打包成 agent SKILL —— 一个自包含、可分发的文件夹，含一份 `SKILL.md` 导航说明
-和一棵 `references/` 目录树（总览、索引、寄存器、逐阶段页面、可选的 agent 定位页、可选的覆盖率清单）——
-并对这类包做结构完整性与**新鲜度**校验（对照活的源码）。
-它在工具链里排在 `@handbook/renderer` 之后，产出的东西正是 `@handbook/planner` 挂载为手册的那个包。
+[English](README.md) · **中文**
 
-> 英文版：[README.md](README.md)
+> 把渲染好的手册重新打包成 agent SKILL —— 每个文件带一个内容哈希，
+> 于是「这一页已经落后于代码了」变成一件**能被检测**的事，而不是你吃了亏才发现的事。
 
-## 职责
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fskill-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/skill)
+[![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
 
-- 从渲染好的手册构建 skill 布局：`SKILL.md` 加
-  `references/{overview.md,index.md,registers.md,stages/<sid>.md}`。
-- 生成 `SKILL.md` 的 frontmatter 与正文，教会 agent **何时**该用这个 skill、以及**怎么路由**
-  （索引 → 阶段页 → 寄存器 → 真实源码）。
-- 可选打包 agent 定位页：`agentDir` 指向渲染好的 agent 站点时，`how_to_use.md` 与
-  `disambiguation.md` 会进入 `references/agent/`，路由规程中也会多出一步消歧指引。
-- 可选本地化 `SKILL.md` 正文与合成的兜底散文（`lang: 'zh'`）；frontmatter 永远保持英文（见设计说明）。
-- 可选产出 `references/coverage.json`：文件 → 阶段的映射，附每个文件的 SHA-256 内容哈希，用于漂移检测。
-- 教会消费方 agent **更正协议**：`SKILL.md` 正文（中英文皆有）指导 agent 在发现手册与源码矛盾时，
-  向 skill 根目录的 `corrections.jsonl` 追加 JSON 行上报 —— 而绝不自己改动 `references/`。
-- 校验一个 skill 目录：结构、frontmatter 契约、索引与阶段页的链接一致性、覆盖率哈希的新鲜度、
-  以及待处理/损坏的更正记录。
-- **不**嵌入源码——skill 是一份**位置索引**，永远把 agent 指回真实文件。
-- **不**调用任何 LLM；构建与校验都是确定性的。
+---
 
-## 公开 API
+## 这是什么
 
-**构建**（`build.ts`）
+两个函数，都是确定性的：
 
-- `buildSkill(options: BuildSkillOptions): BuildSkillResult` —— 组装 skill 包（输出目录会被从零重建；
-  唯一的例外是输出根目录里已存在的 `corrections.jsonl` —— 它会被逐字节保留，且构建器永远不会主动创建它）。
-  - `BuildSkillOptions` —— `{ handbookDir, outDir, name, project?, coverage?: { assignment, sourceRoot? }, agentDir?, lang? }`；
-    `name` 是 slug（skill 名字最终是 `<slug>-handbook`），`project` 是散文里用的人类可读名称。
-    - `agentDir?: string` —— 渲染好的 agent 定位站点。当其中同时存在 `how_to_use.md` 和
-      `disambiguation.md` 时，两页会被复制到 `references/agent/`，并且 SKILL.md 的路由规程会多出一步
-      （「词义不明时，查 `references/agent/disambiguation.md`」）。定位页只成对发布，
-      因此 SKILL.md 永远不会指向不存在的文件。不传（或页面缺失）时，输出与不带该选项的构建**逐字节相同**。
-    - `lang?: 'en' | 'zh'`（默认 `'en'`）—— SKILL.md 正文与合成的「无寄存器」兜底页的语言。
-      YAML frontmatter 永远不会被翻译。
-  - `BuildSkillResult` —— `{ outDir, nStagePages, references }`（打包了定位页时 `references` 会列出 `agent/*.md` 条目）。
+- **`buildSkill`** —— 渲染好的手册目录 → 一个自包含、可分享的 SKILL 包。
+- **`validateSkill`** —— SKILL 包 → 一份关于结构、契约、链接一致性和新鲜度的通过/失败报告。
 
-**校验**（`validate.ts`）
+这个包**从不嵌入源码**。它交付的是**地图**，不是**领土**。
 
-- `validateSkill(options: ValidateSkillOptions): ValidationResult` —— 检查这个包。
-  - `ValidateSkillOptions` —— `{ skillDir, sourceRoot? }`；传了 `sourceRoot` 就会重新计算源文件哈希
-    并与 `coverage.json` 比对，找出过期条目与已删除文件。
-  - `ValidationResult` —— `{ ok, errors, warnings }`。
+---
 
-校验项包括：`SKILL.md` 存在且 frontmatter **恰好**只有 `name` + `description`；
-name 是小写连字符 slug；description 同时写明「Use when …」与「Do not use …」；
-正文引用 `references/index.md` 并把 agent 引向真实源码（中英文措辞皆可）；
-`overview.md` / `index.md` / `registers.md` 与 `stages/` 存在；
-每个阶段页都被 `index.md` 链接到；若 `references/agent/` 存在，
-其中的定位页必须非空（否则报错），成对缺一页只给警告——没有该目录的 skill 照常通过校验；
-`coverage.json` 没有重复路径，且（在给了 `sourceRoot` 时）没有过期哈希或已删除文件；
-若 skill 根目录存在 `corrections.jsonl`，每个非空行都必须是带非空 `file` 字符串的 JSON 对象
-（违反者按行号报错），N 条有效记录会给出警告
-`"N unprocessed correction(s) — resync with --corrections to fold them in"` —— 文件不存在时保持沉默。
+## 安装
 
-## 用法
+```bash
+pnpm add @handbook/skill
+```
+
+---
+
+## 快速上手
 
 ```ts
 import { buildSkill, validateSkill } from '@handbook/skill';
-import { WorkDir } from '@handbook/pipeline';
 
-const work = new WorkDir('/path/to/work');
-const result = buildSkill({
-  handbookDir: '/path/to/out', // 渲染好的 markdown 手册
-  outDir: '/path/to/skills/myproject',
-  name: 'myproject',
-  project: 'MyProject',
-  coverage: { assignment: work.loadAssignment(), sourceRoot: '/path/to/project' },
-  agentDir: '/path/to/out/agent', // 可选：随包发布 agent 定位页
-  lang: 'zh', // 可选：中文正文，英文 frontmatter
+buildSkill({
+  handbookDir: 'work/myrepo/handbook',
+  outDir: 'skills/myrepo',
+  name: 'myrepo', // slug → skill 名为 `myrepo-handbook`
+  project: 'MyRepo', // 散文里用的人类可读名
+  agentDir: 'work/myrepo/handbook/agent', // 可选：一并发布定位页
+  coverage: { assignment, sourceRoot: '/path/to/repo' }, // 可选：漂移哈希
+  lang: 'zh',
 });
-console.log(result.nStagePages, result.references);
 
-const check = validateSkill({ skillDir: result.outDir, sourceRoot: '/path/to/project' });
-if (!check.ok) console.error(check.errors);
+const result = validateSkill({ skillDir: 'skills/myrepo', sourceRoot: '/path/to/repo' });
+result.ok;
+result.errors;
+result.warnings;
 ```
 
-## 设计说明
+命令行：
 
-- **覆盖率哈希是漂移信号，不是强制门禁**：`coverage.json` 在构建时记下每个源文件的 SHA-256，
-  之后 `validateSkill`（或任何消费方）可以重算哈希，找出哪些手册页面落后于代码。
-  生成的 `SKILL.md` 明确告诉 agent：过期哈希是**新鲜度警告**，该去读真实源码。
-- **frontmatter 契约是硬校验**（键必须恰好是 `name`+`description`，措辞必须含「Use when」/「Do not use」），
-  因为 agent 运行时是**按 description 做路由**的；一个含糊的描述会静默地毁掉 skill 选择。
-- **即使 `lang: 'zh'`，frontmatter 也保持英文**，理由同上：skill 路由跑在 description 文本上，
-  经过校验的「Use when …」/「Do not use …」措辞正是路由面的一部分——翻译它会在一本好好的中文手册上
-  静默毁掉 skill 选择。本地化只作用于正文（路由规程散文）与合成的兜底页面。
-- **阶段页发现支持两种布局**：有嵌套的 `stages/` 目录时以它为准；
-  否则根目录下每个不属于已知顶层页面（`overview.md`、`index.md`、`register(s).md`……）的 `.md` 都算阶段页——
-  因为阶段 id 是任意的。发现过程**不递归**，所以自带阶段页副本的子站点（`agent/`、`html/`）不会被重复收集。
-- **agent 定位页放在 `references/agent/` 子目录**（而不是 `references/` 根下），
-  这样根级阶段页发现和既有的索引 ↔ 阶段页检查完全不受影响；且只复制两张定位页——
-  agent 站点自己的 `index.md` 和阶段页副本绝不会被二次打包。
-- **刻意零代码嵌入**：校验要求 `SKILL.md` 正文把 agent 引向真实源码，
-  这样代码库演进时这个 skill 依然是诚实的——它从不假装自己是代码的副本。
-- **更正通道把消费方 agent 变成质量传感器**。当 agent 发现手册与真实源码矛盾
-  （「手册说 X 在文件 A，实际在 B」）时，它向 `corrections.jsonl` 追加一行 JSON：
-  `{"file": "<仓库相对源码路径>", "page": "<references/… 页面>", "claim": "<手册怎么说>", "actual": "<源码是什么>", "notedAt": "<ISO 时间戳>"}`
-  —— 只有 `file` 必填。这个文件放在 **skill 根目录**，刻意不放进 `references/`：
-  planner 以只读方式挂载 `references/`，根目录是消费方 agent 唯一可写的位置。
-  生命周期：agent 追加（首次写入时创建文件）→ `validateSkill` 对未处理记录发出警告
-  → resync 消费这些记录、只刷新被点名的文件 → 整批就地归档为
-  `corrections.<stamp>.applied.jsonl`，记录绝不会被二次折入。
-  `buildSkill` 永远不会创建该文件，重建时也绝不覆盖已存在的那份。
+```bash
+handbook skill --handbook work/myrepo/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work work/myrepo --source /path/to/repo \
+    --agent-dir work/myrepo/handbook/agent --lang zh
 
-## 依赖
+handbook validate --skill skills/myrepo --source /path/to/repo
+```
 
-内部：
+---
 
-- `@handbook/core` —— 文件 I/O 辅助（`writeFileAtomic`、`writeJsonFile`、`listFilesRecursive`）、
-  `sha256Hex`、`Assignment` 类型。
+## 一个 SKILL 包长什么样
 
-外部：无。
+```
+skills/myrepo/
+  SKILL.md                    路由指南 —— agent 该怎么用这本手册
+  corrections.jsonl           agent 写回的反馈（由 agent 创建，构建**从不**创建它）
+  references/
+    overview.md               系统的整体形状
+    index.md                  阶段索引 —— 每个子系统 → 它的文件
+    registers.md              跨阶段状态
+    stages/<id>.md            每阶段一页
+    agent/                    how_to_use.md + disambiguation.md   （可选）
+    coverage.json             文件 → 阶段 + 每个文件一个内容哈希   （可选）
+```
+
+### `SKILL.md` —— 契约
+
+frontmatter 是 agent 运行时用来做路由的东西：
+
+```yaml
+---
+name: myrepo-handbook
+description: Navigate the MyRepo codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing MyRepo work that is unfamiliar, spans
+  multiple files, or may affect cross-cutting state. Do not use for tasks unrelated to
+  MyRepo or isolated edits where the exact file is already known and no cross-cutting
+  impact is plausible.
+---
+```
+
+**即使正文是中文，frontmatter 也保持英文。** 这是刻意的：运行时靠匹配 description 文本
+来选择 skill，而经过校验的「Use when … / Do not use …」契约正是这个路由面的一部分。
+翻译它会**悄无声息地弄坏 skill 选择**。传 `lang: 'zh'` 得到的是中文正文 + 英文 frontmatter。
+
+正文是一份带编号的路由规程——读总览、经索引路由、只打开相关阶段页、
+查寄存器里的横切状态、词义不明时去消歧，**然后去读每个被引用路径的真实源码**。
+正文第一行就把话说死：
+
+> 本手册是代码库的**位置索引**，不是代码描述。
+
+### `coverage.json` —— 漂移信号
+
+```json
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+打包时抓下的、每个文件一个哈希。`validateSkill` 会重新哈希活的源码，
+报告每一个自那以后内容变了的文件——**这就是 agent 在拿一个过期断言去行动之前，
+学会「这一页可能落后了」的方式。**
+
+### `corrections.jsonl` —— 反馈通道
+
+当手册的断言与真实源码矛盾时，消费它的 agent 会在 **skill 根目录**追加一行 JSON：
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py"
+}
+```
+
+只有 `file` 是必填。它放在根目录而不是 `references/` 下，因为 planner 把那棵树**只读挂载**。
+之后 `handbook resync --corrections <file>` 会**只刷新其中点名的那些文件**。
+
+**重新打包会保留它。** 构建会先清空 `outDir`，所以待处理的 corrections 会跨过这次清空被暂存起来——
+**还没被 resync 消费的记录，不能被一次重新打包毁掉。**
+
+---
+
+## 构建强制的安全规则
+
+- **它拒绝吃掉自己的输入。** 如果 `outDir` **就是**手册目录，或者手册在它里面，
+  构建会中止——因为构建以清空 `outDir` 开始，那会删掉正要打包的东西，然后悄悄产出一个空 skill。
+- **定位页要么成对发布，要么都不发。** 只有 `agent/how_to_use.md` 和
+  `agent/disambiguation.md` 都存在时才复制，SKILL.md 的路由规程也只有在这时才多出消歧步骤。
+  **`SKILL.md` 绝不能路由到一个不存在的文件。**
+- **寄存器页永远存在。** 零寄存器的手册不会渲染寄存器页；skill 仍然会写一个说明「没有」的页面，
+  因为**稳定的引用布局是契约的一部分**。
+- **阶段页发现不看名字形状。** 阶段 id 是任意的（LLM 或用户写的），
+  所以扁平布局下会取「不是已知顶层页」的每一个根级 `.md`——
+  按名字形状过滤会悄悄丢页。它刻意**不递归**：`agent/` 和 `html/` 里有各自的副本。
+
+---
+
+## 校验都查什么
+
+| 检查                                                      | 严重程度              |
+| --------------------------------------------------------- | --------------------- |
+| `SKILL.md` 存在且有 YAML frontmatter                      | error                 |
+| `name` 是合法的小写连字符 slug                            | error                 |
+| `description` 含「Use when … / Do not use …」契约         | error                 |
+| `references/overview.md`、`index.md`、`registers.md` 齐备 | error                 |
+| `references/stages/` 下至少有一页                         | error                 |
+| `index.md` 链接到的每个阶段页都存在                       | error                 |
+| 每个阶段页都能从索引到达                                  | warning               |
+| `coverage.json` 能解析且符合 schema                       | error                 |
+| 自打包以来哈希变了的源文件                                | warning（逐路径列出） |
+| agent 定位页只有一半                                      | warning               |
+| `corrections.jsonl` 每行都能解析                          | warning               |
+
+`handbook validate` 把 warning 和 error 写到 stderr，并在**失败时退出码 `2`**，
+所以可以直接放进 CI。
+
+它在该宽容的地方也宽容：接受开头的 UTF-8 BOM 和 CRLF 换行，
+因为在 Windows 上 checkout 出来的 `SKILL.md` 依然是合法的。
+
+---
+
+## API
+
+```ts
+buildSkill(options: BuildSkillOptions): BuildSkillResult
+validateSkill(options: ValidateSkillOptions): ValidationResult
+
+interface BuildSkillOptions {
+  handbookDir: string;
+  outDir: string;
+  name: string;                 // slug；产出 `<slug>-handbook`
+  project?: string;             // 散文里的人类可读名，默认取 `name`
+  coverage?: { assignment: Assignment; sourceRoot?: string };
+  agentDir?: string;
+  lang?: 'en' | 'zh';           // 正文语言；frontmatter 保持英文
+}
+
+interface ValidationResult { ok: boolean; errors: string[]; warnings: string[] }
+```
+
+---
+
+## 测试
+
+```bash
+pnpm --filter @handbook/skill test
+```
+
+覆盖两种布局（扁平与嵌套 `stages/`）、缺页、outDir 吃掉输入的拒绝、
+重新打包时 corrections 的保留、BOM/CRLF 容忍，以及哈希漂移检测。
+
+---
+
+[Handbook](../../README.zh-CN.md) 的一部分 · MIT

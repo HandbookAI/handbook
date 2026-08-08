@@ -1,100 +1,252 @@
 # @handbook/analyzer
 
-Multi-language static call-graph extraction, entirely LLM-free. Language adapters parse source files with tree-sitter (WASM) into the shared IR from `@handbook/core`; the graph builder assembles that IR into the persisted `graph.json` (plus CSV/DOT/dropped-calls artifacts) that phase 1 of the pipeline writes and every later phase consumes. It also derives the "navigation pack" — a deterministic orientation summary that feeds skeleton synthesis and file assignment.
+**English** · [中文](README.zh-CN.md)
 
-> 中文版：[README.zh-CN.md](README.zh-CN.md)
+> Point it at a directory. Get back a typed call graph. No LLM, no network, no native
+> compilation — the parsers are WebAssembly.
 
-## Responsibilities
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fanalyzer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/analyzer)
+[![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
+[![languages](https://img.shields.io/badge/languages-18-a78bfa?style=flat-square)](#supported-languages)
 
-- Define the `LanguageAdapter` contract and the adapter registry (`registerAdapter`, `getAdapter`, `adapterForFile`, `discoverAll`).
-- Ship the built-in adapters. Hand-written, full fidelity: Python, TypeScript (`.ts`/`.tsx` plus
-  JavaScript `.js`/`.jsx`/`.mjs`/`.cjs`), Go, Rust, Java, C#, C/C++ (`.c`/`.h`/`.cpp`/… — one
-  adapter, since the C++ grammar parses C while the C grammar fails on C++). Config-driven,
-  generic tier: Kotlin, Scala, Zig, Objective-C, OCaml, plus Shell. Each declares an
-  `AdapterCapabilities` saying which call types it can actually produce.
-- Build the degree-annotated `CodeGraph` from adapter output, synthesizing nodes referenced by edges but never defined (implicit constructors, boundary symbols).
-- Partition unresolved edges out of the graph into a categorized `dropped-calls.json` instead of polluting it.
-- Emit the four phase-1 artifacts (`graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`) and the `NavPack` orientation summary.
-- Does NOT call any LLM and does NOT know about handbook stages, cards, or the work-directory layout.
-- Does NOT perform full type inference — resolution is index-based and best-effort; anything unresolvable becomes a categorized dropped edge, never a guessed edge.
+---
 
-## Public API
+## What it is
 
-Adapter contract and registry (`adapter.ts`):
+`@handbook/analyzer` is the static-analysis engine of the [Handbook](../../README.md)
+toolchain — and it is genuinely useful on its own. Give it a source root and it returns
+the same language-agnostic IR no matter what the code is written in:
 
-- `LanguageAdapter` — `{ name, extensions, discover(sourceRoot), analyze(files, sourceRoot), statementSpans?(filePath, qualname) }`.
-- `COMMON_SKIP_DIRS` — directory names every adapter's discovery skips.
-- `discoverByExtension(sourceRoot, extensions, extraSkipDirs?, filter?)` — default discovery helper.
-- `registerAdapter(name, factory)` / `getAdapter(name)` / `availableLanguages()` — lazy-instantiating registry.
-- `adapterForFile(relPath)` — owning adapter by longest-extension match.
-- `discoverAll(sourceRoot)` — per-language file lists; each file claimed by at most one adapter.
-- `registerBuiltinAdapters()` — register every built-in once at startup.
+- every **function and method**, with its file, line range, signature, decorators,
+  parameter types, and the instance attributes it reads and writes;
+- every **call edge**, resolved through `self`/`this`, attribute types, parameter type
+  annotations, imports, and inheritance;
+- every **boundary call** — where your code leaves for a third-party library;
+- every **unresolved call**, categorized and quarantined into its own artifact rather
+  than guessed at.
 
-Adapters implement `LanguageAdapter`; the hand-written ones are built on `spine.ts` (shared
-driver, standard cross-module indexes, stateless resolution helpers) and the generic-tier ones
-come from `generic.ts` plus a declarative spec. Only `PythonAdapter` implements
-`statementSpans` (legal snap boundaries for resync). Run `handbook analyze --help` for the
-authoritative list — the CLI derives it from the registry.
+Because it is deterministic, the same input always produces the same graph. You can diff
+two graphs, commit one, or assert on one in a test.
 
-Graph building (`graph.ts`):
+---
 
-- `buildGraph(analysis, options): BuildGraphResult` — with `BuildGraphOptions` (`sourceRoot`, `scannedFiles`, `language`, `defaultExt?`, `now?`) and `BuildGraphResult` (`graph`, `dropped`, `stats`).
-- `writeGraphArtifacts(result, outDir)` — persist all four artifacts.
-- `functionsCsv(graph)` / `graphDot(graph)` — CSV inventory and Graphviz rendering.
-- `synthesizeBoundary(id)` — `boundary:<qualname>` id to a `BoundaryNode` with best-effort module/class split.
-- `categorizeDropped(calleeId)` — bucket an unresolved callee (`builtin`, `self_attr_unknown`, `local_var_method`, …).
+## Install
 
-Navigation pack (`navpack.ts`):
+```bash
+pnpm add @handbook/analyzer
+```
 
-- `buildNavPack(graph, options?): NavPack` — directory map, entry-point candidates, fan-out top-K, external subsystems; `NavPackOptions` (`fanOutTopK?`, `sampleFnsPerFile?`), `NavFileDescriptor`.
-- `allFileDescriptors(graph, nav)` — nav files widened with function-less scanned files (the 1:1 file set for cards/assignment).
-- `renderOrientation(nav, options?)` — bounded plain-text orientation block for prompts; `OrientationOptions`.
+No post-install compilation step. Grammars ship as `.wasm` files.
 
-tree-sitter runtime (`languages.ts`):
+---
 
-- `loadLanguage(grammar)` / `createParser(grammar)` — lazy, cached WASM grammar loading by `tree-sitter-wasms` name.
-
-## Usage
+## Quick start
 
 ```ts
 import {
   registerBuiltinAdapters,
+  discoverAll,
   getAdapter,
   buildGraph,
   writeGraphArtifacts,
-  buildNavPack,
-  renderOrientation,
 } from '@handbook/analyzer';
 
 registerBuiltinAdapters();
-const adapter = getAdapter('typescript');
-const sourceRoot = '/path/to/project';
-const files = adapter.discover(sourceRoot);
-const analysis = await adapter.analyze(files, sourceRoot);
 
-const result = buildGraph(analysis, { sourceRoot, scannedFiles: files, language: 'typescript' });
-writeGraphArtifacts(result, '/path/to/work/phase1');
+const root = '/path/to/repo';
+const byLanguage = discoverAll(root); // { typescript: [...], python: [...] }
 
-const nav = buildNavPack(result.graph);
-console.log(renderOrientation(nav));
-console.log(result.stats); // { functions, edgesKept, edgesDropped, internalNodes, boundaryNodes }
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, root));
+}
+
+const result = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  { sourceRoot: root, scannedFiles: Object.values(byLanguage).flat(), language: 'multi', defaultExt: '' },
+);
+
+console.log(result.stats); // { functions, edgesKept, edgesDropped }
+writeGraphArtifacts(result, './out');
 ```
+
+Or, from the command line — same thing, one line:
+
+```bash
+handbook analyze --source /path/to/repo --work work/myrepo
+```
+
+### What lands on disk
+
+| File                 | Contents                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `graph.json`         | The graph: metadata, degree-annotated nodes, edges, per-class self-attribute index |
+| `functions.csv`      | Every function, flat — for `grep`, a spreadsheet, or a quick sanity check          |
+| `graph.dot`          | Graphviz. `dot -Tsvg graph.dot -o graph.svg`                                       |
+| `dropped-calls.json` | Unresolved calls by category, with the raw call text and line                      |
+
+---
+
+## Supported languages
+
+**Full tier** — hand-written adapters. Type-driven call resolution, inherited members,
+per-attribute state tracking, statement spans:
+
+| Language                      | Extensions                                               |
+| ----------------------------- | -------------------------------------------------------- |
+| Python                        | `.py`                                                    |
+| TypeScript _(and JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  |
+| Go                            | `.go`                                                    |
+| Rust                          | `.rs`                                                    |
+| Java                          | `.java`                                                  |
+| C#                            | `.cs`                                                    |
+| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` |
+| Ruby                          | `.rb` `.rake` `.gemspec`                                 |
+| PHP                           | `.php` `.phtml`                                          |
+| Swift                         | `.swift`                                                 |
+| Dart                          | `.dart`                                                  |
+| Solidity                      | `.sol`                                                   |
+| Shell                         | `.sh` `.bash`                                            |
+
+**Generic tier** — one config-driven engine, one declarative spec per language. Exact
+file and function inventory; call relations are best-effort:
+
+Kotlin (`.kt` `.kts`) · Scala (`.scala` `.sc`) · Zig (`.zig`) · Objective-C (`.m`) ·
+OCaml (`.ml`)
+
+### Fidelity is declared, and disclosed downstream
+
+Every adapter must publish what it can actually deliver:
+
+```ts
+readonly capabilities: AdapterCapabilities = {
+  tier: 'full',
+  callTypes: ['self_method', 'self_attr_method', 'param_method', 'internal_func', /* … */],
+  selfAttrs: true,
+  statementSpans: true,
+};
+```
+
+Phase 1 records this **per language** in the graph metadata, and the renderers surface it
+in the handbook overview. Both tiers produce identical-looking IR, so without this a
+reader would take a generic-tier call edge for a Python-grade fact. Saying so out loud is
+the whole point.
+
+### Two honest caveats
+
+- **Swift**: the bundled grammar aborts the process on V8 ≥ 13 (measured fatal 5/5 on
+  Node 24, fine on Node 21, and unique to that one grammar). The adapter therefore
+  **refuses at discovery** on such a runtime and names the remedy — `node --liftoff-only`
+  — instead of taking your whole run down with it.
+- **Shell**: a script containing a `case` statement is skipped, because that grammar
+  throws.
+
+Both are reported through the logger during the scan. Nothing is ever silently dropped.
+
+---
+
+## API
+
+### Adapters and the registry
+
+```ts
+registerBuiltinAdapters(): void            // idempotent; call once at startup
+registerAdapter(name, factory): void       // register your own
+getAdapter(name): LanguageAdapter          // throws, naming every registered language
+availableLanguages(): string[]
+adapterForFile(relPath): LanguageAdapter | undefined   // longest-extension match wins
+discoverAll(root, logger?): Record<string, string[]>   // first adapter to claim a file keeps it
+discoverByExtension(root, exts, extraSkipDirs?, filter?): string[]
+```
+
+`COMMON_SKIP_DIRS` is the shared skip list every adapter honours: `.git`, `node_modules`,
+`vendor`, `target`, `build`, `dist`, `out`, `__pycache__`, `.venv`, `.idea`, `.vscode`,
+`.handbook-patches`, and friends.
+
+### The adapter contract
+
+```ts
+interface LanguageAdapter {
+  readonly name: string;
+  readonly extensions: readonly string[];
+  readonly capabilities: AdapterCapabilities; // required — see above
+  discover(sourceRoot: string): string[];
+  analyze(files, sourceRoot, options?): Promise<ModuleAnalysis>;
+  statementSpans?(filePath, qualname): Promise<Array<[number, number]> | undefined>;
+}
+```
+
+That is the entire surface. Implement it, `registerAdapter` it, and every downstream
+phase works unchanged.
+
+### Graph building
+
+```ts
+buildGraph(analysis, options): BuildGraphResult
+  // partitions kept vs dropped edges, annotates in/out degree,
+  // synthesizes nodes for referenced-but-undefined constructors
+writeGraphArtifacts(result, outDir): void
+functionsCsv(graph): string
+graphDot(graph): string
+categorizeDropped(calleeId): string
+dedupeFunctionsById(functions): FunctionNode[]   // last definition wins
+```
+
+### Navigation pack
+
+```ts
+buildNavPack(graph, options?): NavPack
+renderOrientation(nav, options?): string
+allFileDescriptors(graph, nav): NavFileDescriptor[]
+```
+
+A compact, LLM-friendly summary of a graph — entry points, directory rollups, hub
+functions — used by the pipeline to synthesize a skeleton without shipping the whole graph
+into a prompt.
+
+---
+
+## Adding a language
+
+**Generic tier** (usually enough): add one `GenericLanguageSpec` to `GENERIC_LANGUAGES` in
+`src/generic.ts` — grammar name, extensions, the node types that mean "function",
+"class", "call", and how a qualified name is built. No new dependency: the grammars for
+the languages listed above already ship with `tree-sitter-wasms`.
+
+**Full tier**: implement `LanguageAdapter` under `src/adapters/`, declare honest
+`capabilities`, and register it in `src/register.ts`.
+
+Either way, add the display name to the docs drift test — it fails the build if a
+registered language is missing from the READMEs, which is exactly how the previous list
+managed to drift six languages behind.
+
+---
 
 ## Design notes
 
-- WASM-only tree-sitter: grammars come from the `tree-sitter-wasms` package and load via `web-tree-sitter`, so no native compilation or node-gyp is ever required; the runtime and each grammar are initialized lazily and cached.
-- Adding a language is just implementing `LanguageAdapter` and calling `registerAdapter` — the graph builder, dropped-call categorization, and nav pack are identical across languages.
-- Adapters emit ALL edges including unresolved ones; `buildGraph` partitions `unresolved` edges into `dropped-calls.json` with per-category counts, keeping the graph honest without losing evidence.
-- Edge endpoints that were never defined in source are synthesized (`synthetic: true`, line numbers 0) rather than dropped, so degree counts and traversals stay consistent.
-- `discoverAll` claims each file for the first adapter that discovers it and swallows individual adapter failures, so one broken grammar cannot break multi-language scans.
+- **Two-pass analysis.** Pass 1 collects definitions and builds type indexes; pass 2 walks
+  call sites with those indexes in hand. That is what makes `self.attr.method()` and
+  `param.method()` resolvable at all.
+- **Unresolved is a category, not a guess.** A call the analyzer cannot pin down goes to
+  `dropped-calls.json` with its raw text and line. Guessing would poison every downstream
+  consumer with edges that look exactly as trustworthy as the real ones.
+- **A broken adapter must not break discovery.** `discoverAll` catches per-adapter
+  failures, logs them, and carries on with the rest.
+- **`web-tree-sitter` is pinned to `~0.25.10`.** 0.26 changed the WASM ABI and fails to
+  load the bundled grammars. The pin is deliberate; do not loosen it.
 
-## Dependencies
+---
 
-Internal:
+## Testing
 
-- `@handbook/core` — the IR types/schemas, `listFilesRecursive`, `truncate`, atomic JSON writes.
+```bash
+pnpm --filter @handbook/analyzer test
+```
 
-External:
+Every test parses real source fixtures — no mocked parse trees, because a mocked tree
+proves nothing about a grammar.
 
-- `web-tree-sitter` — the tree-sitter runtime (parser + language loading) compiled to WASM.
-- `tree-sitter-wasms` — prebuilt grammar `.wasm` binaries for python/typescript/tsx/go/rust/bash.
+---
+
+Part of [Handbook](../../README.md) · [Architecture](../../docs/architecture.md) ·
+[Artifact formats](../../docs/formats.md) · MIT

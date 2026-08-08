@@ -1,75 +1,227 @@
 # @handbook/skill
 
-Packages a rendered handbook directory as an agent SKILL — a self-contained, shareable folder with a `SKILL.md` navigation guide and a `references/` tree (overview, index, registers, per-stage pages, optional agent locator pages, optional coverage manifest) — and validates such packages for structural integrity and freshness against the live source. It sits after `@handbook/renderer` in the toolchain and produces the artifact that `@handbook/planner` mounts as its handbook.
+**English** · [中文](README.zh-CN.md)
 
-> 中文版：[README.zh-CN.md](README.zh-CN.md)
+> Repackage a rendered handbook as an agent SKILL — with a content hash per file, so
+> "this page has fallen behind the code" becomes something you can _detect_ instead of
+> something you discover the hard way.
 
-## Responsibilities
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fskill-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/skill)
+[![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 
-- Build the skill layout from a rendered handbook: `SKILL.md` plus `references/{overview.md,index.md,registers.md,stages/<sid>.md}`.
-- Generate `SKILL.md` frontmatter and body that teach an agent when to use the skill and how to route (index → stage pages → registers → real source).
-- Optionally package the agent locator pages: with `agentDir` pointing at a rendered agent site, `how_to_use.md` and `disambiguation.md` ship under `references/agent/` and the routing protocol gains a disambiguation step.
-- Optionally localize the `SKILL.md` body and synthetic fallback prose (`lang: 'zh'`); the frontmatter always stays English (see Design notes).
-- Optionally emit `references/coverage.json`: file → stage mapping with per-file SHA-256 content hashes for drift detection.
-- Teach the consuming agent the **corrections protocol**: the `SKILL.md` body (both languages) instructs agents to report handbook ↔ source contradictions by appending JSON lines to `corrections.jsonl` at the skill root — never by editing `references/` themselves.
-- Validate a skill directory: structure, frontmatter contract, index ↔ stage-page link consistency, coverage-hash freshness, and pending/malformed correction records.
-- Does NOT embed source code — the skill is a location index that always points agents back to the real files.
-- Does NOT call any LLM; both building and validation are deterministic.
+---
 
-## Public API
+## What it is
 
-Build (`build.ts`):
+Two functions, both deterministic:
 
-- `buildSkill(options: BuildSkillOptions): BuildSkillResult` — assemble the skill package (the output directory is recreated from scratch; an existing `corrections.jsonl` at the output root is the one exception — it is preserved byte-for-byte, and the builder never creates it).
-  - `BuildSkillOptions` — `{ handbookDir, outDir, name, project?, coverage?: { assignment, sourceRoot? }, agentDir?, lang? }`; `name` is the slug (skill name becomes `<slug>-handbook`), `project` the human name used in prose.
-    - `agentDir?: string` — a rendered agent locator site. When it contains both `how_to_use.md` and `disambiguation.md`, they are copied to `references/agent/` and the SKILL.md routing protocol gains a step ("when a term is ambiguous, check `references/agent/disambiguation.md`"). Locator pages ship only as a pair, so SKILL.md never routes to a missing file. Omitted (or pages missing): output is byte-identical to a build without the option.
-    - `lang?: 'en' | 'zh'` (default `'en'`) — language of the SKILL.md body and the synthetic no-registers fallback. The YAML frontmatter is never translated.
-  - `BuildSkillResult` — `{ outDir, nStagePages, references }` (`references` lists `agent/*.md` entries when packaged).
+- **`buildSkill`** — a rendered handbook directory → a self-contained, shareable SKILL
+  package.
+- **`validateSkill`** — a SKILL package → a pass/fail report on structure, contract, link
+  consistency and freshness.
 
-Validate (`validate.ts`):
+The package never embeds source code. It ships the _map_, not the territory.
 
-- `validateSkill(options: ValidateSkillOptions): ValidationResult` — check the package.
-  - `ValidateSkillOptions` — `{ skillDir, sourceRoot? }`; passing `sourceRoot` re-hashes source files against `coverage.json` to detect stale or deleted entries.
-  - `ValidationResult` — `{ ok, errors, warnings }`.
+---
 
-Validation checks include: `SKILL.md` exists with exactly `name` + `description` frontmatter, the name is a lowercase-hyphen slug, the description states both "Use when …" and "Do not use …", the body references `references/index.md` and directs agents to the actual source (English or Chinese phrasing); `overview.md`/`index.md`/`registers.md` and `stages/` exist; every stage page is linked from `index.md`; if `references/agent/` exists, present locator pages must be non-empty (error) and a missing half of the pair is a warning — skills without the directory validate clean; `coverage.json` has no duplicate paths and (with `sourceRoot`) no stale hashes or deleted files; if `corrections.jsonl` exists at the skill root, every non-blank line must be a JSON object with a non-empty `file` string (violations error with their line number) and N valid records warn `"N unprocessed correction(s) — resync with --corrections to fold them in"` — an absent file is silent.
+## Install
 
-## Usage
+```bash
+pnpm add @handbook/skill
+```
+
+---
+
+## Quick start
 
 ```ts
 import { buildSkill, validateSkill } from '@handbook/skill';
-import { WorkDir } from '@handbook/pipeline';
 
-const work = new WorkDir('/path/to/work');
-const result = buildSkill({
-  handbookDir: '/path/to/out', // rendered markdown handbook
-  outDir: '/path/to/skills/myproject',
-  name: 'myproject',
-  project: 'MyProject',
-  coverage: { assignment: work.loadAssignment(), sourceRoot: '/path/to/project' },
-  agentDir: '/path/to/out/agent', // optional: ship the agent locator pages
-  lang: 'zh', // optional: Chinese body, English frontmatter
+buildSkill({
+  handbookDir: 'work/myrepo/handbook',
+  outDir: 'skills/myrepo',
+  name: 'myrepo', // slug → skill name `myrepo-handbook`
+  project: 'MyRepo', // human name used in prose
+  agentDir: 'work/myrepo/handbook/agent', // optional: ship the locator pages
+  coverage: { assignment, sourceRoot: '/path/to/repo' }, // optional: drift hashes
+  lang: 'en',
 });
-console.log(result.nStagePages, result.references);
 
-const check = validateSkill({ skillDir: result.outDir, sourceRoot: '/path/to/project' });
-if (!check.ok) console.error(check.errors);
+const result = validateSkill({ skillDir: 'skills/myrepo', sourceRoot: '/path/to/repo' });
+result.ok;
+result.errors;
+result.warnings;
 ```
 
-## Design notes
+From the CLI:
 
-- Coverage hashes are drift signals, not enforcement: `coverage.json` records a SHA-256 per source file at build time, and `validateSkill` (or any consumer) can re-hash later to detect which handbook pages lag the code — the generated `SKILL.md` explicitly tells agents to treat stale hashes as freshness warnings.
-- The frontmatter contract is validated hard (exact `name`+`description` keys, "Use when"/"Do not use" phrasing) because agent runtimes route on the description; a vague description silently breaks skill selection.
-- The frontmatter stays English even with `lang: 'zh'` for the same reason: skill routing runs on the description text, and the validated "Use when …" / "Do not use …" phrasing is part of that routing surface — translating it would silently break skill selection over a perfectly good Chinese handbook. Only the body (routing protocol prose) and synthetic fallback pages are localized.
-- Stage-page discovery supports two layouts — a nested `stages/` directory wins; otherwise every root-level `.md` that is not a known top-level page (`overview.md`, `index.md`, `register(s).md`, …) is a stage page, since stage ids are arbitrary. Discovery never recurses, so sub-sites (`agent/`, `html/`) carrying their own stage-page copies are never double-collected.
-- The agent locator pages live in a `references/agent/` subdirectory (not at the `references/` root) so root-level stage-page discovery and the existing index ↔ stage-page checks are untouched; only the two locator pages are copied — the agent site's own `index.md` and stage-page copies never ship twice.
-- Deliberately zero code embedding: validation requires the `SKILL.md` body to direct agents to the real source, keeping the skill honest as the codebase evolves.
-- The corrections channel turns consuming agents into quality sensors. When an agent finds the handbook contradicting the real source ("the handbook says X is in file A; it is actually in B"), it appends one JSON line to `corrections.jsonl`: `{"file": "<repo-relative source path>", "page": "<references/… page>", "claim": "<what the handbook said>", "actual": "<what the source shows>", "notedAt": "<ISO timestamp>"}` — only `file` is required. The file lives at the **skill root**, deliberately not under `references/`: planners mount `references/` read-only, so the root is the only place a consuming agent can write. Lifecycle: the agent appends (creating the file on first write) → `validateSkill` warns about unprocessed records → a resync run consumes them to refresh exactly the named files → the batch is archived next to the skill as `corrections.<stamp>.applied.jsonl`, so records are never folded in twice. `buildSkill` never creates the file and never overwrites an existing one on rebuild.
+```bash
+handbook skill --handbook work/myrepo/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work work/myrepo --source /path/to/repo \
+    --agent-dir work/myrepo/handbook/agent
 
-## Dependencies
+handbook validate --skill skills/myrepo --source /path/to/repo
+```
 
-Internal:
+---
 
-- `@handbook/core` — file I/O helpers (`writeFileAtomic`, `writeJsonFile`, `listFilesRecursive`), `sha256Hex`, the `Assignment` type.
+## What a SKILL package looks like
 
-External: none.
+```
+skills/myrepo/
+  SKILL.md                    the routing guide — how an agent should use this
+  corrections.jsonl           agent-written feedback (created by the agent, never by the build)
+  references/
+    overview.md               the system's shape
+    index.md                  the stage index — every subsystem → its files
+    registers.md              cross-stage state
+    stages/<id>.md            one page per stage
+    agent/                    how_to_use.md + disambiguation.md   (optional)
+    coverage.json             file → stage + a content hash each   (optional)
+```
+
+### `SKILL.md` — the contract
+
+The frontmatter is what an agent runtime routes on:
+
+```yaml
+---
+name: myrepo-handbook
+description: Navigate the MyRepo codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing MyRepo work that is unfamiliar, spans
+  multiple files, or may affect cross-cutting state. Do not use for tasks unrelated to
+  MyRepo or isolated edits where the exact file is already known and no cross-cutting
+  impact is plausible.
+---
+```
+
+**The frontmatter stays English even when the body is Chinese.** That is deliberate:
+runtimes select skills by matching against the description text, and the validated
+"Use when … / Do not use …" contract is part of that routing surface. Translating it
+would silently break selection. Pass `lang: 'zh'` and you get a Chinese body with English
+frontmatter.
+
+The body is a numbered routing protocol — read the overview, route through the index,
+open only the relevant stage pages, check registers for cross-cutting state, disambiguate
+when a term is ambiguous, and **then read the real source at every cited path**. The first
+line of the body says it outright:
+
+> This handbook is a **location index** for the codebase, not a code description.
+
+### `coverage.json` — the drift signal
+
+```json
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+A hash per file, captured at build time. `validateSkill` re-hashes the live source and
+reports every file whose content moved since — which is how an agent learns _"this page
+may lag the code"_ before it acts on a stale claim.
+
+### `corrections.jsonl` — the feedback channel
+
+When a handbook claim contradicts the real source, the consuming agent appends one line
+of JSON at the **skill root**:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py",
+  "notedAt": "2026-08-04T12:00:00Z"
+}
+```
+
+Only `file` is required. It lives at the root, never under `references/`, because
+planners mount that tree read-only. `handbook resync --corrections <file>` then refreshes
+**exactly the files named in it**.
+
+**A rebuild preserves it.** The build wipes `outDir` first, so pending corrections are
+stashed across the clean — records that have not been resynced yet must not be destroyed
+by a re-package.
+
+---
+
+## Safety rules the build enforces
+
+- **It refuses to eat its own input.** If `outDir` _is_ the handbook directory, or the
+  handbook sits inside it, the build aborts — because it starts by wiping `outDir`, and
+  that would delete the very thing being packaged and then quietly emit an empty skill.
+- **Locator pages ship as a pair or not at all.** `agent/how_to_use.md` and
+  `agent/disambiguation.md` are only copied when both exist, and the SKILL.md routing
+  protocol only gains its disambiguation step when they do. `SKILL.md` must never route to
+  a file that is not there.
+- **The register page always exists.** A handbook with zero registers renders no register
+  page; the skill still ships one saying so, because a stable reference layout is part of
+  the contract.
+- **Stage-page discovery is shape-agnostic.** Stage ids are arbitrary (LLM- or
+  user-authored), so the flat-layout scan takes every root-level `.md` that is not a known
+  top-level page — a name-shape filter would silently drop pages. It deliberately does not
+  recurse: `agent/` and `html/` carry their own copies.
+
+---
+
+## What validation checks
+
+| Check                                                            | Severity                 |
+| ---------------------------------------------------------------- | ------------------------ |
+| `SKILL.md` exists and has YAML frontmatter                       | error                    |
+| `name` is a valid lowercase-hyphen slug                          | error                    |
+| `description` contains the "Use when … / Do not use …" contract  | error                    |
+| `references/overview.md`, `index.md`, `registers.md` all present | error                    |
+| At least one stage page under `references/stages/`               | error                    |
+| Every stage page linked from `index.md` exists                   | error                    |
+| Every stage page is reachable from the index                     | warning                  |
+| `coverage.json` parses and matches its schema                    | error                    |
+| Source files whose hash moved since packaging                    | warning (listed by path) |
+| Only half of the agent locator pair present                      | warning                  |
+| `corrections.jsonl` lines parse                                  | warning                  |
+
+`handbook validate` writes warnings and errors to stderr and **exits `2` on failure**, so
+it drops straight into CI.
+
+It is also tolerant where tolerance is correct: a leading UTF-8 BOM and CRLF line endings
+are accepted, because a `SKILL.md` checked out on Windows is still a valid one.
+
+---
+
+## API
+
+```ts
+buildSkill(options: BuildSkillOptions): BuildSkillResult
+validateSkill(options: ValidateSkillOptions): ValidationResult
+
+interface BuildSkillOptions {
+  handbookDir: string;
+  outDir: string;
+  name: string;                 // slug; produces `<slug>-handbook`
+  project?: string;             // human name in prose; defaults to `name`
+  coverage?: { assignment: Assignment; sourceRoot?: string };
+  agentDir?: string;
+  lang?: 'en' | 'zh';           // body language; frontmatter stays English
+}
+
+interface ValidationResult { ok: boolean; errors: string[]; warnings: string[] }
+```
+
+---
+
+## Testing
+
+```bash
+pnpm --filter @handbook/skill test
+```
+
+Covers both layouts (flat and nested `stages/`), missing pages, the outDir-eats-input
+refusal, corrections preservation across rebuilds, BOM/CRLF tolerance, and hash drift
+detection.
+
+---
+
+Part of [Handbook](../../README.md) · MIT

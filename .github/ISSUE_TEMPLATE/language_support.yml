@@ -1,0 +1,90 @@
+name: Language support
+description: Request support for a language, or report that an existing adapter mis-parses something
+labels: [language, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Support comes in two tiers, and which one you're asking for changes the size of the work
+        considerably:
+
+        - **Generic tier** — exact file and function inventory, best-effort call relations. One entry
+          in `GENERIC_LANGUAGES`, no new adapter file. Currently: Kotlin, Scala, Zig, Objective-C, OCaml.
+        - **Full fidelity** — type-driven call resolution, inherited members, per-attribute state
+          tracking. A hand-written adapter plus tests plus a fixture. Currently: Python,
+          TypeScript/JavaScript, Go, Rust, Java, C#, C/C++, Ruby, PHP, Swift, Dart, Solidity, Shell.
+
+        A hard prerequisite: the grammar must already exist in
+        [tree-sitter-wasms](https://www.npmjs.com/package/tree-sitter-wasms). This project never
+        requires native compilation, so a language whose grammar isn't there can't be added yet.
+
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: Elixir
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What are you asking for
+      options:
+        - 'New language — generic tier (inventory + best-effort calls)'
+        - 'New language — full fidelity (hand-written adapter)'
+        - 'Promote an existing generic-tier language to full fidelity'
+        - 'An existing adapter mis-parses or misses something'
+    validations:
+      required: true
+
+  - type: input
+    id: grammar
+    attributes:
+      label: Grammar availability
+      description: 'The name under `tree-sitter-wasms/out/tree-sitter-<name>.wasm`, if you checked.'
+      placeholder: elixir
+    validations:
+      required: true
+
+  - type: input
+    id: extensions
+    attributes:
+      label: File extensions
+      placeholder: '.ex, .exs'
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: A small, idiomatic sample
+      description: |
+        Fifteen to fifty lines showing how functions, methods and calls are actually written in this
+        language — including whatever makes call resolution hard (dynamic dispatch, macros, protocols,
+        implicit receivers). This is the input an adapter would be judged against, so write it the way
+        real code in that language looks, not the way it would be easiest to parse.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What happens today
+      description: |
+        For a mis-parse, run `handbook analyze --source <repo> --work work/tmp -v` and paste what came
+        out — the functions it found, what it missed, and the dropped calls from
+        `work/tmp/phase1/dropped-calls.json`. For a new language, say whether the generic tier already
+        gets you something usable.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues for this language
+          required: true
+        - label: The grammar exists in tree-sitter-wasms (or I've said that it doesn't)
+          required: true
