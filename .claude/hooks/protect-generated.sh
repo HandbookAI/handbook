@@ -21,7 +21,7 @@ FILE="$(printf '%s' "$INPUT" | node -e '
       const path = JSON.parse(raw)?.tool_input?.file_path;
       if (typeof path === "string") process.stdout.write(path);
     } catch {
-      /* malformed input is not this hook’s problem to report */
+      /* malformed input is not for this hook to report */
     }
   });
 ')"

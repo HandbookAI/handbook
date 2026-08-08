@@ -1,18 +1,31 @@
 # Monorepo CI.
 #
-# Six independent gates, so a failure names its own cause. Everything they run
-# is a script that also runs locally — `pnpm check`, `pnpm check:packaging`,
-# `pnpm run check:install` — so a red job can be reproduced on a laptop instead of
-# debugged by pushing commits.
+# Independent gates, so a failure names its own cause. Everything they run is a
+# script that also runs locally — `pnpm check`, `pnpm check:packaging`,
+# `pnpm run check:install`, `pnpm run check:cli` — so a red job can be reproduced
+# on a laptop instead of debugged by pushing commits.
+#
+# Two of these gates exist because of bugs that shipped past all the others:
+#
+#   - `docs` builds the documentation site. It is a SEPARATE pnpm workspace with
+#     its own lockfile, so a root `pnpm install` never sees it and `pnpm check`
+#     never compiles a line of it. It could break entirely and every other job
+#     here would stay green.
+#   - the browser steps drive real Chrome. A page whose JavaScript is blocked
+#     still server-renders perfectly and passes every fetch-based check while
+#     being completely inert — search, theme, language and sidebar all dead.
+#     Only a browser notices.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # A pull request that gets a second push cancels the first run. Without this,
 # `on: push` + `on: pull_request` also meant every PR commit was built twice.
+# Pushes to main are never cancelled: main's history should stay fully verified.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -42,6 +55,8 @@ jobs:
             node-version: 24
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # Installs the pnpm version pinned in package.json's "packageManager".
       - uses: pnpm/action-setup@v4
@@ -76,6 +91,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -99,6 +116,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -112,12 +131,99 @@ jobs:
       # The only gate here that tests what users actually receive.
       - run: pnpm run check:install
 
-  demo:
-    name: demo (offline, via the shell entry point)
+  cli:
+    name: cli surface (every subcommand, every layer)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The unit tests mock `generateHandbook` and friends, so they cannot catch
+      # a flag that resolves correctly and is then never passed on, a wrong exit
+      # code, or an artifact contract that broke at the seam. This drives the
+      # real binary against the offline mock and asserts on exit codes and
+      # artifacts — every subcommand, the config cascade, and the refusals.
+      - run: pnpm run check:cli
+
+  docs:
+    name: docs site (build + browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          # `docs/` is its own workspace with its own lockfile. Keying the cache
+          # on the ROOT lockfile would reuse a store that has none of its deps.
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - name: Install the docs workspace
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache the Next.js build
+        uses: actions/cache@v4
+        with:
+          path: docs/.next/cache
+          key: next-${{ hashFiles('docs/pnpm-lock.yaml') }}-${{ hashFiles('docs/**/*.ts', 'docs/**/*.tsx', 'docs/content/**') }}
+          restore-keys: next-${{ hashFiles('docs/pnpm-lock.yaml') }}-
+
+      - name: Typecheck
+        working-directory: docs
+        run: pnpm run types:check
+
+      - name: Build
+        working-directory: docs
+        run: pnpm run build
+
+      - name: Serve the production build
+        working-directory: docs
+        run: |
+          set -euo pipefail
+          pnpm start -p 3000 > /tmp/next-start.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3000/docs; then
+              echo "up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "the docs server never came up:"; cat /tmp/next-start.log; exit 1
+
+      # Search, the theme toggle, the language menu and the sidebar collapse are
+      # all client components. This is the only gate that proves they respond.
+      - name: Browser-test the docs site
+        run: node scripts/browser/docs-site.mjs http://127.0.0.1:3000
+
+      - name: Upload the server log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-server-log
+          path: /tmp/next-start.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  demo:
+    name: demo (offline, via the shell entry point)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -138,11 +244,21 @@ jobs:
             "$work/handbook/overview.md" \
             "$work/handbook/handbook.html" \
             "$work/handbook/html/overview.html" \
+            "$work/handbook/html/search-index.js" \
             "$work/skill/SKILL.md"
           do
             test -s "$artefact" || { echo "missing or empty: $artefact"; exit 1; }
           done
           echo "demo artefacts OK"
+
+      # The rendered handbook is a human-facing artifact that opens from file://
+      # with no server. Its search, theme, disclosure and deep-link behaviour is
+      # inlined JavaScript that no string assertion can exercise.
+      - name: Browser-test the rendered handbook
+        run: |
+          node scripts/browser/handbook-html.mjs \
+            examples/work/demo/handbook/html \
+            examples/work/demo/handbook/handbook.html
 
       - name: Upload the generated handbook
         if: ${{ failure() }}
@@ -159,9 +275,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      # shellcheck is preinstalled on the ubuntu runner image. These scripts are
-      # the demo entry points; they used to be linted by nothing at all.
-      - run: shellcheck examples/*.sh examples/demo-project/scripts/*.sh
+        with:
+          persist-credentials: false
+      # shellcheck is preinstalled on the ubuntu runner image. Every tracked
+      # script, not a hand-kept list: the demo entry points, the CLI smoke
+      # suite, and the agent hooks. A list goes stale the first time someone
+      # adds a script, and silently — which is how the hooks went unlinted.
+      - name: Lint every tracked shell script
+        run: |
+          set -euo pipefail
+          mapfile -t scripts < <(git ls-files '*.sh')
+          printf 'linting %d script(s):\n' "${#scripts[@]}"
+          printf '  %s\n' "${scripts[@]}"
+          shellcheck "${scripts[@]}"
 
   commits:
     name: commitlint
@@ -173,6 +299,7 @@ jobs:
         with:
           # commitlint needs the full range of the PR's commits.
           fetch-depth: 0
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -184,3 +311,24 @@ jobs:
           --from ${{ github.event.pull_request.base.sha }}
           --to ${{ github.event.pull_request.head.sha }}
           --verbose
+
+  # One check for branch protection to require. The matrix above expands to a
+  # different set of job names whenever it changes, so requiring the individual
+  # jobs means protection silently stops covering a platform the day someone
+  # adds one. `needs` + an explicit result test cannot drift that way: a
+  # skipped or cancelled dependency fails this too.
+  ci-ok:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ always() }}
+    needs: [check, packaging, smoke, cli, docs, demo, shell, commits]
+    steps:
+      - name: Report
+        run: |
+          echo '${{ toJSON(needs) }}'
+          # `skipped` is fine — `commits` only runs on pull requests.
+          if echo '${{ toJSON(needs) }}' | grep -qE '"result":[[:space:]]*"(failure|cancelled)"'; then
+            echo "at least one required job did not pass"; exit 1
+          fi
+          echo "all required jobs passed"
