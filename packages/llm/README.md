@@ -232,4 +232,4 @@ key.**
 
 ---
 
-Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/prompts.md) · MIT
+Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) · MIT

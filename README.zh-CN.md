@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
-[![Tests](https://img.shields.io/badge/tests-1334%20passing-2dd4bf.svg?style=flat-square)](#开发)
+[![Tests](https://img.shields.io/badge/tests-offline%2C%20no%20API%20key-2dd4bf.svg?style=flat-square)](#开发)
 [![Languages](https://img.shields.io/badge/languages-18-a78bfa.svg?style=flat-square)](#语言支持)
 [![LLM](https://img.shields.io/badge/LLM-any%20OpenAI--compatible-fbbf24.svg?style=flat-square)](#环境要求)
 

@@ -252,5 +252,5 @@ proves nothing about a grammar.
 
 ---
 
-Part of [Handbook](../../README.md) · [Architecture](../../docs/architecture.md) ·
-[Artifact formats](../../docs/formats.md) · MIT
+Part of [Handbook](../../README.md) · [Architecture](../../docs/content/docs/concepts/architecture.mdx) ·
+[Artifact formats](../../docs/content/docs/reference/artifacts.mdx) · MIT

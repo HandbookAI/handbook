@@ -232,4 +232,4 @@ cells.
 
 ---
 
-Part of [Handbook](../../README.md) · [Artifact formats](../../docs/formats.md) · MIT
+Part of [Handbook](../../README.md) · [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) · MIT

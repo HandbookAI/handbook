@@ -241,5 +241,5 @@ pnpm --filter @handbook/analyzer test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/architecture.md) ·
-[产物格式](../../docs/formats.md) · MIT
+[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/content/docs/concepts/architecture.mdx) ·
+[产物格式](../../docs/content/docs/reference/artifacts.mdx) · MIT

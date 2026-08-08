@@ -231,5 +231,5 @@ pnpm --filter @handbook/pipeline test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/formats.md) ·
-[提示词目录](../../docs/prompts.md) · MIT
+[Handbook](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/content/docs/reference/artifacts.mdx) ·
+[提示词目录](../../docs/content/docs/reference/prompts.mdx) · MIT
