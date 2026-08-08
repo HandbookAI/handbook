@@ -282,6 +282,73 @@ SSR `data-state="open"` = **0** 个、侧边栏只有 6 个链接；中文页 3 
 **验证**：英文页 SSR 现在和中文页逐项一致（3 个 open / 12+ 链接）；
 21 个页面（8 语言 + 404）真 Chrome 加载，**0 console error、0 失败请求**。
 
+### Bug #8（真 bug，用户报的，已修）：`127.0.0.1:3000` 上文档站四个功能全死
+
+**用户现象**：搜索、切换语言、切换主题、左侧菜单收起——**全都点不动**。
+
+**根因**：`next dev` 绑定了所有本地地址，但只把 `localhost` 当成自己的 origin，
+其它一律拒发 `/_next/*` 开发资源：
+
+    ⚠ Blocked cross-origin request to Next.js dev resource
+      /_next/static/chunks/…_dialog_search-default_….js from "127.0.0.1".
+
+于是 SSR 的 HTML 完美渲染、**每一个 JS chunk 都 403**。搜索/主题/语言/侧边栏收起
+全是 client component，一个都没 hydrate，所以全都不响应。这也解释了为什么
+"页面看起来完全正常，但什么都点不动"。
+
+**修法**：`docs/next.config.mjs` 的 `allowedDevOrigins` 声明回环地址与内网段。
+这不增加任何可达范围（这些地址本来就能连到 dev server），只是不再把同一个 origin
+换个写法就拒掉。`next build`/`next start` 不受影响。
+
+**顺带修掉的第二个真 bug**：`docs/proxy.ts` 的 matcher 只排除了 `_next/static`
+和 `_next/image`，没排除 `_next` 本身，于是它接管了 `/_next/hmr`——i18n 中间件把
+热更新 socket 重写成 `/en/_next/hmr`，每次加载都握手失败。现在整个 `_next` 全排除。
+
+**验证**：真 Chrome 跑 `scripts/browser/docs-site.mjs`，dev 与生产构建都 15/15；
+把 `allowedDevOrigins` 删掉再跑 → 立刻 5 条失败（403 chunks / 搜索打不开 /
+主题不变 / 语言菜单空 / 侧边栏不收），退出码 1。**这个套件确实能抓住它。**
+
+## 生成物 HTML 的 UI 重做（renderer）
+
+`packages/renderer/src/html.ts` + 新增 `html-assets.ts`。零依赖、全内联、
+`file://` 直接打开——所以不能真的用 fumadocs（它要 Node + 构建），而是把那套视觉
+语言手写出来：
+
+- 三栏：侧边栏（阶段树 + 层级编号 1 / 3.1）｜正文（限制行宽）｜右侧本页目录（滚动高亮）
+- **⌘K 搜索**：阶段/文件/函数/状态寄存器全索引（ripgrep 3144 条）。多页站点写成
+  兄弟文件 `search-index.js`（`<script src>` 是 `file://` 下唯一还能用的加载方式，
+  fetch/import 都会被不透明 origin 挡掉）；单页版内联同一份索引
+- 命中的文件/函数在折叠的 `<details>` 里 → `hbReveal()` 沿祖先逐层展开再滚过去
+- 主题三态（跟随系统/浅/深）+ 无闪烁预涂 + 持久化
+- 上一页/下一页、标题锚点、代码块复制、回到顶部、移动端抽屉、打印样式
+- 修掉一个内容 bug：`lifecycle` 本该是 "startup" 这种短提示，模型经常回一整句，
+  以前会被塞进一个和整行一样宽的 pill；现在超过 24 字符就降级成正文里的标注行
+- 搜索结果用 `createElement`+`textContent` 构建，**绝不 innerHTML**——标签内容是
+  模型写的散文和文件路径，用 innerHTML 等于把服务端刚escape掉的注入又放回来
+
+**验证**：`scripts/browser/handbook-html.mjs` 真 Chrome 跑 `file://`，
+demo fixture 与 ripgrep 各 **32/32**。
+
+## GitHub CI 深度优化
+
+补掉三个真实缺口（都是"坏了 CI 也不会红"的）：
+
+1. **`docs/` 从来没被 CI 构建过**。它是独立 pnpm workspace + 独立 lockfile，
+   root `pnpm install` 看不见它，`pnpm check` 一行都不编译。新增 `docs` job：
+   frozen-lockfile 安装 → typecheck → build → `next start` → 真浏览器测四个功能。
+2. **`pnpm check:cli` 根本没进 CI**（`check:all` 里有，CI 只跑 `check`）。新增 `cli` job。
+3. **shellcheck 只覆盖 `examples/*.sh`**，`scripts/smoke-cli.sh` 和 6 个 agent hook
+   全没 lint。改成 `git ls-files '*.sh'` 全量——手写清单第一次有人加脚本就过期了，
+   而且是静默过期。为此把所有告警都真正修掉（不是加 disable）：
+   - `format-touched.sh`：`case` 里有永远匹配不到的死分支（SC2221/2222）
+   - `smoke-cli.sh`：`cd` 未防失败、`local` 掩盖返回值、`$HB` 靠分词——改成数组
+     （4 处在 `env` 后面，shell 函数在那里用不了）、`A && B || C` 改成真 if/else
+   - 改完 `pnpm check:cli` 仍是 **75/75**，并单独验证了新助手 `grep_ok` 四个分支都对
+
+其他：`workflow_dispatch`、`persist-credentials: false`、Next 构建缓存、
+dependabot 补 `/docs`（它的 lockfile 之前永远不会被更新）、
+新增 `ci-ok` 汇总 job 供分支保护使用（matrix 一改，逐个 job 的保护规则就会静默失效）。
+
 ## 最终验收
 
 - `pnpm check` 全绿（typecheck / workspace 不变量 / eslint 0 告警 / prettier / 覆盖率下限）

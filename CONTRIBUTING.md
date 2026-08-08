@@ -131,6 +131,31 @@ one; a redundant patch bump is cheaper than a silent behaviour change.
   skipped. Both are reported in the scan log rather than silently dropped — keep it that
   way.
 
+### Browser tests
+
+Two surfaces are HTML that a person clicks, and no string assertion can tell you whether
+they work: the documentation site, and the handbook the renderer writes. Both are covered
+by [`scripts/browser/`](scripts/browser), which drives real Chrome over the DevTools
+Protocol — no Playwright, no Puppeteer, no install step.
+
+```bash
+# the docs site (start it first: cd docs && pnpm dev)
+node scripts/browser/docs-site.mjs http://127.0.0.1:3000
+
+# a rendered handbook, straight off the filesystem
+pnpm demo
+node scripts/browser/handbook-html.mjs \
+  examples/work/demo/handbook/html examples/work/demo/handbook/handbook.html
+```
+
+Set `CHROME_PATH` if your Chrome is somewhere unusual. These run in CI on every push.
+
+They exist because of a bug they now catch: `next dev` refused to serve its own JavaScript
+to `127.0.0.1`, so every page server-rendered perfectly, passed every fetch-based check,
+and was completely inert in a browser — search, theme, language menu and sidebar collapse
+all dead. If you add behaviour to either surface, add the assertion that would notice it
+going missing.
+
 ## Adding a language
 
 Two tiers, and picking the right one is most of the work.

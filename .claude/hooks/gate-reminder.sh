@@ -20,6 +20,8 @@ if [ -f "$STAMP" ] && [ -z "$(find packages/*/src scripts -newer "$STAMP" -name 
   exit 0
 fi
 
+# shellcheck disable=SC2016  # the JS below is a literal program, not a
+# shell template: single quotes are exactly what keeps $ and ` out of it.
 node -e '
   process.stdout.write(
     JSON.stringify({

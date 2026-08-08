@@ -62,12 +62,48 @@ describe('renderHtmlSite', () => {
 
   it('renders stage pages with collapsed details, functions and registers', () => {
     const page = read('stage-1.html');
-    expect(page).toContain('<details><summary><code>src/ingest/loader.ts</code>');
-    expect(page).toContain('<details class="fn"><summary><code>loader.loadAll</code>');
+    // Every file and every function is a closed disclosure with a stable id, so
+    // a search hit or a shared link can name one and have it revealed.
+    expect(page).toContain('<details class="file" id="f-src-ingest-loader-ts">');
+    expect(page).toContain('<code class="path">src/ingest/loader.ts</code>');
+    expect(page).toContain('<details class="fn" id="fn-src-ingest-loader-ts-loader-loadall">');
+    expect(page).toContain('<span class="fn-n">loader.loadAll</span>');
     expect(page).toContain('lines 10–42');
     expect(page).toContain('State Registers Touched');
     expect(page).toContain('reg-parser-cache');
     expect(page).toContain('Sub-stages');
+    expect(page).not.toContain('<details class="file" id="f-src-ingest-loader-ts" open');
+  });
+
+  it('gives each file row a role chip, a lifecycle chip and a function count', () => {
+    const page = read('stage-1.html');
+    expect(page).toContain('<span class="chip role role-orchestration">orchestration</span>');
+    expect(page).toContain('<span class="chip">startup</span>');
+    expect(page).toContain('<span class="chip">2 functions</span>');
+    // `lifecycle: 'none'` is not a lifecycle; it must not become a chip.
+    expect(read('stage-1.1.html')).not.toContain('<span class="chip">none</span>');
+    expect(read('stage-1.1.html')).toContain('<span class="chip">1 function</span>');
+  });
+
+  it('builds a table of contents from the headings it actually emitted', () => {
+    const page = read('stage-1.html');
+    expect(page).toContain('class="toc"');
+    expect(page).toContain('On this page');
+    // Each entry must resolve to a real id on the page, or scroll-spy tracks
+    // nothing and the link dead-ends.
+    for (const id of [...page.matchAll(/<li class="d\d"><a href="#([^"]+)"/g)].map((m) => m[1])) {
+      expect(page, id).toContain(`id="${id}"`);
+    }
+    expect(page).toContain('<li class="d1"><a href="#stage-1-files">Files in this stage</a></li>');
+  });
+
+  it('links each stage to its neighbours in reading order', () => {
+    // stage-1 → stage-1.1 → stage-2 → crosscut-1 is `contentStages()` order.
+    expect(read('stage-1.1.html')).toContain('<a class="pv" href="stage-1.html">');
+    expect(read('stage-1.1.html')).toContain('<a class="nx" href="stage-2.html">');
+    // The ends have one neighbour each, not a dead link to nothing.
+    expect(read('stage-1.html')).not.toContain('class="pv"');
+    expect(read('crosscut-1.html')).not.toContain('class="nx"');
   });
 
   it('builds the breadcrumb from the stage ancestry', () => {
@@ -99,6 +135,57 @@ describe('renderHtmlSite', () => {
   });
 });
 
+describe('renderHtmlSite — the search index', () => {
+  type Entry = [number, string, string, string];
+  const entries = (): Entry[] => {
+    const js = read('search-index.js');
+    expect(js.startsWith('window.HB_INDEX=')).toBe(true);
+    return JSON.parse(js.slice('window.HB_INDEX='.length).replace(/;\n?$/, '')) as Entry[];
+  };
+
+  it('is a sibling asset, not a counted page', () => {
+    expect(existsSync(join(dir, 'search-index.js'))).toBe(true);
+    // 7 pages, as asserted above — the index must not inflate what the CLI
+    // reports to a human as "pages written".
+    expect(site.nPages).toBe(7);
+  });
+
+  it('indexes every stage, file, function and register', () => {
+    const all = entries();
+    const kinds = (k: number): string[] => all.filter((e) => e[0] === k).map((e) => e[1]);
+    expect(kinds(0)).toEqual(['Ingestion Pipeline', 'Ingestion Parser', 'Query Pipeline', 'Test Harness']);
+    expect(kinds(1)).toContain('src/ingest/loader.ts');
+    expect(kinds(2)).toContain('loader.loadAll');
+    expect(kinds(3)).toContain('reg-parser-cache');
+  });
+
+  it('points every entry at a page that exists and an id that is on it', () => {
+    for (const [, label, , url] of entries()) {
+      const [file, hash] = url.split('#');
+      expect(existsSync(join(dir, file)), `${label} → ${file}`).toBe(true);
+      if (hash !== undefined) expect(read(file), `${label} → ${url}`).toContain(`id="${hash}"`);
+    }
+  });
+
+  it('escapes markup so a model-written label cannot close the script element', () => {
+    const out = mkdtempSync(join(tmpdir(), 'hb-renderer-html-idx-'));
+    try {
+      const m = makeFixtureModel();
+      m.skeleton.stages[0].title = '</script><svg onload=alert(1)>';
+      renderHtmlSite(m, out);
+      const js = readFileSync(join(out, 'search-index.js'), 'utf8');
+      expect(js).not.toContain('</script>');
+      expect(js).not.toContain('<svg');
+      expect(js).toContain('\\u003c/script\\u003e');
+      // Still readable as JS — the escaping must not corrupt the payload.
+      const parsed = JSON.parse(js.slice('window.HB_INDEX='.length).replace(/;\n?$/, '')) as Entry[];
+      expect(parsed.some((e) => e[1] === '</script><svg onload=alert(1)>')).toBe(true);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('renderHtmlSite — source links (opt-in)', () => {
   it('links file paths to the source base URL', () => {
     const out = mkdtempSync(join(tmpdir(), 'hb-renderer-html-src-'));
@@ -106,7 +193,7 @@ describe('renderHtmlSite — source links (opt-in)', () => {
       renderHtmlSite(model, out, { sourceBaseUrl: 'https://example.com/repo/' });
       const page = readFileSync(join(out, 'stage-1.html'), 'utf8');
       expect(page).toContain(
-        '<a href="https://example.com/repo/src/ingest/loader.ts"><code>src/ingest/loader.ts</code></a>',
+        '<a href="https://example.com/repo/src/ingest/loader.ts"><code class="path">src/ingest/loader.ts</code></a>',
       );
     } finally {
       rmSync(out, { recursive: true, force: true });
@@ -262,9 +349,15 @@ describe('renderSinglePageHtml', () => {
 
   it('numbers sections hierarchically and anchors the sidebar', () => {
     const html = read('handbook.html');
-    expect(html).toContain('<a href="#stage-1">1 Ingestion Pipeline</a>');
-    expect(html).toContain('<a href="#stage-1.1">1.1 Ingestion Parser</a>');
-    expect(html).toContain('<a href="#stage-2">2 Query Pipeline</a>');
+    for (const [sid, number, title] of [
+      ['stage-1', '1', 'Ingestion Pipeline'],
+      ['stage-1.1', '1.1', 'Ingestion Parser'],
+      ['stage-2', '2', 'Query Pipeline'],
+    ] as const) {
+      expect(html).toContain(
+        `<a href="#${sid}"><span class="sb-num">${number}</span><span>${title}</span></a>`,
+      );
+    }
   });
 
   it('ends with an anchored registers table', () => {

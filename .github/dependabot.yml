@@ -34,6 +34,27 @@ updates:
       - dependency-name: web-tree-sitter
         update-types: [version-update:semver-minor, version-update:semver-major]
 
+  # The documentation site is a SEPARATE workspace with its own lockfile, which
+  # the root entry above cannot see. Without this it would never be updated at
+  # all — and it carries the largest dependency surface in the repo (Next,
+  # React, Tailwind, fumadocs).
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps)'
+    groups:
+      # These are versioned together upstream and break together downstream.
+      next:
+        patterns: ['next', 'react', 'react-dom', '@types/react', '@types/react-dom']
+      fumadocs:
+        patterns: ['fumadocs-*']
+      tailwind:
+        patterns: ['tailwindcss', '@tailwindcss/*', 'postcss']
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

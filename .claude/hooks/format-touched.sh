@@ -45,7 +45,7 @@ esac
 # eslint only for repo sources — docs/ is a separate app with its own linting.
 case "$REL" in
   docs/*) ;;
-  *.ts | *.mjs | *.cjs | *.js | packages/*/src/*.ts | scripts/*.mjs)
+  *.ts | *.mjs | *.cjs | *.js)
     (cd "$ROOT" && pnpm exec eslint --fix --no-warn-ignored "$FILE") >/dev/null 2>&1
     ;;
 esac

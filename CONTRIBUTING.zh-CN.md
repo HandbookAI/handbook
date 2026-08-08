@@ -115,6 +115,29 @@ changeset 是写给升级的人看的，不是写给 reviewer 看的：对他们
   discovery 阶段就明确拒绝），以及含 `case` 语句的 shell 脚本会被跳过。两者都会记入扫描日志，
   而不是被静默丢弃——请保持这一点。
 
+### 浏览器测试
+
+有两处产物是"给人点的 HTML"，任何字符串断言都判断不了它到底能不能用：文档站，以及渲染器
+写出的那份 handbook。两者都由 [`scripts/browser/`](scripts/browser) 覆盖——直接用 DevTools
+Protocol 驱动真实 Chrome，不需要 Playwright、不需要 Puppeteer、不需要额外安装。
+
+```bash
+# 文档站（先启动：cd docs && pnpm dev）
+node scripts/browser/docs-site.mjs http://127.0.0.1:3000
+
+# 渲染出来的 handbook，直接从文件系统打开
+pnpm demo
+node scripts/browser/handbook-html.mjs \
+  examples/work/demo/handbook/html examples/work/demo/handbook/handbook.html
+```
+
+Chrome 装在非常规位置时设置 `CHROME_PATH`。这两个套件每次推送都会在 CI 里跑。
+
+它们的存在源于一个它们现在能抓住的 bug：`next dev` 拒绝把自己的 JavaScript 发给
+`127.0.0.1`，于是每个页面服务端渲染都完美、所有基于 fetch 的检查都通过，在浏览器里却
+完全是死的——搜索、主题、语言菜单、侧边栏收起全都不响应。如果你给这两处加了行为，
+请同时补上"它消失时会报警"的那条断言。
+
 ## 新增一种语言
 
 分两档，选对档位就是大部分工作。
