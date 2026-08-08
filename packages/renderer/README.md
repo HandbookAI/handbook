@@ -1,93 +1,235 @@
 # @handbook/renderer
 
-The presentation arm of the toolchain. It takes a completed `HandbookModel` (loaded from a finished work directory by `@handbook/pipeline`) and renders it four ways: a markdown handbook for humans, an "agent locator" site optimized for coding agents, self-contained HTML (multi-page or single-page), and the `llms.txt` / `llms-full.txt` AI-agent entry files. Rendering is fully deterministic — no LLM, no network.
+**English** · [中文](README.zh-CN.md)
 
-> 中文版：[README.zh-CN.md](README.zh-CN.md)
+> Turn a generated handbook into things people open and things agents route with.
+> Four output formats, no LLM, no network, no build step.
 
-## Responsibilities
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Frenderer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/renderer)
+[![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 
-- Render the markdown handbook: one page per content-bearing stage plus `overview.md` (including a mermaid stage map when the skeleton has more than one stage), `index.md`, and `register.md`.
-- Render the llms.txt entry files: `llms.txt` (title, summary blockquote, linked table of contents over the markdown pages) and `llms-full.txt` (the whole handbook flattened into one plain-markdown document).
-- Render the agent locator site: fixed-schema stage blocks (`Duty`, `Entry concepts`, `State`, `Exemplar`, `Strong co-change`, `Core files`), `how_to_use.md`, and a `disambiguation.md` built from a title-token collision index.
-- Render self-contained HTML: a multi-page site with sidebar TOC/theme toggle, and a single-page variant with numbered collapsible sections.
-- Render the per-file leaf content shared by all outputs (`renderFileCardMd`), including graph-fact call lines.
-- Support both narration languages (`en`/`zh`) through internal label tables.
-- Does NOT generate or modify handbook content — narration gaps fall back to stage descriptions/titles, never to new prose.
-- Does NOT read the work directory; its only input is the `HandbookModel` boundary type.
+---
 
-## Public API
+## What it is
 
-Markdown handbook (`markdown.ts`):
+The presentation arm of the [Handbook](../../README.md) toolchain. It takes a
+`HandbookModel` — the boundary type produced by `@handbook/pipeline` — and writes:
 
-- `renderMarkdownHandbook(model, outDir, options?): { nStagePages, files }` — write `<sid>.md` per content stage plus `overview.md` (with the mermaid stage map), `index.md`, and (when registers exist) `register.md`; appends idempotent per-stage register sections. `options: { sourceBaseUrl? }` — see below.
-- `stageSectionMarker(lang)` — the marker heading used for those idempotent appends.
+| Function                 | Output                                                                       | Audience |
+| ------------------------ | ---------------------------------------------------------------------------- | -------- |
+| `renderMarkdownHandbook` | `overview.md`, `index.md`, `register.md`, one page per stage                 | humans   |
+| `renderHtmlSite`         | A multi-page site with a shared shell                                        | humans   |
+| `renderSinglePageHtml`   | One self-contained `.html` file                                              | humans   |
+| `renderAgentSite`        | `how_to_use.md`, `index.md`, `disambiguation.md`, one locator page per stage | agents   |
+| `renderLlmsTxt`          | `llms.txt` + `llms-full.txt`                                                 | agents   |
 
-llms.txt entry files (`llms-txt.ts`):
+**Generation is expensive and happens once. Rendering is free and can happen on every
+commit.** That split is the whole reason this is a separate package.
 
-- `renderLlmsTxt(model, outDir): { files }` — write `llms.txt` and `llms-full.txt` into `outDir` (the same directory the markdown handbook was rendered into, so the `llms.txt` links resolve). `llms.txt` follows the llms.txt convention: `# title`, a `>` summary blockquote derived from the system-overview narration, then a `## Handbook` link list (overview, top-level stages, register page) with one short description per line. `llms-full.txt` is the full handbook content in reading order — overview prose, stage map, each stage's narration plus its organized file listing with purposes, registers — as plain link-free markdown.
+---
 
-Agent locator site (`agent-site.ts`):
+## Install
 
-- `renderAgentSite(model, outDir): { nStagePages, nCollisions }` — write `how_to_use.md`, `index.md`, `disambiguation.md`, and one locator page per content stage.
-
-HTML (`html.ts`):
-
-- `renderHtmlSite(model, outDir, options?): { nPages }` — multi-page site (`index.html` redirect, `overview.html`, `register.html`, `<sid>.html`) with a shared shell (sticky sidebar, breadcrumb, persisted theme toggle, expand/collapse-all). `options: { sourceBaseUrl? }` — see below.
-- `renderSinglePageHtml(model, outPath): { bytes }` — one self-contained page; every stage is a numbered, collapsed `<details>` section.
-
-Source links (`SourceLinkOptions`):
-
-- `renderMarkdownHandbook` and `renderHtmlSite` accept an optional `{ sourceBaseUrl }`. When set, every file card's path becomes a hyperlink to `<base>/<path>` (trailing `/` stripped from the base, path segments URL-encoded, `/` kept), e.g. a repo blob URL. When not set, output is byte-identical to before the option existed and contains no external URLs.
-
-File cards (`file-card.ts`):
-
-- `renderFileCardMd(rel, card, lang, options?)` — full markdown card for one file: role/lifecycle badges, description (falling back to purpose), per-function details; `options: { sourceBaseUrl? }` links the heading path to the source file.
-- `fileOneLiner(rel, card)` — one-line `- \`rel\` — purpose [role]` entry.
-- `callFactsLine(fn, lang)` — the structural call-graph fact line for one `FunctionNote`.
-- `REL_NAMES_CAP` — names shown per relation list before collapsing to `(+K more)`.
-
-## Usage
-
-```ts
-import {
-  renderMarkdownHandbook,
-  renderAgentSite,
-  renderHtmlSite,
-  renderSinglePageHtml,
-  renderLlmsTxt,
-} from '@handbook/renderer';
-import { loadHandbookModel } from '@handbook/pipeline';
-
-const model = loadHandbookModel('/path/to/work', 'My Project Handbook');
-
-const md = renderMarkdownHandbook(model, '/path/to/out');
-const llms = renderLlmsTxt(model, '/path/to/out'); // same dir so llms.txt links resolve
-const agent = renderAgentSite(model, '/path/to/out/agent');
-const html = renderHtmlSite(model, '/path/to/out/html');
-const single = renderSinglePageHtml(model, '/path/to/out/handbook.html');
-
-// Opt in to source links (markdown + multi-page HTML only):
-renderMarkdownHandbook(model, '/path/to/out', { sourceBaseUrl: 'https://forge.example/repo/blob/main' });
-
-console.log(md.nStagePages, llms.files, agent.nCollisions, html.nPages, single.bytes);
+```bash
+pnpm add @handbook/renderer
 ```
 
-## Design notes
+---
 
-- No LLM anywhere: every output is a pure function of the `HandbookModel`, so rendering is instant, reproducible, and safe to re-run.
-- Self-contained HTML: all CSS/JS is inlined, every link is relative, and there are no external assets, so both HTML outputs work over `file://` and can be shipped as-is. External URLs appear only when `sourceBaseUrl` is explicitly passed.
-- The mermaid stage map is emitted into the markdown outputs only (`overview.md` and `llms-full.txt`) — the HTML outputs deliberately do NOT embed it, because rendering mermaid would require a JS library and the HTML must stay dependency-free.
-- Agent locator fields are gated on structural signals: a field (co-change twins, register hits, collisions, exemplars) is emitted iff its signal exists, and `how_to_use.md` tells agents that an empty field is information — never something to invent.
-- Content gating is uniform: a stage gets a page/summary iff it has children or directly assigned files (`HandbookView.hasContent`), so empty skeleton nodes never produce empty pages.
-- The disambiguation index is computed from stage-title token collisions (document frequency 2–6, pure ancestor chains excluded), giving agents a deterministic "this word lands in several stages" map.
-- Markdown register sections are appended behind a marker heading, so re-rendering over an existing output directory stays idempotent.
+## Quick start
 
-## Dependencies
+```ts
+import { loadHandbookModel } from '@handbook/pipeline';
+import {
+  renderMarkdownHandbook,
+  renderHtmlSite,
+  renderSinglePageHtml,
+  renderAgentSite,
+  renderLlmsTxt,
+} from '@handbook/renderer';
 
-Internal:
+const model = loadHandbookModel('work/myrepo', 'MyRepo Handbook');
+const out = 'work/myrepo/handbook';
 
-- `@handbook/core` — `HandbookModel` and friends, `StageTree`, atomic writes, text helpers.
+renderMarkdownHandbook(model, out, { sourceBaseUrl: 'https://github.com/me/repo/blob/main' });
+renderHtmlSite(model, `${out}/html`);
+renderSinglePageHtml(model, `${out}/handbook.html`);
+renderAgentSite(model, `${out}/agent`);
+renderLlmsTxt(model, out);
+```
 
-External:
+Or:
 
-- `markdown-it` — renders narration/description markdown to HTML for the two HTML outputs (markdown outputs need no dependency).
+```bash
+handbook render --work work/myrepo --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt \
+    --source-base-url https://github.com/me/repo/blob/main
+```
+
+---
+
+## The markdown handbook
+
+```
+overview.md      system prose + a mermaid stage map + "see also" links
+index.md         every stage, nested by depth, with a paragraph each
+<stage-id>.md    one page per content-bearing stage
+register.md      the cross-stage state table (only when registers exist)
+```
+
+A stage page carries the stage's summary, links to sub-stages, then its files — grouped
+and ordered as phase 2c decided, each rendered as a **file card**: purpose, role,
+lifecycle, call facts, and (for deep cards) per-function notes.
+
+Two details that matter more than they look:
+
+- **Stale pages are cleaned up.** Stage ids change between generations. Each render
+  writes a manifest of what it produced and removes the previous render's pages first, so
+  a renamed stage does not leave a ghost page behind for the skill packager to scoop up.
+- **The per-stage register section is idempotent.** It is appended under a marker and
+  only if the marker is absent, so re-rendering never stacks duplicates.
+
+Both English and Chinese are first-class: every label, heading and table header is
+localized from `model.lang`. **The structure is identical in both**, so tooling that reads
+the output does not need to know which language it is in.
+
+---
+
+## The HTML site
+
+`renderHtmlSite` writes `index.html`, `overview.html`, `register.html` and one page per
+stage, all sharing one shell:
+
+- sticky sidebar table of contents with the current page highlighted
+- breadcrumb navigation
+- a theme toggle that persists your choice
+- expand-all / collapse-all for function details
+
+`renderSinglePageHtml` writes the whole handbook as **one file** with numbered sections
+and every stage as a collapsed `<details>`.
+
+**All CSS and JS is inlined and every link is relative.** Both work over `file://` — no
+server, no CDN, no fonts fetched from anywhere. You can attach the single-page output to
+a ticket and it just opens.
+
+---
+
+## The agent locator index
+
+This is the format built specifically for code agents, and it is deliberately _not_ prose.
+Each stage gets a fixed-schema locator block:
+
+| Field               | Meaning                                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **duty**            | What this stage is responsible for                                                                                                |
+| **entry concepts**  | The vocabulary that routes here — derived from file stems, with generic tokens (`util`, `main`, `index`, `types`, …) filtered out |
+| **state**           | Registers this stage reads or writes                                                                                              |
+| **exemplars**       | The files that best represent the stage                                                                                           |
+| **co-change hints** | Files that tend to move together, from call-graph adjacency                                                                       |
+| **core files**      | Highest-degree files in the stage                                                                                                 |
+
+### The data-gating invariant
+
+**A field is emitted if and only if its structural signal exists.** No placeholders, no
+"N/A", no hedging. An empty field means _"the graph has no signal here"_ — which is real
+information — rather than _"the model did not know"_, which is noise an agent will
+happily reason on top of.
+
+`disambiguation.md` handles the opposite problem: when one term legitimately points at
+several stages, it lists them side by side with what distinguishes them, so an agent can
+choose instead of guessing. `strongTwins` and `buildCollisionIndex` are what detect those
+collisions.
+
+---
+
+## llms.txt
+
+Follows the [llms.txt](https://llmstxt.org/) convention:
+
+- **`llms.txt`** — an H1 title, a one-sentence summary blockquote, then a `## Handbook`
+  section linking each markdown page with a short description.
+- **`llms-full.txt`** — the entire handbook flattened into one plain-markdown document in
+  reading order: overview prose, the mermaid stage map, each stage's narration and file
+  listing, then the registers.
+
+Both are self-contained and honour `model.lang`.
+
+---
+
+## Options
+
+```ts
+interface RenderOptions {
+  /** Turn every file-card path into a link to the source. Opt-in. */
+  sourceBaseUrl?: string;
+  /** Per-language analysis capabilities; drives the fidelity disclosure. Opt-in. */
+  languages?: Record<string, AdapterCapabilities>;
+}
+```
+
+Both are opt-in and both are no-ops when absent — without `sourceBaseUrl` the output
+contains **no external URLs at all**, which matters if you are shipping a handbook for a
+private codebase.
+
+When `languages` shows any generic-tier language, the overview gains one disclosure line:
+
+> **Analysis fidelity** — call relations for Kotlin, Scala come from the generic
+> (config-driven) analyzer: they are best-effort and may be incomplete. The file inventory
+> and the structure of these languages are exact.
+
+It appears right under the overview prose, where a reader forms their trust in the call
+facts — and **nowhere at all** when every language is full-tier, so the common case stays
+noise-free.
+
+---
+
+## API
+
+```ts
+renderMarkdownHandbook(model, outDir, options?): { nStagePages: number; files: string[] }
+renderHtmlSite(model, outDir, options?)
+renderSinglePageHtml(model, outPath, options?)
+renderAgentSite(model, outDir, options?)
+renderLlmsTxt(model, outDir, options?)
+
+// building blocks, exported because they are useful on their own
+class HandbookView                  // stage tree + cards + organization, resolved
+stageMapMermaid(tree): string
+renderFileCardMd(file, card, lang, options): string
+fileOneLiner(rel, card): string
+callFactsLine(fn, lang): string
+genericTierLanguages(languages): string[]
+stageSectionMarker(lang): string
+```
+
+`HandbookView` is the shared resolver every renderer sits on: which stages have content,
+which files belong directly to a stage, how groups resolve, which registers touch a
+stage. Writing a new output format means using it, not re-deriving it.
+
+---
+
+## Guarantees
+
+- **Deterministic.** Same model in, byte-identical files out. Safe to commit and diff.
+- **Offline.** No network, no LLM, no external assets, no fonts.
+- **Injection-safe tables.** Register semantics and stage titles are free text from an
+  LLM; `|` is escaped and newlines are flattened so a stray character cannot break a table
+  or open a column.
+- **Path-safe filenames.** Stage ids are schema-restricted to filename-safe characters, so
+  a `/` or `..` in LLM output can never write outside the output directory.
+
+---
+
+## Testing
+
+```bash
+pnpm --filter @handbook/renderer test
+```
+
+Rendering is asserted on real fixture models, including the ugly ones: empty stages,
+missing prose, zero registers, mixed fidelity, CJK titles and pipe characters in table
+cells.
+
+---
+
+Part of [Handbook](../../README.md) · [Artifact formats](../../docs/formats.md) · MIT

@@ -1,128 +1,211 @@
 # @handbook/cli
 
-`handbook` 命令行——把其余每个包接成一条工具链的唯一入口：
-把代码库分析成调用图、生成手册、渲染给人和 agent 看、打包成 skill、校验这个 skill、
-用它规划改动、把改动真正落盘、代码变了之后再把手册前滚。
-它自己**没有任何业务逻辑**：每个子命令都只是「命令行参数 → 某个包的 API」的薄适配器，
-结果 JSON 打到 stdout，日志打到 stderr。
+[English](README.md) · **中文**
 
-> 英文版：[README.md](README.md)
+> `handbook` 命令。十一个子命令、一套配置模型，
+> 外加一个能告诉你**每个值到底从哪来**的 `config` 命令。
 
-## 职责
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcli-6366f1?style=flat-square)](https://www.npmjs.com/package/@handbook/cli)
 
-- 定义十个子命令（`analyze`、`generate`、`render`、`skill`、`validate`、`plan`、`apply`、`rollback`、
-  `resync`、`studio`），并把参数映射到底层包的 API。
-- 每次调用构建共享基础设施：分级日志器（`-v`/`-q`），以及需要 LLM 的命令所用的、由环境变量配置的
-  `OpenAiChatClient`。
-- 在任何子命令动作之前**自动加载 `.env`**（默认当前目录下的 `./.env`，可用 `--env-file` 指定；
-  **shell 里已有的环境变量优先**）。
-- 把所有路径参数解析成绝对路径，并打印机器可读的 JSON 结果。
-- 设置退出码（`validate` 失败退 2；任何错误退 1 并只打一行信息）。
-- **不**实现任何管线、渲染、规划、前滚逻辑——那些都在别的 `@handbook/*` 包里。
-- **不**导出编程 API——`src/index.ts` 故意是空的；要编程调用请直接依赖底层包。
+---
 
-## 公开 API
+## 安装
 
-无。这个包的产物是 `handbook` 可执行文件（`bin: { "handbook": "./dist/main.js" }`）；
-`src/index.ts` 什么都不导出。
-
-全局参数：`-v, --verbose`（debug 日志）、`-q, --quiet`（只报错误）、`--env-file <path>`。
-
-需要 LLM 的命令（`generate` 除阶段 1 之外、`plan`、未加 `--no-llm` 的 `resync`、以及 `studio` 里的作业）
-读取这些环境变量：`OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL`、`OPENAI_MAX_TOKENS`、
-`OPENAI_TIMEOUT`（秒，默认 300）、`OPENAI_EXTRA_BODY`（JSON，透传厂商专属字段），
-均可用 `HANDBOOK_LLM_*` 作为回退。
-
-## 用法
-
-```sh
-# 1. analyze —— 只做静态调用图，不花 LLM
-handbook analyze --source ./project --work ./work --lang auto
-
-# 2. generate —— 完整管线（阶段 1/2a/2b/2c/3）
-export OPENAI_API_KEY=... OPENAI_MODEL=gpt-4o-mini      # 或写进 ./.env
-handbook generate --source ./project --work ./work \
-  --phase all --strategy file --detail deep --synth-mode doctor \
-  --narrate-lang zh --resume --refresh
-# member 策略 + 手写骨架：
-handbook generate --source ./project --work ./work --strategy member --skeleton ./skeleton.yaml
-
-# 3. render —— work 目录 → markdown（可选 HTML / agent 站点），不花 LLM
-handbook render --work ./work --out ./out --title "我的项目手册" \
-  --html --html-single --agent-site
-
-# 4. skill —— 把渲染好的手册打包成 agent SKILL，不花 LLM
-handbook skill --handbook ./out --out ./skills/myproject --name myproject \
-  --project MyProject --work ./work --source ./project
-
-# 5. validate —— 校验 SKILL 包结构与覆盖率新鲜度，不花 LLM
-handbook validate --skill ./skills/myproject --source ./project
-
-# 6. plan —— 手册驱动的改动定位（只读 agent）
-handbook plan --source ./project --handbook ./skills/myproject/references \
-  --request "给 export 命令加一个 --json 参数" --max-turns 30 --out plan.md
-
-# 7. apply —— 把计划里的 EDIT 块真正写进源码树（先 dry-run）
-handbook apply --source ./project --plan plan.md --dry-run
-handbook apply --source ./project --plan plan.md
-
-# 8. rollback —— 还原到补丁前的确切字节
-handbook rollback --backup ./project/.handbook-patches/2026-08-03T…
-handbook rollback --backup … --force       # 覆盖「补丁之后又被改过」的保护
-
-# 9. resync —— 代码改了之后把手册前滚
-#    （不传 --detail 则沿用手册原本的粒度；<work>/handbook 下已渲染的产物自动刷新，--no-render 跳过）
-handbook resync --case ./case --work ./work
-handbook resync --case ./case --work ./work --no-llm   # 只刷新结构
-
-# 10. studio —— 本地 Web 界面（仅 127.0.0.1）
-handbook studio --port 4860 --state-dir ~/.handbook-studio
+```bash
+npm i -g @handbook/cli
+handbook --help
 ```
 
-各命令的关键参数：
+或者，从 monorepo 的克隆里：
 
-- `analyze`：`--source`、`--work`（必填）；`--lang auto|python|typescript|go|rust|shell`。
-- `generate`：`--source`、`--work`（必填）；`--phase all|1|2|2a|2b|2c|3|<逗号列表>`、
-  `--strategy file|member`、`--skeleton <path>`、`--detail brief|deep`、`--synth-mode oneshot|doctor`、
-  `--max-doctor-rounds <n>`、`--narrate-lang en|zh`、`--read-workers <n>`、`--resume`、`--refresh`。
-- `render`：`--work`（必填）；`--out`、`--title`、`--html`、`--html-single`、`--agent-site`。
-- `skill`：`--handbook`、`--out`、`--name`（必填）；`--project`、`--work`（加上 coverage.json）、
-  `--source`（加上内容哈希）。
-- `validate`：`--skill`（必填）；`--source`（启用哈希新鲜度检查）。
-- `plan`：`--source`、`--request`（必填）；`--handbook`、`--out`、`--max-turns <n>`。
-- `apply`：`--source`、`--plan`（必填）；`--dry-run`、`--backup-root <dir>`。
-- `rollback`：`--backup`（必填）；`--source`、`--force`。
-- `resync`：`--case`、`--work`（必填）；`--no-llm`、`--detail brief|deep`、`--narrate-lang en|zh`。
-- `studio`：`--port <n>`、`--state-dir <dir>`。
+```bash
+pnpm install && pnpm build
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+```
 
-## 设计说明
+或者用 pnpm 快捷方式，它们会先构建、再把参数直接透传：
 
-- **stdout / stderr 严格分离**：结果是 stdout 上的 JSON，日志经 core 的日志器走 stderr，
-  所以每个命令都能进管道（`handbook analyze ... | jq .functions`）。
-- **LLM 客户端懒构建，且只给需要它的命令**——`analyze`、`render`、`skill`、`validate`
-  完全不需要 API key，`generate --phase 1` 也整个跳过客户端构建。
-- **`.env` 在 preAction 钩子里加载**，所以它对每个子命令都生效，
-  而 shell 里已有的变量永远优先——临时覆盖一个参数不需要改文件。
-- `resync` 的 `--no-llm` 走 commander 的取反参数约定（`opts.llm === false`），
-  选择「只刷新结构、散文标记为过期」的路径。
-- **错误统一漏进一个 `parseAsync().catch` 处理器**，只打一行 `handbook: error: …` 然后退 1——
-  正常使用时不会看到堆栈。
+```bash
+pnpm analyze --source ~/code/proj --work work/proj
+pnpm handbook --help
+```
 
-## 依赖
+---
 
-内部：
+## 十一个子命令
 
-- `@handbook/core` —— 日志器创建与日志级别类型、`.env` 解析。
-- `@handbook/llm` —— 需要 LLM 的命令所用的 `OpenAiChatClient`。
-- `@handbook/pipeline` —— `runPhase1`、`generateHandbook`、`loadHandbookModel`、`WorkDir`。
-- `@handbook/renderer` —— `render` 背后的四个渲染函数。
-- `@handbook/skill` —— `buildSkill` / `validateSkill`。
-- `@handbook/planner` —— `plan` 背后的 `runPlanner`。
-- `@handbook/patcher` —— `apply` / `rollback` 背后的 `applyPlan` / `rollback` / `listBackups`。
-- `@handbook/resync` —— `resync` 背后的 `resyncHandbook`。
-- `@handbook/studio` —— `studio` 背后的 `startStudio`。
-- `@handbook/analyzer` —— 分析栈（经由 pipeline 使用）。
+| 命令       | 做什么                                                  | 用 LLM？ |
+| ---------- | ------------------------------------------------------- | :------: |
+| `analyze`  | 只跑阶段 1 —— 构建静态调用图                            |    ❌    |
+| `generate` | 完整管线（阶段 1、2a、2b、2c、3）                       |    ✅    |
+| `render`   | work dir → markdown / HTML 站点 / agent 索引 / llms.txt |    ❌    |
+| `skill`    | 渲染好的手册 → agent SKILL 包                           |    ❌    |
+| `validate` | 检查 SKILL 包的结构与新鲜度                             |    ❌    |
+| `plan`     | 手册驱动的变更定位 → 修改计划                           |    ✅    |
+| `apply`    | 逐字节应用计划的 EDIT 块，带备份                        |    ❌    |
+| `rollback` | 从补丁备份还原源码树                                    |    ❌    |
+| `resync`   | 代码变更后把手册前滚                                    |    ✅    |
+| `studio`   | 启动本地 Web UI                                         |    ✅    |
+| `config`   | 打印解析后的配置及其来源                                |    ❌    |
 
-外部：
+每个子命令都支持 `--help`，而且这份帮助是**从配置 registry 生成的**——
+所以每个参数都附带它的环境变量、它的命令域变量，以及默认值：
 
-- `commander` —— 声明式的子命令、参数解析与帮助文本。
+```
+--read-workers <n>   concurrent card batches
+                     [env: HANDBOOK_READ_WORKERS, or scoped: HANDBOOK_GENERATE_READ_WORKERS]
+                     (default: 12)
+```
+
+---
+
+## 全局参数
+
+| 参数                | 作用                                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `-v, --verbose`     | debug 级日志（`--log-level debug` 的简写）                                                                                        |
+| `-q, --quiet`       | 只输出错误（**优先于 `-v`**）                                                                                                     |
+| `--env <name>`      | 选择环境 —— 在 `.env.local` 和 `.env` **之前**加载 `.env.<name>.local` 和 `.env.<name>`，并优先选用 `handbook.config.<name>.yaml` |
+| `--env-file <path>` | 只加载这一个文件，绕过 `.env` 级联。**文件不存在是响亮的错误，不是回退**                                                          |
+| `--config <path>`   | 用这个配置文件，而不是去发现最近的 `handbook.config.yaml`                                                                         |
+
+---
+
+## 配置，一张图说完
+
+```
+CLI 参数  >  shell 环境变量  >  .env 级联  >  handbook.config.yaml  >  registry 默认值
+```
+
+每个设置在 `@handbook/core` 的 registry 里只声明一次。你看到的参数、能用的环境变量、
+被接受的 YAML 键、`.env.example`、`handbook.config.example.yaml` 和
+`docs/configuration.md`，**全都是从那一张表生成的**。
+它们不可能互相漂移，因为漂移测试会逐字节比对。
+
+### 执行顺序，以及它为什么重要
+
+```
+1. 读 --env / HANDBOOK_ENV                      ← 下面每一步都依赖它
+2. 把 .env 级联并入 process.env                  ← 好让第 3 步能看到 HANDBOOK_*
+3. 发现并加载配置文件                            ← 在 env 之后：它的优先级更低
+4. 解析**本次命令**的设置                        ← 参数 > env > 文件 > 默认值
+```
+
+配置文件**刻意**在 env 文件之后加载：它在优先级上低于环境变量，
+所以来自 `.env` 的 `HANDBOOK_*` 必须**先**进入 `process.env` 才会被读到——
+而后加载的文件**不能、也绝不该**覆盖环境变量给出的值。
+
+两个值得知道的推论：
+
+- **从不设置 commander 的默认值。** 一个被急切求值的默认值会在模块加载时
+  捕获 shell 里的值——**那时 `--env-file` 还没被应用**——于是文件被悄悄忽略。
+  默认值来自 registry，在 action 执行时取。
+- **没有任何东西被 commander 标为「必填」。** `--source` 和 `--work` 可以来自 env
+  或配置文件，所以必填性是在**所有层都问过之后**由解析器强制的。
+  报错时会把每一种提供方式都列出来：
+
+  ```
+  invalid configuration:
+    - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+      or add it to handbook.config.yaml
+  ```
+
+---
+
+## `handbook config` —— 调试利器
+
+```bash
+handbook config                        # 每个设置、它的值、它的来源
+handbook config --command generate     # 只看某个子命令
+handbook config --json                 # 机器可读
+handbook config --check                # 只校验；有问题就退出码 2
+```
+
+它会打印当前环境、级联真正加载了的每个 `.env` 文件、解析到的配置文件，
+然后每个设置一行，附带来源（`flag` / `env` / `file` / `default`）。
+**没有这个，一个多达八种可能来源的级联是不可审计的。**
+
+它刻意用的是**不抛错**的解析器：**这个命令的职责就是展示配置，包括配置坏掉的时候。**
+缺失的 `--source` 会渲染成一行可见的 `— unset (required)`，
+而不是把「你唯一能用来调试这个问题的工具」也一起搞挂。
+
+密钥会被打码。`--check` 是该放进 CI 的那一个。
+
+---
+
+## 示例
+
+```bash
+# 免费的冒烟测试
+handbook analyze --source ~/code/api --work work/api
+
+# 先便宜跑一遍，再只把卡片做深
+handbook generate --source ~/code/api --work work/api
+handbook generate --source ~/code/api --work work/api --phase 2a --detail deep --resume
+
+# 全套，中文，带 actor-critic 骨架循环
+handbook generate --source ~/code/api --work work/api \
+  --detail deep --synth-mode doctor --narrate-lang zh --llm-cache
+
+# 渲染所有格式
+handbook render --work work/api --title "API 手册" \
+  --html --html-single --agent-site --llms-txt \
+  --source-base-url https://github.com/me/api/blob/main
+
+# 打包 + 校验
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source ~/code/api --agent-dir work/api/handbook/agent
+handbook validate --skill skills/api --source ~/code/api
+
+# plan → dry-run → apply → rollback
+handbook plan --source ~/code/api --handbook skills/api/references \
+  --request "给 export 命令加一个 --json 参数" --out plan.md
+handbook apply --source ~/code/api --plan plan.md --dry-run
+handbook apply --source ~/code/api --plan plan.md
+handbook rollback --backup ~/code/api/.handbook-patches/<时间戳>
+
+# 让手册保持最新
+handbook resync --case cases/export-json --work work/api
+
+# 分环境配置
+handbook generate --env prod --source ~/code/api --work work/api
+handbook config --env prod --command generate
+```
+
+---
+
+## 退出码
+
+| 码  | 含义                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------- |
+| `0` | 成功                                                                                              |
+| `1` | 错误 —— 配置非法、产物缺失、运行失败（消息写到 stderr，前缀 `handbook: error:`）                  |
+| `2` | 一次**检查**失败：`validate` 发现问题、`apply` 未完全落地、或 `config --check` 发现非法或缺失的值 |
+
+这个区分在脚本里很重要：`2` 的意思是**「工具正常工作，而答案是否」**。
+
+---
+
+## 输出
+
+每个命令把结果以 **JSON 写到 stdout**，日志写到 **stderr**。所以下面这些如你所愿地工作：
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env")'
+```
+
+---
+
+## 备注
+
+- `handbook studio` 会一直运行到 `Ctrl-C`。
+- 省略 `--out` 时 `handbook plan` 写到 stdout，可以直接管道。
+- `handbook apply` 总会打印备份目录 —— **在你需要它之前先复制下来**。
+- `handbook skill --work <dir>` 只有在存在阶段 2 归属产物时才加 `coverage.json`；
+  没有的 work dir 只是**不贡献任何东西**，而不是让构建失败。
+
+---
+
+[Handbook](../../README.zh-CN.md) 的一部分 ·
+[配置参考](../../docs/configuration.md) · MIT

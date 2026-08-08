@@ -1,111 +1,222 @@
 # @handbook/llm
 
-工具链与任何 LLM 之间**唯一的接缝**。它定义 `ChatClient` 接口；实现 `OpenAiChatClient`——对接任何
-OpenAI 兼容的 `/chat/completions` 端点（托管 API、vLLM、代理），自带重试、限流与 JSON 抽取；
-提供确定性的 `MockChatClient` 供离线测试；以及一套与业务无关的 actor–critic 评审循环，
-管线里的「骨架医生」就建在它上面。
+[English](README.md) · **中文**
 
-> 英文版：[README.md](README.md)
+> 一个小而诚实的客户端，接任意 OpenAI 兼容端点——外加磁盘缓存、离线 mock，
+> 以及 pipeline 用来「让 LLM 跟自己吵到答案站得住」的 actor–critic 循环。
 
-## 职责
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fllm-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/llm)
+[![deps](https://img.shields.io/badge/运行时依赖-无-2dd4bf?style=flat-square)](#)
 
-- 定义 `ChatClient` —— 工具链里每一处 LLM 触点都只走这一个接口。
-- 实现 `OpenAiChatClient`：环境变量驱动的配置、有界并发、带退避的重试、请求超时、用量统计。
-- 对 HTTP 失败分类：永久性 4xx 快速失败；408/429/5xx 重试；**网关返回的 HTML 错误页也算可重试**（见设计说明）。
-- 提供 `MockChatClient`，让整条管线可以离线按脚本跑通。
-- 提供 actor–critic 编排（`actorCriticLoop` 及其提示词构造器与裁决解析器），支持角色扮演的评审团。
-- **不**包含任何手册专属提示词——任务上下文、证据、schema 都由调用方提供。
-- **不**做流式输出，也**不**管理多轮会话状态；`complete` 在设计上就是单轮的。
+---
 
-## 公开 API
+## 这是什么
 
-**客户端**（`client.ts`）
-
-- `ChatClient` —— `{ complete(prompt, options?): Promise<ChatResult>; readonly model: string }`。
-- `ChatOptions` —— `{ temperature?, maxTokens? }`；`ChatResult` —— `{ text, json, elapsedSec }`。
-- `OpenAiChatClient` —— `new OpenAiChatClient(options?)`；`complete(...)`、
-  `usage(): Readonly<LlmUsageStats>`（`calls`、`failures`、`totalElapsedSec`）。
-- `OpenAiChatClientOptions` —— `{ config?, concurrency?（默认 16）, logger?, timeoutMs?, fetchImpl? }`。
-  **务必传 `logger`**：不传就是静默客户端，重试、超时、网关拦截全都看不见。
-- `resolveLlmEnv(env?)` / `LlmEnvConfig` —— 从环境变量取配置：`OPENAI_API_KEY`、`OPENAI_MODEL`、
-  `OPENAI_BASE_URL`、`OPENAI_MAX_TOKENS`、`OPENAI_TIMEOUT`（秒，默认 300）、`OPENAI_EXTRA_BODY`（JSON），
-  均可用 `HANDBOOK_LLM_*` 作为回退；本地无鉴权端点用 `OPENAI_API_KEY=EMPTY`。
-- `extractAssistantText(payload)` —— 从常见的 OpenAI 兼容响应形状里取出助手正文。
-- `looksLikeGatewayPage(body)` —— 判断错误响应体是边缘网关的 HTML 页，而不是 API 的回答。
-
-**Mock**（`mock.ts`）
-
-- `MockChatClient` —— `new MockChatClient(rules: MockRule[], fallback?)`；每次调用都记进 `calls: RecordedCall[]`。
-- `MockRule` —— `{ match: string | RegExp | (prompt) => boolean; respond: MockResponse }`；
-  `MockResponse` 可以是字符串、对象（自动包成 JSON 栅栏块）或 `(prompt, callIndex) => …`。
-
-**Actor–critic**（`critic.ts`）
-
-- `actorCriticLoop(client, actorPrompt, options): Promise<ActorCriticResult>` ——
-  一个 actor 提案交给并行评审团审查，修改轮数有上限。
-- `ActorCriticOptions` —— `{ roles?, taskContext, schemaHint?, evidence?, maxReviseRounds?（默认 1）,
-criticConcurrency?, temperature?, logger? }`。
-- `ActorCriticResult` —— `{ proposal, accepted, rounds, verdicts }`。
-- `CriticRole`（`'engineer' | 'architect' | 'reader' | 'editor'`）、`ROLE_PROMPTS` ——
-  每个角色对应一类失败模式的角色扮演框架。
-- `CriticDecision`（`'APPROVE' | 'REVISE' | 'REJECT'`）、`Verdict`、`parseVerdict(json, text?)` ——
-  裁决解析，含「空洞 REVISE」归一化。
-- `buildCriticPrompt(args)` / `buildRevisePrompt(args)` —— 评审与修改的提示词构造器。
-
-## 用法
+[Handbook](../../README.zh-CN.md) 工具链里所有碰 LLM 的地方，都只走一个很小的接口：
 
 ```ts
-import { OpenAiChatClient, MockChatClient, actorCriticLoop, type ChatClient } from '@handbook/llm';
-import { createLogger } from '@handbook/core';
-
-const client: ChatClient = process.env.OPENAI_API_KEY
-  ? new OpenAiChatClient({ concurrency: 8, logger: createLogger('[llm]') })
-  : new MockChatClient([{ match: 'summarize', respond: { summary: 'stub' } }]);
-
-const result = await client.complete('Summarize this module as JSON: {"summary": "..."}', {
-  temperature: 0,
-});
-console.log(result.json);
-
-const review = await actorCriticLoop(client, 'Propose a title for the module. Return JSON.', {
-  roles: ['engineer', 'reader'],
-  taskContext: 'Module titling for a codebase handbook.',
-  evidence: 'The module parses CLI flags.',
-});
-console.log(review.accepted, review.proposal);
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
 ```
 
-## 设计说明
+**整个契约就这些。** 有三种实现满足它：
 
-- **一个接缝，两种实现**：下游代码全部面向 `ChatClient` 编写，所以生产上任何 OpenAI 兼容端点都能用，
-  而测试里 `MockChatClient` 能零网络地把整条管线按脚本跑完。
-- **永久性 4xx 快速失败**：400/401/403/404/405/410/422 抛 `PermanentError`，`retry` 绝不重试；
-  408/429/5xx 走线性退避加抖动重试。
-- **HTML 响应体 = 网关拦截，一律可重试**：某些服务商的边缘网关会用 HTML 错误页回你 405，
-  这意味着请求**根本没到 API**——它的裁决说明不了请求本身有问题。这类失败只报一行原因，
-  不把 300 字符的标记语言倒进日志。
-- **空正文是失败，不是空答案**：`content` 为空（或全是空白）会抛可重试错误。曾经它被当作成功返回，
-  于是「模型什么都没说」被记成一次成功调用——一整轮 90 个文件的卡片因此全空，而作业报告成功。
-- **截断只在「要结构且结构坏了」时拒绝**：`finish_reason: 'length'` 时，若回复里能抽出可用 JSON 就接受；
-  若明显想给结构却已残缺则报错重试；若是**散文**则保留已返回的部分并告警——
-  少了半句话的段落仍然胜过一段套话兜底。
-- **预算放大是按调用的**，上限 2×，并受「从 400 学到的天花板」约束（提到 token 参数的 400 视为可重试，
-  同时记住这个端点能接受的上限）。曾经它是客户端级状态，一次截断就会污染 16 个并发工作线程的预算。
-- **推理型模型的参数切换**：匹配 `gpt-5|gpt-4.1|o[1-9]` 的模型用 `max_completion_tokens` 且不传 `temperature`，
-  其余用经典的 `max_tokens`/`temperature`——调用方不需要关心。
-  厂商专属参数（例如某些模型的「关闭思考」开关）走 `OPENAI_EXTRA_BODY`，客户端自己管的字段受保护、不可被覆盖。
-- 每个 `ChatResult` 都带一个预先抽好的 `json` 字段（经 `extractJsonBlock`），
-  调用方不必各自重新实现栅栏与括号扫描。
-- **评审循环在构造上就保守**：某个 critic 的调用或解析失败一律算 REJECT（坏审稿人不能放行）；
-  提前通过需要全体 APPROVE；没有具体意见的 REVISE 归一化成 APPROVE，因为它给 actor 的是空指令。
-  裁决解析容忍 `verdict`/`judgement`/`status` 等键名和纯决策词回复，但**散文不能投票**——
-  「I would not approve this」依旧算读不出来，也就是 REJECT。
+| 实现               | 用途                                             |
+| ------------------ | ------------------------------------------------ |
+| `OpenAiChatClient` | 生产环境。任何认 `/v1/chat/completions` 的端点。 |
+| `CachedChatClient` | 装饰器。磁盘缓存、内容寻址——重跑变免费。         |
+| `MockChatClient`   | 测试与离线演示。脚本化规则，零网络。             |
 
-## 依赖
+正因为接口这么小，**整条 pipeline 都能离线测试**，而换端点只是改一个 URL。
 
-内部：
+**不依赖任何 SDK。** 它是一个薄薄的 `fetch` 客户端——这正是它能跑在
+「只实现了 OpenAI API 八成」的端点上的原因。
 
-- `@handbook/core` —— `PermanentError`、`retry`、`pLimit`、`mapLimit`、`extractJsonBlock`、`Logger`
-  以及形状容忍工具（`describeJsonShape`、`replyExcerpt`）。
+---
 
-外部：无 —— HTTP 走全局 `fetch`（测试可注入）。
+## 安装
+
+```bash
+pnpm add @handbook/llm
+```
+
+---
+
+## 快速上手
+
+```ts
+import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+
+const client = new OpenAiChatClient({ config: resolveLlmEnv(), concurrency: 16 });
+
+const result = await client.complete('用一句话概括这个模块：…', {
+  temperature: 0,
+  maxTokens: 400,
+});
+
+result.text; // 原始回复
+result.json; // 从中解析出来的 JSON（如果有）—— 见下文「JSON 提取」
+```
+
+### 配置
+
+`resolveLlmEnv()` 读的是共享的 registry，所以它同时接受大家已经 export 的厂商变量名
+和工具链自己的：
+
+| 设置             | 环境变量（厂商别名在前）                        | 默认值                         |
+| ---------------- | ----------------------------------------------- | ------------------------------ |
+| API Key          | `OPENAI_API_KEY` · `HANDBOOK_LLM_API_KEY`       | — （本地无鉴权端点填 `EMPTY`） |
+| 模型             | `OPENAI_MODEL` · `HANDBOOK_LLM_MODEL`           | `gpt-4o-mini`                  |
+| Base URL         | `OPENAI_BASE_URL` · `HANDBOOK_LLM_BASE_URL`     | `https://api.openai.com/v1`    |
+| 最大输出 token   | `OPENAI_MAX_TOKENS` · `HANDBOOK_LLM_MAX_TOKENS` | `16000`                        |
+| 单请求超时（秒） | `OPENAI_TIMEOUT` · `HANDBOOK_LLM_TIMEOUT`       | `300`                          |
+| 重试次数         | `HANDBOOK_LLM_MAX_RETRIES`                      | `6`                            |
+| 退避基数（秒）   | `HANDBOOK_LLM_RETRY_BACKOFF`                    | `3`                            |
+| 并发上限         | `HANDBOOK_LLM_CONCURRENCY`                      | `16`                           |
+| 厂商扩展字段     | `OPENAI_EXTRA_BODY`（JSON）                     | —                              |
+
+`llmConfigFromValues(values)` 做同样的事，但从一个已解析好的配置对象出发——
+CLI 就是这样把 `--model` 和 `--base-url` 送进客户端的。
+
+---
+
+## 客户端替你处理了什么
+
+- **指数退避 + 抖动的重试**，在端点返回 `Retry-After` 时尊重它。
+  `PermanentError`（真的是请求本身有问题）**永不重试**。
+- **全局并发上限**，作用于**一个客户端上的所有调用**，而不是单个调用点。
+  阶段 2a 可以放心要 12 个 worker，不会变成 12 × N 个在途请求。
+- **单请求超时。** 卡住的调用会被中止并重试，而不是永远扣着一个阶段不放。
+- **协作式取消。** 传一个 `AbortSignal`；被取消的调用以 signal 的 reason 拒绝
+  （一个 `AbortError`，绝不包装），中止在途 HTTP 请求，且**不重试**。
+- **推理模型的怪癖。** 对拒绝 `temperature` 的模型自动省略该字段。
+- **网关页面识别。** `looksLikeGatewayPage(body)` 能识破公司代理用 `200`
+  返回一个 HTML 登录页的情况，于是你看到的是
+  _「你的网关返回了 HTML 而不是 JSON」_，而不是一个莫名其妙的解析错误。
+- **Token 计量。** `client.usage()` 返回 prompt/completion/total，
+  pipeline 会把它写进 `run-manifest.json`，让你看得见一次运行花了多少。
+
+### JSON 提取
+
+模型会把 JSON 包在散文里、代码块里、解释里，或者结尾多个逗号。
+`ChatResult.json` 是一次宽容提取的结果，上面这些都能处理——
+并且在**确实找不到**的时候返回 `undefined`，而不是一个错误的对象。
+失败时，`replyExcerpt` 和 `describeJsonShape`（来自 `@handbook/core`）
+会把回复变成可读的诊断，而不是一堵文字墙。
+
+---
+
+## 缓存
+
+```ts
+import { CachedChatClient } from '@handbook/llm';
+
+const cached = new CachedChatClient(client, '<work>/phase3/cache');
+```
+
+是个装饰器，所以没有任何阶段知道缓存存在。缓存键覆盖**模型、提示词和选项**，
+所以换模型或改 temperature 绝不会喂给你陈旧的文本。
+**空回复永远不入缓存**——一个被钉在稳定键上的空响应会毒害之后每一次运行。
+
+命令行：`handbook generate --llm-cache`（`--refresh` 则忽略缓存）。
+
+---
+
+## 离线 mock
+
+```ts
+import { MockChatClient } from '@handbook/llm';
+
+const client = new MockChatClient(
+  [
+    { match: /概括这个文件/, respond: { purpose: '解析配置', role: 'config' } },
+    { match: (p) => p.includes('skeleton'), respond: (prompt, i) => `stage-${i}` },
+  ],
+  /* fallback */ '{}',
+);
+
+client.calls; // 记录下的每次提示词、选项和响应
+```
+
+第一条匹配上的规则获胜。匹配器可以是子串、正则或谓词；响应可以是字符串、对象，
+或提示词的函数。这已经足够把整条 pipeline 跑一遍——本仓库的测试正是这样在
+**完全不碰网络**的情况下覆盖阶段 2a → 3 的。
+
+还有一个 **mock HTTP 端点**（`examples/mock-llm-server.mjs`），用于端到端测试真实客户端：
+
+```bash
+pnpm mock-llm    # → http://127.0.0.1:8099/v1
+```
+
+---
+
+## Actor–critic 编排
+
+有意思的部分。一个 **actor** 提出结构化的改动；一个或多个 **critic**
+（每个角色扮演针对一种不同的失败模式）拿着**事实证据**评审它；
+然后 actor 有一轮修订机会来回应汇总后的意见。
+
+```ts
+import { actorCriticLoop, ROLE_PROMPTS } from '@handbook/llm';
+
+const result = await actorCriticLoop({
+  client,
+  actorPrompt,
+  evidence, // critic 用来对照的事实依据
+  critics: ['engineer', 'architect', 'reader'],
+  schemaHint: '{ "stages": [...] }',
+});
+```
+
+| Critic      | 审什么                                                     |
+| ----------- | ---------------------------------------------------------- |
+| `engineer`  | 提案是否符合代码实际行为？被引用的东西是否真实存在？       |
+| `architect` | 结构问题——边界不清、阶段过胖、横切关注点放错地方           |
+| `reader`    | 是否**更好读**？页面是否内聚、标题是否直观、新人能否跟着走 |
+| `editor`    | 一节内部的排序读起来像故事，还是像目录清单？               |
+
+每个返回一个 `Verdict`：`APPROVE` / `REVISE` / `REJECT`，外加关注点、建议修订和理由。
+
+这个模块刻意**与领域无关**——actor 提示词、证据块和 schema 提示都由 pipeline 提供。
+`handbook generate --synth-mode doctor` 底下跑的就是它。
+
+---
+
+## API
+
+```ts
+// 客户端
+class OpenAiChatClient implements ChatClient
+resolveLlmEnv(env?): LlmEnvConfig
+llmConfigFromValues(values): Partial<LlmEnvConfig>
+looksLikeGatewayPage(body: string): boolean
+extractAssistantText(payload: unknown): string | undefined
+
+// 缓存与 mock
+class CachedChatClient implements ChatClient
+class MockChatClient implements ChatClient
+
+// actor–critic
+actorCriticLoop(options): Promise<ActorCriticResult>
+parseVerdict(json, text?): Verdict | undefined
+buildCriticPrompt(args): string
+buildRevisePrompt(args): string
+ROLE_PROMPTS: Record<CriticRole, string>
+```
+
+---
+
+## 测试
+
+```bash
+pnpm --filter @handbook/llm test
+```
+
+客户端是对着一个本地 HTTP 服务器测的——重试、超时、限流、取消、网关页面、
+畸形负载，全都有真实测试。**没有任何测试需要 API Key。**
+
+---
+
+[Handbook](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/prompts.md) · MIT

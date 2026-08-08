@@ -1,189 +1,512 @@
+<div align="center">
+
 # Handbook
 
-**English** | [中文](README.zh-CN.md)
+**Turn any codebase into a handbook your agent can actually route with.**
 
-Turn any codebase into a navigable **handbook** — then use that handbook to help a code
-agent find _every_ place a change needs to touch, and keep the handbook current as the
-code evolves.
+[![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
+[![Tests](https://img.shields.io/badge/tests-1334%20passing-2dd4bf.svg?style=flat-square)](#development)
+[![Languages](https://img.shields.io/badge/languages-18-a78bfa.svg?style=flat-square)](#language-support)
+[![LLM](https://img.shields.io/badge/LLM-any%20OpenAI--compatible-fbbf24.svg?style=flat-square)](#requirements)
 
+**English** · [中文](README.zh-CN.md)
+
+</div>
+
+<p align="center">
+  <img src="assets/pipeline.svg" alt="Handbook pipeline: analyze, generate, render, skill, plan, apply, resync" width="100%">
+</p>
+
+---
+
+## The 60-second version
+
+You have a repository. It is too big to hold in your head, and too big to hold in a
+context window. Your coding agent greps for a symbol, finds three of the seven places
+that matter, edits those three, and ships a half-change.
+
+**Handbook fixes the routing problem.** It reads your code with a real parser, builds a
+map of it, and hands that map to the agent as a _location index_ — not a summary. Then
+it keeps the map current as the code moves.
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install && pnpm build
+pnpm demo            # ← full end-to-end run, offline, no API key, ~30 seconds
 ```
-source code ──▶ analyze ──▶ generate ──▶ render ──▶ skill ──▶ plan
-   (any repo)   call graph   LLM pipeline  md + HTML   agent      change
-                (no LLM)     cards/stages  + locator   package    localization
-                             /narration    index                     │
-                                  ▲                                  │
-                                  └────────────── resync ◀───────────┘
-                                             (after code changes)
-```
+
+That last command runs the whole toolchain against a bundled sample project using a
+bundled mock LLM. When it finishes you will have a rendered handbook, an HTML site, an
+agent locator index and a validated SKILL package on disk. **Zero tokens spent.**
+
+---
+
+## Table of contents
+
+- [What this actually is](#what-this-actually-is)
+- [What you get](#what-you-get)
+- [Requirements](#requirements)
+- [Quick start — 8 steps](#quick-start--8-steps)
+- [Studio: the same thing, but you click it](#studio-the-same-thing-but-you-click-it)
+- [How generation works](#how-generation-works)
+- [Configuration](#configuration)
+- [Language support](#language-support)
+- [Monorepo layout](#monorepo-layout)
+- [Command cheatsheet](#command-cheatsheet)
+- [Docker](#docker)
+- [Development](#development)
+- [Releasing](#releasing)
+- [FAQ](#faq)
+
+---
+
+## What this actually is
+
+### The problem, stated plainly
+
+A code agent is good at _editing_ code and bad at _finding_ the code to edit. Ask it to
+"retry failed uploads three times" and it will confidently patch the one upload function
+it found — and miss the retry policy constant, the mirrored implementation in the batch
+worker, the metric that counts attempts, and the test that asserts the old behaviour.
+
+That is not a reasoning failure. It is a **routing** failure. The agent never saw a map.
+
+### The answer, in three ideas
+
+**1. Facts come from a parser, not from a model.**
+Handbook parses every source file with tree-sitter and builds a typed call graph:
+functions, methods, call edges resolved through `self`/attributes/parameters/imports,
+calls that leave your code, and calls it could not resolve (quarantined, never guessed).
+This layer never touches an LLM. It is the same every time you run it.
+
+**2. Prose is layered _on top of_ facts, and labelled.**
+An LLM writes the human-readable part — what a file is for, how a subsystem hangs
+together, which state flows across which stages. It is always anchored to the graph, and
+where it fails, the structure still ships with an empty description. **A missing sentence
+is better than an invented one.**
+
+**3. The map is built for routing, not for reading.**
+The output is not a summary of your code. It is an index that answers _"which files,
+functions and state does this change have to touch?"_ — including the scattered,
+non-obvious ones. Then the planner uses that index, reads the real source at every
+address it found, and emits an edit plan that is byte-exact enough to apply mechanically.
+
+### Who this is for
+
+| You are…                                           | You get…                                                                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| An engineer who just inherited a 200k-line service | A stage-by-stage walkthrough you can actually read, plus an HTML site to share |
+| Someone running a coding agent on a big repo       | A SKILL package that stops the agent guessing where things live                |
+| A team lead onboarding people                      | Documentation that regenerates instead of rotting                              |
+| Someone maintaining a polyglot monorepo            | One pass over 18 languages, with the analysis fidelity disclosed per language  |
+
+---
 
 ## What you get
 
-- **A handbook**: a stage-by-stage map of the codebase — system overview, ordered stage
-  pages with plain-language walkthroughs of every file and function, a cross-stage
-  **state-register** table, and a self-contained HTML site (multi-page or single-file).
-- **An agent locator index**: a deterministic, fact-gated routing layer (duty, entry
-  concepts, state, exemplars, co-change hints, core files) built for code agents.
-- **A SKILL package**: the handbook repackaged as an agent skill (`SKILL.md` +
-  `references/`), with content-hash coverage for drift detection.
-- **A planner**: a read-only agent that routes with the handbook, reads the real source,
-  and emits a byte-exact edit plan plus machine-readable change declarations.
-- **Resync**: after a real code change, the handbook's derived layer rolls forward
-  incrementally — no full regeneration.
+<p align="center">
+  <img src="assets/outputs.svg" alt="Outputs: markdown handbook, HTML site, single page, agent locator index, llms.txt, SKILL package" width="100%">
+</p>
+
+Concretely, one `generate` + `render` produces:
+
+- **A markdown handbook** — `overview.md` (system prose + a mermaid stage map),
+  `index.md` (every stage, nested), one page per stage with grouped file cards, and
+  `register.md`: a table of cross-stage state with the stages that touch it.
+- **A multi-page HTML site** — sticky sidebar TOC, breadcrumbs, a persisted theme
+  toggle, expand/collapse-all. All CSS and JS inlined, every link relative: it works
+  straight off `file://`, no server, no CDN.
+- **One self-contained HTML page** — the whole handbook in a single file you can email.
+- **An agent locator index** — a deterministic, fact-gated routing layer: duty, entry
+  concepts, state touched, exemplar files, co-change hints, core files. A field is
+  emitted _only_ if the structural signal for it exists, so an empty field means
+  "no signal", never "unknown".
+- **`llms.txt` and `llms-full.txt`** — the [llms.txt](https://llmstxt.org/) convention,
+  plus the whole handbook flattened into one document.
+- **A SKILL package** — `SKILL.md` + `references/`, with `coverage.json` carrying a
+  content hash per file, so an agent can tell when a page has fallen behind the code.
+
+---
 
 ## Requirements
 
-- Node.js ≥ 20.11, pnpm ≥ 9
-- For LLM phases: any **OpenAI-compatible** endpoint
+- **Node.js ≥ 20.11** and **pnpm ≥ 9** — that is the whole list. No native compilation,
+  no Python, no `node-gyp`; the parsers are WebAssembly.
+- **For the LLM phases:** any **OpenAI-compatible** chat endpoint. Hosted OpenAI, Azure,
+  vLLM, Ollama, LiteLLM, an internal proxy — if it speaks `/v1/chat/completions`, it works.
 
 ```bash
-export OPENAI_API_KEY=sk-...                        # required for phases 2/3
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
 export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
-export OPENAI_BASE_URL=https://api.openai.com/v1    # or vLLM / a proxy / any compatible endpoint
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
 ```
 
-Use `OPENAI_API_KEY=EMPTY` for keyless local endpoints. Phase 1 (static analysis) never
-needs a key. `--lang auto` detects and merges every language in one pass.
-
-**Full fidelity** (hand-written adapters: type-driven call resolution, inherited members,
-per-attribute state tracking): Python, TypeScript — which also covers JavaScript
-(`.js`/`.jsx`/`.mjs`/`.cjs`) — Go, Rust, Java, C#, C/C++, Ruby, PHP, Swift, Dart, Solidity,
-and Shell.
-**Generic tier** (config-driven: exact file and function inventory, best-effort call
-relations): Kotlin, Scala, Zig, Objective-C, OCaml. A handbook whose analysis mixes tiers says
-so in its overview — see [docs/architecture.md](docs/architecture.md).
-
-Two caveats worth stating up front: Swift's grammar aborts the process on V8 ≥ 13, so the
-adapter refuses at discovery there and names the remedy (`node --liftoff-only`) instead of
-crashing; and a shell script containing a `case` statement is skipped, because that grammar
-throws — both are reported in the scan log rather than silently dropped.
+Use `OPENAI_API_KEY=EMPTY` for keyless local endpoints. **Phase 1 — static analysis —
+never needs a key at all**, so `handbook analyze` is always free.
 
 Prefer a file over shell exports? The CLI auto-loads `./.env` from the directory you run
-it in (shell variables win; see [.env.example](.env.example)), or pass an explicit
-`--env-file <path>`.
+it in (shell variables always win — see [.env.example](.env.example)), or pass an
+explicit `--env-file <path>`. See [Configuration](#configuration) for the full cascade.
 
-Multiple environments? `--env prod` (or `HANDBOOK_ENV=prod`) layers `.env.prod` ahead of
-`.env`, and prefers `handbook.config.prod.yaml` over the plain file:
+---
+
+## Quick start — 8 steps
+
+```bash
+pnpm install && pnpm build
+
+# Make the CLI convenient to call:
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+```
+
+> Every `pnpm <command>` shortcut below does an incremental `tsc -b` first (~0.4 s when
+> up to date), so you can never run a stale `dist`.
+
+### Step 1 — Look before you leap: build the call graph (free, no LLM)
+
+```bash
+handbook analyze --source /path/to/repo --work work/myrepo
+```
+
+```json
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+This is your smoke test. It writes `work/myrepo/phase1/graph.json` plus a CSV of every
+function and a Graphviz `.dot`. If the file count looks wrong, fix that before spending
+tokens. `--lang auto` (the default) detects and merges every language in one pass.
+
+### Step 2 — Generate the handbook (this is the part that costs tokens)
+
+```bash
+handbook generate --source /path/to/repo --work work/myrepo \
+    --detail deep --synth-mode doctor --narrate-lang en
+```
+
+Runs phases 1 → 2a → 2b → 2c → 3. On a first run of a mid-size repo expect minutes, not
+seconds. It is **resumable** (`--resume`), **cancellable**, and **content-hash cached**,
+so a re-run after a crash picks up where it stopped.
+
+Start cheap on a big repo and upgrade later:
+
+```bash
+handbook generate --source /path/to/repo --work work/myrepo          # brief cards, one-shot skeleton
+handbook generate --source /path/to/repo --work work/myrepo \
+    --phase 2a --detail deep --resume                                # deepen only the cards
+```
+
+### Step 3 — Render it into things people and agents can open
+
+```bash
+handbook render --work work/myrepo --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt
+```
+
+No LLM. Run it as often as you like — in CI, on every commit, for free.
+
+### Step 4 — Package it as an agent SKILL
+
+```bash
+handbook skill --handbook work/myrepo/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work work/myrepo --source /path/to/repo \
+    --agent-dir work/myrepo/handbook/agent
+```
+
+`--work` + `--source` add `coverage.json` with a content hash per file — that is what
+makes handbook drift _detectable_ rather than silently wrong.
+
+### Step 5 — Validate it
+
+```bash
+handbook validate --skill skills/myrepo --source /path/to/repo
+```
+
+Checks structure, frontmatter contract, index ↔ stage-page consistency, and re-hashes
+the source to report pages that have fallen behind. Exits non-zero when it fails, so you
+can wire it into CI.
+
+### Step 6 — Plan a real change with it
+
+```bash
+handbook plan --source /path/to/repo --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
+
+A **read-only** agent loop: it lists, reads and greps (it can never write), routes with
+the handbook, verifies against the real source, and emits `plan.md`. The plan ends with a
+machine-readable declarations block:
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — add the retry wrapper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+If the planner cannot produce a usable plan it **exits non-zero** instead of writing an
+apology into `plan.md` that a script would then happily feed into `apply`.
+
+### Step 7 — Apply it, byte-exactly, with a way back
+
+```bash
+handbook apply --source /path/to/repo --plan plan.md --dry-run   # verify only, never writes
+handbook apply --source /path/to/repo --plan plan.md             # for real
+```
+
+The safety rules, in priority order:
+
+1. **Verify everything first, then write in two phases.** One failure aborts the whole
+   application. Writes are staged as temp files and only renamed once every stage
+   succeeded — and if a rename fails midway, the already-renamed files are restored.
+2. **`old` must match byte-exactly and uniquely.** Zero matches means the code moved on.
+   Two or more means the anchor is ambiguous. Both refuse.
+3. **Every touched file is backed up with its pre-patch hash**, so rollback can _prove_
+   it is restoring the bytes this patch replaced.
+4. **No path escapes the source root** — including through symlinked parent directories.
+
+Changed your mind?
+
+```bash
+handbook rollback --backup /path/to/repo/.handbook-patches/<stamp>
+```
+
+Rollback refuses any file that changed _after_ the patch, unless you pass `--force`.
+
+### Step 8 — Roll the handbook forward
+
+A resync **case** is a directory you assemble: the tree as it stands now, plus what the
+plan said.
+
+```
+cases/upload-retry/
+  edited/       copy of the repo after the change   (required)
+  plan.md       the plan from step 6                (optional — sharpens scope)
+  change.diff   unified diff of the change          (optional — widens scope)
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R /path/to/repo cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work work/myrepo
+```
+
+Resync re-analyzes the edited tree, diffs old graph against new, and regenerates **only
+what changed** — cards for touched files, assignment for added ones, organization for
+affected stages, narration for affected prose. Already-rendered outputs under
+`work/myrepo/handbook` refresh automatically (`--no-render` to skip).
+
+No endpoint handy? `--no-llm` does the structural refresh and marks the prose stale
+rather than pretending it is current.
+
+---
+
+## Studio: the same thing, but you click it
+
+```bash
+pnpm studio                    # → http://127.0.0.1:4860
+pnpm studio --port 5000        # flags pass straight through
+```
+
+A local web UI over the whole toolchain: a repository registry, generation with live
+streaming logs, the handbook browser, an impact graph, a source viewer, and the full
+**plan → dry-run → apply → rollback → resync** loop.
+
+It binds to `127.0.0.1` by default and its CSRF defence checks the `Host` header, so it
+stays a local tool unless you deliberately change that.
+
+---
+
+## How generation works
+
+| Phase  | What happens                                                                                                                                                                                                                                                                                                                                                | LLM? |
+| :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--: |
+| **1**  | Language adapters (tree-sitter, WASM) parse every file into a typed call graph: functions, methods, resolved call edges (`self` / attribute / parameter / import), boundary calls into third-party code, and unresolved calls quarantined into `dropped-calls.json` rather than guessed at.                                                                 |  ❌  |
+| **2a** | Every file gets a **card**: purpose, role, lifecycle — and in `--detail deep` a 120–300-word walkthrough plus per-function purpose / data flow / relations merged onto the graph facts. Batched, three-tier degradation, crash-safe, resumable.                                                                                                             |  ✅  |
+| **2b** | A stage **skeleton** — the narrative spine, ordered by execution lifecycle — is synthesized from directory rollups and entry points; then every file is assigned to exactly one stage. `--synth-mode doctor` runs an actor–critic repair loop (engineer / architect / reader critics) until nothing is unassigned and no structural change survives review. |  ✅  |
+| **2c** | Each stage's files are ordered by call-graph topology and grouped into 2–8 titled sub-groups. Every failure degrades to a deterministic flat order — **files are never dropped.**                                                                                                                                                                           |  ✅  |
+| **3**  | Bottom-up narration: stage overviews (children before parents), then the system overview, then cross-stage **state registers** extracted with a loop-until-dry gap pass. Content-hash cached throughout.                                                                                                                                                    |  ✅  |
+
+`--phase` selects any subset: `all`, `1`, `2` (= 2a+2b+2c), `2a`, `2b`, `2c`, `3`, or a
+comma list like `2c,3`.
+
+### Two strategies
+
+|           | `--strategy file` (default) | `--strategy member`                    |
+| --------- | --------------------------- | -------------------------------------- |
+| Skeleton  | synthesized by the LLM      | **you author** `skeleton.yaml`         |
+| Leaf unit | one source file             | one function/method                    |
+| Best for  | repos you do not know yet   | repos where you already know the shape |
+| Cost      | lower                       | higher — every member is classified    |
+
+The strategy is recorded in `<work>/phase2/strategy.json`, so a partial re-run
+(`--phase 3`) can never silently cross strategies.
+
+### The work directory
+
+```
+<work>/
+  phase1/graph.json          the call graph — the one file everything downstream reads
+  phase1/functions.csv       every function, flat, for grepping
+  phase1/graph.dot           Graphviz, if you want to look at it
+  phase1/dropped-calls.json  calls we could not resolve, categorized — not hidden
+  phase2/cards/<rel>.json    one card per source file
+  phase2/cards/_coverage.json
+  phase2/skeleton.yaml       the stage spine
+  phase2/assignment.json     file → stage
+  phase2/organization.yaml   intra-stage groups + reading order
+  phase3/narration.json      stage and system prose
+  phase3/registers.json      cross-stage state registers
+  phase3/cache/              content-hash caches
+  run-manifest.json          model, phases, timings, token usage of the last good run
+```
+
+Every artifact is schema-validated on read. A corrupted one fails loudly and names
+itself; it never propagates.
+
+---
+
+## Configuration
+
+<p align="center">
+  <img src="assets/config-cascade.svg" alt="Configuration cascade: flag, environment, .env files, handbook.config.yaml, default" width="100%">
+</p>
+
+Every setting is declared **once**, in one registry table. The CLI flags, the environment
+variable names, the config-file keys, [.env.example](.env.example),
+[handbook.config.example.yaml](handbook.config.example.yaml) and
+[docs/configuration.md](docs/configuration.md) are all _generated_ from it — so they
+cannot drift apart.
+
+### Precedence, highest first
+
+1. **CLI flag** — `--read-workers 4`
+2. **Shell environment** — `HANDBOOK_GENERATE_READ_WORKERS`, then `HANDBOOK_READ_WORKERS`,
+   then vendor aliases like `OPENAI_MODEL`
+3. **`.env` cascade** — merged into the environment before anything reads it
+4. **`handbook.config.yaml`** — discovered by walking up from the cwd, stopping at the git root
+5. **Registry default**
+
+### Multiple environments
 
 ```bash
 handbook generate --env prod --source ~/code/proj --work work/proj
 ```
 
-Every setting is also a flag and a config-file key — see [docs/configuration.md](docs/configuration.md)
-for the full reference, or run `handbook config` to see what is set and where it came from
-(including the active environment and every file it loaded).
+`--env prod` (or `HANDBOOK_ENV=prod`) loads `.env.prod.local` → `.env.prod` →
+`.env.local` → `.env`, in that order, first writer wins — and prefers
+`handbook.config.prod.yaml` over the plain file. `--env-file <path>` bypasses the
+cascade entirely and loads exactly that file.
 
-## Quick start
+### Ask what is actually set
 
 ```bash
-pnpm install
-pnpm build
-
-# Try the full offline demo first (bundled mock LLM, no key needed):
-bash examples/run-demo.sh
-
-# On your own repo:
-alias handbook="node $(pwd)/packages/cli/dist/main.js"
-
-# 1. Static call graph only — a good smoke test, no LLM:
-handbook analyze --source /path/to/repo --work work/myrepo
-
-# 2. Full generation (cards → skeleton → assignment → organization → narration):
-handbook generate --source /path/to/repo --work work/myrepo \
-    --detail deep --synth-mode doctor --narrate-lang en
-
-# 3. Render markdown + HTML site + agent locator index:
-handbook render --work work/myrepo --title "MyRepo Handbook" --html --html-single --agent-site
-
-# 4. Package as an agent SKILL (+ coverage hashes for drift detection):
-handbook skill --handbook work/myrepo/handbook --out skills/myrepo \
-    --name myrepo --work work/myrepo --source /path/to/repo
-
-# 5. Validate a skill (structure + freshness):
-handbook validate --skill skills/myrepo --source /path/to/repo
-
-# 6. Plan a change with the handbook:
-handbook plan --source /path/to/repo --handbook skills/myrepo/references \
-    --request "Retry failed uploads three times before giving up" --out plan.md
-
-# 7. Apply the plan for real (verify first, then write with backups):
-handbook apply --source /path/to/repo --plan plan.md --dry-run
-handbook apply --source /path/to/repo --plan plan.md
-#    …changed your mind? handbook rollback --backup <dir printed above>
-
-# 8. After the change lands, roll the handbook forward. A resync case is a
-#    directory you assemble — the tree as it stands now, plus what the plan said:
-#      cases/upload-retry/
-#        edited/       copy of the repo after the change   (required)
-#        plan.md       the plan from step 6                (optional — sharpens scope)
-#        change.diff   unified diff of the change          (optional — widens scope)
-mkdir -p cases/upload-retry
-cp -R /path/to/repo cases/upload-retry/edited
-cp plan.md cases/upload-retry/
-handbook resync --case cases/upload-retry --work work/myrepo
-#    Already-rendered outputs under work/myrepo/handbook refresh automatically
-#    (--no-render to skip); card depth follows the existing handbook.
+handbook config                              # a table: every setting, value, and where it came from
+handbook config --command generate           # scoped to one subcommand
+handbook config --json                       # machine-readable
+handbook config --check                      # exit non-zero if anything is invalid or missing
 ```
 
-Prefer clicking over typing? `handbook studio` opens a local web UI at http://127.0.0.1:4860 — repository registry, generation with live logs, the handbook browser, an impact graph, a source viewer, and the full plan → dry-run → apply → rollback → resync loop.
+`--check` is the one to put in CI. A typo'd environment variable used to mean "silently
+ran at the default"; now it is a build failure with the variable named in the message.
 
-Key `generate` flags: `--strategy file|member` (file = auto skeleton, file-as-leaf;
-member = you author `skeleton.yaml`, functions are classified individually),
-`--detail brief|deep`, `--synth-mode oneshot|doctor` (doctor = actor–critic repair loop),
-`--narrate-lang en|zh`, `--phase all|1|2|2a|2b|2c|3|comma-list`, `--resume`.
+Secrets (`llmApiKey` / `OPENAI_API_KEY`) are masked in that output, are never a flag, and
+are **rejected** if they appear in a config file — because config files get committed.
 
-## How generation works
+Full reference: **[docs/configuration.md](docs/configuration.md)**.
 
-| Phase | What happens                                                                                                                                                                                                                                                                                                                                            | LLM |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 1     | Language adapters (tree-sitter, WASM) parse every file into a typed call graph: functions, methods, resolved call edges (`self`/attribute/parameter/import), boundary calls, unresolved calls quarantined into `dropped-calls.json`.                                                                                                                    | no  |
-| 2a    | Every file gets a **card**: purpose, role, lifecycle — and in deep mode a 120–300-word walkthrough plus per-function purpose / data flow / relations merged onto graph facts. Batched, three-tier degradation, crash-safe, resumable.                                                                                                                   | yes |
-| 2b    | A stage **skeleton** (the narrative spine, ordered by execution lifecycle) is synthesized from directory rollups + entry points, then every file is assigned to exactly one stage. `--synth-mode doctor` runs an actor–critic repair loop (engineer / architect / reader critics) until nothing is unassigned and no structural change survives review. | yes |
-| 2c    | Each stage's files are ordered by call-graph topology and grouped into 2–8 titled sub-groups; every failure degrades to a deterministic flat order — files are never dropped.                                                                                                                                                                           | yes |
-| 3     | Bottom-up narration: stage overviews (children before parents), a system overview, and cross-stage **state registers** extracted with a loop-until-dry gap pass. Everything is content-hash cached.                                                                                                                                                     | yes |
+---
 
-Every artifact is schema-validated JSON/YAML under the work dir; any phase can be re-run
-independently and a crashed run resumes where it stopped.
+## Language support
+
+**Full fidelity** — hand-written adapters with type-driven call resolution, inherited
+members and per-attribute state tracking:
+
+| Language       | Extensions                              |     | Language     | Extensions               |
+| -------------- | --------------------------------------- | --- | ------------ | ------------------------ |
+| **Python**     | `.py`                                   |     | **Ruby**     | `.rb` `.rake` `.gemspec` |
+| **TypeScript** | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs` |     | **PHP**      | `.php` `.phtml`          |
+| **Go**         | `.go`                                   |     | **Swift**    | `.swift`                 |
+| **Rust**       | `.rs`                                   |     | **Dart**     | `.dart`                  |
+| **Java**       | `.java`                                 |     | **Solidity** | `.sol`                   |
+| **C#**         | `.cs`                                   |     | **Shell**    | `.sh` `.bash`            |
+| **C/C++**      | `.c` `.h` `.cpp` `.cc` `.cxx` `.hpp` …  |     |              |                          |
+
+> JavaScript is covered by the TypeScript adapter — there is no separate one to pick.
+
+**Generic tier** — one config-driven engine, one declarative spec per language. Exact
+file and function inventory; call relations are best-effort:
+
+**Kotlin** (`.kt` `.kts`) · **Scala** (`.scala` `.sc`) · **Zig** (`.zig`) ·
+**Objective-C** (`.m`) · **OCaml** (`.ml`)
+
+A handbook whose analysis mixes tiers **says so** in its overview, so "best-effort call
+relations" can never be read as "exact".
+
+Two caveats stated up front rather than discovered later:
+
+- **Swift**'s grammar aborts the process on V8 ≥ 13. The adapter refuses at discovery on
+  such a runtime and names the remedy (`node --liftoff-only`) instead of crashing your run.
+- A **shell** script containing a `case` statement is skipped, because that grammar throws.
+
+Both are reported in the scan log — never silently dropped.
+
+---
 
 ## Monorepo layout
 
-| Package                                             | Role                                                                                |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| [`@handbook/core`](packages/core/README.md)         | Data model (call-graph IR + handbook model), zod schemas, dependency-free utilities |
-| [`@handbook/analyzer`](packages/analyzer/README.md) | Multi-language static call-graph extraction (tree-sitter WASM) — no LLM             |
-| [`@handbook/llm`](packages/llm/README.md)           | OpenAI-compatible chat client + actor–critic orchestration + offline mock           |
-| [`@handbook/pipeline`](packages/pipeline/README.md) | The generation pipeline (phases 1–3, file & member strategies)                      |
-| [`@handbook/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, self-contained HTML site — no LLM              |
-| [`@handbook/skill`](packages/skill/README.md)       | SKILL packaging + validation + coverage drift detection — no LLM                    |
-| [`@handbook/planner`](packages/planner/README.md)   | Handbook-guided read-only planning agent                                            |
-| [`@handbook/patcher`](packages/patcher/README.md)   | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback         |
-| [`@handbook/resync`](packages/resync/README.md)     | Incremental handbook roll-forward after code changes                                |
-| [`@handbook/studio`](packages/studio/README.md)     | Local web UI: repos · generate · browse · evolve (127.0.0.1)                        |
-| [`@handbook/cli`](packages/cli/README.md)           | The `handbook` command                                                              |
+<p align="center">
+  <img src="assets/architecture.svg" alt="Package layering: entry points, capabilities, engines, foundation" width="100%">
+</p>
 
-Dependency direction is strictly one-way (`cli → pipeline/renderer/skill/planner/resync →
-analyzer/llm → core`); LLM-touching code and deterministic code are separated by package
-boundary, so the analyzer, renderer and skill packages are reusable with no LLM at all.
+| Package                                             | Role                                                                                                     | LLM? |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | :--: |
+| [`@handbook/core`](packages/core/README.md)         | Data model (call-graph IR + handbook model), zod schemas, the config registry, dependency-free utilities |  ❌  |
+| [`@handbook/analyzer`](packages/analyzer/README.md) | Multi-language static call-graph extraction via tree-sitter WASM                                         |  ❌  |
+| [`@handbook/llm`](packages/llm/README.md)           | OpenAI-compatible chat client, disk cache, actor–critic orchestration, offline mock                      |  ✅  |
+| [`@handbook/pipeline`](packages/pipeline/README.md) | The generation pipeline — phases 1–3, file & member strategies                                           |  ✅  |
+| [`@handbook/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, HTML site, llms.txt                                                 |  ❌  |
+| [`@handbook/skill`](packages/skill/README.md)       | SKILL packaging, validation, coverage drift detection                                                    |  ❌  |
+| [`@handbook/planner`](packages/planner/README.md)   | Handbook-guided read-only planning agent                                                                 |  ✅  |
+| [`@handbook/patcher`](packages/patcher/README.md)   | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback                              |  ❌  |
+| [`@handbook/resync`](packages/resync/README.md)     | Incremental handbook roll-forward after code changes                                                     |  ✅  |
+| [`@handbook/studio`](packages/studio/README.md)     | Local web UI: repos · generate · browse · evolve                                                         |  ✅  |
+| [`@handbook/cli`](packages/cli/README.md)           | The `handbook` command                                                                                   |  —   |
 
-## Documentation
+Dependency direction is strictly one-way:
+`cli → pipeline/renderer/skill/planner/patcher/resync → analyzer/llm → core`.
+LLM-touching code and deterministic code are separated by **package boundary**, so the
+analyzer, renderer, patcher and skill packages are fully reusable with no LLM at all.
+A cycle or an upward import fails `pnpm check:workspace` — it is enforced, not documented.
 
-- [docs/architecture.md](docs/architecture.md) — layering, data flow, design decisions
-- [docs/formats.md](docs/formats.md) — every artifact schema (graph, cards, skeleton, …)
-- [docs/prompts.md](docs/prompts.md) — the complete prompt catalogue
-- [examples/](examples/) — offline end-to-end demo (mock LLM server included)
-- Per-package READMEs under [packages/](packages/)
+---
 
-## Command cheatsheet (no global CLI install needed)
+## Command cheatsheet
 
-Every script runs an incremental build first (`tsc -b`, ~0.4 s when up to date), so
-you never run a stale `dist`. Flags are forwarded straight through — no `--` needed:
+Every script below runs an incremental build first, and forwards flags straight through —
+no `--` needed:
 
 ```bash
-pnpm studio                          # local web UI → http://127.0.0.1:4860
-pnpm studio --port 5000              # flags pass straight through
+pnpm studio                                                 # local web UI → http://127.0.0.1:4860
 
-pnpm analyze  --source ~/code/proj --work work/proj      # static call graph, free
+pnpm analyze  --source ~/code/proj --work work/proj         # static call graph, free
 pnpm generate --source ~/code/proj --work work/proj --narrate-lang en
-pnpm render   --work work/proj --html --agent-site
+pnpm render   --work work/proj --html --agent-site --llms-txt
 pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
 pnpm validate --skill skills/proj --source ~/code/proj
 
@@ -191,109 +514,111 @@ pnpm plan     --source ~/code/proj --request "Add a --json flag to export" --out
 pnpm apply    --source ~/code/proj --plan plan.md --dry-run
 pnpm apply    --source ~/code/proj --plan plan.md
 pnpm rollback --backup ~/code/proj/.handbook-patches/<stamp>
-pnpm resync   --case case1 --work work/proj
+pnpm resync   --case cases/mycase --work work/proj
 
-pnpm handbook <subcommand>           # generic entry point, same as the binary
-pnpm handbook --help                 # list every subcommand
+pnpm config:show --command generate                         # what is set, and where it came from
+pnpm handbook --help                                        # every subcommand
+pnpm handbook <subcommand> --help                           # every flag, with its env var and default
 ```
 
 Offline demos and the mock endpoint:
 
 ```bash
-pnpm demo             # examples/run-demo.sh — fully offline, zero tokens
-pnpm demo:self        # this repo as its own input (mock)
+pnpm demo             # examples/run-demo.sh — full pipeline, fully offline, zero tokens
+pnpm demo:self        # this repo as its own input (mock LLM)
 pnpm demo:self:real   # same, against the real endpoint from .env
-pnpm mock-llm         # the bundled mock LLM server alone (port 8099)
+pnpm mock-llm         # the bundled mock LLM server alone, on port 8099
 ```
 
-> LLM-backed commands (`generate` past phase 1, `plan`, `resync` without `--no-llm`,
-> and Studio's jobs) auto-load `./.env` from the **current directory**, with shell
-> variables winning — so run them from the repo root.
+> LLM-backed commands (`generate` past phase 1, `plan`, `resync` without `--no-llm`, and
+> Studio's jobs) auto-load `./.env` from the **current directory**, with shell variables
+> winning — so run them from the repo root, or pass `--env-file`.
+
+---
 
 ## Docker
 
-No local Node/pnpm install needed — the image is Node 22 (deliberately not 24;
-see the Dockerfile) plus the built packages:
+No local Node/pnpm install needed. The image is Node 22 (deliberately not 24 — see the
+Dockerfile) plus the built packages:
 
 ```bash
 pnpm run docker:build     # docker build -t handbook:local .
 
-# Run any subcommand. HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked
-# into the image, so you only mount volumes — no --source/--work needed:
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked in, so you only mount volumes:
 docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
 docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate --narrate-lang en
 
-# --env-file layers on top of the toolchain's own .env loading (both apply;
-# an OPENAI_* var from --env-file is visible the same way a shell export is):
+# Docker's own --env-file layers on top of the toolchain's .env loading — both apply:
 docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
 
-# One image serves every environment (.env* files are never baked into it —
-# see .dockerignore). Select one at run time with docker's own --env-file
-# pointed at that environment's file, or HANDBOOK_ENV plus a mounted config:
+# One image serves every environment (.env* files are never baked in — see .dockerignore):
 docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
   -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
 ```
 
-Studio, via `docker compose` (see `docker-compose.yml`):
+Studio via compose:
 
 ```bash
 pnpm run docker:studio    # docker compose up --build studio
 ```
 
-**Only `http://localhost:4860` works — not a LAN IP or the container name.**
-Studio's CSRF defence checks the `Host` request header, not the socket, so a
-container has to bind `0.0.0.0` for the published port to be reachable at all
-(`HANDBOOK_STUDIO_HOST=0.0.0.0` in the compose file), but that does not widen
-who may talk to it: browsing `http://localhost:4860` from the host machine
-still sends `Host: localhost:4860` and passes, while a request naming a LAN IP
-or the `studio` container hostname gets refused with `403` by design. Remote
-access is a deliberately unimplemented, separate feature (an explicit
-allowlist), not a bug in this defence.
+> **Only `http://localhost:4860` works — not a LAN IP, not the container name.**
+> Studio's CSRF defence checks the `Host` header, not the socket. A container must bind
+> `0.0.0.0` for the published port to be reachable at all, but that does not widen who
+> may talk to it: browsing from the host still sends `Host: localhost:4860` and passes,
+> while a request naming a LAN IP or the container hostname is refused with `403` by
+> design. Remote access is a deliberately unimplemented, separate feature — an explicit
+> allowlist — not a gap in this defence.
+
+---
 
 ## Development
 
 ```bash
-pnpm build            # tsc -b (composite project references)
-pnpm test             # build + vitest (every test runs offline)
-pnpm check            # the everyday gate — run before committing (see below)
-pnpm check:all        # check + packaging + install smoke; what CI runs
-pnpm typecheck        # tsc -b, then the tests against tsconfig.tests.json
-pnpm lint             # eslint over the whole repo
-pnpm format           # prettier over the whole repo
-pnpm test:coverage    # vitest with per-package coverage floors
-pnpm check:workspace  # the monorepo's structural invariants
-pnpm check:packaging  # publint + are-the-types-wrong, per package
-pnpm run check:install # pack, install with plain npm, drive the CLI
+pnpm build             # tsc -b (composite project references)
+pnpm test              # build + vitest — every test runs offline
+pnpm check             # the everyday gate; run this before committing
+pnpm check:all         # check + packaging + install smoke — what CI runs
+
+pnpm typecheck         # sources, then the tests against tsconfig.tests.json
+pnpm lint              # eslint over the whole repo, zero warnings tolerated
+pnpm format            # prettier over the whole repo
+pnpm test:coverage     # vitest with per-package coverage floors
+pnpm check:workspace   # the monorepo's structural invariants
+pnpm check:packaging   # publint + are-the-types-wrong, per package
+pnpm check:install     # pack, install with plain npm, drive the CLI
 ```
 
-`pnpm check` runs, in order: type-check (sources, then tests) → workspace
-invariants → eslint with zero warnings → prettier → tests with per-package
-coverage floors. It is deliberately the fast one. `pnpm check:all` adds the two
-publish-facing gates, which pack eleven tarballs and belong in CI and before a
-release rather than in every local loop. A pre-commit hook runs the formatter and
-linter over staged files only, and `commit-msg` enforces Conventional Commits.
+`pnpm check` runs, in order: type-check → workspace invariants → eslint → prettier →
+tests with per-package coverage floors. It is deliberately the fast one. `pnpm check:all`
+adds the two publish-facing gates, which pack eleven tarballs and belong in CI and before
+a release rather than in every local loop. A pre-commit hook runs the formatter and linter
+over staged files only; `commit-msg` enforces Conventional Commits.
 
-Testing philosophy: everything runs offline. LLM-dependent flows are tested against
-`MockChatClient` (scripted rules) and the bundled mock HTTP endpoint; deterministic
-packages are tested directly. No test ever needs an API key.
+**Testing philosophy: everything runs offline.** LLM-dependent flows are tested against
+`MockChatClient` (scripted rules) and a bundled mock HTTP endpoint; deterministic packages
+are tested directly. **No test ever needs an API key.**
 
-Conventions the tooling enforces rather than documents:
+Four conventions the tooling _enforces_ rather than documents:
 
 - **Versions live in one place.** Every third-party version is declared in
-  `pnpm-workspace.yaml`'s catalog; packages depend on `"catalog:"` and never
-  restate a range. A literal range in a manifest fails `pnpm check:workspace`.
-- **`dist/` is the published surface.** Build projects exclude `*.test.ts` and
-  `*.test-helper.ts`; `tsconfig.tests.json` type-checks them with `noEmit`, and
-  source maps are excluded from the tarball because they name sources that are
-  never published. A test artifact under `dist/` fails the same check.
-- **Coverage floors are per package.** A single repo-wide number hides what
-  matters: at 86% overall, `@handbook/cli` sits at 23%. Each package has its own
-  floor, set just under what it measures, so it ratchets.
-- **Tests resolve `@handbook/*` to source, not `dist`.** Otherwise coverage of
-  anything consumed across a package boundary is attributed nowhere —
-  `core/src/util/hash.ts` read as 0% while the pipeline called it on every run.
-  The real `dist` is verified by `tsc -b` and by `pnpm run check:install`, which
-  installs the packed tarballs with plain npm and runs the CLI against them.
+  `pnpm-workspace.yaml`'s catalog; packages depend on `"catalog:"` and never restate a
+  range. A literal range in a manifest fails `pnpm check:workspace`.
+- **`dist/` is the published surface.** Build projects exclude `*.test.ts`;
+  `tsconfig.tests.json` type-checks tests with `noEmit`, and source maps are excluded
+  from the tarball because they name sources that are never published.
+- **Coverage floors are per package.** A single repo-wide number hides what matters: at
+  86% overall, `@handbook/cli` sits at 23%. Each package has its own floor, set just
+  under what it measures, so it ratchets.
+- **Tests resolve `@handbook/*` to source, not `dist`.** Otherwise coverage of anything
+  consumed across a package boundary is attributed nowhere. The real `dist` is verified
+  by `tsc -b` and by `pnpm check:install`, which installs the packed tarballs with plain
+  npm and drives the CLI against them.
+
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Security: [SECURITY.md](SECURITY.md) ·
+Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+---
 
 ## Releasing
 
@@ -304,10 +629,49 @@ pnpm changeset        # describe the change and pick the version bumps
 ```
 
 Commit that file with the code. On merge to `main`, the Release workflow opens a
-"Version Packages" PR that applies pending changesets, bumps versions and writes
-each package's `CHANGELOG.md`. Merging that PR publishes to npm — which stays
-inert until an `NPM_TOKEN` secret is configured, so versioning and changelogs are
-correct whether or not the packages are being published yet.
+"Version Packages" PR that applies pending changesets, bumps versions and writes each
+package's `CHANGELOG.md`. Merging that PR publishes to npm — which stays inert until an
+`NPM_TOKEN` secret is configured, so versioning and changelogs are correct whether or not
+the packages are being published yet.
+
+---
+
+## FAQ
+
+**Does my code get uploaded anywhere?**
+Phase 1 is entirely local. Phases 2 and 3 send file contents to whatever endpoint you
+configured — which can be a model running on your own machine. Nothing else leaves.
+`--max-chars-per-file` caps how much of any single file is ever sent.
+
+**How much does a run cost?**
+It depends on repo size and `--detail`. Start with `handbook analyze` (free) to see the
+file count, then run `--detail brief` before `--detail deep`. Every run writes token usage
+into `run-manifest.json`, and `--llm-cache` makes re-runs nearly free.
+
+**What if the LLM writes something wrong?**
+Structural facts are not LLM-written, so paths, functions and line ranges are correct by
+construction. For prose, agents consuming the SKILL are instructed to append contradictions
+to `corrections.jsonl`; `handbook resync --corrections <file>` then refreshes exactly the
+files named in it.
+
+**Can I use it without an LLM at all?**
+Yes, partially. `analyze`, `render`, `skill`, `validate`, `apply` and `rollback` never
+touch one, and `resync --no-llm` does a structural refresh that marks prose stale instead
+of pretending it is current.
+
+**My language is not in the list.**
+Adding a generic-tier language is a declarative spec, not a new parser — see
+[packages/analyzer/README.md](packages/analyzer/README.md).
+
+---
+
+## Documentation
+
+- **[docs/](docs/)** — the full documentation site (architecture, every command, every
+  setting, formats, prompts, guides)
+- [docs/configuration.md](docs/configuration.md) — every setting, generated from the registry
+- [examples/](examples/) — the offline end-to-end demo, mock LLM server included
+- Per-package READMEs under [packages/](packages/)
 
 ## License
 

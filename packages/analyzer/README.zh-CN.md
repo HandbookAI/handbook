@@ -1,103 +1,241 @@
 # @handbook/analyzer
 
-多语言静态调用图提取，**完全不碰 LLM**。语言适配器用 tree-sitter（WASM）把源文件解析成 `@handbook/core` 里的共享 IR；
-图构建器把 IR 组装成落盘的 `graph.json`（外加 CSV / DOT / 丢弃调用三份产物）——这是管线阶段 1 的产出，
-后面每个阶段都消费它。它同时导出「导航包」（NavPack）：一份确定性的定位摘要，喂给骨架合成与文件归档。
+[English](README.md) · **中文**
 
-> 英文版：[README.md](README.md)
+> 指向一个目录，拿回一张带类型的调用图。不用 LLM，不联网，不需要本地编译——解析器是 WebAssembly。
 
-## 职责
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fanalyzer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/analyzer)
+[![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
+[![languages](https://img.shields.io/badge/languages-18-a78bfa?style=flat-square)](#支持的语言)
 
-- 定义 `LanguageAdapter` 契约与适配器注册表（`registerAdapter`、`getAdapter`、`adapterForFile`、`discoverAll`）。
-- 内置五个适配器：Python、TypeScript（`.ts` / `.tsx`）、Go、Rust、Shell（`.sh` / `.bash`）。
-- 从适配器输出构建带度数标注的 `CodeGraph`，并**合成**那些「被边引用但源码里从未定义」的节点（隐式构造函数、边界符号）。
-- 把无法解析的边**分流**到分类过的 `dropped-calls.json`，而不是让它们污染图。
-- 产出阶段 1 的四份产物（`graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`）与 `NavPack` 定位摘要。
-- **不**调用任何 LLM，**不**知道手册的阶段、卡片或 work 目录布局。
-- **不**做完整类型推导——解析是基于索引的尽力而为；解析不出来的一律变成分类过的丢弃边，
-  **绝不猜一条边出来**。
+---
 
-## 公开 API
+## 这是什么
 
-**适配器契约与注册表**（`adapter.ts`）
+`@handbook/analyzer` 是 [Handbook](../../README.zh-CN.md) 工具链的静态分析引擎——
+而且它**单独拿出来用也很有价值**。给它一个源码根目录，不管代码是什么语言写的，
+它都返回同一套与语言无关的 IR：
 
-- `LanguageAdapter` —— `{ name, extensions, discover(sourceRoot), analyze(files, sourceRoot), statementSpans?(filePath, qualname) }`。
-- `COMMON_SKIP_DIRS` —— 所有适配器发现文件时都跳过的目录名。
-- `discoverByExtension(sourceRoot, extensions, extraSkipDirs?, filter?)` —— 默认的发现辅助函数。
-- `registerAdapter(name, factory)` / `getAdapter(name)` / `availableLanguages()` —— 懒实例化的注册表。
-- `adapterForFile(relPath)` —— 按**最长扩展名**匹配归属的适配器。
-- `discoverAll(sourceRoot)` —— 每种语言一份文件列表；每个文件最多被一个适配器认领。
-- `registerBuiltinAdapters()` —— 启动时一次性注册全部五个内置适配器。
+- 每个**函数和方法**，带文件、行范围、签名、装饰器、参数类型，
+  以及它读写的实例属性；
+- 每条**调用边**，通过 `self`/`this`、属性类型、参数类型标注、import 和继承解析出来；
+- 每个**边界调用** —— 你的代码离开自己、进入第三方库的地方；
+- 每个**未解析的调用**，被分类并隔离到单独的产物里，**而不是猜一个**。
 
-**适配器**：`PythonAdapter`、`TypeScriptAdapter`、`GoAdapter`、`RustAdapter`、`ShellAdapter`，
-各自实现 `LanguageAdapter`；只有 `PythonAdapter` 实现了 `statementSpans`（供 resync 使用的合法切分边界）。
+因为它是确定性的，同样的输入永远产出同样的图。你可以 diff 两张图、把一张提交进仓库，
+或者在测试里对它断言。
 
-**图构建**（`graph.ts`）
+---
 
-- `buildGraph(analysis, options): BuildGraphResult` —— `BuildGraphOptions`（`sourceRoot`、`scannedFiles`、`language`、
-  `defaultExt?`、`now?`），`BuildGraphResult`（`graph`、`dropped`、`stats`）。
-- `writeGraphArtifacts(result, outDir)` —— 落盘全部四份产物。
-- `functionsCsv(graph)` / `graphDot(graph)` —— CSV 函数清单与 Graphviz 渲染。
-- `synthesizeBoundary(id)` —— 把 `boundary:<qualname>` 形式的 id 变成 `BoundaryNode`，尽力拆出模块与类名。
-- `categorizeDropped(calleeId)` —— 给一条解析不出的被调方归类（`builtin`、`self_attr_unknown`、`local_var_method`……）。
+## 安装
 
-**导航包**（`navpack.ts`）
+```bash
+pnpm add @handbook/analyzer
+```
 
-- `buildNavPack(graph, options?): NavPack` —— 目录地图、入口点候选、扇出 Top-K、外部子系统；
-  `NavPackOptions`（`fanOutTopK?`、`sampleFnsPerFile?`）、`NavFileDescriptor`。
-- `allFileDescriptors(graph, nav)` —— 在 nav 文件之外补上「一个函数都没有」的已扫描文件，
-  得到卡片 / 归档所用的 1:1 文件集合。
-- `renderOrientation(nav, options?)` —— 给提示词用的、长度有界的纯文本定位块；`OrientationOptions`。
+没有安装后编译步骤。语法以 `.wasm` 文件形式随包发布。
 
-**tree-sitter 运行时**（`languages.ts`）
+---
 
-- `loadLanguage(grammar)` / `createParser(grammar)` —— 按 `tree-sitter-wasms` 里的名字懒加载并缓存 WASM 语法。
-
-## 用法
+## 快速上手
 
 ```ts
 import {
   registerBuiltinAdapters,
+  discoverAll,
   getAdapter,
   buildGraph,
   writeGraphArtifacts,
-  buildNavPack,
-  renderOrientation,
 } from '@handbook/analyzer';
 
 registerBuiltinAdapters();
-const adapter = getAdapter('typescript');
-const sourceRoot = '/path/to/project';
-const files = adapter.discover(sourceRoot);
-const analysis = await adapter.analyze(files, sourceRoot);
 
-const result = buildGraph(analysis, { sourceRoot, scannedFiles: files, language: 'typescript' });
-writeGraphArtifacts(result, '/path/to/work/phase1');
+const root = '/path/to/repo';
+const byLanguage = discoverAll(root); // { typescript: [...], python: [...] }
 
-const nav = buildNavPack(result.graph);
-console.log(renderOrientation(nav));
-console.log(result.stats); // { functions, edgesKept, edgesDropped, internalNodes, boundaryNodes }
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, root));
+}
+
+const result = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  { sourceRoot: root, scannedFiles: Object.values(byLanguage).flat(), language: 'multi', defaultExt: '' },
+);
+
+console.log(result.stats); // { functions, edgesKept, edgesDropped }
+writeGraphArtifacts(result, './out');
 ```
+
+或者，用命令行——同一件事，一行：
+
+```bash
+handbook analyze --source /path/to/repo --work work/myrepo
+```
+
+### 会落到磁盘上的东西
+
+| 文件                 | 内容                                                        |
+| -------------------- | ----------------------------------------------------------- |
+| `graph.json`         | 图本体：元数据、带出入度的节点、边、逐类的 self 属性索引    |
+| `functions.csv`      | 全部函数，平铺 —— 给 `grep`、给表格、或者快速看一眼是否合理 |
+| `graph.dot`          | Graphviz。`dot -Tsvg graph.dot -o graph.svg`                |
+| `dropped-calls.json` | 按类别归档的未解析调用，带原始调用文本和行号                |
+
+---
+
+## 支持的语言
+
+**完整层** —— 手写适配器。类型驱动的调用解析、继承成员、逐属性状态追踪、语句跨度：
+
+| 语言                          | 扩展名                                                   |
+| ----------------------------- | -------------------------------------------------------- |
+| Python                        | `.py`                                                    |
+| TypeScript*（含 JavaScript）* | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  |
+| Go                            | `.go`                                                    |
+| Rust                          | `.rs`                                                    |
+| Java                          | `.java`                                                  |
+| C#                            | `.cs`                                                    |
+| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` |
+| Ruby                          | `.rb` `.rake` `.gemspec`                                 |
+| PHP                           | `.php` `.phtml`                                          |
+| Swift                         | `.swift`                                                 |
+| Dart                          | `.dart`                                                  |
+| Solidity                      | `.sol`                                                   |
+| Shell                         | `.sh` `.bash`                                            |
+
+**通用层** —— 一个配置驱动的引擎，每种语言一份声明式规格。文件与函数清单精确，
+调用关系尽力而为：
+
+Kotlin（`.kt` `.kts`）· Scala（`.scala` `.sc`）· Zig（`.zig`）· Objective-C（`.m`）·
+OCaml（`.ml`）
+
+### 保真度是声明出来的，而且会传到下游
+
+每个适配器都必须公布自己实际能交付什么：
+
+```ts
+readonly capabilities: AdapterCapabilities = {
+  tier: 'full',
+  callTypes: ['self_method', 'self_attr_method', 'param_method', 'internal_func', /* … */],
+  selfAttrs: true,
+  statementSpans: true,
+};
+```
+
+阶段 1 把它**逐语言**记进图的元数据，渲染器再把它写进手册总览。
+两层产出的 IR 看起来一模一样，所以没有这个声明，读者就会把通用层的调用边
+当成 Python 级别的事实。**把话说出来，就是全部的意义。**
+
+### 两个如实说明的注意点
+
+- **Swift**：随包的语法在 V8 ≥ 13 上会让进程 abort（Node 24 上实测 5/5 必挂，
+  Node 21 正常，而且十九种语法里只有它这样）。所以适配器在这种运行时上会
+  **在发现阶段直接拒绝**，并给出解决办法 `node --liftoff-only`，
+  而不是把你整次运行一起带走。
+- **Shell**：含 `case` 语句的脚本会被跳过，因为那个语法会抛异常。
+
+两者都会通过 logger 在扫描时报告。**任何东西都不会被悄悄丢掉。**
+
+---
+
+## API
+
+### 适配器与注册表
+
+```ts
+registerBuiltinAdapters(): void            // 幂等；启动时调一次
+registerAdapter(name, factory): void       // 注册你自己的
+getAdapter(name): LanguageAdapter          // 抛错时会列出全部已注册语言
+availableLanguages(): string[]
+adapterForFile(relPath): LanguageAdapter | undefined   // 最长扩展名优先
+discoverAll(root, logger?): Record<string, string[]>   // 先认领的适配器留住这个文件
+discoverByExtension(root, exts, extraSkipDirs?, filter?): string[]
+```
+
+`COMMON_SKIP_DIRS` 是所有适配器共同遵守的跳过列表：`.git`、`node_modules`、`vendor`、
+`target`、`build`、`dist`、`out`、`__pycache__`、`.venv`、`.idea`、`.vscode`、
+`.handbook-patches` 等等。
+
+### 适配器契约
+
+```ts
+interface LanguageAdapter {
+  readonly name: string;
+  readonly extensions: readonly string[];
+  readonly capabilities: AdapterCapabilities; // 必填 —— 见上
+  discover(sourceRoot: string): string[];
+  analyze(files, sourceRoot, options?): Promise<ModuleAnalysis>;
+  statementSpans?(filePath, qualname): Promise<Array<[number, number]> | undefined>;
+}
+```
+
+**整个接口就这么多。** 实现它，`registerAdapter` 一下，下游每个阶段原封不动就能工作。
+
+### 构图
+
+```ts
+buildGraph(analysis, options): BuildGraphResult
+  // 划分保留/丢弃的边、标注出入度、
+  // 为「被引用但没有显式定义」的构造函数合成节点
+writeGraphArtifacts(result, outDir): void
+functionsCsv(graph): string
+graphDot(graph): string
+categorizeDropped(calleeId): string
+dedupeFunctionsById(functions): FunctionNode[]   // 后定义者胜
+```
+
+### 导航包（NavPack）
+
+```ts
+buildNavPack(graph, options?): NavPack
+renderOrientation(nav, options?): string
+allFileDescriptors(graph, nav): NavFileDescriptor[]
+```
+
+一张图的紧凑、适合喂给 LLM 的摘要——入口点、目录汇总、枢纽函数——
+pipeline 用它来合成骨架，从而**不必把整张图塞进提示词**。
+
+---
+
+## 加一门语言
+
+**通用层**（通常够用）：在 `src/generic.ts` 的 `GENERIC_LANGUAGES` 里加一条
+`GenericLanguageSpec`——语法名、扩展名、表示「函数」「类」「调用」的节点类型，
+以及限定名怎么拼。**不需要新依赖**：上面列出的语言的语法已经随 `tree-sitter-wasms` 一起发布。
+
+**完整层**：在 `src/adapters/` 下实现 `LanguageAdapter`，声明诚实的 `capabilities`，
+然后在 `src/register.ts` 里注册。
+
+无论哪种，都要把显示名加进文档漂移测试——**已注册的语言如果没出现在 README 里，构建就会失败**。
+之前那份列表正是这么落后了六种语言的。
+
+---
 
 ## 设计说明
 
-- **只用 WASM 版 tree-sitter**：语法来自 `tree-sitter-wasms` 包，通过 `web-tree-sitter` 加载，
-  所以**永远不需要**本地编译或 node-gyp；运行时与每个语法都是懒初始化并缓存的。
-- **加一门语言 = 实现 `LanguageAdapter` 并调 `registerAdapter`**。图构建、丢弃调用分类、导航包对所有语言都是同一套。
-- 适配器输出**全部**边，包括解析不出的；`buildGraph` 再把 `unresolved` 边分流进 `dropped-calls.json` 并按类别计数——
-  图保持诚实，同时证据不丢。
-- 边的端点若在源码里从未定义，就**合成**一个节点（`synthetic: true`，行号 0）而不是丢掉这条边，
-  这样度数统计与图遍历始终自洽。
-- `discoverAll` 让第一个发现某文件的适配器认领它，并**吞掉单个适配器的失败**——
-  一门语法坏了不能让整个多语言扫描崩掉。
+- **两遍分析。** 第一遍收集定义并建立类型索引；第二遍带着这些索引走调用点。
+  这正是 `self.attr.method()` 和 `param.method()` 能被解析出来的原因。
+- **「未解析」是一个类别，不是一次猜测。** 定位不到的调用带着原始文本和行号进
+  `dropped-calls.json`。猜一个，就会给所有下游消费者塞进一批
+  **看起来和真边一样可信**的假边。
+- **一个坏掉的适配器不能搞垮发现流程。** `discoverAll` 会捕获单个适配器的失败、
+  记日志，然后继续跑其余的。
+- **`web-tree-sitter` 锁死在 `~0.25.10`。** 0.26 改了 WASM ABI，加载不了随包的语法。
+  这个锁是刻意的，**不要放宽**。
 
-## 依赖
+---
 
-内部：
+## 测试
 
-- `@handbook/core` —— IR 类型与 schema、`listFilesRecursive`、`truncate`、原子 JSON 写入。
+```bash
+pnpm --filter @handbook/analyzer test
+```
 
-外部：
+每个测试都解析真实的源码 fixture——**没有 mock 出来的语法树**，因为 mock 的树
+证明不了任何关于语法的事。
 
-- `web-tree-sitter` —— 编译成 WASM 的 tree-sitter 运行时（解析器 + 语法加载）。
-- `tree-sitter-wasms` —— python / typescript / tsx / go / rust / bash 的预编译语法 `.wasm`。
+---
+
+[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/architecture.md) ·
+[产物格式](../../docs/formats.md) · MIT

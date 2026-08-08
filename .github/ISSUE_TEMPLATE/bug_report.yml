@@ -1,0 +1,115 @@
+name: Bug report
+description: Something in the toolchain behaves incorrectly or crashes
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: `pnpm build` and `bash examples/run-demo.sh` should both pass on a clean
+        clone. If the demo itself fails, say so below — that is a different (and more urgent) bug
+        than one in your own repository.
+
+        **Do not paste proprietary source or an API key.** The analyzer runs entirely locally, so a
+        minimal synthetic fixture almost always reproduces a parsing problem.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, what you got instead, and the exact command you ran.
+      placeholder: |
+        Command: handbook generate --source ./myrepo --work work/myrepo --lang auto
+        Expected: stage pages for all four stages
+        Got: phase 2c fails with "assignment leaves 3 functions unplaced"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: |
+        The smallest input that shows the problem — a fixture repo, a few files inline, or a public
+        repository plus the commit you ran against.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: offline
+    attributes:
+      label: Does it reproduce offline?
+      description: |
+        `pnpm mock-llm` serves the bundled mock endpoint on port 8099. A bug that reproduces
+        against it is deterministic and can be turned into a test; one that only appears against a
+        live model is usually a prompt or a model-behaviour issue, which is triaged differently.
+      options:
+        - 'Yes — reproduces against the bundled mock LLM'
+        - 'No — only against a live endpoint'
+        - "Not applicable — the failing command doesn't use an LLM (analyze/render/skill/validate)"
+        - "Haven't tried"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: command
+    attributes:
+      label: Which command
+      multiple: true
+      options:
+        - analyze
+        - generate
+        - render
+        - skill
+        - validate
+        - plan
+        - apply
+        - rollback
+        - resync
+        - studio
+        - config
+        - 'the demo scripts (run-demo.sh / run-self.sh)'
+        - 'installing or building the repo itself'
+    validations:
+      required: true
+
+  - type: input
+    id: languages
+    attributes:
+      label: Languages in the analyzed repository
+      description: And which `--lang` you passed. Mixed-tier analysis is worth calling out.
+      placeholder: 'Python + TypeScript, --lang auto'
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Log output
+      description: |
+        Rerun with `-v` and paste the relevant part, including the full stack trace if it crashed.
+        Redact paths if you must, but keep the shape — a normalisation bug lives in the shape.
+      render: text
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: 'Paste the output of `node -v && pnpm -v` plus your OS, and the handbook version or commit.'
+      placeholder: |
+        node v24.4.0
+        pnpm 10.18.1
+        Windows 11 / macOS 15.3 / Ubuntu 24.04
+        handbook: 0.1.0 (or commit 9a2ba88)
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues, including closed ones
+          required: true
+        - label: This is not a security vulnerability (those go to a private advisory — see SECURITY.md)
+          required: true
+        - label: I have not included an API key, a token, or source I'm not allowed to share
+          required: true

@@ -1,103 +1,202 @@
 # @handbook/resync
 
-代码真的改了之后，把手册的**派生层**往前滚一格，而不重跑整条管线。
-给它一个「case 目录」（`edited/` 修改后的源码树、可选的带 declarations 的 `plan.md`、可选的 `change.diff`），
-它重新分析修改后的树，把新旧调用图 diff 成 changed / added / deleted 三个文件集合，
-然后只更新这些集合牵连到的东西：卡片、归档、组织、叙述、寄存器——并在 case 旁边写一份 `resync-report.json`。
-它闭合了 `@handbook/planner` 打开的那个环：plan → apply → resync。
+[English](README.md) · **中文**
 
-> 英文版：[README.md](README.md)
+> 代码变了。让手册跟上——diff 调用图，**只重新生成真正变了的那部分**，其余原样不动。
+> 不做全量重建。
 
-## 职责
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fresync-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/resync)
 
-- 加载并校验 case 契约（`loadCase`）：`edited/` 必需，`plan.md` 与 `change.diff` 可选，空 diff 直接短路为跳过。
-- 计算「已存图」与「对修改后树重跑阶段 1 得到的新图」之间的增量（`diffGraphs`）：
-  逐文件内容哈希为主，结构指纹兜底——既兜没有哈希的旧图，也逐文件兜「某次分析中读不出来」的文件。
-- 为 changed / added 文件重生成卡片——深浅默认沿用手册原本的粒度（`detectCardDetail`），除非显式指定——
-  为 added 文件重新归档，丢掉 deleted 文件，并把桶（buckets）对齐。
-- 对受影响阶段的组织条目做**最小机械编辑**（剔除离开的、刷新事实、追加新来的），并通过内容哈希缓存重写叙述。
-- 把计划里的 declarations 与 unified diff 的文件清单作为**扩范围**输入解析
-  （`parsePlanDeclarations`、`filesFromDiff`）。
-- **不**重跑骨架合成，也**不**跑医生——阶段结构保持不变，只有派生层往前滚。
-- **不**做渲染——CLI 的 `resync` 命令会在之后自动刷新已渲染的产物（`--no-render` 可跳过）；其他调用方自行重渲染。
+---
 
-## 公开 API
+## 这是什么
 
-全部在 `resync.ts`：
+文档会烂，是因为维护它的成本和写它一样高。`resync` 让更新的成本
+**与改动大小成正比**：改了三个文件，就只为三个文件付费。
 
-- `resyncHandbook(options: ResyncOptions): Promise<ResyncReport>` ——
-  整个流程；就地更新 work 目录并写出 `<case>/resync-report.json`。
-  - `ResyncOptions` —— `{ caseDir, workDir, client?, noLlm?, lang?, detail?, editedRoot?, planText?, correctionsPath?, signal?, logger? }`；
-    除非 `noLlm` 为真，否则 `client` 必填；`detail`（`'brief' | 'deep'`）默认探测现有卡片的粒度；
-    `editedRoot`/`planText` 允许调用方（如 studio 的实时树流程）直接提供改动后的树和计划，绕过 case 文件。
-  - `ResyncReport` —— `{ skipped, changedFiles, addedFiles, deletedFiles, affectedStages,
-cardsRegenerated, narrated }`。
-- `loadCase(caseDir): ResyncCase | undefined` —— 读取 case 目录；返回 `undefined` 表示空 diff（无需同步）。
-  - `ResyncCase` —— `{ editedRoot, planText?, declarations?, diffText? }`。
-- `parsePlanDeclarations(planText)` —— 取最后一个可解析的、含
-  `will_modify`/`will_add`/`will_remove` 的 ` ```json ` 块 → `{ willModify, willAdd, willRemove }`。
-- `filesFromDiff(diffText): string[]` —— 从 unified diff 的 `+++/---` 头里取文件路径（跳过 `/dev/null`）。
-- `diffGraphs(before, after): GraphDelta` —— 逐文件内容哈希（结构指纹兜底）→ `{ changed, added, deleted }`。
-- `detectCardDetail(cards): 'brief' | 'deep'` —— 手册构建时的粒度（deep 卡片带函数笔记/走读描述）。
-- `loadCorrections(path)` / `correctionFiles(corrections)` / `archiveCorrections(path, stamp)`
-  （`corrections.ts`）—— agent 纠错通道：容错 JSONL 读取（坏行带行号进 `problems`）、
-  取出被点名的源文件、把已消费的文件归档为 `corrections.<stamp>.applied.jsonl`。
+```
+   旧图 ──┐
+          ├──▶ diff ──▶ 变更 / 新增 / 删除 的文件
+   新图 ──┘                    │
+                               ▼
+         ┌─────────────────────────────────────────────┐
+         │ 1. 为变更 + 新增的文件重新生成卡片            │
+         │ 2. 归属新增、剔除删除、修正桶                 │
+         │ 3. 为受影响阶段重建组织结构                   │
+         │ 4. 重新叙述受影响阶段 + 系统总览              │
+         │ 5. 刷新寄存器                                 │
+         └─────────────────────────────────────────────┘
+```
 
-### 取消与纠错
+其余交给内容哈希缓存：输入没变的阶段**根本不会被重新叙述**。
 
-`signal` 是**协作式**取消：在各编号步骤之间以及每个 LLM 环节里检查，所以被取消的 resync
-会在下一个检查点抛 `AbortError`，而不是写到一半被砍。work 目录锁照常释放，已保存的卡片留在盘上。
+---
 
-`correctionsPath` 指向由「读手册的 agent」写出的 `corrections.jsonl`（协议见 `@handbook/skill`）。
-其中每个存在于已分析文件集里的文件都会**扩大**刷新范围——手册的说法被源码否证，就是重写这个
-文件描述的理由，哪怕它的字节从未变过；不在集合里的文件会进 `report.corrections.problems`，
-绝不静默丢弃。归档只在整轮跑完后进行，所以被取消或失败的 resync 会把纠错留给下一次。
+## 安装
 
-## 用法
+```bash
+pnpm add @handbook/resync
+```
+
+---
+
+## case 契约
+
+一个 **case** 是你自己组装的目录。它回答两个问题：_代码现在长什么样_，
+以及*这次改动本来打算做什么*。
+
+```
+<case>/
+  edited/        改动后的源码树              必需
+  plan.md        这次改动是什么              可选 —— 让范围更**精确**
+  change.diff    相对上一版的 unified diff   可选 —— 让范围更**完整**
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R /path/to/repo cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work work/myrepo
+```
+
+**声明和 diff 只能让刷新集合变大，永远不能让它变小。** 调用图 diff 是下限：
+一个文件的字节变了就一定会被刷新，无论计划有没有提到它。
+**一份低估了自己波及面的计划，不可能导致某一页过期。**
+
+**空的** `change.diff` 表示「没什么要做的」，本次运行会被干净地跳过，
+而不是被当成「所有东西都变了」。
+
+---
+
+## 快速上手
 
 ```ts
 import { resyncHandbook } from '@handbook/resync';
-import { OpenAiChatClient } from '@handbook/llm';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
 
-// case 目录布局：<case>/edited/（改动后的树）、plan.md?、change.diff?
 const report = await resyncHandbook({
-  caseDir: '/path/to/case',
-  workDir: '/path/to/work', // 存放待前滚的手册产物
-  client: new OpenAiChatClient(),
-  lang: 'zh', // detail 不传则自动探测现有卡片的粒度
+  caseDir: 'cases/upload-retry',
+  workDir: 'work/myrepo',
+  client: new OpenAiChatClient({ config: resolveLlmEnv() }),
+  correctionsPath: 'skills/myrepo/corrections.jsonl', // 可选
 });
 
-console.log(report.changedFiles, report.addedFiles, report.deletedFiles);
-console.log(report.affectedStages, report.cardsRegenerated, report.narrated);
+report.changedFiles; // string[]
+report.addedFiles;
+report.deletedFiles;
+report.affectedStages;
+report.cardsRegenerated; // number
+report.narrated; // boolean
+report.corrections; // { applied, files, problems, archivedTo }
 ```
 
-只想刷新结构、完全不花 LLM：传 `noLlm: true` 并省略 `client`——
-事实层被刷新，旧散文保留并标注为过期。
+---
 
-## 设计说明
+## diff 是怎么做的
 
-- **基于内容哈希的增量**：changed / added / deleted 由每个文件的 sha256（存于
-  `graph.metadata.fileHashes`）驱动，所以「不增不删、只改函数体」的改动同样能被发现。
-  结构指纹（`qualname@lines:signature`）保留为兜底——既兜没有哈希的旧图，
-  也逐文件兜「某次分析中读不出来」的文件（哈希缺失 ≠ 新文件，成员资格看 scannedFiles）。
-- **范围只能扩大，不能缩小**：计划里的 declarations 与 unified diff 只能往刷新集合里**加**文件，
-  **永远不能移除**——图增量是地板，不是天花板。
-- **`noLlm` 模式保留旧卡片散文**，但在 purpose 后面追加「(stale: code changed since narration)」标记，
-  同时刷新结构性的函数清单，这样消费方能清楚看到**哪些散文落后于代码**。
-- **受影响阶段的组织条目是机械编辑而非重建**：离开的文件从各自分组中剔除（空组自动消失），
-  留下的条目从当前卡片刷新事实，新来的文件按调用序落进一个标注「(resynced)」的确定性分组——
-  LLM 原有的分组结构在反复 resync 中得以保留。随后叙述复用阶段 3 的内容哈希缓存，没动过的阶段一分钱不花。
-- **归档是机械对齐的**（deleted 文件丢掉，added 文件先默认 `unassigned` 再由 LLM 重新归档），
-  这样 `buckets` 与 `coverage` 保持一致，且完全不动那些稳定的文件。
+`diffGraphs(before, after)` 比较两张阶段 1 的图，给每个文件分类：
 
-## 依赖
+| 信号             | 能检测到                                                           |
+| ---------------- | ------------------------------------------------------------------ |
+| **内容哈希**     | 行号和签名都没动的原地函数体编辑——**纯结构 diff 完全看不见的那种** |
+| **函数集合**     | 新增、删除或改名的函数                                             |
+| **签名与行范围** | 被重塑的函数                                                       |
+| **调用边**       | 新增或消失的关系，包括进出未被改动文件的                           |
+| **文件集合**     | 新增与删除的文件                                                   |
 
-内部：
+逐文件哈希正是阶段 1 为此盖上的。如果某张图早于这个特性，diff 会退化到只看结构——
+**能力下降，但绝不会给出错误答案**。
 
-- `@handbook/core` —— 产物类型、文件辅助、`isInternalNode`、错误类型。
-- `@handbook/analyzer` —— 间接经由阶段 1 使用（对修改后的树重建新图）。
-- `@handbook/pipeline` —— `WorkDir`、`runPhase1`、`generateCards`、`rebuildAssignment`/`reassignSubset`、
-  `suggestOrder`/`fileCallAdjacency`、`narrate`、`extractRegisters`、`buildInventory`。
-- `@handbook/llm` —— 可选 LLM 环节所用的 `ChatClient` 类型。
+---
 
-外部：无。
+## Corrections：反馈闭环
+
+消费手册 SKILL 的 agent 被要求把矛盾之处追加到 `corrections.jsonl`：
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py"
+}
+```
+
+`--corrections <file>` 会把它们折进来：**被点名的文件即使字节从没变过，也会加入刷新集合**——
+因为一个被源码打脸的断言，本身就是重新描述那个文件的理由。
+消费掉的文件随后会带时间戳归档，于是同一条更正不会被应用两次，记录也不会丢。
+
+畸形的行会记进 `report.corrections.problems`，**从不致命**——
+一个 agent 写坏的一行，不该挡住整次刷新。
+
+---
+
+## 没有 LLM 也能用
+
+```bash
+handbook resync --case cases/x --work work/myrepo --no-llm
+```
+
+结构性事实会被刷新——调用图、函数清单、归属、排序——并且每张受影响卡片的用途后面会追加
+` (stale: code changed since narration)`。
+
+**这是诚实的降级方式。** 另一种做法——把散文原封不动地留着且不加标记——
+是一本**在悄悄撒谎**的手册。
+
+---
+
+## 两种策略都支持
+
+对于 `member` 策略的 work dir，resync 会为受影响文件重新分类成员，
+并像阶段 2b 那样确定性地重新推导文件级产物。它读 `phase2/strategy.json`，
+**不用你告诉它就会做对**。
+
+---
+
+## 安全与生命周期
+
+- **和 `generateHandbook` 用同一把目录锁**，所以 resync 绝不会与并发的 generate
+  在同一批产物上交错。
+- **阶段 1 的暂存区一定会被清理** —— `<case>/.resync-phase1` 绝不会活过这次调用，
+  无论成功还是失败。
+- **协作式取消。** 传 `AbortSignal`；步骤之间会检查它，并一路传进每次 LLM 调用。
+- **被删除文件的卡片会被移除**，所以删掉的文件不会赖在手册里。
+- **`editedRoot`** 允许调用方指向一棵活的树而不是 `<case>/edited`——
+  Studio 就是这样**不复制仓库**就地跑 resync 的。
+
+---
+
+## API
+
+```ts
+resyncHandbook(options: ResyncOptions): Promise<ResyncReport>
+
+loadCase(caseDir): ResyncCase | undefined
+diffGraphs(before, after): GraphDelta
+filesFromDiff(diffText): string[]
+parsePlanDeclarations(planText): { willModify; willAdd; willRemove } | undefined
+detectCardDetail(cards): 'brief' | 'deep'      // 与现有手册的深度保持一致
+
+loadCorrections(path): LoadCorrectionsResult
+correctionFiles(corrections): string[]
+archiveCorrections(path, stamp): string | undefined
+```
+
+`detectCardDetail` 正是 `--detail` 可以不填的原因：不填意味着*「跟现在这本手册保持一致」*，
+所以一次 resync **绝不会悄悄把 deep 手册降级成 brief**。`--narrate-lang` 同理。
+
+---
+
+## 测试
+
+```bash
+pnpm --filter @handbook/resync test
+```
+
+用 `MockChatClient` 做端到端覆盖：原地函数体编辑、改名、新增与删除文件、空 diff、
+`--no-llm` 路径、corrections 扩大刷新集合、畸形更正行、member 策略 work dir，
+以及运行中途取消。
+
+---
+
+[Handbook](../../README.zh-CN.md) 的一部分 · MIT

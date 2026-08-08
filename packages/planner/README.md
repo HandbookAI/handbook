@@ -1,70 +1,250 @@
 # @handbook/planner
 
-A handbook-guided, read-only planning agent. Given a natural-language change request, it routes through a mounted handbook (or skill `references/` directory) to find the sites in scope, reads the real source through a sandboxed tool belt, and emits a precise, self-contained edit plan — verbatim old/new edit blocks plus a machine-readable declarations JSON that `@handbook/resync` later uses to scope its update. It plans; it never edits.
+**English** · [中文](README.zh-CN.md)
 
-> 中文版：[README.zh-CN.md](README.zh-CN.md)
+> A read-only agent that routes with the handbook, reads the real source, and emits an
+> edit plan precise enough to apply mechanically. It cannot write a single byte.
 
-## Responsibilities
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fplanner-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/planner)
+[![read-only](https://img.shields.io/badge/filesystem-read--only-2dd4bf?style=flat-square)](#the-tool-belt)
 
-- Run the agent loop (`runPlanner`): route with the handbook, read real source, emit the plan within a turn budget.
-- Provide the read-only tool belt (`ReadOnlyTools`): `list_dir`, `read_file` (line-ranged, numbered), `grep` — all confined to a sandbox root.
-- Own the planner prompt (`buildPlannerSystemPrompt`, `TOOL_PROTOCOL`) including the exact EDIT-block format a mechanical executor relies on.
-- Parse the final declarations JSON (`parseDeclarations`) into `{ willModify, willAdd, willRemove }`.
-- Does NOT write, edit, or execute anything — its only output is text; path escapes from the sandbox are rejected.
-- Does NOT require a function-calling API — any plain-text `ChatClient` endpoint works.
+---
 
-## Public API
+## What it is
 
-Planner (`planner.ts`):
+Give it a natural-language change request and a handbook. It runs an agent loop —
+list, read, grep — until it knows enough, then produces a plan:
 
-- `runPlanner(options: PlannerOptions): Promise<PlannerResult>` — the agent loop.
-  - `PlannerOptions` — `{ client, sourceRoot, handbookDir?, request, promptVars?, maxTurns? (default 30), logger? }`.
-  - `PlannerResult` — `{ plan, declarations?, turns, trace }` (`trace` is one line per tool call).
-- `Declarations` — `{ willModify: string[], willAdd: string[], willRemove: string[] }`.
-- `parseDeclarations(plan): Declarations | undefined` — last ` ```json ` block with `will_modify`/`will_add`/`will_remove` keys.
-- `handbookDirFromSkill(skillDir)` — mount a skill's `references/` directory as the planner handbook.
+```
+"Retry failed uploads three times"
+        │
+        ▼
+  ┌─────────────────────────────────────────────┐
+  │  route with the handbook  → WHICH files      │
+  │  read the real source     → WHAT to change   │
+  │  verify anchors           → byte-exact text  │
+  └─────────────────────────────────────────────┘
+        │
+        ▼
+  plan.md  →  handbook apply
+```
 
-Tools (`tools.ts`):
+Two artifacts, two distinct roles, and the prompt is explicit about it:
 
-- `ReadOnlyTools` — `new ReadOnlyTools(root)`; `listDir(relPath?)`, `readFile(relPath, startLine?, endLine?)`, `grep(pattern, dirOrFile?)`, each returning `ToolResult` (`{ ok, content }`). Reads are capped (60k chars, 100 grep hits, 5 MB file limit) and `.git`/build dirs are skipped.
+- **The handbook** is a pure **location index**. It surfaces the scattered, non-obvious
+  sites a plain text search misses — mirror implementations, every read and write of a
+  piece of state, cross-subsystem touch points.
+- **The real source** is ground truth for **what** to change. The handbook gives the
+  address; the code at that address gives the bytes.
 
-Prompt (`prompt.ts`):
+---
 
-- `buildPlannerSystemPrompt(vars: PlannerPromptVars)` — the planning rules: route with the handbook, read real source, emit byte-exact EDIT blocks and declarations.
-- `PlannerPromptVars` / `DEFAULT_PROMPT_VARS` — project-specific substitutions (`projectIntro`, `pathExample`, `whereExample`, `qualnameNote`, `declExample`).
-- `TOOL_PROTOCOL` — the JSON-action protocol appended to the system prompt (`list_dir` / `read_file` / `grep` / `finish`).
+## Install
 
-## Usage
+```bash
+pnpm add @handbook/planner
+```
+
+---
+
+## Quick start
 
 ```ts
 import { runPlanner, handbookDirFromSkill } from '@handbook/planner';
-import { OpenAiChatClient } from '@handbook/llm';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
 
 const result = await runPlanner({
-  client: new OpenAiChatClient(),
-  sourceRoot: '/path/to/project',
-  handbookDir: handbookDirFromSkill('/path/to/skills/myproject'),
-  request: 'Rename the retry backoff env var and update every read site.',
+  client: new OpenAiChatClient({ config: resolveLlmEnv() }),
+  sourceRoot: '/path/to/repo',
+  handbookDir: handbookDirFromSkill('skills/myrepo'), // → skills/myrepo/references
+  request: 'Retry failed uploads three times before giving up',
   maxTurns: 30,
 });
 
-console.log(result.plan); // summary + EDIT blocks + declarations JSON
-console.log(result.declarations); // { willModify, willAdd, willRemove }
-console.log(result.trace); // e.g. ['read_file(__handbook__/index.md)', 'grep(BACKOFF)']
+result.plan; // the markdown plan
+result.declarations; // { willModify, willAdd, willRemove }
+result.turns; // how many turns it took
+result.trace; // one line per tool call
+result.aborted; // 'fabrication' | 'turn-limit' | 'no-plan' — MUST be treated as failure
 ```
 
-## Design notes
+From the CLI:
 
-- Single-turn transcript protocol: the whole transcript is re-sent each turn as one prompt and the model answers with exactly one JSON action block, so the planner works against ANY OpenAI-compatible endpoint (no function-calling API) and is trivially scriptable with `MockChatClient`.
-- Read-only sandbox: every path is resolved inside the tool root and escape attempts throw; the handbook is mounted under a virtual `__handbook__/` prefix with its own separate sandbox, so the agent can never confuse handbook pages with source files.
-- The handbook and the source have distinct roles baked into the prompt: the handbook is a location index that decides WHICH sites are in scope (surfacing scattered/mirror sites plain search misses); the real source is the only ground truth for WHAT to change — every edit's old text must be copied verbatim from a `read_file` result.
-- Graceful degradation at the edges: prose replies containing `### EDIT` are accepted as the plan, the final turn forces a `finish`, and oversized tool results are truncated with a hint to narrow the range.
+```bash
+handbook plan --source /path/to/repo --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
 
-## Dependencies
+---
 
-Internal:
+## The plan format
 
-- `@handbook/core` — `listFilesRecursive`, `toPosix`, `truncate`, `Logger`.
-- `@handbook/llm` — the `ChatClient` seam the agent loop drives.
+````markdown
+### EDIT 1
 
-External: none.
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+### EDIT 2
+
+- file: `src/upload.py`
+- where: `Uploader` — add the helper
+
+```old
+    def send(self, url, data):
+```
+
+```new
+    def _retry(self, call, attempts):
+        last = None
+        for _ in range(attempts):
+            try:
+                return call()
+            except TransientError as exc:
+                last = exc
+        raise last
+
+    def send(self, url, data):
+```
+
+Both sites now share one retry policy.
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+- `old` must be **byte-exact** and appear **exactly once** in the file. An empty `old`
+  means "create this file".
+- Edits are numbered and must **ascend**, top to bottom.
+- The trailing `json` block is the machine-readable declarations, consumed by `resync` to
+  sharpen its refresh scope.
+
+`@handbook/patcher` executes this format. It is deliberately hostile to ambiguity — see
+that package's README for exactly what it refuses and why.
+
+---
+
+## The tool belt
+
+```ts
+class ReadOnlyTools {
+  listDir(path): ToolResult;
+  readFile(path, startLine?, endLine?): ToolResult;
+  grep(pattern, path): ToolResult;
+}
+```
+
+**There is no write tool.** Not disabled — not implemented. The planner's output is a
+plan; something else decides whether to apply it.
+
+Everything else is a sandbox rule:
+
+- Every path resolves inside the sandbox root; escapes — including through symlinks —
+  are rejected.
+- The handbook is mounted read-only at `__handbook__/`, a separate sandbox from the source.
+- Reads cap at 60,000 characters; grep caps at 100 hits and skips files over 5 MB.
+- **Catastrophic regexes are refused.** A pattern with an unbounded quantifier applied to
+  a group that itself contains one (`(a+)+`, `(.*)*`, `(\d+){2,}`) turns one long line
+  into a multi-hour hang. `hasNestedUnboundedQuantifier` catches those and returns a
+  graceful tool error instead of freezing the run. Character classes and escaped
+  metacharacters are skipped, so `[+*]` and `\+` are not misread.
+
+---
+
+## Why the loop is built the way it is
+
+The planner uses a **plain single-turn `ChatClient`** — the whole transcript is re-sent
+each turn as one prompt. No function-calling API required, so it works against _any_
+OpenAI-compatible endpoint, and it is trivially scriptable with `MockChatClient` in tests.
+
+Four hard-won behaviours, each of which exists because the naive version failed in
+production:
+
+### 1. Fabricated tool results are rejected outright
+
+A reply that writes the harness's own `## Tool result` heading has **invented file
+contents and is reasoning on top of them**. One observed reply contained thirteen
+fabricated results and a plan built from a line that does not exist in the file.
+
+The planner refuses it — not even the plan at the end of it, because that plan was derived
+from fiction. It pushes back and asks again, and gives up after three such replies with
+`aborted: 'fabrication'`.
+
+### 2. The reminder goes _last_, not in the system prompt
+
+If the last thing the model reads is a tool result, that is the shape it starts imitating
+— generating tens of thousands of characters of invented conversation until it hits the
+token cap. Repeating the instruction after the transcript every turn fixes it.
+
+### 3. A run that gave up exits non-zero
+
+Returning an apology as `plan` with no `aborted` flag reports an abandoned run as a
+success — and a script would then feed that apology straight into `apply`. So:
+
+| Situation                              | `aborted`       |
+| -------------------------------------- | --------------- |
+| Kept inventing tool results            | `'fabrication'` |
+| Hit the turn limit with no EDIT blocks | `'turn-limit'`  |
+| Called `finish` with nothing usable    | `'no-plan'`     |
+
+The CLI turns any of these into a non-zero exit.
+
+### 4. One dangling fence is repaired; anything else is refused
+
+A complete, correct two-edit plan was once refused wholesale because the trailing
+declarations block was missing its closing ` ``` `. The executor's strictness must
+not be relaxed — a tolerated unclosed fence is how a truncated anchor once slipped
+through — so the slip is repaired _here_, where we can see it is a delimiter and not
+content: **only one fence may be open, and only at end of text.** Anything else is left
+for the executor to refuse.
+
+Other guards: tool arguments come straight from model JSON, so a non-string `path` is a
+graceful tool error rather than a `TypeError` that rejects the whole run; and a prose
+reply containing EDIT blocks _is_ the plan, even if some fenced JSON inside it happens to
+parse as an action.
+
+---
+
+## API
+
+```ts
+runPlanner(options: PlannerOptions): Promise<PlannerResult>
+handbookDirFromSkill(skillDir: string): string
+parseDeclarations(plan: string): Declarations | undefined
+closeDanglingFence(plan: string): { plan: string; repaired: boolean }
+buildPlannerSystemPrompt(vars: PlannerPromptVars): string
+class ReadOnlyTools
+hasNestedUnboundedQuantifier(src: string): boolean
+DEFAULT_PROMPT_VARS, TOOL_PROTOCOL
+```
+
+The prompt is parameterized (`projectIntro`, `pathExample`, `whereExample`,
+`qualnameNote`, `declExample`), so you can teach it your codebase's idiom for qualified
+names without forking the prompt.
+
+---
+
+## Testing
+
+```bash
+pnpm --filter @handbook/planner test
+```
+
+Every failure path has a scripted test: fabricated results, malformed actions, non-string
+tool arguments, turn-limit exhaustion, unclosed fences, sandbox escape attempts and
+catastrophic regexes.
+
+---
+
+Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/prompts.md) ·
+[`@handbook/patcher`](../patcher/README.md) applies what this produces · MIT

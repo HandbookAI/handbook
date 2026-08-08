@@ -1,131 +1,178 @@
 # @handbook/studio
 
-A local web UI over the handbook toolchain: register repositories, run generation with
-live logs, browse rendered handbooks, plan changes with the handbook-guided planner, and
-roll handbooks forward after code changes — all on `127.0.0.1`, with source code leaving
-the machine only via the LLM endpoint the pipeline itself is configured to use.
+**English** · [中文](README.zh-CN.md)
 
-> 中文版：[README.zh-CN.md](README.zh-CN.md)
+> The whole toolchain, in a browser tab. Register repositories, generate with live logs,
+> browse the handbook, plan a change, dry-run it, apply it, roll it back, resync.
+> Localhost only, by design.
 
-## Responsibilities
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fstudio-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/studio)
+[![binds](https://img.shields.io/badge/binds-127.0.0.1-2dd4bf?style=flat-square)](#security-model)
 
-- Serve a single-page dashboard (`public/index.html`) and a JSON API over `node:http` —
-  zero web-framework dependencies.
-- Maintain the repository registry (`studio.json` in the state dir); each repo pairs a
-  source root with a work dir holding its handbook artifacts.
-- Run pipeline operations as **jobs** (generate / analyze / plan / resync) with captured
-  logs streamed over SSE; one running job per repo (work dirs are single-writer).
-- Record every resync as an **evolution** under `<work>/evolutions/<stamp>/` and expose
-  the timeline.
-- Deliberately NOT a deployment server: binds localhost only, no auth, no TLS — it is a
-  desktop tool.
-- Apply edit plans through `@handbook/patcher`: dry-run verification, all-or-nothing
-  writes, per-edit outcomes, and a rollback that refuses to clobber work done after the
-  patch (an explicit override is offered in the UI).
+---
 
-## Endpoints
+## What it is
 
-| Method & path                                        | Purpose                                                                                              |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET /`                                              | the dashboard UI                                                                                     |
-| `GET/POST /api/repos`, `GET/DELETE /api/repos/:name` | registry + status (chapters, strategy, evolutions)                                                   |
-| `POST /api/repos/:name/analyze`                      | phase-1 static analysis job (free, no LLM)                                                           |
-| `POST /api/repos/:name/generate`                     | full pipeline + render job — accepts every CLI generate option (see below)                           |
-| `POST /api/repos/:name/plan`                         | planner job (`{request}` → plan + declarations)                                                      |
-| `POST /api/repos/:name/resync`                       | live-tree resync job (`{description, noLlm, narrateLang}`) + re-render                               |
-| `GET /api/repos/:name/overview`                      | stages/summaries/registers/coverage JSON                                                             |
-| `GET /api/repos/:name/history`                       | evolution timeline                                                                                   |
-| `GET /api/repos/:name/graph?stage=&limit=`           | file-level impact graph (nodes with degree + stage, weighted links)                                  |
-| `GET /api/repos/:name/source?path=`                  | file content + function anchors (line ranges)                                                        |
-| `POST /api/repos/:name/apply`                        | patch job (`{plan, dryRun}`) → per-edit outcomes, changedFiles, backupDir                            |
-| `POST /api/repos/:name/rollback`                     | rollback job (`{backup?, force?}`) → restored / removed / skipped                                    |
-| `GET /api/repos/:name/patches`                       | backup stamps, newest first                                                                          |
-| `GET /api/history`                                   | evolutions across every repo, newest first                                                           |
-| `GET /api/repos/:name/handbook/*`                    | static serving of the rendered handbook (traversal-safe)                                             |
-| `GET /api/jobs?repo=`                                | `{jobs: [...]}` — recent job summaries (id/repo/kind/status/startedAt, no raw log), newest first     |
-| `GET /api/jobs/:id`, `GET /api/jobs/:id/stream`      | job status / SSE log stream                                                                          |
-| `POST /api/jobs/:id/cancel`                          | request cancellation: `202 {ok:true}` for a running job, `409` if it already finished, `404` unknown |
-
-### Generate options
-
-`POST /api/repos/:name/generate` accepts the full CLI surface; defaults mirror the CLI.
-
-| Field                                                                                              | Meaning                                                                               |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `narrateLang` (`en`\|`zh`), `detail` (`brief`\|`deep`), `synthMode` (`oneshot`\|`doctor`), `title` | the common four, shown at the top of the dialog                                       |
-| `phase`                                                                                            | `all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3` or a comma list (default `all`)                |
-| `strategy`                                                                                         | `file` \| `member`; omitted = keep the work dir's recorded strategy                   |
-| `skeleton`                                                                                         | path to an authored `skeleton.yaml` — required for `member`                           |
-| `lang`                                                                                             | source language: `auto \| python \| typescript \| go \| rust \| shell`                |
-| `resume`, `refresh`                                                                                | booleans: skip completed cards / ignore phase-3 caches                                |
-| `readWorkers` (default 12), `maxDoctorRounds` (default 6, doctor mode only)                        | numerics, validated server-side: garbage is a `400` on the request, never a NaN'd job |
-
-### Cancellation
-
-Cancellation is **cooperative**: `POST /api/jobs/:id/cancel` aborts the job's
-`AbortSignal` and answers `202` immediately, but the run only stops when it
-reaches its next checkpoint (between pipeline phases / before a render — and,
-as the underlying packages learn to observe the signal, mid-phase). A job that
-stopped this way finishes as **`cancelled`, which is an outcome, not a
-failure**: the UI renders it in the neutral ice tone, `error` stays unset, and
-the log ends with `[job] cancelled by user`. A cancelled job releases the
-per-repo mutex and no longer blocks repo deletion, exactly like a succeeded or
-failed one. The drawer shows a 取消/Cancel button while its job is running.
-
-## Views
-
-| View            | What it is for                                                                                                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Home            | the product's shape: the Request → Handbook → Plan → Patch → Sync loop, plus recent repositories and evolutions                                                              |
-| Instructions    | in-app guide: the five-step loop, what each button does, cost and data-boundary facts                                                                                        |
-| Overview        | status, chapter index with summaries, coverage, state registers                                                                                                              |
-| Browse handbook | the rendered handbook, embedded — a switcher offers every output that exists: chapter site, single-page `handbook.html`, and the agent locator index (`agent/how_to_use.md`) |
-| Impact graph    | file-level call relations as SVG — degree-sized nodes, stage colours, stage filter, click through to source                                                                  |
-| Source          | the real file with line numbers and a function index that jumps and highlights                                                                                               |
-| Evolve          | plan → dry-run → apply (per-edit table) → rollback → resync, with the backup list                                                                                            |
-| History         | evolution timeline per repo, and across all repos from the sidebar                                                                                                           |
-
-Chinese/English and dark/light are both toggles in the top bar, persisted per browser.
-
-## Usage
+A local web UI over every other `@handbook/*` package. Same code paths as the CLI, same
+config resolution, same artifacts on disk — just a different way to drive it.
 
 ```bash
-handbook studio                      # http://127.0.0.1:4860
-handbook studio --port 5000 --state-dir ~/.handbook-studio
+handbook studio                    # → http://127.0.0.1:4860
+handbook studio --port 5000        # or: pnpm studio --port 5000
 ```
 
-Or programmatically:
+**Zero build step.** The UI is one hand-written HTML file with inlined CSS and vanilla
+JS — no bundler, no framework, no `node_modules` shipped to the browser, nothing fetched
+from a CDN. It loads instantly and it works with the network cable unplugged.
+
+---
+
+## What you can do in it
+
+| Area                 | What it does                                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Repositories**     | Register a source tree + work dir under a URL-safe name. Persisted in one `studio.json`, so the server is stateless across restarts.                                 |
+| **Generate**         | Kick off a run with the full parameter set (phase, strategy, detail, synth mode, narration language, worker counts). Logs stream live over SSE. Cancellable mid-run. |
+| **Handbook browser** | Read the rendered handbook in place — overview, stage index, stage pages, register table.                                                                            |
+| **Impact graph**     | Which files a stage owns, what calls into it, and what it calls out to.                                                                                              |
+| **Source viewer**    | Open the real file behind any card, at the line the handbook cited.                                                                                                  |
+| **Plan**             | Type a change request, watch the read-only agent work, read the resulting plan.                                                                                      |
+| **Apply / rollback** | Dry-run first, then apply, with every backup listed and one-click rollback.                                                                                          |
+| **Resync**           | Roll the handbook forward against the live tree — no case directory to assemble by hand.                                                                             |
+| **History**          | Per-repo evolution: what each run changed, and when.                                                                                                                 |
+
+---
+
+## Install
+
+```bash
+pnpm add @handbook/studio
+```
+
+Or just use the CLI — `handbook studio` is this package.
+
+---
+
+## Embedding it
 
 ```ts
-import { startStudio } from '@handbook/studio';
-import { MockChatClient } from '@handbook/llm';
+import { startStudio, createStudioServer } from '@handbook/studio';
 
-const server = await startStudio({
-  stateDir: '/tmp/studio',
+await startStudio({
+  stateDir: `${process.env.HOME}/.handbook-studio`,
   port: 4860,
-  clientFactory: () => new MockChatClient([...]), // injectable — tests run fully offline
+  host: '127.0.0.1',
+  clientFactory: (jobLogger) => new OpenAiChatClient({ config, logger: jobLogger }),
+  configFile, // the already-loaded handbook.config.yaml layer
+  logger,
 });
 ```
 
-## Design notes
+Two parameters are worth explaining, because they are where a subtle bug used to live:
 
-- The LLM client is created per job via `clientFactory`, defaulting to env-configured
-  `OpenAiChatClient` — the CLI's `.env` auto-loading applies, and tests inject mocks.
-- Resync uses the repo's **live source tree** (`editedRoot`) instead of a copied case
-  dir: Studio's evolution flow is "you changed the code in place; the handbook catches
-  up". The case dir still receives the report, staging area, and `evolution.json`.
-- Static handbook serving resolves paths against the handbook root and rejects
-  escapes — the API never serves arbitrary filesystem paths.
-- Job logs are capped (last 2000 lines) and streamed with replay-then-follow SEE
-  semantics so a late-opened drawer still shows the full recent log.
-- Reloading the page mid-run does not orphan the job: the UI polls `GET /api/jobs`
-  on boot and view changes, shows a "Job running" chip in the top bar while one is
-  live, and clicking it reattaches the log drawer to the job's SSE stream (replay
-  fills in the missed lines). If the job finished in the meantime, the chip click
-  refreshes the repo status instead.
+- **`clientFactory` receives the _job_ logger**, not the top-level one. A silent client
+  hides retries and gateway blocks from the only log the user is actually watching.
+- **`configFile` is passed through** so a generate job's parameters see the same
+  `handbook.config.yaml` layer as every other command. Without it, `--model`, `--base-url`
+  and a config-file `llm:` block silently did nothing for Studio while `--help` and
+  `handbook config` both claimed they worked.
 
-## Dependencies
+`createStudioServer` returns an unstarted `http.Server`, which is what the tests drive.
 
-Internal: `@handbook/{core,llm,pipeline,planner,renderer,resync,skill}` — Studio is a
-thin orchestration shell; every capability lives in the underlying packages. External:
-`zod` (state file validation) only.
+---
+
+## Jobs
+
+Generation, planning and resync run as **background jobs** with a captured log served over
+Server-Sent Events.
+
+- **One job per repo at a time.** The pipeline's artifacts are not safe for concurrent
+  writers on the same work dir; a second start is refused with a clear message rather than
+  allowed to interleave.
+- **Cancellable.** Every job gets an `AbortController` whose signal is threaded all the
+  way down into in-flight LLM requests. Cancel means cancel, not "stop showing me the log".
+- **Statuses:** `running` → `succeeded` | `failed` | `cancelled`. The full log is kept, so
+  you can read what happened after it finished.
+
+---
+
+## Security model
+
+Studio is a **local tool**. It is not hardened for exposure and does not pretend to be.
+
+- **It binds `127.0.0.1` by default.**
+- **The CSRF guard checks the `Host` request header**, not the socket. Only loopback host
+  names pass.
+- **`POST` requires `application/json`**, which blocks the classic HTML-form cross-origin
+  attack.
+- **Repo names are validated** against `^[A-Za-z0-9][A-Za-z0-9._-]*$` before they touch
+  the filesystem, and paths are realpath-normalized so two spellings of one tree compare
+  equal.
+- **Source and handbook file serving is sandboxed** to the registered roots.
+
+### Running it in a container
+
+A container must bind `0.0.0.0` for the published port to be reachable at all
+(`HANDBOOK_STUDIO_HOST=0.0.0.0` in `docker-compose.yml`). **That does not widen who may
+talk to it.** Browsing `http://localhost:4860` from the host still sends
+`Host: localhost:4860` and passes; a request naming a LAN IP or the container hostname is
+refused with `403`.
+
+**Only `http://localhost:4860` works — not a LAN IP, not the container name.** Remote
+access is a deliberately unimplemented, separate feature (it would need an explicit
+allowlist), not a gap in this defence.
+
+---
+
+## HTTP API
+
+The UI is just a client; the API is stable enough to script against.
+
+| Method   | Path                          | Purpose                                                                   |
+| -------- | ----------------------------- | ------------------------------------------------------------------------- |
+| `GET`    | `/`                           | The UI (also answers `HEAD`, so uptime probes get the truth)              |
+| `GET`    | `/api/repos`                  | Registered repositories                                                   |
+| `POST`   | `/api/repos`                  | Register one                                                              |
+| `DELETE` | `/api/repos/:name`            | Unregister                                                                |
+| `GET`    | `/api/repos/:name`            | One repo's state                                                          |
+| `POST`   | `/api/repos/:name`            | Start a job: `analyze`, `generate`, `plan`, `resync`, `apply`, `rollback` |
+| `GET`    | `/api/repos/:name/overview`   | Handbook overview + stage index                                           |
+| `GET`    | `/api/repos/:name/graph`      | Impact graph data                                                         |
+| `GET`    | `/api/repos/:name/source`     | A source file, sandboxed                                                  |
+| `GET`    | `/api/repos/:name/handbook/*` | Rendered handbook files                                                   |
+| `GET`    | `/api/repos/:name/patches`    | Backups available for rollback                                            |
+| `GET`    | `/api/repos/:name/history`    | Evolution history                                                         |
+| `GET`    | `/api/languages`              | Registered analyzer languages                                             |
+| `GET`    | `/api/jobs`                   | All jobs                                                                  |
+| `GET`    | `/api/jobs/:id`               | One job, or its SSE log stream                                            |
+| `POST`   | `/api/jobs/:id/cancel`        | Cancel a running job                                                      |
+
+---
+
+## State
+
+```
+~/.handbook-studio/
+  studio.json        the repository registry (schema-validated on read)
+  work/<name>/       auto-created work dirs for repos that did not bring their own
+```
+
+`--state-dir` moves it. Everything else — handbook artifacts, evolution history — lives in
+each repo's own work dir, so deleting the state directory loses the registry and nothing
+that matters.
+
+---
+
+## Testing
+
+```bash
+pnpm --filter @handbook/studio test
+```
+
+The server is driven end to end over real HTTP: routing, the Host-header guard, the
+content-type guard, path sandboxing, job lifecycle, cancellation and SSE streaming. There
+is also a UI-drift test that keeps the hand-written HTML in step with the API it calls.
+
+---
+
+Part of [Handbook](../../README.md) · MIT
