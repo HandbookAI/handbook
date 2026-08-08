@@ -68,8 +68,34 @@
 - [x] `docs/` 独立 pnpm workspace（自带 pnpm-workspace.yaml），root install 不会拉 React/Next
 - [x] `pnpm check` 全绿（1334 测试 + 覆盖率）
 
-### Step 4 — .claude / .codex / .cursor ⏳
-### Step 5 — 全命令全配置测试 ⏳
+### Step 4 — .claude / .codex / .cursor ✅ (commit 793a989)
+
+- [x] `.gitignore` 改为白名单式反选，共享部分入库、`settings.local.json` 仍忽略
+- [x] `.claude/settings.json`：permissions(allow/deny/ask) + env + 4 个 hooks
+- [x] 4 个 hook 脚本，**逐个实测过**：
+      - `protect-generated.sh`（PreToolUse，拦截 3 个生成物 / dist / diagrams / lockfile，exit 2）
+      - `format-touched.sh`（PostToolUse，只格式化刚改的那个文件）
+      - `session-brief.sh`（SessionStart，用 `tsc -b --dry` 判断 dist 是否过期——
+        mtime 方案会误报，已验证并修掉）
+      - `gate-reminder.sh`（Stop，只提醒不阻断）
+- [x] 3 个 subagent：adapter-author / pipeline-debugger / config-surgeon
+- [x] 4 个 skill：/gate /self-handbook /diagnose-run /offline-e2e
+- [x] 3 个 path-scoped rules
+- [x] `CLAUDE.md`（新建）+ `AGENTS.md`（新建，Codex/Cursor 共用）
+- [x] `.codex/config.toml`（**用 tomllib 校验过**，修掉了顶层 key 掉进 table 的真 bug）
+      + 2 个 hook + 3 个 prompt + README
+- [x] `.cursor/rules/*.mdc` × 6（1 个 alwaysApply + 5 个 globs 分域）+ README
+
+### Step 5 — 全命令全配置测试 ✅ (commit 7ec8fa8)
+
+- [x] `pnpm check` 全绿（1337 测试）
+- [x] 新增 `scripts/smoke-cli.sh` + `pnpm check:cli`：**75 条断言**，驱动真实二进制端到端
+- [x] **发现并修复 1 个真 bug**：Node ≥ 20.6 自己有 `--env-file`，会预扫描整条命令行，
+      导致 `handbook --env-file <不存在的路径>` 被 node 以 exit 9 杀死，
+      而这恰好是该 flag 承诺要"响亮报错"的那一种情况。
+      → 新增 `HANDBOOK_ENV_FILE`（环境变量拦不住），3 个回归测试，文档 5 处更新，changeset 已加
+- [x] 其余 3 个"失败"经查是我的测试写错（子串锚点 / 取了最旧的备份 / 零编辑计划本就该 exit 0），已修正断言
+
 ### Step 6 — 9 语言真实仓库实测 + 修 bug ⏳
 ### Step 7 — 5 轮对抗 ⏳
 
