@@ -25,6 +25,14 @@ export const repoEntrySchema = z.object({
   addedAt: z.string(),
   /** Handbook title chosen at generate time; resync re-renders under it. */
   title: z.string().optional(),
+  /**
+   * Last-used job parameters, by job kind — what lets the UI pre-fill a dialog
+   * with the values that actually produced this repo's handbook instead of the
+   * registry defaults. Never contains a secret: the server strips `llmApiKey`
+   * (and rejects it outright) before anything reaches this file, because
+   * studio.json is exactly the kind of file that ends up in a backup.
+   */
+  lastParams: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 });
 export type RepoEntry = z.infer<typeof repoEntrySchema>;
 
@@ -99,6 +107,15 @@ export class StateStore {
     const repo = this.state.repos.find((r) => r.name === name);
     if (repo) {
       repo.title = title;
+      this.save();
+    }
+  }
+
+  /** Remember the parameters a job kind was last run with (secrets already stripped). */
+  setLastParams(name: string, kind: string, params: Record<string, unknown>): void {
+    const repo = this.state.repos.find((r) => r.name === name);
+    if (repo) {
+      repo.lastParams = { ...repo.lastParams, [kind]: params };
       this.save();
     }
   }

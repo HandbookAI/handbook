@@ -433,11 +433,13 @@ addSettings(
     // command — otherwise --model, --base-url and a config-file `llm:` block
     // all silently do nothing for studio (P0-1), while --help and `handbook
     // config` both claim they work. Receives the job logger, not the top-level
-    // one: a silent client hides retries and gateway blocks.
-    clientFactory: (jobLogger) =>
+    // one: a silent client hides retries and gateway blocks. Per-job overrides
+    // (a request's own `llmModel`, `--max-tokens`-equivalent, …) land on top of
+    // the launch configuration; the API key never does — studio rejects it.
+    clientFactory: (jobLogger, llmOverrides) =>
       new OpenAiChatClient({
-        config: llmConfigFromValues(cfg),
-        concurrency: cfg.llmConcurrency as number | undefined,
+        config: llmConfigFromValues({ ...cfg, ...llmOverrides }),
+        concurrency: (llmOverrides?.llmConcurrency ?? cfg.llmConcurrency) as number | undefined,
         logger: jobLogger,
       }),
     // Same file layer studio's own launch settings just used, so a generate

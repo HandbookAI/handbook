@@ -17,24 +17,28 @@ import {
   readJsonFile,
   resolveConfig,
   settingByKey,
+  settingsFor,
   silentLogger,
   truncate,
   writeJsonFile,
   type ConfigFileData,
   type Logger,
+  type Setting,
 } from '@handbook/core';
-import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
+import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
 import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
 import { isInternalNode } from '@handbook/core';
 import {
   renderAgentSite,
   renderHtmlSite,
+  renderLlmsTxt,
   renderMarkdownHandbook,
   renderSinglePageHtml,
 } from '@handbook/renderer';
 import { parseDeclarations, runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
+import { buildSkill, validateSkill } from '@handbook/skill';
 import { applyPlan, listBackups, rollback } from '@handbook/patcher';
 import { REPO_NAME_RE, StateStore, type RepoEntry } from './state.js';
 import { JobRunner, type Job, type JobKind } from './jobs.js';
@@ -48,9 +52,13 @@ export interface StudioOptions {
    *  container passes 0.0.0.0. The Host-header guard in createStudioServer is
    *  unaffected and must stay as it is. */
   host?: string;
-  /** LLM client factory — injectable for tests; default reads OPENAI_* env. */
-  /** Injectable LLM client. Receives the job logger so retries reach its log. */
-  clientFactory?: (logger: Logger) => ChatClient;
+  /**
+   * Injectable LLM client. Receives the job logger so retries reach its log,
+   * and the per-job LLM overrides (`llmModel`, `llmBaseUrl`, …) the request
+   * carried — already validated against the registry, never the API key, which
+   * is env-only. Default reads OPENAI_* env and applies the overrides on top.
+   */
+  clientFactory?: (logger: Logger, llmOverrides?: Record<string, unknown>) => ChatClient;
   /**
    * The project config file (`handbook.config.yaml`), already discovered and
    * loaded by the CLI's `preAction` hook. Passed through so a generate job's
@@ -65,11 +73,60 @@ export interface StudioOptions {
 interface Ctx {
   store: StateStore;
   jobs: JobRunner;
-  clientFactory: (logger: Logger) => ChatClient;
+  clientFactory: (logger: Logger, llmOverrides?: Record<string, unknown>) => ChatClient;
   configFile?: ConfigFileData;
   logger: Logger;
   /** Default parent dir for auto-created work dirs. */
   stateDirWork: string;
+}
+
+/** The per-job tunable LLM settings. `llmApiKey` is deliberately absent — see rejectSecrets. */
+const LLM_OVERRIDE_KEYS = [
+  'llmModel',
+  'llmBaseUrl',
+  'llmMaxTokens',
+  'llmTimeout',
+  'llmMaxRetries',
+  'llmRetryBackoff',
+  'llmConcurrency',
+  'llmExtraBody',
+] as const;
+
+/**
+ * Refuse a request that carries a secret.
+ *
+ * The registry's own rule is that secrets are never a flag and are rejected in
+ * a config file, because those surfaces get persisted and shared. An HTTP body
+ * is the same kind of surface — it lands in logs, dev-tools HAR exports and
+ * `lastParams` — so the key travels by environment only. Silently dropping it
+ * (what this API used to do) is worse than refusing: the caller believes the
+ * key was used.
+ */
+function rejectSecrets(body: Record<string, unknown>): void {
+  if ('llmApiKey' in body || 'OPENAI_API_KEY' in body) {
+    throw new Error(
+      'llmApiKey is environment-only — set OPENAI_API_KEY where studio runs; it is never accepted over HTTP',
+    );
+  }
+}
+
+/**
+ * The llm-group overrides this request actually carried, post-validation.
+ *
+ * Only keys present in the BODY are forwarded: `values` also contains what env
+ * and the config file supplied, and re-sending those to the client factory
+ * would overwrite the factory's own launch-time configuration with a copy of
+ * itself at best, and with registry defaults at worst.
+ */
+function llmOverridesFrom(
+  body: Record<string, unknown>,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const overrides: Record<string, unknown> = {};
+  for (const key of LLM_OVERRIDE_KEYS) {
+    if (body[key] !== undefined) overrides[key] = values[key];
+  }
+  return overrides;
 }
 
 const MIME: Record<string, string> = {
@@ -387,8 +444,17 @@ interface GenerateParams {
   synthMode: 'oneshot' | 'doctor';
   maxDoctorRounds: number;
   readWorkers: number;
+  readBatchSize?: number;
+  maxCharsPerFile: number;
+  assignBatchSize: number;
+  assignWorkers: number;
+  organizeWorkers: number;
+  narrateWorkers: number;
   resume: boolean;
   refresh: boolean;
+  llmCache: boolean;
+  debug: boolean;
+  llmOverrides: Record<string, unknown>;
   title?: string;
 }
 
@@ -409,6 +475,7 @@ function parseGenerateParams(
   repo: RepoEntry,
   configFile?: ConfigFileData,
 ): GenerateParams {
+  rejectSecrets(body);
   const { values, errors } = resolveConfig({
     command: 'generate',
     flags: { ...body, source: repo.sourceRoot, work: repo.workDir },
@@ -428,8 +495,17 @@ function parseGenerateParams(
     synthMode: values.synthMode as 'oneshot' | 'doctor',
     maxDoctorRounds: values.maxDoctorRounds as number,
     readWorkers: values.readWorkers as number,
+    readBatchSize: values.readBatchSize as number | undefined,
+    maxCharsPerFile: values.maxCharsPerFile as number,
+    assignBatchSize: values.assignBatchSize as number,
+    assignWorkers: values.assignWorkers as number,
+    organizeWorkers: values.organizeWorkers as number,
+    narrateWorkers: values.narrateWorkers as number,
     resume: values.resume as boolean,
     refresh: values.refresh as boolean,
+    llmCache: values.llmCache as boolean,
+    debug: values.logLevel === 'debug',
+    llmOverrides: llmOverridesFrom(body, values),
     // `title` belongs to render/resync in the registry, not generate — generate
     // only forwards it to the render step that runs at the end of the job, so it
     // stays a plain pass-through rather than a resolved setting.
@@ -445,10 +521,16 @@ async function runGenerate(
   signal: AbortSignal,
 ): Promise<unknown> {
   const needsLlm = params.phase !== '1';
+  let client = needsLlm ? ctx.clientFactory(logger, params.llmOverrides) : undefined;
+  // Same rule as the CLI: the reply cache only helps a re-run, and --refresh is
+  // the explicit request to NOT reuse anything.
+  if (client && params.llmCache && !params.refresh) {
+    client = new CachedChatClient(client, join(repo.workDir, 'phase3', 'cache'));
+  }
   const stats = await generateHandbook({
     sourceRoot: repo.sourceRoot,
     workDir: repo.workDir,
-    client: needsLlm ? ctx.clientFactory(logger) : undefined,
+    client,
     phase: params.phase,
     strategy: params.strategy,
     skeletonPath: params.skeletonPath,
@@ -458,6 +540,12 @@ async function runGenerate(
     synthMode: params.synthMode,
     maxDoctorRounds: params.maxDoctorRounds,
     readWorkers: params.readWorkers,
+    readBatchSize: params.readBatchSize,
+    maxCharsPerFile: params.maxCharsPerFile,
+    assignBatchSize: params.assignBatchSize,
+    assignWorkers: params.assignWorkers,
+    organizeWorkers: params.organizeWorkers,
+    narrateWorkers: params.narrateWorkers,
     resume: params.resume,
     refresh: params.refresh,
     logger,
@@ -487,8 +575,27 @@ async function runGenerate(
   return { ...stats, render: { ...md, files: undefined, agent, html, single } };
 }
 
-async function runAnalyzeOnly(repo: RepoEntry, logger: Logger): Promise<unknown> {
-  return runPhase1({ sourceRoot: repo.sourceRoot, workDir: repo.workDir, logger });
+async function runAnalyzeOnly(
+  repo: RepoEntry,
+  body: Record<string, unknown>,
+  configFile: ConfigFileData | undefined,
+  logger: Logger,
+): Promise<unknown> {
+  // Same resolver as the CLI's `analyze`, so `lang` accepts exactly the
+  // registered adapter names and a typo is a 400, not a silent 'auto'.
+  const { values, errors } = resolveConfig({
+    command: 'analyze',
+    flags: { ...body, source: repo.sourceRoot, work: repo.workDir },
+    env: process.env,
+    file: configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
+  return runPhase1({
+    sourceRoot: repo.sourceRoot,
+    workDir: repo.workDir,
+    lang: values.lang as string,
+    logger,
+  });
 }
 
 async function runPlan(
@@ -500,12 +607,20 @@ async function runPlan(
 ): Promise<unknown> {
   const request = typeof body.request === 'string' ? body.request.trim() : '';
   if (!request) throw new Error('missing "request"');
+  const { values, errors } = resolveConfig({
+    command: 'plan',
+    flags: { ...body, source: repo.sourceRoot, request },
+    env: process.env,
+    file: ctx.configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
   const handbookDir = join(repo.workDir, 'handbook');
   const result = await runPlanner({
-    client: ctx.clientFactory(logger),
+    client: ctx.clientFactory(logger, llmOverridesFrom(body, values)),
     sourceRoot: repo.sourceRoot,
     handbookDir: fileExists(join(handbookDir, 'index.md')) ? handbookDir : undefined,
     request,
+    maxTurns: values.maxTurns as number,
     logger,
   });
   // Cooperative checkpoint: a cancelled planning run must not come back green.
@@ -532,6 +647,17 @@ async function runApply(repo: RepoEntry, body: Record<string, unknown>, logger: 
   const plan = typeof body.plan === 'string' ? body.plan : '';
   if (!plan.trim()) throw new Error('missing "plan"');
   const dryRun = body.dryRun === true;
+  // Registry `backupRoot`, honoured at last: an absolute path is used as given;
+  // a relative one is anchored on the WORK dir (studio's own territory), never
+  // resolved against the server's cwd, which the caller cannot see.
+  const requestedBackupRoot =
+    typeof body.backupRoot === 'string' && body.backupRoot.trim() ? body.backupRoot.trim() : undefined;
+  const backupRoot =
+    requestedBackupRoot === undefined
+      ? patchBackupRoot(repo)
+      : requestedBackupRoot.startsWith('/')
+        ? requestedBackupRoot
+        : join(repo.workDir, requestedBackupRoot);
   // A plan with no edit blocks AND empty declarations is the planner saying "no
   // code change is needed" — a legitimate conclusion, not a malformed plan. Both
   // used to surface as the same red failure, which reads as "the tool is broken".
@@ -549,7 +675,7 @@ async function runApply(repo: RepoEntry, body: Record<string, unknown>, logger: 
     sourceRoot: repo.sourceRoot,
     plan,
     dryRun,
-    backupRoot: patchBackupRoot(repo),
+    backupRoot,
     logger,
   });
   for (const problem of result.problems) logger.warn(`plan problem: ${problem}`);
@@ -600,12 +726,16 @@ async function summariseChange(
   repo: RepoEntry,
   report: { changedFiles: string[]; addedFiles: string[]; deletedFiles: string[]; affectedStages: string[] },
   client: ChatClient | undefined,
-  body: Record<string, unknown>,
+  lang: 'en' | 'zh',
   logger: Logger,
 ): Promise<{ text: string; source: DescriptionSource } | undefined> {
   const touched = [...report.changedFiles, ...report.addedFiles];
   const removed = report.deletedFiles;
-  const zh = body.narrateLang !== 'en';
+  // The caller resolves this from the handbook's own prose language. It used to
+  // read `body.narrateLang !== 'en'` — a key the UI never sent (and the wrong
+  // key besides; resync's is `proseLang`), so an English-UI user's evolution
+  // descriptions were always written in Chinese.
+  const zh = lang === 'zh';
   // Nothing changed is itself a fact worth writing down: a timeline entry reading
   // "no file changes" tells the reader something, "(no description)" does not.
   if (touched.length === 0 && removed.length === 0) {
@@ -663,19 +793,68 @@ async function summariseChange(
   return fromFiles();
 }
 
+interface ResyncParams {
+  proseLang?: 'en' | 'zh';
+  cardDetail?: 'brief' | 'deep';
+  refreshRendered: boolean;
+  correctionsPath?: string;
+  noLlm: boolean;
+  debug: boolean;
+  llmOverrides: Record<string, unknown>;
+}
+
+/**
+ * Validate a resync request BEFORE the job starts — same contract as
+ * `parseGenerateParams`: garbage input is a 400 on this request, not a failed
+ * job discovered in the drawer later.
+ *
+ * The registry's resync settings, resolved like the CLI's — `proseLang` and
+ * `cardDetail` were previously unreachable from studio, and the body key
+ * `narrateLang` (a generate-only setting) was silently read instead.
+ */
+function parseResyncParams(
+  body: Record<string, unknown>,
+  repo: RepoEntry,
+  configFile?: ConfigFileData,
+): ResyncParams {
+  rejectSecrets(body);
+  const { values, errors } = resolveConfig({
+    command: 'resync',
+    // `case` is studio-managed (the stamp dir the job creates); a placeholder
+    // satisfies the resolver's required check and is never used.
+    flags: { ...body, work: repo.workDir, case: '(studio)' },
+    env: process.env,
+    file: configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
+  return {
+    proseLang: (values.proseLang ??
+      (body.narrateLang === 'zh' || body.narrateLang === 'en' ? body.narrateLang : undefined)) as
+      'en' | 'zh' | undefined,
+    cardDetail: values.cardDetail as 'brief' | 'deep' | undefined,
+    refreshRendered: values.refreshRendered as boolean,
+    correctionsPath: values.corrections as string | undefined,
+    noLlm: body.noLlm === true || values.useLlm === false,
+    debug: values.logLevel === 'debug',
+    llmOverrides: llmOverridesFrom(body, values),
+  };
+}
+
 async function runResync(
   ctx: Ctx,
   repo: RepoEntry,
   body: Record<string, unknown>,
+  params: ResyncParams,
   logger: Logger,
   signal: AbortSignal,
 ): Promise<unknown> {
+  const { proseLang, cardDetail, refreshRendered, correctionsPath, noLlm } = params;
+
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const caseDir = join(evolutionsDir(repo), stamp);
   ensureDir(caseDir);
   const planText = typeof body.description === 'string' ? body.description : undefined;
-  const noLlm = body.noLlm === true;
-  const client = noLlm ? undefined : ctx.clientFactory(logger);
+  const client = noLlm ? undefined : ctx.clientFactory(logger, params.llmOverrides);
   let report;
   try {
     report = await resyncHandbook({
@@ -685,7 +864,9 @@ async function runResync(
       workDir: repo.workDir,
       client,
       noLlm,
-      lang: body.narrateLang === 'zh' ? 'zh' : body.narrateLang === 'en' ? 'en' : undefined,
+      lang: proseLang,
+      detail: cardDetail,
+      correctionsPath,
       logger,
       signal,
     });
@@ -697,22 +878,42 @@ async function runResync(
     rmSync(caseDir, { recursive: true, force: true });
     throw error;
   }
-  logger.info('re-rendering handbook…');
-  const outDir = join(repo.workDir, 'handbook');
-  const model = loadHandbookModel(repo.workDir, repo.title ?? `${repo.name} Handbook`);
-  // Same fidelity disclosure as a full generate: a resync re-renders the whole
-  // handbook, so dropping it here would silently un-say it.
-  const languages = readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
-  renderMarkdownHandbook(model, outDir, { languages });
-  renderAgentSite(model, join(outDir, 'agent'));
-  renderHtmlSite(model, join(outDir, 'html'), { languages });
-  renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
+  const title =
+    typeof body.title === 'string' && body.title.trim()
+      ? body.title.trim()
+      : (repo.title ?? `${repo.name} Handbook`);
+  if (title !== repo.title) ctx.store.setTitle(repo.name, title);
+  if (refreshRendered) {
+    logger.info('re-rendering handbook…');
+    const outDir = join(repo.workDir, 'handbook');
+    const model = loadHandbookModel(repo.workDir, title);
+    // Same fidelity disclosure as a full generate: a resync re-renders the whole
+    // handbook, so dropping it here would silently un-say it.
+    const languages =
+      readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
+    renderMarkdownHandbook(model, outDir, { languages });
+    renderAgentSite(model, join(outDir, 'agent'));
+    renderHtmlSite(model, join(outDir, 'html'), { languages });
+    renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
+  } else {
+    // Registry `refreshRendered` (`--no-render`): the artifacts are refreshed,
+    // the rendered outputs deliberately are not — say so where the reader looks.
+    logger.info('skipping the re-render (refreshRendered=false) — rendered outputs are now stale');
+  }
   // A resync with no description used to leave a bare dash in the timeline while
   // the facts needed to label it sat in the report. Fill it in — but never let the
   // reader mistake a machine summary for the author's own intent, and never let a
   // cosmetic summary fail the resync that already succeeded.
+  // The summary language follows the handbook's own prose: the explicit
+  // `proseLang` when given, else whatever language the narration on disk is in.
+  const summaryLang =
+    proseLang ??
+    (readOptional(() => (readJsonFile(new WorkDir(repo.workDir).narrationPath) as { lang?: string }).lang) ===
+    'zh'
+      ? 'zh'
+      : 'en');
   const typed = (planText ?? '').trim();
-  const auto = typed ? undefined : await summariseChange(repo, report, client, body, logger);
+  const auto = typed ? undefined : await summariseChange(repo, report, client, summaryLang, logger);
   const evolution = {
     id: stamp,
     at: new Date().toISOString(),
@@ -722,6 +923,170 @@ async function runResync(
   };
   writeJsonFile(join(caseDir, 'evolution.json'), evolution);
   return evolution;
+}
+
+/**
+ * Re-render the existing artifacts — the CLI's `render`, jobified. No LLM.
+ *
+ * Output formats follow the registry defaults (all opt-in) rather than the
+ * everything-on behaviour of the generate job's render step: this endpoint
+ * exists precisely so the caller can choose. `out` stays studio-managed at
+ * `<work>/handbook` — every viewer route serves from there.
+ */
+async function runRender(
+  ctx: Ctx,
+  repo: RepoEntry,
+  body: Record<string, unknown>,
+  logger: Logger,
+): Promise<unknown> {
+  rejectSecrets(body);
+  const { values, errors } = resolveConfig({
+    command: 'render',
+    flags: { ...body, work: repo.workDir },
+    env: process.env,
+    file: ctx.configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
+  const outDir = join(repo.workDir, 'handbook');
+  const title =
+    typeof body.title === 'string' && body.title.trim()
+      ? body.title.trim()
+      : (repo.title ?? (values.title as string));
+  if (title !== repo.title) ctx.store.setTitle(repo.name, title);
+  const model = loadHandbookModel(repo.workDir, title);
+  const languages = readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
+  const render = {
+    languages,
+    ...(values.sourceBaseUrl ? { sourceBaseUrl: values.sourceBaseUrl as string } : {}),
+  };
+  logger.info(`rendering markdown handbook → ${outDir}`);
+  const md = renderMarkdownHandbook(model, outDir, render);
+  const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
+  if (values.agentSite) {
+    logger.info('rendering the agent locator index…');
+    result.agent = renderAgentSite(model, join(outDir, 'agent'), { languages });
+  }
+  if (values.html) {
+    logger.info('rendering the multi-page HTML site…');
+    result.html = renderHtmlSite(model, join(outDir, 'html'), render);
+  }
+  if (values.htmlSingle) {
+    logger.info('rendering the single-page HTML…');
+    result.htmlSingle = renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
+  }
+  if (values.llmsTxt) {
+    logger.info('writing llms.txt / llms-full.txt…');
+    result.llms = renderLlmsTxt(model, outDir, { languages });
+  }
+  return result;
+}
+
+/** Package the rendered handbook as an agent SKILL — the CLI's `skill`, jobified. No LLM. */
+async function runSkillBuild(
+  ctx: Ctx,
+  repo: RepoEntry,
+  body: Record<string, unknown>,
+  logger: Logger,
+): Promise<unknown> {
+  rejectSecrets(body);
+  const handbookDir = join(repo.workDir, 'handbook');
+  if (!fileExists(join(handbookDir, 'index.md'))) {
+    throw new Error('no rendered handbook yet — run generate (or render) first');
+  }
+  const outDir = join(repo.workDir, 'skill');
+  const { values, errors } = resolveConfig({
+    command: 'skill',
+    flags: {
+      ...body,
+      source: repo.sourceRoot,
+      work: repo.workDir,
+      handbook: handbookDir,
+      out: outDir,
+      // A sensible slug from the repo name when the caller does not pass one.
+      name:
+        typeof body.name === 'string' && body.name.trim()
+          ? body.name
+          : `${repo.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-handbook`,
+    },
+    env: process.env,
+    file: ctx.configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
+  let coverage;
+  if (fileExists(join(repo.workDir, 'phase2', 'assignment.json'))) {
+    coverage = { assignment: new WorkDir(repo.workDir).loadAssignment(), sourceRoot: repo.sourceRoot };
+  }
+  const agentDir = join(handbookDir, 'agent');
+  logger.info(`packaging SKILL "${values.name as string}" → ${outDir}`);
+  return buildSkill({
+    handbookDir,
+    outDir,
+    name: values.name as string,
+    project: (values.project as string | undefined) ?? repo.name,
+    coverage,
+    agentDir: fileExists(join(agentDir, 'how_to_use.md')) ? agentDir : undefined,
+    lang: values.bodyLang as 'en' | 'zh',
+  });
+}
+
+/** The studio-relevant command surface, served for the UI to build its forms from. */
+const SETTINGS_COMMANDS = [
+  'analyze',
+  'generate',
+  'render',
+  'skill',
+  'validate',
+  'plan',
+  'apply',
+  'rollback',
+  'resync',
+] as const;
+
+/**
+ * Settings studio supplies itself; a form rendering them would offer a knob
+ * that does nothing (or worse, one that fights the repo entry).
+ */
+const MANAGED_KEYS: Record<string, readonly string[]> = {
+  '*': ['source', 'work', 'logLevel'],
+  render: ['out'],
+  skill: ['handbook', 'out', 'agentDir'],
+  validate: ['skill'],
+  apply: ['plan'],
+  rollback: ['backup'],
+  resync: ['case'],
+};
+
+function settingsPayload(): unknown {
+  registerBuiltinAdapters();
+  const languages = ['auto', ...availableLanguages()];
+  const describe = (setting: Setting, command: string): Record<string, unknown> => ({
+    key: setting.key,
+    type: setting.type,
+    doc: setting.doc,
+    flag: setting.flag,
+    default: setting.default,
+    min: setting.min,
+    choices: setting.dynamicChoices === 'languages' ? languages : setting.choices,
+    negated: setting.negated === true,
+    secret: setting.secret === true,
+    required: setting.required === true || (setting.requiredFor?.includes(command) ?? false),
+    managed:
+      MANAGED_KEYS['*']!.includes(setting.key) || (MANAGED_KEYS[command]?.includes(setting.key) ?? false),
+  });
+  return {
+    commands: Object.fromEntries(
+      SETTINGS_COMMANDS.map((command) => [
+        command,
+        settingsFor(command).map((setting) => describe(setting, command)),
+      ]),
+    ),
+  };
+}
+
+/** Body minus anything that must not be persisted, for `lastParams`. */
+function persistableParams(body: Record<string, unknown>): Record<string, unknown> {
+  const { llmApiKey: _key, OPENAI_API_KEY: _envKey, ...rest } = body;
+  return rest;
 }
 
 // ---------------------------------------------------------------------------
@@ -758,6 +1123,14 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   if (path === '/api/languages' && method === 'GET') {
     registerBuiltinAdapters();
     json(res, 200, { languages: ['auto', ...availableLanguages()] });
+    return;
+  }
+
+  // The whole registry surface for every studio-runnable command, so the UI
+  // renders its forms FROM the registry instead of hand-maintaining a subset —
+  // which is how six of generate's parameters came to be silently discarded.
+  if (path === '/api/settings' && method === 'GET') {
+    json(res, 200, settingsPayload());
     return;
   }
 
@@ -827,17 +1200,24 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       method === 'POST' &&
       (sub === '/generate' ||
         sub === '/analyze' ||
+        sub === '/render' ||
+        sub === '/skill' ||
         sub === '/plan' ||
         sub === '/resync' ||
         sub === '/apply' ||
         sub === '/rollback')
     ) {
       const body = await readBody(req);
-      const kind = sub.slice(1) as 'generate' | 'analyze' | 'plan' | 'resync' | 'apply' | 'rollback';
+      // Secrets never travel over HTTP, whichever endpoint this is. The per-run
+      // parsers repeat the check; this one catches every route at the door.
+      rejectSecrets(body);
+      const kind = sub.slice(1) as
+        'generate' | 'analyze' | 'render' | 'skill' | 'plan' | 'resync' | 'apply' | 'rollback';
       const jobKind: JobKind = kind === 'analyze' ? 'generate' : (kind as JobKind);
       // Validate BEFORE the job exists: a garbage readWorkers must be a 400 on
       // this request, not a failed job discovered in the drawer later.
       const genParams = kind === 'generate' ? parseGenerateParams(body, repo, ctx.configFile) : undefined;
+      const resyncParams = kind === 'resync' ? parseResyncParams(body, repo, ctx.configFile) : undefined;
       // A repo already running a job is a state CONFLICT (409), like DELETE and
       // cancel report — not a malformed request (400). Check before start(), whose
       // own throw would otherwise surface as a misleading 400 via the catch-all.
@@ -845,23 +1225,49 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
         json(res, 409, { error: `repo "${repo.name}" already has a running job — wait for it to finish` });
         return;
       }
-      const job = ctx.jobs.start(repo.name, jobKind, (logger, signal) => {
-        switch (kind) {
-          case 'analyze':
-            return runAnalyzeOnly(repo, logger);
-          case 'generate':
-            return runGenerate(ctx, repo, genParams as GenerateParams, logger, signal);
-          case 'plan':
-            return runPlan(ctx, repo, body, logger, signal);
-          case 'resync':
-            return runResync(ctx, repo, body, logger, signal);
-          case 'apply':
-            return runApply(repo, body, logger);
-          case 'rollback':
-            return runRollback(repo, body, logger);
-        }
-      });
+      // What this job was run with, remembered per kind so the UI can pre-fill
+      // the next dialog with the values that produced the current handbook.
+      ctx.store.setLastParams(repo.name, kind, persistableParams(body));
+      const debug = body.logLevel === 'debug' || genParams?.debug === true || resyncParams?.debug === true;
+      const job = ctx.jobs.start(
+        repo.name,
+        jobKind,
+        (logger, signal) => {
+          switch (kind) {
+            case 'analyze':
+              return runAnalyzeOnly(repo, body, ctx.configFile, logger);
+            case 'generate':
+              return runGenerate(ctx, repo, genParams as GenerateParams, logger, signal);
+            case 'render':
+              return runRender(ctx, repo, body, logger);
+            case 'skill':
+              return runSkillBuild(ctx, repo, body, logger);
+            case 'plan':
+              return runPlan(ctx, repo, body, logger, signal);
+            case 'resync':
+              return runResync(ctx, repo, body, resyncParams as ResyncParams, logger, signal);
+            case 'apply':
+              return runApply(repo, body, logger);
+            case 'rollback':
+              return runRollback(repo, body, logger);
+          }
+        },
+        { debug },
+      );
       json(res, 202, jobSummary(job));
+      return;
+    }
+    // Validation is read-only and fast — a plain response, not a job. Exit-code
+    // semantics carry over as fields: `ok:false` is the tool working and the
+    // answer being no, exactly like the CLI's exit 2.
+    if (method === 'POST' && sub === '/validate') {
+      const skillDir = join(repo.workDir, 'skill');
+      if (!fileExists(join(skillDir, 'SKILL.md'))) {
+        json(res, 409, { error: 'no SKILL package yet — build one with the skill action first' });
+        return;
+      }
+      const result = validateSkill({ skillDir, sourceRoot: repo.sourceRoot });
+      json(res, 200, result);
       return;
     }
     if (method === 'GET' && sub === '/overview') {
@@ -1027,7 +1433,25 @@ export function createStudioServer(options: StudioOptions): Server {
     jobs: new JobRunner(),
     // Pass the job logger: a silent client hides retries, timeouts and
     // gateway blocks, which is how a failing run looks like a quiet one.
-    clientFactory: options.clientFactory ?? ((logger: Logger) => new OpenAiChatClient({ logger })),
+    // The overrides are the per-job llm settings a request carried (already
+    // registry-validated, never the API key); they are re-resolved through the
+    // same cascade as a CLI launch so env and the config file still apply
+    // underneath them.
+    clientFactory:
+      options.clientFactory ??
+      ((logger: Logger, llmOverrides?: Record<string, unknown>) => {
+        const { values } = resolveConfig({
+          command: 'studio',
+          flags: llmOverrides ?? {},
+          env: process.env,
+          file: options.configFile,
+        });
+        return new OpenAiChatClient({
+          config: llmConfigFromValues(values),
+          concurrency: values.llmConcurrency as number | undefined,
+          logger,
+        });
+      }),
     configFile: options.configFile,
     logger: options.logger ?? silentLogger,
     stateDirWork: join(options.stateDir, 'work'),

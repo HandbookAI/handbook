@@ -209,15 +209,27 @@ export function PlatformMeta({ locale = i18n.defaultLanguage }: { locale?: strin
           redundant-but-harmless: duplicate hreflang annotations for the same
           URL are a conflicting signal, and Google's own guidance is to drop the
           whole cluster when it finds them contradicting. One producer only. */}
-
-      {/* ── Structured data: Google, Bing, DuckDuckGo rich results ───────── */}
-      <script
-        type="application/ld+json"
-        // The payload is a literal built from module constants — no user input
-        // reaches it, and JSON.stringify escapes what little punctuation it has.
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData()) }}
-      />
     </>
+  );
+}
+
+/**
+ * Structured data (Google, Bing, DuckDuckGo rich results), rendered in `<body>`.
+ *
+ * NOT a React `<script>` element: React never executes client-rendered inline
+ * scripts, and in development it says so with a `console.error` every time a
+ * locale switch re-renders the layout — an error in every reader's console.
+ * JSON-LD never needed executing in the first place; crawlers read its TEXT out
+ * of the DOM. So the whole tag is injected as a string through a hidden `<div>`
+ * with `dangerouslySetInnerHTML`: byte-identical on server and client (clean
+ * hydration), inert everywhere, silent in the console, and exactly as visible
+ * to a crawler as before. The payload is built from module constants — no user
+ * input reaches it — and `<` is escaped so no content can close the tag early.
+ */
+export function StructuredData() {
+  const json = JSON.stringify(structuredData()).replace(/</g, '\\u003c');
+  return (
+    <div hidden dangerouslySetInnerHTML={{ __html: `<script type="application/ld+json">${json}</script>` }} />
   );
 }
 

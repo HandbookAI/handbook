@@ -371,6 +371,46 @@ java=gson / js=express / ts=zod / python=requests / go=cobra，每个仓库两�
 0 missing）；10 份输出 × 全部页面 **0 死链、0 空描述占位**。截图目检 gson 总览、
 requests 阶段页、express mock 总览——排版、编号、芯片、目录高亮均正常。
 
+## 大工单（2026-08-09，进行中）：Studio 全配置 + 全站翻译 + README 重做
+
+用户要求：① Studio 覆盖**全部**配置项 + 和 docs 一样的 8 语言；② docs 内容页全量翻译
+（7 语种 × 34 页）+ 图（assets/*.svg）也要多语言；③ 消灭 docs 报错；④ README 重写出
+冲击力，讲清「一份给人读、一份给 AI 用」的双产物故事（docs 站同样要讲清），5 轮对抗。
+
+### 已完成
+- docs JSON-LD 控制台报错根治：`lib/seo.tsx` 的 `<script>` 改为 body 里
+  `<div hidden dangerouslySetInnerHTML>` 注入（innerHTML 的 script 天生惰性，
+  React 不再告警，爬虫照读；`<` 转义 <）。layout.tsx 已挂 `<StructuredData />`。
+- 全站 272 页 × 8 locale HTTP 全 200；dev 日志无错误。
+- Studio 差距报告（gap report）完成：42 项配置不可达；render/skill/validate 无端点；
+  generate 有 6 参数被验证后丢弃；llmCache 从不生效；`server.ts:608` resync 描述
+  语言 bug（英文 UI 恒中文）；backupRoot 与 CLI 不一致（work/patches vs
+  source/.handbook-patches）；jobs.ts logger 硬编码丢 debug。
+- 翻译落盘：ru/pt A 批完整（14 文件）；zh/es 缺 2 页（trust-model、work-directory）；
+  hi/de 缺 4 页（+analysis-fidelity、pipeline）；ja 缺 8 页。SVG：pipeline 7 语种全有；
+  architecture 有 zh/de/hi；config-cascade、outputs 全缺。
+
+### 待办（按序）
+1. 补翻 A 批缺口 + SVG 缺口（wave 1，7 agents）
+2. B 批 guides 12 页 × 7（wave 2）；C 批 reference 8 + contributing 3 × 7（wave 3）
+3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
+   README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
+4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +
+   generate 六参数转发 + llmCache + 每任务 LLM 覆盖（llmApiKey 拒收，env-only）+
+   analyze lang + plan maxTurns + apply backupRoot + resync
+   proseLang/cardDetail/refreshRendered/corrections/title + 修 608 行语言 bug +
+   jobs.ts debug 等级 + state.ts lastParams
+5. Studio UI：registry 驱动的表单 + 8 语言 DICT（现 zh/en ~226 条，翻 6 语种 + 新增串）
+6. README.md / README.zh-CN.md 重写（双产物故事、冲击力、色彩排版），5 轮对抗；
+   docs 首页/“What is Handbook”同步讲清 human vs AI 两份产物
+7. CJK 搜索验证（orama 默认分词器对 zh/ja 可能无效，必要时接 @orama/tokenizers）
+8. 全量验证：docs build 358 页 + 全 locale 浏览器扫 + pnpm check + studio 测试
+
+### 关键事实
+- 翻译规则/术语表在各 agent prompt 里（fence/JSX 数量自检；meta.json 只译 title）。
+- fumadocs 回退检测：`page.path.includes('.{lang}.')`——翻译文件一到位，横幅自动消失。
+- session limit 会杀 agent：分波发（≤7 并行），完成一波再发下一波。
+
 ## 最终验收
 
 - `pnpm check` 全绿（typecheck / workspace 不变量 / eslint 0 告警 / prettier / 覆盖率下限）

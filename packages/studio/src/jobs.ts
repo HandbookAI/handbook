@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@handbook/core';
 
-export type JobKind = 'generate' | 'render' | 'plan' | 'resync' | 'apply' | 'rollback';
+export type JobKind = 'generate' | 'render' | 'skill' | 'plan' | 'resync' | 'apply' | 'rollback';
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
 
 export interface Job {
@@ -32,7 +32,12 @@ export class JobRunner {
   private readonly controllers = new Map<string, AbortController>();
 
   /** Start a job. Throws when the repo already has a running job. */
-  start(repo: string, kind: JobKind, work: (logger: Logger, signal: AbortSignal) => Promise<unknown>): Job {
+  start(
+    repo: string,
+    kind: JobKind,
+    work: (logger: Logger, signal: AbortSignal) => Promise<unknown>,
+    options: { debug?: boolean } = {},
+  ): Job {
     if (this.busyRepos.has(repo)) {
       throw new Error(`repo "${repo}" already has a running job`);
     }
@@ -61,7 +66,10 @@ export class JobRunner {
       }
     };
     const logger: Logger = {
-      debug: () => {},
+      // Off unless asked for: debug is the pipeline narrating every batch, which
+      // would drown the drawer. `logLevel: debug` on the job request enables it —
+      // the registry setting used to be accepted and then ignored here.
+      debug: options.debug ? (m) => emit(`· ${m}`) : () => {},
       info: (m) => emit(m),
       warn: (m) => emit(`⚠ ${m}`),
       error: (m) => emit(`✖ ${m}`),
