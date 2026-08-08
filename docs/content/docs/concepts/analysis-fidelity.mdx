@@ -100,7 +100,10 @@ of 5 on Node 24, fine on Node 21, and unique to that one grammar among nineteen.
 adapter **refuses at discovery** on such a runtime and names the remedy
 (`node --liftoff-only`) rather than taking your whole run down with it.
 
-**Shell.** A script containing a `case` statement is skipped, because that grammar throws.
+**Shell.** A script containing a `case` statement is skipped, because that grammar throws
+— its external scanner imports a symbol the pinned WASM linker does not provide. Because
+`case` is ubiquitous this is most non-trivial scripts (measured on `nvm`: all 6 files,
+all 122 functions), so **treat shell coverage as partial**. The scan log names the cause.
 
 Both are reported through the logger during the scan. Run with `-v` to see them.
 

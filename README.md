@@ -462,7 +462,11 @@ Two caveats stated up front rather than discovered later:
 
 - **Swift**'s grammar aborts the process on V8 ≥ 13. The adapter refuses at discovery on
   such a runtime and names the remedy (`node --liftoff-only`) instead of crashing your run.
-- A **shell** script containing a `case` statement is skipped, because that grammar throws.
+- A **shell** script containing a `case` statement is skipped, because that grammar throws
+  (its external scanner imports a symbol the pinned WASM linker does not provide). `case`
+  is ubiquitous, so in practice this is most non-trivial scripts — measured on `nvm`, all
+  6 files and all 122 functions. Shell is listed as full-tier because the adapter is, but
+  **treat shell coverage as partial** until that grammar is fixed upstream.
 
 Both are reported in the scan log — never silently dropped.
 

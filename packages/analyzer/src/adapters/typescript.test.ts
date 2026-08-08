@@ -322,3 +322,93 @@ describe('TypeScriptAdapter — JavaScript (.js/.mjs/.cjs/.jsx)', () => {
     expect(shape(analysis)).toEqual(shape(tsAnalysis));
   });
 });
+
+/**
+ * Assignment-style definitions — the dominant shape in real JavaScript, and
+ * invisible to this adapter until it was measured against Express.
+ *
+ * Express writes its entire public API as `res.send = function send() {}`.
+ * Before this, the adapter found 11 of ~78 functions in its `lib/` — 2 of the
+ * 22 methods in `lib/response.js`. A handbook generated from that graph is not
+ * so much wrong as absent, and nothing in the output would have said so.
+ */
+describe('TypeScriptAdapter — assignment-style and object-literal definitions', () => {
+  const SOURCE = `
+const util = require('./util');
+
+function classic() { return 1; }
+
+exports.exported = function exported() { return classic(); };
+module.exports.modExported = function modExported() { return 2; };
+
+res.send = function send(body) { return res.end(body); };
+res.status = function status(code) { return code; };
+
+Thing.prototype.spin = function spin() { return 3; };
+
+const api = {
+  run() { return classic(); },
+  stop: () => 4,
+  'quoted': function quoted() { return 5; },
+  notAFunction: 6,
+};
+
+lookup[key] = function computed() { return 7; };
+factory().attached = function fromCall() { return 8; };
+`;
+
+  let analysis: ModuleAnalysis;
+  let ids: string[];
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-assign-'));
+    writeFileSync(join(root, 'm.js'), SOURCE);
+    analysis = await new TypeScriptAdapter().analyze(['m.js'], root);
+    ids = analysis.functions.map((f) => f.id).sort();
+  });
+
+  it('treats exports.f and module.exports.f as free functions of the module', () => {
+    expect(ids).toContain('m.exported');
+    expect(ids).toContain('m.modExported');
+    const exported = analysis.functions.find((f) => f.id === 'm.exported');
+    expect(exported?.isMethod).toBe(false);
+    expect(exported?.className).toBeNull();
+  });
+
+  it('treats obj.f = function as a method on obj — how every call site spells it', () => {
+    expect(ids).toContain('m.res.send');
+    expect(ids).toContain('m.res.status');
+    const send = analysis.functions.find((f) => f.id === 'm.res.send');
+    expect(send?.isMethod).toBe(true);
+    expect(send?.className).toBe('res');
+    expect(send?.name).toBe('send');
+  });
+
+  it('treats X.prototype.f as a method on X, not on "prototype"', () => {
+    expect(ids).toContain('m.Thing.spin');
+    expect(ids).not.toContain('m.prototype.spin');
+    expect(analysis.functions.find((f) => f.id === 'm.Thing.spin')?.className).toBe('Thing');
+  });
+
+  it('records object-literal methods under the binding name, including quoted keys', () => {
+    expect(ids).toContain('m.api.run');
+    expect(ids).toContain('m.api.stop');
+    expect(ids).toContain('m.api.quoted');
+    // A non-function value is a field, not a method.
+    expect(ids).not.toContain('m.api.notAFunction');
+  });
+
+  it('SKIPS what it cannot name rather than guessing an owner', () => {
+    // `lookup[key] = fn` and `factory().attached = fn` have no honest owner. An
+    // invented one becomes a call edge indistinguishable from a real one.
+    expect(ids.filter((id) => id.includes('computed'))).toEqual([]);
+    expect(ids.filter((id) => id.includes('fromCall'))).toEqual([]);
+  });
+
+  it('resolves calls out of an assignment-defined body', () => {
+    const edge = analysis.edges.find((e) => e.callerId === 'm.exported' && e.calleeId === 'm.classic');
+    expect(edge?.callType).toBe('internal_func');
+    const fromLiteral = analysis.edges.find((e) => e.callerId === 'm.api.run' && e.calleeId === 'm.classic');
+    expect(fromLiteral?.callType).toBe('internal_func');
+  });
+});

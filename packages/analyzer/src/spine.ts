@@ -18,11 +18,11 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Node, Parser } from 'web-tree-sitter';
+import type { Node, Parser, Tree } from 'web-tree-sitter';
 import type { AdapterCapabilities, CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import type { Logger } from '@handbook/core';
-import { createParser } from './languages.js';
+import { createParser, freeParsers } from './languages.js';
 import { discoverByExtension, type LanguageAdapter } from './adapter.js';
 
 /** Id segment separator used by every language except Rust (`::`). */
@@ -492,67 +492,130 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
     const { spec } = this;
     const logger = options.logger;
     const parsers = new Map<string, Parser>();
+    const trees: Tree[] = [];
     const unparsable: string[] = [];
     const scans: S[] = [];
     const byModule = new Map<string, S>();
 
-    for (const file of files) {
-      let source: string;
-      try {
-        source = readFileSync(join(sourceRoot, file), 'utf8');
-      } catch {
-        continue;
-      }
-      const grammar = spec.grammarFor(file);
-      let parser = parsers.get(grammar);
-      if (!parser) {
-        parser = await createParser(grammar);
-        parsers.set(grammar, parser);
-      }
-      // A grammar can THROW, not merely fail: tree-sitter-bash's external
-      // scanner imports a symbol web-tree-sitter does not resolve, so any
-      // `case` statement throws — and the throw escapes the whole run, taking
-      // every other file with it. Catching is not enough: the parser instance
-      // stays poisoned and fails every subsequent parse, so it is discarded
-      // and rebuilt for the files that follow.
-      let tree;
-      try {
-        tree = parser.parse(source);
-      } catch (error) {
-        parsers.delete(grammar);
-        unparsable.push(file);
-        logger?.debug(`[scan] ${file}: parser failed (${(error as Error).message})`);
-        continue;
-      }
-      if (!tree) continue;
+    // Trees and parsers both own memory inside ONE WASM instance shared by every
+    // grammar, and the JavaScript garbage collector cannot reclaim it —
+    // `delete()` is the only way back.
+    //
+    // THE TREES ARE THE ONES THAT MATTER. Measured on a 4,937-file polyglot
+    // repository: holding every tree from C++ (566 files), Dart (3,351), Java
+    // (510) and Kotlin (343) exhausted the shared resource, and the next
+    // `new Parser()` — the first one Objective-C asked for — died with
+    //
+    //     RuntimeError: table index is out of bounds
+    //         at tree-sitter.wasm.ts_parser_new_wasm
+    //
+    // taking the whole analyze down 90% of the way through. Freeing the parsers
+    // and not the trees does NOT fix it (verified by running both in isolation);
+    // freeing the trees does. Parsers are freed too because they are ours to
+    // free, not because they were the cause.
+    //
+    // Trees are freed AFTER pass 2, never during pass 1. `spec.scan` stores live
+    // body `Node`s in `scan.fnContext` for `extractCalls` to walk, and a Node is
+    // a pointer into its tree's memory — freeing inside the loop would hand pass
+    // 2 dangling pointers, which is worse than the leak: silently wrong call
+    // facts instead of a crash.
+    //
+    // So the peak is one language's trees rather than the whole process's, which
+    // is what makes a polyglot repository analyzable at all. A single language
+    // large enough to exhaust the table on its own would still fail, and the
+    // remedy is to analyze it alone with `--lang`.
+    //
+    // A `finally`, because a leak on the error path costs exactly as much as one
+    // on the success path.
+    try {
+      for (const file of files) {
+        let source: string;
+        try {
+          source = readFileSync(join(sourceRoot, file), 'utf8');
+        } catch {
+          continue;
+        }
+        const grammar = spec.grammarFor(file);
+        let parser = parsers.get(grammar);
+        if (!parser) {
+          parser = await createParser(grammar);
+          parsers.set(grammar, parser);
+        }
+        // A grammar can THROW, not merely fail: tree-sitter-bash's external
+        // scanner imports a symbol web-tree-sitter does not resolve, so any
+        // `case` statement throws — and the throw escapes the whole run, taking
+        // every other file with it. Catching is not enough: the parser instance
+        // stays poisoned and fails every subsequent parse, so it is discarded
+        // and rebuilt for the files that follow.
+        let tree;
+        try {
+          tree = parser.parse(source);
+        } catch (error) {
+          parsers.delete(grammar);
+          // Free it as well as forget it. A discarded-but-live parser still
+          // holds its slots in the shared WASM function table, so a language
+          // with many unparsable files would exhaust the table on its own.
+          try {
+            parser.delete();
+          } catch {
+            // already gone, or the runtime is past saving — either way, moving on
+          }
+          unparsable.push(file);
+          logger?.debug(`[scan] ${file}: parser failed (${(error as Error).message})`);
+          continue;
+        }
+        if (!tree) continue;
+        trees.push(tree);
 
-      const moduleId = spec.moduleIdForFile(file);
-      let scan = spec.mergeByModule ? byModule.get(moduleId) : undefined;
-      if (!scan) {
-        scan = spec.emptyScan(moduleId);
-        if (spec.mergeByModule) byModule.set(moduleId, scan);
-        scans.push(scan);
+        const moduleId = spec.moduleIdForFile(file);
+        let scan = spec.mergeByModule ? byModule.get(moduleId) : undefined;
+        if (!scan) {
+          scan = spec.emptyScan(moduleId);
+          if (spec.mergeByModule) byModule.set(moduleId, scan);
+          scans.push(scan);
+        }
+        scan.files.push(file);
+        spec.scan(scan, tree.rootNode, file);
       }
-      scan.files.push(file);
-      spec.scan(scan, tree.rootNode, file);
+
+      // Skipped files are stated, not swallowed: a handbook that silently omits
+      // part of a codebase is worse than one that admits the gap.
+      if (unparsable.length > 0) {
+        const shown = unparsable.slice(0, 5).join(', ');
+        const more = unparsable.length > 5 ? ` (+${unparsable.length - 5} more)` : '';
+        // For shell the cause is known and worth naming, because the raw
+        // message ("resolved is not a function") tells a reader nothing and the
+        // impact is large: `case` is ubiquitous, so this routinely accounts for
+        // EVERY file in a shell codebase. Saying "5 files skipped" without the
+        // reason invites the conclusion that the tool merely found little.
+        const because =
+          spec.name === 'shell'
+            ? ' — the pinned bash grammar throws on `case`, which most real scripts use;' +
+              ' their functions are absent from this graph, not merely unresolved'
+            : '';
+        logger?.warn(
+          `[scan] ${spec.name}: ${unparsable.length} file(s) the grammar could not parse${because} — ${shown}${more}`,
+        );
+      }
+
+      // Pass 2 runs HERE, inside the try, so its results are computed while the
+      // trees its body nodes point into are still alive.
+      const std = buildStandardIndexes(scans, spec.idSeparator ?? DEFAULT_SEPARATOR);
+      const own = spec.buildIndexes?.(scans, std) as I;
+      return {
+        functions: scans.flatMap((scan) => scan.functions),
+        edges: scans.flatMap((scan) => spec.extractCalls(scan, std, own)),
+      };
+    } finally {
+      freeParsers(parsers.values());
+      for (const tree of trees) {
+        try {
+          tree.delete();
+        } catch {
+          // already freed, or the runtime is past saving
+        }
+      }
     }
-
-    // Skipped files are stated, not swallowed: a handbook that silently omits
-    // part of a codebase is worse than one that admits the gap.
-    if (unparsable.length > 0) {
-      const shown = unparsable.slice(0, 5).join(', ');
-      const more = unparsable.length > 5 ? ` (+${unparsable.length - 5} more)` : '';
-      logger?.warn(
-        `[scan] ${spec.name}: ${unparsable.length} file(s) the grammar could not parse — ${shown}${more}`,
-      );
-    }
-
-    const std = buildStandardIndexes(scans, spec.idSeparator ?? DEFAULT_SEPARATOR);
-    const own = spec.buildIndexes?.(scans, std) as I;
-    return {
-      functions: scans.flatMap((scan) => scan.functions),
-      edges: scans.flatMap((scan) => spec.extractCalls(scan, std, own)),
-    };
   }
 }
 

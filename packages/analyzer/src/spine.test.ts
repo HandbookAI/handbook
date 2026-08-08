@@ -1,6 +1,11 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { Node } from 'web-tree-sitter';
 import type { FunctionNode } from '@handbook/core';
 import {
+  createAdapter,
   boundaryOf,
   buildStandardIndexes,
   dirOf,
@@ -565,5 +570,83 @@ describe('BaseScan function nodes', () => {
     const scan = scanOf('app', { functions: [node] });
     expect(buildStandardIndexes([scan]).moduleIds.has('app')).toBe(true);
     expect(scan.functions[0]?.id).toBe('app.main');
+  });
+});
+
+describe('SpineAdapter.analyze — WASM lifetime', () => {
+  /**
+   * Regression for an analyze that died 90% of the way through a 4,937-file
+   * polyglot repository with
+   *
+   *     RuntimeError: table index is out of bounds
+   *         at tree-sitter.wasm.ts_parser_new_wasm
+   *
+   * The cause was every parsed tree staying alive for the whole process: trees
+   * own memory in one WASM instance shared by every grammar, and the JS garbage
+   * collector cannot reclaim it. Four languages' worth of held trees exhausted
+   * the shared table, and the fifth language's first `new Parser()` was what
+   * happened to be holding the gun.
+   *
+   * Reproducing the exhaustion itself needs thousands of real source files, so
+   * this asserts the FIX rather than the symptom: after `analyze` resolves, the
+   * trees it parsed have been freed. A freed tree's nodes stop reporting their
+   * real type — the observable signal that the memory went back, and stable
+   * because `web-tree-sitter` is pinned to `~0.25.10`.
+   *
+   * The ordering half matters just as much: the free must happen AFTER pass 2,
+   * because `spec.scan` hands `extractCalls` live nodes. Freeing during pass 1
+   * would swap a crash for silently wrong call facts, so the test also records
+   * what the node looked like while `extractCalls` was running.
+   */
+  it('frees every parsed tree once it is done, and not before pass 2 has read it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'spine-lifetime-'));
+    try {
+      writeFileSync(join(root, 'a.py'), 'def alpha():\n    return 1\n');
+      writeFileSync(join(root, 'b.py'), 'def beta():\n    return alpha()\n');
+
+      const captured: Node[] = [];
+      let typeDuringExtract: string | undefined;
+
+      const adapter = createAdapter<BaseScan>({
+        name: 'lifetime-probe',
+        extensions: ['.py'],
+        grammarFor: () => 'python',
+        moduleIdForFile: (file) => file.replace(/\.py$/, ''),
+        capabilities: {
+          tier: 'generic',
+          callTypes: ['unresolved'],
+          selfAttrs: false,
+          statementSpans: false,
+        },
+        emptyScan: (moduleId) => ({
+          moduleId,
+          files: [],
+          functions: [],
+          fnContext: new Map(),
+          imports: new Map(),
+          ownerMethods: new Map(),
+          fieldTypes: new Map(),
+          freeFunctions: new Set(),
+        }),
+        scan: (_scan, node) => {
+          captured.push(node);
+        },
+        extractCalls: () => {
+          // Pass 2 runs while the trees are still alive — that is the contract
+          // `fnContext`'s body nodes depend on.
+          typeDuringExtract = captured[0]?.type;
+          return [];
+        },
+      });
+
+      await adapter.analyze(['a.py', 'b.py'], root);
+
+      expect(captured).toHaveLength(2);
+      expect(typeDuringExtract).toBe('module'); // alive when extractCalls ran
+      // …and dead afterwards, for every tree, not just the last one.
+      expect(captured.map((node) => node.type)).toEqual(['ERROR', 'ERROR']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
