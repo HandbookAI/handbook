@@ -1,0 +1,129 @@
+---
+title: Package index
+description: Eleven npm packages, what each one exports, and which of them work with no LLM at all.
+---
+
+Handbook is a monorepo of eleven packages. **Four of them never touch an LLM** and are
+useful entirely on their own.
+
+| Package              | Role                                                | LLM? | Docs                                                       |
+| -------------------- | --------------------------------------------------- | :--: | ---------------------------------------------------------- |
+| `@handbook/core`     | Data model, zod schemas, config registry, utilities |  ❌  | [README](https://www.npmjs.com/package/@handbook/core)     |
+| `@handbook/analyzer` | Multi-language static call-graph extraction         |  ❌  | [README](https://www.npmjs.com/package/@handbook/analyzer) |
+| `@handbook/llm`      | OpenAI-compatible client, cache, actor–critic, mock |  ✅  | [README](https://www.npmjs.com/package/@handbook/llm)      |
+| `@handbook/pipeline` | The generation pipeline, phases 1–3                 |  ✅  | [README](https://www.npmjs.com/package/@handbook/pipeline) |
+| `@handbook/renderer` | Markdown, HTML, agent index, llms.txt               |  ❌  | [README](https://www.npmjs.com/package/@handbook/renderer) |
+| `@handbook/skill`    | SKILL packaging, validation, drift hashes           |  ❌  | [README](https://www.npmjs.com/package/@handbook/skill)    |
+| `@handbook/planner`  | Read-only planning agent                            |  ✅  | [README](https://www.npmjs.com/package/@handbook/planner)  |
+| `@handbook/patcher`  | Byte-exact apply, backups, rollback                 |  ❌  | [README](https://www.npmjs.com/package/@handbook/patcher)  |
+| `@handbook/resync`   | Incremental roll-forward                            |  ✅  | [README](https://www.npmjs.com/package/@handbook/resync)   |
+| `@handbook/studio`   | Local web UI                                        |  ✅  | [README](https://www.npmjs.com/package/@handbook/studio)   |
+| `@handbook/cli`      | The `handbook` command                              |  —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+
+## The three most useful on their own
+
+### `@handbook/analyzer` — a call graph for 18 languages
+
+```ts
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+
+registerBuiltinAdapters();
+const byLanguage = discoverAll('/path/to/repo');
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, '/path/to/repo'));
+}
+const { graph, stats } = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  {
+    sourceRoot: '/path/to/repo',
+    scannedFiles: Object.values(byLanguage).flat(),
+    language: 'multi',
+    defaultExt: '',
+  },
+);
+```
+
+No LLM, no network, no native compilation.
+
+### `@handbook/patcher` — apply an edit plan safely
+
+```ts
+import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+
+const problems = parsePlan(planText).problems; // lint a plan without applying it
+const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
+if (dry.ok) {
+  const result = applyPlan({ sourceRoot, plan: planText });
+  // rollback(result.backupDir!, { expectedSourceRoot: sourceRoot })
+}
+```
+
+The plan format is documented in [Applying changes](/docs/guides/applying-changes). Nothing
+requires the plan to have come from `@handbook/planner` — you can write one by hand.
+
+### `@handbook/renderer` — render any `HandbookModel`
+
+```ts
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+
+renderMarkdownHandbook(model, 'out/');
+renderAgentSite(model, 'out/agent');
+renderLlmsTxt(model, 'out/');
+```
+
+`HandbookModel` is the only contract. Fill one however you like and rendering, skill
+packaging and planning all work.
+
+## Key exports at a glance
+
+```ts
+// @handbook/core — the vocabulary
+CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
+FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
+HandbookModel · StageTree · coerceRole
+resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
+writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
+
+// @handbook/analyzer — the parser
+registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
+discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
+
+// @handbook/llm — the model seam
+ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
+resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
+
+// @handbook/pipeline — generation
+generateHandbook · loadHandbookModel · runPhase1 · generateCards
+synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
+narrate · extractRegisters · classifyMembers · WorkDir
+
+// @handbook/renderer — presentation
+renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
+renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
+
+// @handbook/skill — packaging
+buildSkill · validateSkill
+
+// @handbook/planner — localization
+runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
+
+// @handbook/patcher — execution
+applyPlan · rollback · listBackups · parsePlan
+
+// @handbook/resync — roll-forward
+resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
+
+// @handbook/studio — the UI
+startStudio · createStudioServer · StateStore · JobRunner
+```
+
+## Installing
+
+```bash
+pnpm add @handbook/analyzer     # or npm / yarn
+```
+
+Every package is ESM-only (`"type": "module"`), ships type declarations, requires Node
+≥ 20.11, and is MIT licensed. Third-party versions are pinned once in the workspace
+catalog, so two packages can never end up on two versions of the same library.

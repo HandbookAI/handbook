@@ -1,0 +1,126 @@
+---
+title: Releasing
+description: Changesets drive versions and changelogs. Publishing stays inert until a token is configured, so the bookkeeping is correct either way.
+---
+
+## Adding a changeset
+
+Any change that affects a published package needs one:
+
+```bash
+pnpm changeset
+```
+
+It asks which packages changed and whether each is a patch, minor or major, then writes a
+markdown file under `.changeset/`. **Commit that file with the code.**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+Write the description for a **changelog reader**, not a reviewer: what changed from the
+outside, not how.
+
+### What needs one
+
+| Change                              | Changeset? |
+| ----------------------------------- | ---------- |
+| A new feature or flag               | ✅ minor   |
+| A bug fix in shipped behaviour      | ✅ patch   |
+| A breaking API or CLI change        | ✅ major   |
+| A new language adapter              | ✅ minor   |
+| Docs, tests, CI, internal refactors | ❌         |
+| Anything under `docs/`              | ❌         |
+
+## The release flow
+
+<Steps>
+
+<Step>
+### Merge to `main` with changesets present
+
+The Release workflow opens (or updates) a **"Version Packages"** pull request.
+
+</Step>
+
+<Step>
+### Review that PR
+
+It applies every pending changeset: bumps versions, writes each package's `CHANGELOG.md`,
+and deletes the consumed changeset files. Read the changelog diff — it is the release
+notes.
+
+</Step>
+
+<Step>
+### Merge it
+
+That publishes to npm.
+
+</Step>
+
+</Steps>
+
+<Callout title="Publishing is inert until NPM_TOKEN exists">
+  Without the secret configured, the publish step is a no-op. **Versioning and changelogs are still correct**
+  — so the bookkeeping is right whether or not the packages are actually being published yet, and turning
+  publishing on later requires no history rewrite.
+</Callout>
+
+## Doing it by hand
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` also runs `pnpm install --lockfile-only`, because bumped workspace
+versions change the lockfile.
+
+## Before a release
+
+```bash
+pnpm check:all
+```
+
+That is `pnpm check` plus the two publish-facing gates:
+
+- **`check:packaging`** — `publint` and `@arethetypeswrong/cli` over each package. Catches
+  a wrong `exports` map, a missing type declaration, a dual-package hazard.
+- **`check:install`** — packs all eleven tarballs, installs them with **plain npm** into a
+  temp directory, and drives the CLI against them. This is the strongest check on `dist`
+  there is: it exercises the real published surface, not the workspace symlinks.
+
+They pack eleven tarballs, so they belong in CI and before a release rather than in every
+local loop.
+
+## Provenance
+
+npm provenance requires a `repository` field pointing at the public repository, in **every**
+manifest. Since that is twelve edits where `directory` differs each time:
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+It is idempotent — run it again after moving the repository. It is deliberately **not**
+wired into `pnpm check`: until the repository has a public URL there is nothing to check
+against, and a gate that fails on a fresh clone teaches people to ignore gates.
+
+## Versioning policy
+
+Standard semver, with two conventions worth stating:
+
+- **The CLI's flags are public API.** Removing or renaming a flag is a major bump. Adding
+  one is minor.
+- **Artifact schemas are versioned separately** by their `version` field. A schema change
+  that invalidates existing work directories is a major bump of the packages that read
+  them, and needs a note in the changeset saying so — there is no artifact migration
+  mechanism, so "delete the work dir and regenerate" must be an acceptable answer.

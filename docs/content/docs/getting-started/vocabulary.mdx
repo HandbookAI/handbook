@@ -1,0 +1,165 @@
+---
+title: The vocabulary
+description: Stage, card, register, work dir, case, skill, plan — every word this project uses in a specific sense, defined once.
+---
+
+Handbook uses a handful of ordinary words in specific senses. Getting these straight makes
+every other page shorter.
+
+## The artifacts
+
+### Call graph
+
+The output of phase 1. Every function and method in your code, plus every call edge
+between them, typed by how it was resolved. **Produced by a parser, never by a model.**
+
+Lives at `<work>/phase1/graph.json`. Everything downstream reads it and nothing
+re-parses source.
+
+### Card
+
+One per source file. Answers _what is this file for?_ in three fields — **purpose**,
+**role**, **lifecycle** — plus, in `--detail deep`, a 120–300-word walkthrough and a note
+per function.
+
+The structural half of a card comes from the graph; the prose half comes from the LLM. If
+the prose fails, the card still exists with an empty description. Lives at
+`<work>/phase2/cards/<path>.json`.
+
+### Role
+
+A card's `role` is drawn from a **closed vocabulary**: `entrypoint`, `orchestration`,
+`domain_logic`, `io_transport`, `data_model`, `config`, `util`, `test`, `generated`,
+`other`. Anything else a model invents collapses to `other` — the set cannot be widened by
+a creative answer.
+
+### Stage
+
+One chapter of the handbook. A stage has an id, a title, a description, an optional
+parent, and a `crosscut` flag for infrastructure that does not belong to any one step of
+the lifecycle.
+
+Stages are ordered by **execution lifecycle**, not alphabetically or by directory — the
+handbook reads in the order the system actually runs.
+
+### Skeleton
+
+The ordered list of stages: the narrative spine. Either synthesized by the LLM
+(`--strategy file`) or **written by you** (`--strategy member`). Lives at
+`<work>/phase2/skeleton.yaml`.
+
+### Assignment
+
+Which stage each file belongs to. Every file gets exactly one **primary** stage, and may
+list extra stages it also touches. Lives at `<work>/phase2/assignment.json`.
+
+### Organization
+
+Within a stage, the files ordered by call-graph topology and grouped into 2–8 titled
+sub-groups. Lives at `<work>/phase2/organization.yaml`.
+
+### Narration
+
+The prose: one summary per stage, plus a system overview. Written bottom-up — children
+before parents — so a parent stage's summary can be written knowing what its children
+say. Lives at `<work>/phase3/narration.json`.
+
+### Register
+
+A piece of state that flows **across** stages: a connection pool, a feature flag, a
+retry budget, an auth token. Each register has an id, one line of plain-language
+semantics, and the list of stages that touch it.
+
+Registers are the single most useful artifact for fan-out changes, because "which stages
+touch this state" is precisely the question a scattered change asks. Lives at
+`<work>/phase3/registers.json`.
+
+## The directories
+
+### Work directory (`--work`)
+
+Where every pipeline artifact lives. One per repository you are documenting.
+
+```text
+<work>/
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
+  phase3/   narration.json · registers.json · cache/
+  handbook/ the rendered output, once you run `render`
+  run-manifest.json
+```
+
+It is **safe to delete and regenerate**, and safe to commit if you want the handbook
+under version control. Nothing outside it is modified by generation.
+
+### Handbook directory
+
+The _rendered_ output — markdown, and optionally HTML, the agent index and `llms.txt`.
+Defaults to `<work>/handbook`.
+
+### Skill directory (`--out` on `skill`)
+
+The packaged agent SKILL: `SKILL.md` plus `references/`. Self-contained and shareable; it
+never embeds source code.
+
+### Case directory (`--case` on `resync`)
+
+What you hand to `resync` to describe a change:
+
+```text
+<case>/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — sharpens scope
+  change.diff   unified diff vs the previous tree   optional — widens scope
+```
+
+## The commands, in one line each
+
+| Command    | One line                                            | LLM? |
+| ---------- | --------------------------------------------------- | :--: |
+| `analyze`  | Source → call graph                                 |  ❌  |
+| `generate` | Call graph → cards, stages, prose, registers        |  ✅  |
+| `render`   | Work dir → markdown / HTML / agent index / llms.txt |  ❌  |
+| `skill`    | Rendered handbook → agent SKILL package             |  ❌  |
+| `validate` | Check a SKILL's structure and freshness             |  ❌  |
+| `plan`     | Change request + handbook → byte-exact edit plan    |  ✅  |
+| `apply`    | Edit plan → real edits, with backups                |  ❌  |
+| `rollback` | Backup → restored source tree                       |  ❌  |
+| `resync`   | Changed code → updated handbook, incrementally      |  ✅  |
+| `studio`   | All of the above, in a browser                      |  ✅  |
+| `config`   | What is set, and where it came from                 |  ❌  |
+
+## The phases
+
+| Phase | Produces              | LLM? |
+| ----- | --------------------- | :--: |
+| `1`   | the call graph        |  ❌  |
+| `2a`  | one card per file     |  ✅  |
+| `2b`  | skeleton + assignment |  ✅  |
+| `2c`  | organization          |  ✅  |
+| `3`   | narration + registers |  ✅  |
+
+`--phase` accepts `all`, `1`, `2` (meaning 2a+2b+2c), any single phase, or a comma list
+like `2c,3`.
+
+## The two strategies
+
+|           | `file` (default)           | `member`                            |
+| --------- | -------------------------- | ----------------------------------- |
+| Skeleton  | synthesized by the LLM     | **you author** `skeleton.yaml`      |
+| Leaf unit | one source file            | one function or method              |
+| Best for  | a repo you do not know yet | a repo whose shape you already know |
+| Cost      | lower                      | higher — every member is classified |
+
+## Two words that are easy to confuse
+
+**Fidelity tier** — how good the _analysis_ is for a language. `full` (a hand-written
+adapter) or `generic` (a config-driven engine). Declared per adapter, recorded per
+language, and disclosed in the handbook overview. See
+[Analysis fidelity](/docs/concepts/analysis-fidelity).
+
+**Detail** — how deep the _prose_ is. `brief` (purpose, role, lifecycle) or `deep`
+(plus a walkthrough and per-function notes). Set with `--detail`.
+
+They are independent: a `generic`-tier language can still have `deep` cards. The prose
+gets deeper; the call facts do not get harder.

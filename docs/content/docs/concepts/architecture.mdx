@@ -1,0 +1,182 @@
+---
+title: Architecture
+description: Eleven packages in four layers, a strictly one-way dependency direction, and the boundaries that make the deterministic half reusable on its own.
+---
+
+## The layering
+
+<div className="not-prose">
+  <img
+    src="/diagrams/architecture.svg"
+    alt="Package layering: entry points, capabilities, engines, foundation"
+    className="rounded-xl border"
+  />
+</div>
+
+| Layer            | Packages                                                        | Job                                        |
+| ---------------- | --------------------------------------------------------------- | ------------------------------------------ |
+| **Entry points** | `cli`, `studio`                                                 | What a human or a container runs           |
+| **Capabilities** | `pipeline`, `renderer`, `skill`, `planner`, `patcher`, `resync` | One job each, independently usable         |
+| **Engines**      | `analyzer`, `llm`                                               | The two things everything else is built on |
+| **Foundation**   | `core`                                                          | Data model, config registry, utilities     |
+
+Dependencies **only ever point down**:
+
+```text
+cli → pipeline / renderer / skill / planner / patcher / resync → analyzer / llm → core
+```
+
+## Three rules that keep it healthy
+
+### 1. One-way dependencies, enforced
+
+`core` imports nothing internal. Nothing imports `cli`. A cycle or an upward import fails
+`pnpm check:workspace`, which also verifies that every package's TypeScript project
+references mirror its `package.json` dependencies exactly — a missing reference makes
+`tsc -b` build in the wrong order, and a root build hides it.
+
+### 2. LLM isolation is a package boundary, not a convention
+
+Only `llm`, `pipeline`, `planner` and `resync` may talk to a model, and only through the
+`ChatClient` interface:
+
+```ts
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
+```
+
+`analyzer`, `renderer`, `skill` and `patcher` **do not depend on `@handbook/llm` at all**.
+They are fully deterministic and reusable with no LLM anywhere in sight. That is why
+`render`, `skill`, `validate`, `apply` and `rollback` are free to run in CI.
+
+It is also why the entire test suite runs offline: one seam, one mock.
+
+### 3. The renderer boundary is a type
+
+`HandbookModel` (defined in `core`) is the only thing the renderer knows about. It never
+reads pipeline internals.
+
+```ts
+interface HandbookModel {
+  title: string;
+  lang: NarrateLang;
+  skeleton: Skeleton;
+  cards: Record<string, FileCard>;
+  assignment: Assignment;
+  organization: Organization;
+  narration: Narration;
+  registers: RegisterEntry[];
+}
+```
+
+**Any producer that can fill a `HandbookModel` gets rendering, skill packaging and
+planning for free.** If you want to generate a handbook some other way, that is the whole
+contract you have to satisfy.
+
+## Data flow
+
+```text
+source tree
+   │  analyzer — tree-sitter WASM, one adapter per language
+   ▼
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+   │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
+   ▼
+phase2/cards/<rel>.json + _coverage.json
+   │  pipeline 2b — skeleton synthesis (+ doctor loop) + file assignment
+   ▼
+phase2/skeleton.yaml + assignment.json
+   │  pipeline 2c — call-graph topological order + LLM grouping (flat fallback)
+   ▼
+phase2/organization.yaml
+   │  pipeline 3 — bottom-up narration + register extraction (content-hash cached)
+   ▼
+phase3/narration.json + registers.json
+   │  loadHandbookModel()
+   ▼
+HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.html · agent/ · llms.txt)
+                     │
+                     └──▶ skill ──▶ SKILL.md + references/ (+ coverage.json)
+```
+
+**The work-directory contract:** every phase reads only its upstream artifacts and writes
+only its own, all schema-validated on read with a `version` field. Any phase can be re-run
+alone. Crashes resume — cards are written per batch, narration is content-hash cached.
+
+## Inside the analyzer
+
+Each language implements one `LanguageAdapter`: `discover`, `analyze`, and optionally
+`statementSpans`. Every grammar is WebAssembly, so installation never compiles native
+code.
+
+Adapters run **two passes** per module:
+
+1. **Scan** — declarations, imports, classes and methods, and per-function facts:
+   signature, line range, async-ness, decorators, `self`/`this` attribute reads and
+   writes, typed parameters, and attribute types learned from constructor assignments.
+2. **Resolve** — every call site becomes a typed edge: `self_method`,
+   `self_attr_method`, `param_method`, `internal_func`, `internal_constructor`,
+   `boundary`, `boundary_constructor` — or `unresolved`, which the graph builder
+   quarantines into `dropped-calls.json` with a category.
+
+**The kept graph only ever contains resolved, named callees.** That is what makes an edge
+in it trustworthy.
+
+The **nav-pack** is a deterministic orientation summary derived from the graph — directory
+rollups, entry-point candidates, fan-out, external subsystems. It is the _only_ view of
+the codebase the skeleton synthesizer sees, which keeps that prompt small and grounded.
+
+## The pipeline's quality machinery
+
+**Three-tier card degradation (2a).** Whole batch → single file → per-function chunks for
+oversized files. Files that still fail get an honest empty card and are listed in
+`_coverage.json`. Coverage is complete _by construction_; misses are visible rather than
+silent.
+
+**Actor–critic skeleton doctor (2b).** The actor proposes at most three structural changes
+against ground-truth stats; three role-played critics (engineer, architect, reader) review
+in parallel; every surviving change is re-validated **mechanically** before it is applied;
+affected files are re-assigned. The loop stops on convergence or two no-progress rounds.
+A broken critic counts as `REJECT` — a failing reviewer must never wave changes through.
+
+**Deterministic fallbacks everywhere (2c, 3).** Organization falls back to call-graph
+order. Narration falls back to the stage description. Register extraction failure yields
+an empty list. A generation run **degrades; it does not block.**
+
+**Content-hash caches (3).** Stage and system prose is cached under `phase3/cache/`, keyed
+by prompt version, language and the full prompt hash — so re-runs and resyncs pay only for
+what actually changed.
+
+## Concurrency and safety
+
+- **One run per work directory.** `generateHandbook` and `resyncHandbook` take the same
+  re-entrant directory lock, so a CLI run and a Studio job cannot interleave writes on the
+  same artifacts.
+- **Atomic writes.** Every artifact is written to a temp file and renamed. A crash never
+  leaves a half-written file for the next run to choke on.
+- **Cooperative cancellation.** An `AbortSignal` is checked between phases and at every
+  batch checkpoint, and threaded into every LLM call so in-flight requests abort. An
+  aborted run keeps what it saved and writes **no** run manifest.
+
+## Decisions worth knowing
+
+| #   | Decision                               | Why                                                                                                                                             |
+| --- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | WASM-only tree-sitter                  | Zero native builds; one loading path for every language; version-locked grammars                                                                |
+| 2   | Hand-rolled `fetch` LLM client         | OpenAI-compatible endpoints vary; a thin client with explicit retry beats an SDK dependency. The interface seam matters more than the transport |
+| 3   | One pipeline, two strategies           | Separate large/small pipelines duplicate adapters, critics, clients and renderers; a strategy flag removes about 40% of that surface            |
+| 4   | zod-validated artifacts with `version` | Corrupted or hand-edited artifacts fail loudly at the boundary instead of poisoning later phases                                                |
+| 5   | Facts/prose separation in cards        | The model annotates a complete graph-derived inventory. Prose can be empty; facts cannot be wrong                                               |
+| 6   | Single-turn planner protocol           | Works on any endpoint, trivially mockable, and the transcript is inspectable. The cost — re-sending tokens — is acceptable at planner scale     |
+| 7   | ESM + `tsc -b`, no bundler             | Libraries ship type-checked `dist/` and `.d.ts`; composite references give incremental builds with zero extra tooling                           |
+| 8   | One configuration registry             | Flags, env names, YAML keys and three generated documents all derive from one table, so they cannot drift                                       |
+
+## Next
+
+<Cards>
+  <Card title="The five phases in detail" href="/docs/concepts/pipeline" />
+  <Card title="The work directory" href="/docs/concepts/work-directory" />
+  <Card title="Package API index" href="/docs/reference/packages" />
+</Cards>

@@ -372,7 +372,7 @@ pnpm studio --port 5000        # 参数直接透传
 
 每个设置只声明**一次**，在同一张 registry 表里。CLI 参数、环境变量名、配置文件键、
 [.env.example](.env.example)、[handbook.config.example.yaml](handbook.config.example.yaml)
-和 [docs/configuration.md](docs/configuration.md) 全都是从它**生成**的——所以它们不可能互相漂移。
+和 [docs/configuration.md](docs/content/docs/reference/configuration.md) 全都是从它**生成**的——所以它们不可能互相漂移。
 
 ### 优先级，从高到低
 
@@ -408,7 +408,7 @@ handbook config --check                      # 有任何非法或缺失就非零
 密钥（`llmApiKey` / `OPENAI_API_KEY`）在输出里会被打码，**永远不是命令行参数**，
 而且一旦出现在配置文件里就会被**拒绝**——因为配置文件是要提交进仓库的。
 
-完整参考：**[docs/configuration.md](docs/configuration.md)**。
+完整参考：**[docs/configuration.md](docs/content/docs/reference/configuration.md)**。
 
 ---
 
@@ -635,7 +635,7 @@ pnpm changeset        # 描述改动，选择版本递增方式
 ## 文档
 
 - **[docs/](docs/)** —— 完整文档站（架构、每个命令、每个配置、格式、提示词、指南）
-- [docs/configuration.md](docs/configuration.md) —— 全部配置项，由 registry 生成
+- [docs/configuration.md](docs/content/docs/reference/configuration.md) —— 全部配置项，由 registry 生成
 - [examples/](examples/) —— 离线端到端演示，含 mock LLM 服务
 - 各包 README 见 [packages/](packages/)
 

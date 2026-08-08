@@ -1,0 +1,128 @@
+---
+title: Quick start
+description: Run the entire toolchain end to end in about thirty seconds — offline, with no API key and zero tokens spent.
+---
+
+The fastest way to understand what Handbook does is to watch it do it. This runs the
+**whole** pipeline — analysis, generation, rendering, packaging, validation — against a
+bundled sample project using a bundled mock LLM server.
+
+**No API key. No network. Zero tokens.**
+
+## Step 1 — Run it
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm demo
+```
+
+## Step 2 — Read what it printed
+
+```text
+== build ==
+== start mock LLM (offline; prose will be placeholder text) ==
+== 1. analyze (no LLM) ==
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+== 2. generate (phases 2+3) ==
+{ "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
+== 3. render markdown + HTML site + agent index + llms.txt ==
+== 4. package as an agent SKILL (with the agent locator pages) ==
+== 5. validate the SKILL ==
+validate: OK
+```
+
+<Callout type="warn" title="The prose will be nonsense — that is expected">
+  The mock LLM returns placeholder text. **The structure is completely real** — stages, file assignment, call
+  facts, line ranges, the register table, every link. Only the sentences are fake. That is exactly the split
+  this project is built on: facts come from the parser, prose comes from a model.
+</Callout>
+
+## Step 3 — Open the results
+
+```bash
+open examples/work/demo/handbook/overview.md        # the markdown handbook
+open examples/work/demo/handbook/html/overview.html # the multi-page HTML site
+open examples/work/demo/handbook/handbook.html      # the whole thing in one file
+open examples/work/demo/skill/SKILL.md              # the agent SKILL package
+```
+
+Things worth looking at specifically:
+
+| Open this                             | And notice                                                                         |
+| ------------------------------------- | ---------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | A mermaid **stage map** generated from the call graph                              |
+| `handbook/index.md`                   | Every stage, nested, each with a paragraph                                         |
+| `handbook/register.md`                | Cross-stage state, with the stages that touch each piece                           |
+| `handbook/agent/index.md`             | The agent locator format — no prose, just addresses                                |
+| `handbook/agent/disambiguation.md`    | Terms that legitimately point at several stages                                    |
+| `skill/references/coverage.json`      | A content hash per file. This is the drift signal.                                 |
+| `work/demo/phase1/dropped-calls.json` | Calls the analyzer could **not** resolve, kept and categorized rather than guessed |
+
+## Step 4 — Look under the hood
+
+Everything the pipeline produced is plain JSON and YAML in the work directory:
+
+```bash
+ls examples/work/demo/
+# phase1/  phase2/  phase3/  handbook/  skill/  run-manifest.json
+
+cat examples/work/demo/phase1/graph.json | head -40
+cat examples/work/demo/phase2/skeleton.yaml
+cat examples/work/demo/run-manifest.json     # model, phases, timings, token usage
+```
+
+Every one of those is schema-validated on read. If you hand-edit one into an invalid
+state, the next command tells you which file and why — it does not propagate.
+
+## The other demos
+
+```bash
+pnpm demo:self        # this repo as its own input, against the mock LLM
+pnpm demo:self:real   # same, but against the real endpoint from .env
+pnpm mock-llm         # just the mock server, on port 8099
+```
+
+`pnpm demo:self` is the more interesting one to read: it analyzes eleven real TypeScript
+packages, so the stage structure it produces is a genuine map of a genuine codebase.
+
+## What just happened
+
+<div className="not-prose">
+  <img
+    src="/diagrams/pipeline.svg"
+    alt="The Handbook pipeline: analyze, generate, render, skill, plan, apply, resync"
+    className="rounded-xl border"
+  />
+</div>
+
+1. **`analyze`** parsed every file with tree-sitter into a typed call graph. No LLM.
+2. **`generate`** wrote a card per file, synthesized a stage skeleton, assigned every
+   file to a stage, grouped and ordered them, then narrated bottom-up and extracted
+   cross-stage state registers.
+3. **`render`** turned that into markdown, an HTML site, one self-contained page, the
+   agent locator index and `llms.txt`. No LLM.
+4. **`skill`** repackaged it as an agent SKILL with a content hash per file. No LLM.
+5. **`validate`** checked the structure, the frontmatter contract, the index ↔ stage-page
+   links and hash freshness. No LLM.
+
+The demo stops there. The other half — **`plan` → `apply` → `rollback` → `resync`** — is
+covered in [Your first handbook](/docs/getting-started/first-handbook) and
+[Planning changes](/docs/guides/planning-changes).
+
+## Next
+
+<Cards>
+  <Card
+    title="Your first real handbook"
+    description="Same steps, your repository, and what to do when it is large."
+    href="/docs/getting-started/first-handbook"
+  />
+  <Card
+    title="The vocabulary"
+    description="Stage, card, register, work dir, case — what each word means here."
+    href="/docs/getting-started/vocabulary"
+  />
+  <Card title="Studio" description="The same pipeline, but you click it." href="/docs/guides/studio" />
+</Cards>

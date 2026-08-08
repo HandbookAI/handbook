@@ -1,0 +1,221 @@
+---
+title: Your first real handbook
+description: Eight steps from a repository you have never read to a change plan you can apply — with the cheap checkpoints in the right places.
+---
+
+This is the full loop on a real repository. It is written to be followed in order, and it
+puts the **free** checks before the expensive ones on purpose.
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+export REPO=~/code/myrepo
+export WORK=work/myrepo
+```
+
+---
+
+## Step 1 — Look before you leap
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**This is free and it is your smoke test.** No LLM, no key, no tokens.
+
+<Callout type="warn" title="Read these numbers before going further">
+  - **`files` far lower than you expect?** A whole language is being skipped, or your source root is wrong.
+  Check the scan log with `-v`. - **`files` far higher?** You are analyzing `node_modules`, `vendor` or a
+  build directory. The common ones are skipped automatically; point `--source` at the real source root rather
+  than the repo root if it is not. - **`edgesDropped` enormous relative to `edgesKept`?** Normal for dynamic
+  languages. Look at `phase1/dropped-calls.json` — every unresolved call is categorized there, not hidden.
+</Callout>
+
+Fix any of the above **now**. Every problem here becomes a more expensive problem later.
+
+## Step 2 — Generate the handbook
+
+This is the step that costs tokens. On a mid-size repository, expect minutes.
+
+Start cheap:
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+That is `--detail brief` and `--synth-mode oneshot`: a short card per file and a
+single-pass skeleton. It is the fastest way to see whether the _shape_ of the handbook is
+right.
+
+Look at `$WORK/phase2/skeleton.yaml`. Does the stage list look like your system? If yes,
+upgrade:
+
+```bash
+handbook generate --source $REPO --work $WORK \
+    --phase 2a --detail deep --resume
+```
+
+`--phase 2a --resume` deepens **only the cards**, skipping files that already have a
+complete one. You keep the skeleton you already validated.
+
+If the skeleton is _wrong_, re-run 2b with the actor–critic loop instead:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+<Callout title="It is resumable, cancellable and cached">
+  Cards are written as they complete. `Ctrl-C` is safe. `--resume` picks up where it stopped, `--llm-cache`
+  makes re-runs nearly free, and `run-manifest.json` records what the last good run cost in tokens.
+</Callout>
+
+## Step 3 — Render it
+
+```bash
+handbook render --work $WORK --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt
+```
+
+**No LLM.** Run it as often as you like — in CI, on every commit.
+
+Add `--source-base-url https://github.com/me/myrepo/blob/main` to turn every file path in
+the handbook into a link to the real file. Without it, the output contains no external
+URLs at all, which matters for a private codebase.
+
+Open `$WORK/handbook/html/overview.html` and read it. This is the moment to judge whether
+the handbook is any good.
+
+## Step 4 — Package it for your agent
+
+```bash
+handbook skill --handbook $WORK/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work $WORK --source $REPO \
+    --agent-dir $WORK/handbook/agent
+```
+
+`--work` + `--source` together produce `coverage.json`: a content hash per file. **That
+is what makes handbook drift detectable** rather than silently wrong later.
+
+`--agent-dir` ships the locator pages, and adds a disambiguation step to the SKILL's
+routing protocol.
+
+## Step 5 — Validate it
+
+```bash
+handbook validate --skill skills/myrepo --source $REPO
+```
+
+Checks structure, the frontmatter contract, index ↔ stage-page consistency, and re-hashes
+your source to report pages that have fallen behind. **Exits `2` on failure**, so this is
+the command to put in CI.
+
+## Step 6 — Plan a real change
+
+```bash
+handbook plan --source $REPO --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
+
+A **read-only** agent loop: it lists, reads and greps — it has no write tool at all —
+routes with the handbook, verifies against the real source, and writes `plan.md`.
+
+Read the plan. Actually read it. It ends with a machine-readable declarations block:
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+<Callout type="info" title="A planner that gives up exits non-zero">
+  If it cannot produce a usable plan — it kept inventing file contents, or it ran out of turns — it fails
+  loudly instead of writing an apology into `plan.md` that a script would then happily feed into `apply`.
+</Callout>
+
+## Step 7 — Apply it, with a way back
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run   # verify only, never writes
+handbook apply --source $REPO --plan plan.md             # for real
+```
+
+The dry run is not optional in spirit. It resolves every anchor against the current file
+contents and tells you exactly which edits would land.
+
+Applying prints the backup directory. **Copy it somewhere before you need it:**
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z
+```
+
+Rollback refuses any file that changed _after_ the patch, unless you pass `--force` —
+because restoring it would silently destroy that work. See
+[Applying changes](/docs/guides/applying-changes) for all four safety rules.
+
+## Step 8 — Roll the handbook forward
+
+The code moved. Do not regenerate — resync.
+
+A **case** is a directory you assemble:
+
+```text
+cases/upload-retry/
+  edited/       copy of the repo after the change   (required)
+  plan.md       the plan from step 6                (optional — sharpens scope)
+  change.diff   unified diff of the change          (optional — widens scope)
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work $WORK
+```
+
+Resync re-analyzes the edited tree, diffs old graph against new, and regenerates **only
+what changed**. Already-rendered outputs under `$WORK/handbook` refresh automatically.
+
+No endpoint handy? `--no-llm` refreshes the structural facts and marks the prose stale,
+rather than pretending it is current.
+
+---
+
+## If your repository is very large
+
+| Symptom                           | What to do                                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Thousands of files                | Start with `--detail brief`. Deepen selected phases later with `--phase 2a --detail deep --resume`. |
+| The run is slow                   | Raise `--read-workers` / `--assign-workers` / `--narrate-workers`, all under `--llm-concurrency`.   |
+| Rate limits                       | Lower `--llm-concurrency`. Raise `--llm-retries` and `--llm-retry-backoff`.                         |
+| Huge generated files              | `--max-chars-per-file 20000` truncates what is sent per file.                                       |
+| You only care about one subsystem | Point `--source` at that subdirectory. The graph is built from what you scan.                       |
+| Re-running while iterating        | `--llm-cache`, and `--refresh` when you deliberately want to ignore caches.                         |
+
+More in [Cost and performance](/docs/guides/cost-and-performance).
+
+## Next
+
+<Cards>
+  <Card title="Generating in depth" href="/docs/guides/generating" />
+  <Card title="Planning changes" href="/docs/guides/planning-changes" />
+  <Card title="Keeping it current" href="/docs/guides/keeping-current" />
+  <Card title="Troubleshooting" href="/docs/guides/troubleshooting" />
+</Cards>

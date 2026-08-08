@@ -1,0 +1,141 @@
+---
+title: Docker
+description: Run the whole toolchain with no local Node install — including Studio, and one image across every environment.
+---
+
+The image is Node 22 (deliberately **not** 24 — see the Dockerfile) plus the built
+packages.
+
+```bash
+pnpm run docker:build      # docker build -t handbook:local .
+```
+
+## Running commands
+
+`HANDBOOK_SOURCE=/src` and `HANDBOOK_WORK=/work` are baked into the image, so you only
+mount volumes — no `--source` or `--work` needed:
+
+```bash
+# free, no key
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+
+# with an endpoint
+docker run --rm --env-file .env \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate --detail deep
+
+# render, then get the output back out
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local render --html --agent-site --llms-txt
+docker run --rm -v handbook-work:/work -v "$PWD/out:/out" \
+  --entrypoint cp handbook:local -R /work/handbook /out/
+```
+
+Mounting the source **read-only** (`:ro`) is a good habit for everything except `apply`.
+
+## Environment variables
+
+Docker's own `--env-file` layers **on top of** the toolchain's `.env` loading — both
+apply, and an `OPENAI_*` variable passed that way is visible exactly as a shell export
+would be.
+
+```bash
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+### One image, every environment
+
+`.env*` files are **never baked into the image** — see `.dockerignore`. Select an
+environment at run time:
+
+```bash
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+Or mount a config file:
+
+```bash
+docker run --rm \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  -v "$PWD/handbook.config.prod.yaml:/cfg.yaml:ro" \
+  handbook:local --config /cfg.yaml generate
+```
+
+## Studio
+
+```bash
+pnpm run docker:studio     # docker compose up --build studio
+```
+
+Then open **`http://localhost:4860`**.
+
+<Callout type="warn" title="Only localhost works — not a LAN IP, not the container name">
+  Studio's CSRF defence checks the `Host` **request header**, not the socket. A container
+  must bind `0.0.0.0` for the published port to be reachable at all
+  (`HANDBOOK_STUDIO_HOST=0.0.0.0` in the compose file), **but that does not widen who may
+  talk to it.** Browsing from the host still sends `Host: localhost:4860` and passes;
+  a request naming a LAN IP or the `studio` container hostname is refused with `403`
+  by design.
+
+Remote access is a deliberately unimplemented, separate feature — it would need an
+explicit allowlist — not a bug in this defence.
+
+</Callout>
+
+```yaml title="docker-compose.yml (excerpt)"
+services:
+  studio:
+    build: .
+    command: studio
+    environment:
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:4860:4860'
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+```
+
+Publishing the port as `127.0.0.1:4860:4860` rather than `4860:4860` keeps it off your
+LAN interface as well, which is belt-and-braces on top of the Host-header check.
+
+## Volumes
+
+| Path    | Contents           | Suggestion                                  |
+| ------- | ------------------ | ------------------------------------------- |
+| `/src`  | Your source tree   | Mount `:ro` for everything except `apply`   |
+| `/work` | Handbook artifacts | A named volume, so it survives between runs |
+
+## In CI
+
+```yaml title=".github/workflows/handbook.yml"
+jobs:
+  handbook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t handbook:ci .
+      - run: |
+          docker run --rm \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci generate --detail brief
+      - run: |
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci render --html --agent-site --llms-txt
+      - uses: actions/upload-artifact@v4
+        with: { name: handbook, path: work/handbook }
+```
+
+`analyze`, `render`, `skill` and `validate` need no key at all, so a fork-safe workflow
+can run those on every pull request and reserve `generate` for `main`.
+
+## Why Node 22 and not 24
+
+One bundled tree-sitter grammar (Swift) aborts the process on V8 ≥ 13. Node 22 sits below
+that boundary, so the image needs no special flags. On Node 24 the adapter refuses at
+discovery and tells you to pass `--liftoff-only`; pinning the image to 22 avoids the
+question entirely. See [Language support](/docs/reference/languages).

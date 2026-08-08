@@ -1,0 +1,109 @@
+---
+title: The work directory
+description: Every artifact the pipeline produces, where it lives, what validates it, and what is safe to delete.
+---
+
+The work directory (`--work`) is where everything the pipeline produces lives. One per
+repository you are documenting.
+
+```text
+<work>/
+  phase1/
+    graph.json          the call graph — everything downstream reads this
+    functions.csv       every function, flat, for grepping or a spreadsheet
+    graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
+    dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+  phase2/
+    cards/<rel>.json    one card per source file, mirroring the source tree
+    cards/_coverage.json  how many files got prose, and which did not
+    cards/_rejected/    replies that produced no usable card (capped at 20)
+    skeleton.yaml       the stage spine
+    assignment.json     file → stage
+    organization.yaml   intra-stage groups + reading order
+    strategy.json       which strategy produced the above
+  phase3/
+    narration.json      stage and system prose
+    registers.json      cross-stage state registers
+    cache/              content-hash caches for prose and registers
+  handbook/             the rendered output, once you run `render`
+  run-manifest.json     model, phases, timings and token usage of the last good run
+```
+
+## Three properties worth relying on
+
+### Everything is schema-validated on read
+
+Every artifact carries a `version` field and is validated with zod when it is loaded. A
+corrupted or hand-edited artifact **fails loudly and names itself**:
+
+```text
+handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
+```
+
+It never propagates into a later phase.
+
+Two deliberate exceptions, both about resilience rather than laxity:
+
+- **Cards** — a single unparseable card file is _skipped_, not fatal. One foreign or
+  half-synced JSON in the cards directory would otherwise crash resume, phases 2b/2c/3
+  and every model load.
+- **`languages` metadata in `graph.json`** — optional, because there is no artifact
+  migration mechanism here and every graph written before fidelity declarations existed
+  must keep validating.
+
+### Every write is atomic
+
+Write to a temp file, then rename. A crash mid-write never leaves a half-written artifact
+for the next run to choke on.
+
+### One run per work directory
+
+`generate` and `resync` take the same re-entrant directory lock. A concurrent CLI run and
+Studio job on the same artifacts would interleave writes; the second one is refused with
+a clear message instead.
+
+## What is safe to do
+
+| Action                           | Safe? | Note                                                                      |
+| -------------------------------- | :---: | ------------------------------------------------------------------------- |
+| Delete the whole work dir        |  ✅   | Nothing outside it was modified. Regenerate from scratch.                 |
+| Commit it to git                 |  ✅   | It is all text. Handy for reviewing what a regeneration changed.          |
+| Delete `phase3/cache/`           |  ✅   | Costs you a full re-narration next run.                                   |
+| Delete `phase2/cards/_rejected/` |  ✅   | Diagnostics only. Cleared automatically at the start of a new cards pass. |
+| Hand-edit `skeleton.yaml`        |  ✅   | It is validated on read, and `--skeleton` exists precisely for this.      |
+| Hand-edit `graph.json`           |  ⚠️   | It is generated. Re-run `analyze` instead.                                |
+| Delete `phase2/strategy.json`    |  ⚠️   | The next run falls back to `file`, which may not match the artifacts.     |
+| Share it publicly                |  ⚠️   | Cards quote and describe your source. Treat it like source.               |
+
+## Reading it by hand
+
+The graph is the interesting one:
+
+```bash
+# how big is this codebase, really
+jq '.metadata | {files: (.scannedFiles|length), nInternalFunctions, nEdges}' phase1/graph.json
+
+# the busiest functions — where a change is most likely to fan out
+jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
+       | sort_by(-.value.nCallers) | .[:15]
+       | .[] | "\(.value.nCallers)\t\(.value.qualname)\t\(.value.file)"' phase1/graph.json
+
+# what could not be resolved, by category
+jq '.metadata.byCategory' phase1/dropped-calls.json
+
+# which files never got prose
+jq '.missing' phase2/cards/_coverage.json
+```
+
+`functions.csv` is there for the same reason — sometimes the fastest tool is a
+spreadsheet.
+
+## Where else things are written
+
+Handbook writes outside the work directory in exactly two places, both opt-in by the
+command you ran:
+
+- **`<source>/.handbook-patches/`** — created by `apply`, holds backups and their
+  manifests. A `.gitignore` is written into it automatically so backups never enter git.
+- **`$HOME/.handbook-studio/`** — Studio's repository registry and its auto-created work
+  dirs. Move it with `--state-dir`.

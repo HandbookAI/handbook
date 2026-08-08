@@ -1,0 +1,197 @@
+---
+title: Generating a handbook
+description: Choosing detail, synthesis mode and strategy; running phases separately; resuming; and what to do when the result is wrong.
+---
+
+```bash
+handbook generate --source <repo> --work <workdir> [options]
+```
+
+This is the only expensive command. Everything on this page is about spending less on it
+and getting more out of it.
+
+## Start cheap, then upgrade
+
+<Steps>
+
+<Step>
+### Confirm the scan is right — free
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+Check the file count. If it is wrong, fix that before spending a token.
+
+</Step>
+
+<Step>
+### Generate with the cheap defaults
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+`--detail brief` and `--synth-mode oneshot`. Read `$WORK/phase2/skeleton.yaml`.
+
+</Step>
+
+<Step>
+### Fix whichever half is wrong
+
+**Prose too thin?** Deepen the cards only, keeping the skeleton you already validated:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+**Structure wrong?** Re-run 2b with the repair loop, keeping the cards:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+</Steps>
+
+Doing it in this order means you never pay for deep cards on top of a skeleton you are
+about to throw away.
+
+## `--detail brief` vs `deep`
+
+|              | `brief` (default)        | `deep`                        |
+| ------------ | ------------------------ | ----------------------------- |
+| Per file     | purpose, role, lifecycle | + a 120–300-word walkthrough  |
+| Per function | —                        | purpose, data flow, relations |
+| Batch size   | 8 files per request      | 1 file per request            |
+| Cost         | roughly 1×               | several times that            |
+
+**Deep is worth it when an agent will use the handbook**, because per-function notes are
+what turn a stage page into an address book. Brief is right for a first pass, for a very
+large repo, or when you mostly want the structure.
+
+You can mix: generate brief everywhere, then re-run `--phase 2a --detail deep --resume`
+after pointing `--source` at the subdirectory you care about most.
+
+## `--synth-mode oneshot` vs `doctor`
+
+`oneshot` synthesizes a skeleton in one pass. Fast, cheap, usually reasonable.
+
+`doctor` runs an actor–critic repair loop: propose at most three structural changes,
+review them with three critics (engineer, architect, reader), validate the survivors
+**mechanically** against the real graph, apply, re-assign, repeat.
+
+<Callout title="When doctor earns its cost">
+  Use it when `oneshot` gave you stages that are lopsided (one stage with 200 files, three with two each),
+  stages whose titles do not mean anything, or a lot of unassigned files. `--max-doctor-rounds` defaults to 6;
+  it also stops early on convergence or after two rounds with no progress.
+</Callout>
+
+## `--strategy file` vs `member`
+
+**`file` (default)** — the LLM synthesizes the skeleton; a source file is the leaf unit.
+Scales to large repositories. Use this unless you have a reason not to.
+
+**`member`** — _you_ author `skeleton.yaml`; individual functions and methods are
+classified into your stages, and the file-level artifacts are derived from that.
+
+```yaml title="skeleton.yaml"
+metadata:
+  version: 1
+  archetype: HTTP API server
+stages:
+  - id: stage-1
+    title: Request intake
+    description: Accepting connections, parsing requests, and routing them.
+    parent: null
+    children: []
+    crosscut: false
+  - id: stage-2
+    title: Business logic
+    description: What the service actually does with a validated request.
+    parent: null
+    children: []
+    crosscut: false
+  - id: crosscut-1
+    title: Configuration and logging
+    description: Cross-cutting infrastructure used by every stage.
+    parent: null
+    children: []
+    crosscut: true
+```
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy member --skeleton skeleton.yaml
+```
+
+Member costs more — every function is classified — but gives tighter prose, and phase 2c
+becomes free because the organization is derived deterministically.
+
+<Callout type="warn">
+  The strategy is recorded in `phase2/strategy.json`. A partial re-run with a different `--strategy` and no
+  `--phase 2b` is **refused**, so a `file`-strategy default cannot silently overwrite a member-derived
+  organization.
+</Callout>
+
+## Running phases separately
+
+```bash
+--phase 1        # just the graph (same as `handbook analyze`)
+--phase 2a       # just the cards
+--phase 2b       # just skeleton + assignment
+--phase 2c       # just the grouping
+--phase 3        # just narration + registers
+--phase 2        # 2a + 2b + 2c
+--phase 2c,3     # a comma list
+```
+
+Each phase reads only its upstream artifacts, so this is always safe. The common ones:
+
+| Situation                             | Command                                 |
+| ------------------------------------- | --------------------------------------- |
+| Cards are fine, skeleton is wrong     | `--phase 2b,2c,3 --synth-mode doctor`   |
+| Everything is fine, prose reads badly | `--phase 3 --refresh`                   |
+| You want deeper cards, nothing else   | `--phase 2a --detail deep --resume`     |
+| You switched narration language       | `--phase 3 --narrate-lang zh --refresh` |
+
+## Resuming and caching
+
+- **`--resume`** skips files that already have a complete card at the requested depth.
+  Cards are written as they complete, so `Ctrl-C` is always safe.
+- **`--llm-cache`** caches raw replies under `<work>/phase3/cache`, keyed by model, prompt
+  and options. Re-runs while you iterate become nearly free.
+- **`--refresh`** ignores phase-3 caches. Use it when you changed the prompt inputs but
+  the cache key did not notice — for example after editing `skeleton.yaml` by hand.
+
+`--refresh` disables `--llm-cache` for that run, by design.
+
+## Watching it work
+
+```bash
+handbook generate --source $REPO --work $WORK -v
+```
+
+```text
+[scan] auto root=/Users/me/code/api
+[scan] typescript: 284 files
+[2a] batch 12/36 · 96 cards
+[2b] 9 stages; 0 files unassigned
+[3] narrating stage-4 (2 children)
+```
+
+Token usage lands in `run-manifest.json` when the run finishes.
+
+## When the result is wrong
+
+| Symptom                              | Likely cause                                 | Fix                                                                      |
+| ------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------ |
+| Stages are lopsided or meaningless   | one-shot synthesis on an unusual layout      | `--phase 2b,2c,3 --synth-mode doctor`                                    |
+| Many files unassigned                | the skeleton does not cover part of the repo | doctor mode, or author a skeleton and pass `--skeleton`                  |
+| Cards have empty descriptions        | the model's replies did not parse            | read `phase2/cards/_rejected/`; try a stronger model or `--detail brief` |
+| Prose is generic and useless         | model too small for the codebase             | change `--model`; this phase rewards a better model more than any other  |
+| Overview mentions "generic analyzer" | you have generic-tier languages              | expected — see [Analysis fidelity](/docs/concepts/analysis-fidelity)     |
+| Run is very slow                     | worker counts too low, or endpoint is slow   | raise `--read-workers` and `--llm-concurrency`                           |
+| Rate-limit errors                    | concurrency too high                         | lower `--llm-concurrency`; raise `--llm-retries`                         |
+
+More in [Troubleshooting](/docs/guides/troubleshooting).

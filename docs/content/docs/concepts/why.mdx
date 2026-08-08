@@ -1,0 +1,119 @@
+---
+title: Why this exists
+description: Summarizing a codebase does not help an agent find things. Routing does. This is the argument, and the design that follows from it.
+---
+
+## The failure you have already seen
+
+You ask a coding agent to make a change that spans the system. It greps for a symbol,
+finds a plausible location, edits it, and reports success.
+
+It missed:
+
+- the constant that actually controls the behaviour, three directories away;
+- the mirrored implementation in the batch path;
+- the metric that counts the thing it just changed;
+- the test that asserts the old behaviour.
+
+The agent was not confused about _how_ to write the code. It was confused about **where
+the code is**. And it had no way to find out, because the only tools it had were text
+search and a context window too small to hold the repository.
+
+## Why summaries do not fix it
+
+The obvious response is "summarize the codebase and give the summary to the agent". This
+fails for a specific reason:
+
+> **A summary answers "what is this?" An agent needs "where is it?"**
+
+A beautifully written paragraph about the upload subsystem does not tell an agent that
+the retry budget also lives in `worker/queue.py` and is read by `metrics/emit.py`. Worse,
+a summary is _plausible prose_ — an agent will happily reason on top of it, and cannot
+tell which sentences are load-bearing facts and which are the model's paraphrase.
+
+Three failure modes follow:
+
+1. **It is not addressable.** Prose names concepts, not paths and line ranges.
+2. **It is not verifiable.** Nothing in it distinguishes a parsed fact from a guess.
+3. **It rots.** The moment the code changes, the summary is quietly wrong, and nothing
+   in it says so.
+
+## What Handbook does instead
+
+### It builds an index, not a summary
+
+The output answers exactly one question: **which files, functions and pieces of state
+does this change have to touch?**
+
+Every entry is an address — a path, a qualified name, a line range — derived from a real
+parse. The prose that surrounds those addresses is there to help a human read it, and is
+explicitly _not_ the thing an agent is supposed to act on. The SKILL package says so in
+its first line:
+
+> This handbook is a **location index** for the codebase, not a code description.
+> Use it to decide WHICH files, functions and state a change must touch — then read the
+> real source.
+
+### It separates facts from prose, by construction
+
+|                                           | Comes from                       | Can it be wrong?                       |
+| ----------------------------------------- | -------------------------------- | -------------------------------------- |
+| Files, functions, line ranges, call edges | tree-sitter                      | No — it is a parse                     |
+| Which calls could **not** be resolved     | tree-sitter                      | No — they are quarantined, not guessed |
+| Stage structure                           | LLM, then mechanically validated | Structurally, no; judgment, yes        |
+| Purpose, walkthroughs, overviews          | LLM                              | Yes — and it is labelled as prose      |
+
+The separation is enforced by **package boundary**, not by convention: the analyzer, the
+renderer, the skill packager and the patcher do not depend on the LLM package at all.
+
+### It fails visibly
+
+Every design choice here follows one rule: **when something does not work, say so.**
+
+- A file whose card generation failed still appears, with an empty description. It is
+  listed in `_coverage.json`. It is never dropped and never invented.
+- A call the analyzer could not resolve goes into `dropped-calls.json` with its category
+  and raw text. It is never guessed into a plausible edge.
+- A language analyzed by the config-driven engine is **named in the overview**, so
+  "best-effort call relations" cannot be read as "exact".
+- A planner run that gave up exits non-zero, so no script mistakes its apology for a plan.
+- A patch anchor that matches zero times, or twice, refuses. It never picks one.
+
+### It stays current at proportional cost
+
+Documentation rots because updating it costs as much as writing it. `resync` diffs the
+old call graph against the new one and regenerates only what changed — cards for touched
+files, assignment for new ones, prose for affected stages. Touch three files, pay for
+three files.
+
+The content-hash cache does the rest: a stage whose inputs did not change is not
+re-narrated at all.
+
+## The economics
+
+Generation is the expensive step, and it happens **once**. Everything after it —
+rendering to markdown, to an HTML site, to the agent index, to `llms.txt`, packaging as a
+SKILL, validating that package — is deterministic and free. You can run those on every
+commit.
+
+That split is why `render` and `skill` are separate commands rather than flags on
+`generate`, and why they live in packages that cannot reach an LLM even by accident.
+
+## What this is not
+
+- **Not a code-search tool.** It does not replace `grep` or your LSP. It tells an agent
+  _where to point them_.
+- **Not an autonomous coding agent.** The planner is read-only by construction; it has
+  no write tool. `apply` is a mechanical executor with no model in the loop. A human
+  decides in between.
+- **Not a replacement for your own docs.** Architecture decisions, product intent and
+  team conventions are not derivable from a call graph, and Handbook does not pretend
+  otherwise.
+
+## Next
+
+<Cards>
+  <Card title="How it is put together" href="/docs/concepts/architecture" />
+  <Card title="The five phases" href="/docs/concepts/pipeline" />
+  <Card title="What you can trust" href="/docs/concepts/trust-model" />
+</Cards>

@@ -1,0 +1,132 @@
+---
+title: What you can trust
+description: Which parts of a handbook are parsed facts, which are model output, what leaves your machine, and what the tool refuses to do.
+---
+
+## The short version
+
+| Claim                                     | Source                      | Can it be wrong?                                   |
+| ----------------------------------------- | --------------------------- | -------------------------------------------------- |
+| This file exists at this path             | parser                      | **No**                                             |
+| This function is at lines 88–104          | parser                      | **No**                                             |
+| This signature is `send(self, url, data)` | parser                      | **No**                                             |
+| This function calls that one              | parser                      | **No** for full tier; best-effort for generic tier |
+| These calls could not be resolved         | parser                      | **No** — they are listed, not guessed              |
+| This file belongs to this stage           | LLM, mechanically validated | Judgment, yes. Structurally, no                    |
+| This file's purpose is "…"                | LLM                         | **Yes** — it is prose                              |
+| This subsystem works like "…"             | LLM                         | **Yes** — it is prose                              |
+| This state flows across these stages      | LLM, over real stage ids    | **Yes**, though the stage ids are real             |
+
+**The rule the whole design follows:** an agent routes on the top half of that table and
+reads the real source before acting. The SKILL package says so in its first line, and its
+routing protocol ends with _"`read_file` the actual source at every cited path before
+proposing or making changes."_
+
+## What leaves your machine
+
+**Phase 1 — nothing.** Static analysis is entirely local. No network call is made.
+
+**Phases 2 and 3** send source file contents to the endpoint **you** configured. That can
+be a model running on your own machine (vLLM, Ollama, LiteLLM). Handbook has no telemetry,
+no analytics and no default endpoint other than OpenAI's, which you must supply a key for.
+
+**`--max-chars-per-file <n>`** caps how much of any single file is ever sent.
+
+**Rendering, packaging and validation** never touch the network. Neither does `apply` or
+`rollback`.
+
+**The planner** reads your source locally and sends excerpts of what it read to the
+endpoint, the same as generation.
+
+## What is deliberately refused
+
+Refusals are the load-bearing part of this tool. In priority order:
+
+### The patcher
+
+- An anchor that matches **zero** times → refuse. The code moved on.
+- An anchor that matches **two or more** times → refuse. It is ambiguous.
+- **Never** "take the first match". That is how a patch lands in the wrong function.
+- One failure aborts the **whole** application, before a byte is written.
+- A path that escapes the source root — including through a symlinked parent directory
+  when the file does not exist yet — is refused.
+- Rollback refuses any file changed _after_ the patch, unless you pass `--force`.
+
+### The planner
+
+- No write tool exists. Not disabled — **not implemented**.
+- A reply that invents `## Tool result` sections is rejected outright, including any plan
+  at the end of it, because that plan was derived from fiction.
+- A run that gave up exits non-zero rather than writing an apology into `plan.md`.
+- Catastrophic regexes (`(a+)+`, `(.*)*`) are refused before they can hang the run.
+
+### The pipeline
+
+- A call the analyzer cannot resolve goes to `dropped-calls.json`. It is never guessed.
+- A file whose card generation failed gets an **empty** description, never an invented
+  one, and is listed in `_coverage.json`.
+- A structural change proposed by the doctor loop that names a non-existent stage, or
+  would orphan files, is rejected before it touches the skeleton.
+- A critic whose reply fails to parse counts as `REJECT`.
+
+### Configuration
+
+- A secret (`llmApiKey` / `OPENAI_API_KEY`) is **never** a command-line flag, and is
+  **rejected** if it appears in a config file — because config files get committed.
+- A supplied-but-invalid value never falls through to a default. A typo is an error.
+- An empty value reads as unset, so `HANDBOOK_TITLE=` cannot produce an untitled handbook.
+
+## Detecting drift
+
+`coverage.json` in a SKILL package carries a **content hash per file**, captured at
+packaging time.
+
+```bash
+handbook validate --skill skills/myrepo --source ~/code/myrepo
+```
+
+re-hashes the live source and reports every file whose content moved since. That is how
+an agent learns _"this page may lag the code"_ before it acts on a stale claim — and it
+is why `--work` and `--source` are worth passing to `handbook skill`.
+
+## The corrections channel
+
+When a handbook claim contradicts the real source, the consuming agent appends one line
+of JSON to `corrections.jsonl` at the skill root:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py"
+}
+```
+
+`handbook resync --corrections <file>` then refreshes **exactly the files named in it** —
+even if their bytes never changed, because a claim the source contradicts is reason
+enough to re-describe that file.
+
+The file lives at the skill root, never under `references/`, because planners mount that
+tree read-only. A rebuild preserves pending corrections across the clean.
+
+## Studio's security posture
+
+Studio is a **local tool** and does not pretend otherwise.
+
+- Binds `127.0.0.1` by default.
+- The CSRF guard checks the `Host` **request header**, not the socket, so only loopback
+  host names pass.
+- `POST` requires `application/json`, which blocks the classic cross-origin form attack.
+- Source and handbook file serving is sandboxed to the registered roots.
+
+In a container it must bind `0.0.0.0` for the published port to be reachable at all, but
+that does not widen who may talk to it: a request naming a LAN IP or the container
+hostname still gets `403`. Remote access is a deliberately unimplemented, separate feature
+— it would need an explicit allowlist.
+
+## What Handbook does not claim to know
+
+A call graph cannot tell you _why_ a decision was made, what the product is for, or what
+your team's conventions are. Handbook does not infer those and does not pretend to. It
+documents structure and behaviour; intent is still yours to write down.

@@ -1,0 +1,158 @@
+---
+title: Rendering outputs
+description: Markdown, an HTML site, one self-contained page, the agent locator index and llms.txt — all deterministic, all free to re-run.
+---
+
+```bash
+handbook render --work <workdir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+**No LLM. No network. Deterministic.** Same model in, byte-identical files out — so this
+belongs in CI, on every commit.
+
+## The five outputs
+
+<Tabs items={['Markdown', 'HTML site', 'Single page', 'Agent index', 'llms.txt']}>
+
+<Tab value="Markdown">
+
+Always written.
+
+```text
+<out>/
+  overview.md      system prose + a mermaid stage map + "see also" links
+  index.md         every stage, nested by depth, a paragraph each
+  <stage-id>.md    one page per content-bearing stage
+  register.md      the cross-stage state table (only when registers exist)
+```
+
+A stage page carries the stage summary, links to sub-stages, then its files — grouped and
+ordered as phase 2c decided, each rendered as a **file card**: purpose, role, lifecycle,
+call facts, and per-function notes for deep cards.
+
+Two behaviours worth knowing:
+
+- **Stale pages are cleaned up.** Stage ids change between generations; each render
+  removes the previous render's pages first, so a renamed stage leaves no ghost page for
+  the skill packager to scoop up.
+- **The per-stage register section is idempotent** — appended under a marker, only when
+  the marker is absent. Re-rendering never stacks duplicates.
+
+</Tab>
+
+<Tab value="HTML site">
+
+`--html` → `<out>/html/`
+
+A multi-page site sharing one shell: sticky sidebar TOC with the current page highlighted,
+breadcrumbs, a theme toggle that persists your choice, and expand/collapse-all for
+function details.
+
+**All CSS and JS is inlined; every link is relative.** It works straight off `file://` —
+no server, no CDN, no fonts fetched from anywhere. `open <out>/html/overview.html`.
+
+</Tab>
+
+<Tab value="Single page">
+
+`--html-single` → `<out>/handbook.html`
+
+The whole handbook in **one file**, with numbered sections and every stage as a collapsed
+`<details>`.
+
+This is the one to email, attach to a ticket, or drop into a shared drive. It has no
+dependencies of any kind.
+
+</Tab>
+
+<Tab value="Agent index">
+
+`--agent-site` → `<out>/agent/`
+
+```text
+how_to_use.md      the agent-side search protocol
+index.md           every stage, as locator blocks
+disambiguation.md  terms that legitimately point at several stages
+<stage-id>.md      one locator page per stage
+```
+
+Each stage gets a fixed-schema block: **duty**, **entry concepts**, **state**,
+**exemplars**, **co-change hints**, **core files**.
+
+The invariant: **a field is emitted if and only if its structural signal exists.** No
+placeholders, no "N/A". An empty field means _"the graph has no signal here"_ — real
+information — rather than _"the model did not know"_, which is noise an agent will reason
+on top of.
+
+Pass this directory to `handbook skill --agent-dir` to ship it inside the SKILL package.
+
+</Tab>
+
+<Tab value="llms.txt">
+
+`--llms-txt` → `<out>/llms.txt` and `<out>/llms-full.txt`
+
+Follows the [llms.txt convention](https://llmstxt.org/):
+
+- **`llms.txt`** — an H1 title, a one-sentence summary blockquote, then a `## Handbook`
+  section linking each page with a short description.
+- **`llms-full.txt`** — the entire handbook flattened into one plain-markdown document in
+  reading order.
+
+Serve `llms.txt` at the root of wherever you publish the handbook.
+
+</Tab>
+
+</Tabs>
+
+## Linking to your source
+
+```bash
+handbook render --work $WORK --source-base-url https://github.com/me/repo/blob/main
+```
+
+Every file path in the handbook becomes a link to the real file. Point it at a tag or a
+commit SHA instead of `main` if you want the handbook to reference the code it was
+generated from.
+
+**Without this flag the output contains no external URLs at all**, which is the right
+default for a private codebase.
+
+## Titles and languages
+
+```bash
+handbook render --work $WORK --title "Payments Service — Engineering Handbook"
+```
+
+The narration language is fixed at generation time (`--narrate-lang`) and stored in
+`phase3/narration.json`. The renderer reads it from there — every label, heading and table
+header is localized to match. **The structure is identical in both languages**, so tooling
+that reads the output does not need to know which one it is.
+
+## Re-rendering as a habit
+
+Rendering is free and deterministic, so wire it into CI:
+
+```yaml title=".github/workflows/handbook.yml"
+- run: handbook render --work work/api --title "API Handbook" --html --agent-site --llms-txt
+- run: handbook skill --handbook work/api/handbook --out skills/api --name api \
+    --work work/api --source . --agent-dir work/api/handbook/agent
+- run: handbook validate --skill skills/api --source .
+```
+
+See [CI integration](/docs/guides/ci).
+
+## Publishing the HTML site
+
+The output is a static directory with relative links and no external assets, so any static
+host works:
+
+```bash
+# GitHub Pages
+cp -R work/api/handbook/html/* docs-site/ && git add docs-site
+
+# Netlify / Vercel / S3 / nginx
+npx serve work/api/handbook/html
+```
+
+Serve `llms.txt` at the site root so agents can find it.

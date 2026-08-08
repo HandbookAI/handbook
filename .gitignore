@@ -1,5 +1,11 @@
 node_modules/
 dist/
+
+# Documentation site (docs/) build output.
+.next/
+.source/
+docs/out/
+docs/public/diagrams/
 .env*
 !.env.example
 *.tsbuildinfo

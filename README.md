@@ -390,7 +390,7 @@ itself; it never propagates.
 Every setting is declared **once**, in one registry table. The CLI flags, the environment
 variable names, the config-file keys, [.env.example](.env.example),
 [handbook.config.example.yaml](handbook.config.example.yaml) and
-[docs/configuration.md](docs/configuration.md) are all _generated_ from it — so they
+[docs/configuration.md](docs/content/docs/reference/configuration.md) are all _generated_ from it — so they
 cannot drift apart.
 
 ### Precedence, highest first
@@ -428,7 +428,7 @@ ran at the default"; now it is a build failure with the variable named in the me
 Secrets (`llmApiKey` / `OPENAI_API_KEY`) are masked in that output, are never a flag, and
 are **rejected** if they appear in a config file — because config files get committed.
 
-Full reference: **[docs/configuration.md](docs/configuration.md)**.
+Full reference: **[docs/configuration.md](docs/content/docs/reference/configuration.md)**.
 
 ---
 
@@ -669,7 +669,7 @@ Adding a generic-tier language is a declarative spec, not a new parser — see
 
 - **[docs/](docs/)** — the full documentation site (architecture, every command, every
   setting, formats, prompts, guides)
-- [docs/configuration.md](docs/configuration.md) — every setting, generated from the registry
+- [docs/configuration.md](docs/content/docs/reference/configuration.md) — every setting, generated from the registry
 - [examples/](examples/) — the offline end-to-end demo, mock LLM server included
 - Per-package READMEs under [packages/](packages/)
 

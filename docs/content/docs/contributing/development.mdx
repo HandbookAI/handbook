@@ -1,0 +1,177 @@
+---
+title: Development
+description: The build, the gates, the conventions the tooling enforces, and why the tests never need an API key.
+---
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm test
+```
+
+Requires Node ≥ 20.11 and pnpm ≥ 9. No native compilation.
+
+## Everyday commands
+
+```bash
+pnpm build             # tsc -b (composite project references)
+pnpm build:watch
+pnpm test              # build + vitest
+pnpm test:watch
+pnpm check             # the everyday gate — run this before committing
+pnpm check:all         # check + packaging + install smoke — what CI runs
+```
+
+`pnpm check` runs, in order:
+
+1. `typecheck` — sources, then the tests against `tsconfig.tests.json`
+2. `check:workspace` — the monorepo's structural invariants
+3. `lint` — eslint over the whole repo, **zero warnings tolerated**
+4. `format:check` — prettier
+5. `test:coverage` — vitest with **per-package** coverage floors
+
+It is deliberately the fast one. `pnpm check:all` adds the two publish-facing gates —
+`check:packaging` (publint + are-the-types-wrong) and `check:install` (pack eleven
+tarballs, install them with plain npm, drive the CLI) — which belong in CI and before a
+release rather than in every local loop.
+
+A pre-commit hook runs the formatter and linter over **staged files only**, and
+`commit-msg` enforces Conventional Commits.
+
+## Testing philosophy
+
+**Everything runs offline. No test ever needs an API key.**
+
+- LLM-dependent flows are tested against `MockChatClient` — a list of rules, first match
+  wins — and against a bundled mock HTTP endpoint for the real client.
+- Deterministic packages are tested directly. Analyzer tests build **real** mini-repos in
+  temp directories and assert on real nodes and edges; a mocked parse tree would prove
+  nothing about a grammar.
+- Failure paths get the same attention as happy paths: unparseable replies, partial
+  batches, degradation tiers, mid-run aborts, sandbox escapes, ambiguous anchors.
+
+```bash
+pnpm test                                  # everything
+pnpm exec vitest run packages/analyzer     # one package
+pnpm exec vitest run -t "dropped calls"    # one test by name
+pnpm test:coverage
+```
+
+## Four conventions the tooling enforces
+
+### Versions live in one place
+
+Every third-party version is declared in `pnpm-workspace.yaml`'s catalog; packages depend
+on `"catalog:"` and never restate a range. **A literal range in a manifest fails
+`pnpm check:workspace`**, and so does an unused catalog entry.
+
+```json
+{ "dependencies": { "zod": "catalog:" } }
+```
+
+pnpm rewrites `catalog:` to the resolved range when packing, so consumers never see the
+protocol.
+
+### `dist/` is the published surface
+
+Build projects exclude `*.test.ts` and `*.test-helper.ts`; `tsconfig.tests.json`
+type-checks tests with `noEmit`. Source maps are excluded from the tarball because they
+name sources that are never published. **A test artifact under `dist/` fails the check.**
+
+### Coverage floors are per package
+
+A single repo-wide number hides what matters: at 86% overall, `@handbook/cli` sits at 23%.
+Each package has its own floor in `vitest.config.ts`, set just under what it measures, so
+it **ratchets**.
+
+If your change raises coverage, raise the floor with it. Do not widen the gap to make a
+red run pass.
+
+### Tests resolve `@handbook/*` to source, not `dist`
+
+Otherwise coverage of anything consumed across a package boundary is attributed nowhere —
+`core/src/util/hash.ts` measured 0% while the pipeline called it on every run.
+
+The real `dist` is verified by `tsc -b` and by `pnpm check:install`, which installs the
+packed tarballs with plain npm and drives the CLI against them. That is a stronger check
+on `dist` than a unit test was.
+
+## The structural invariants
+
+`scripts/check-workspace.mjs` enforces seven rules, each of which the repo violated at
+least once:
+
+1. TypeScript project references mirror workspace dependencies exactly.
+2. Workspace dependencies use the `workspace:` protocol and actually exist.
+3. The root solution file references every package.
+4. Build projects exclude tests, and `dist/` contains none.
+5. Manifest shape is uniform — `type`, `description`, `license`, `files`, `engines`,
+   `exports`, `scripts`, `publishConfig`.
+6. A publishable package never depends on a private one.
+7. Third-party versions live in the catalog and nowhere else.
+
+## Generated files
+
+Three files are generated from the settings registry and compared **byte for byte** by a
+drift test:
+
+```bash
+pnpm run config:docs
+# writes .env.example
+#        docs/content/docs/reference/configuration.md
+#        handbook.config.example.yaml
+```
+
+Hand-editing any of them fails the build. Change the registry instead
+(`packages/core/src/config/registry.ts`) and regenerate.
+
+The same drift test also checks that both READMEs name **every registered language** and
+reference no nonexistent pnpm script, and that every relative link in them points at a
+**git-tracked** file.
+
+## The documentation site
+
+```bash
+cd docs
+pnpm install
+pnpm dev      # → http://localhost:3000
+```
+
+Next.js + Fumadocs, MDX content under `docs/content/docs/`. It is **not** part of the pnpm
+workspace, so a root `pnpm install` ignores it entirely.
+
+Diagrams live in `assets/` at the repo root — both READMEs reference them from there — and
+are copied into `docs/public/diagrams/` at build time by `docs/scripts/sync-generated.mjs`.
+Do not hand-copy them; the copy is gitignored for exactly that reason.
+
+## Commit conventions
+
+Conventional Commits, enforced by `commitlint`:
+
+```text
+feat(analyzer): add a Kotlin generic-tier spec
+fix(patcher): refuse an anchor that matches zero times
+docs(cli): document the --env cascade
+chore(deps): bump vitest
+```
+
+Changes that affect a published package need a changeset:
+
+```bash
+pnpm changeset
+```
+
+Commit that file with the code. See [Releasing](/docs/contributing/releasing).
+
+## Where things live
+
+```text
+packages/<name>/src/         source
+packages/<name>/src/*.test.ts  tests, colocated
+scripts/                     repo tooling (workspace checks, doc generation, smoke tests)
+examples/                    the offline demo, the mock LLM server, the fixture project
+assets/                      diagrams referenced by both READMEs
+docs/                        the documentation site (a standalone Next.js app)
+docs/internal/               the engineering journal — specs, plans, review notes
+```

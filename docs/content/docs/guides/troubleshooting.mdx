@@ -1,0 +1,264 @@
+---
+title: Troubleshooting
+description: The things that actually go wrong, what the message means, and what to do about it.
+---
+
+<Callout title="Start here, every time">
+```bash
+handbook config --command <the-command-that-failed>
+```
+It prints the active environment, every `.env` file loaded, the config file resolved, and
+one row per setting with **where its value came from**. Most "it ignored my setting"
+problems are answered by that table in ten seconds.
+</Callout>
+
+## Configuration
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+Exactly what it says — and it lists every way to supply it. Required-ness is checked
+_after_ all layers have been consulted, so this means none of them had it.
+
+### My environment variable is being ignored
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+The `FROM` column tells you which layer actually won. Usual causes:
+
+- A **flag** is overriding it. Flags beat everything.
+- You set the flat name but a **scoped** one exists — `HANDBOOK_GENERATE_DETAIL` beats
+  `HANDBOOK_DETAIL`.
+- You set an **empty** value. Empty reads as unset, deliberately.
+- You are running from a different directory: **the `.env` cascade is cwd-only**, unlike
+  `handbook.config.yaml`, which is discovered by walking up.
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+Move it to `.env` or the shell environment. This refusal is deliberate.
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+The file parsed as YAML but is not an object at the top level. Check the indentation of
+the first key.
+
+## Analysis
+
+### `no analyzable files found under <dir>`
+
+`--source` points somewhere with nothing the analyzer recognizes. Check for a typo, and
+check that you are pointing at the source root rather than a directory of build output.
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### The file count is far lower than expected
+
+Run with `-v` and read the `[scan]` lines. Likely causes:
+
+- A whole language is missing from the list → see [Language support](/docs/reference/languages).
+- Your code is under a directory in the shared skip list (`vendor`, `build`, `dist`,
+  `out`, `target`, …). Point `--source` at the real source root.
+- Swift on Node ≥ 24 → the adapter refused at discovery. Use `node --liftoff-only`.
+
+### The file count is far higher than expected
+
+You are scanning `node_modules`, a vendored tree, or generated code. The common
+directories are skipped automatically; anything else needs a narrower `--source`.
+
+### `edgesDropped` is enormous
+
+Normal for dynamic languages, and **not** an error — every dropped call is categorized in
+`phase1/dropped-calls.json` rather than guessed at:
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+Generic-tier languages drop more by design. See
+[Analysis fidelity](/docs/concepts/analysis-fidelity).
+
+### Swift kills the process
+
+```text
+Fatal process out of memory: Zone
+```
+
+The bundled Swift grammar aborts on V8 ≥ 13. The adapter refuses at discovery on such a
+runtime rather than letting this happen — if you see the abort itself, you are on a code
+path that bypassed it. Run with:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## Generation
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+No API key resolved. Check `handbook config --command generate` — the `llmApiKey` row will
+say `— unset (required)`. For a keyless local endpoint, set `OPENAI_API_KEY=EMPTY`
+explicitly.
+
+### The endpoint returns HTML
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+A corporate proxy is intercepting the request and returning a login page with a `200`.
+Fix the proxy, or point `--base-url` at something reachable.
+
+### Cards come back empty
+
+Look at what the model actually said:
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+Those are replies that produced no usable card. Common causes: a model too small to
+follow the schema, a refusal, or truncation. Try `--detail brief`, a smaller
+`--read-batch-size`, or a stronger `--model`.
+
+Which files ended up without prose:
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### Rate-limit errors, or a very slow run
+
+**Lower** `--llm-concurrency` first. Retrying harder against a rate limit spends the same
+tokens twice.
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### The stages make no sense
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+The actor–critic loop exists for exactly this. If it still fails, author a
+`skeleton.yaml` yourself and pass `--skeleton`.
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+Deliberate. Re-run phase 2b to switch strategies:
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+A lock. Either a run is genuinely in progress — including a Studio job — or a previous run
+died hard. Wait, or remove the lock directory named in the message after confirming
+nothing is running.
+
+## Rendering and packaging
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` must point at the **rendered** directory (`<work>/handbook`), not the work
+directory.
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+The skill build starts by wiping `--out`. Pointing it at the handbook would delete the
+input. Use a separate directory: `--handbook work/api/handbook --out skills/api`.
+
+### `validate` warns about stale hashes
+
+Working as intended: the source moved since packaging. Roll the handbook forward:
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## Planning and applying
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+The model invented `## Tool result` sections — it was reasoning on imagined file contents.
+Nothing from that run is trustworthy. **Use a stronger model.**
+
+### `planner reached the turn limit without producing a plan`
+
+Raise `--max-turns`, or narrow the request. A vague request makes the planner explore
+instead of localize.
+
+### `apply` says `no-match`
+
+The code changed after the plan was written. Re-run `plan`. Do **not** hand-edit the
+anchor to make it match — the anchor is the safety mechanism.
+
+### `apply` says `ambiguous`
+
+The `old` text appears more than once. Re-run `plan`, or hand-edit the plan to include
+more surrounding context in `old` so it is unique.
+
+### `EDIT 1: content between the fenced blocks`
+
+The `old` or `new` content contains a code fence that closed the block early. Open those
+blocks with a **longer** fence:
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` refuses a file
+
+Its current hash does not match the post-patch hash — someone edited it after the patch,
+and restoring would destroy that work. Check what changed, then `--force` if you are sure.
+
+## Studio
+
+### `403` when opening Studio
+
+You are not using `localhost`. The CSRF guard checks the `Host` header, so a LAN IP or a
+container name is refused **by design**. Use `http://localhost:4860`, or an SSH tunnel:
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+One job per repository at a time, because the artifacts are not safe for concurrent
+writers. Wait, or cancel the running job from the UI.
+
+## Still stuck
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+```
+
+If it is reproducible, the artifacts above are exactly what a bug report needs.

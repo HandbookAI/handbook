@@ -208,4 +208,4 @@ handbook config --json | jq '.settings[] | select(.source.kind == "env")'
 ---
 
 [Handbook](../../README.zh-CN.md) 的一部分 ·
-[配置参考](../../docs/configuration.md) · MIT
+[配置参考](../../docs/content/docs/reference/configuration.md) · MIT

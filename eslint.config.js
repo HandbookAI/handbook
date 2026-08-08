@@ -7,7 +7,18 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     // Global ignores. Anything generated, vendored, or run-local.
-    ignores: ['**/dist/**', '**/node_modules/**', 'coverage/**', 'examples/work/**', 'work/**', 'runs/**'],
+    // The docs site is a separate Next.js app with its own toolchain (React,
+    // JSX, Tailwind) and its own lint step; linting it with the library config
+    // reports nothing but false positives.
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      'coverage/**',
+      'examples/work/**',
+      'work/**',
+      'runs/**',
+      'docs/**',
+    ],
   },
 
   // TypeScript sources — the packages, plus root config files.

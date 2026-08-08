@@ -56,7 +56,7 @@
   },
   "lint-staged": {
     "*.{ts,mjs,js,json,md,yml,yaml}": "prettier --write",
-    "*.{ts,mjs,js}": "eslint --fix --max-warnings 0"
+    "*.{ts,mjs,js}": "eslint --fix --max-warnings 0 --no-warn-ignored"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "catalog:",
