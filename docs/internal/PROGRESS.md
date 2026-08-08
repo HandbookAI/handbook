@@ -564,7 +564,7 @@ Solidity（跨文件 import + 状态变量类型驱动的调用）均正确。
 `--title` 一个**同时能用环境变量设置；LLM 端点根本没有 flag；`GenerateOptions` 里六个真实
 字段两头都到不了。
 
-现在 `packages/core/src/config/` 一张登记表（61 项）派生四个界面：commander 选项、解析、
+现在 `packages/core/src/config/` 一张登记表派生四个界面：commander 选项、解析、
 `.env.example`、`docs/configuration.md`。优先级 flag > shell env > `.env` >
 `handbook.config.yaml` > 默认值，每个值都记来源，`handbook config` 能打出来。
 `.env.example` 从 19 行手写变成 174 行生成，漂移测试逐字节钉住。

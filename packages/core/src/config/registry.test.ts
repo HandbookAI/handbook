@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SETTINGS, settingsFor, settingByKey } from './registry.js';
 import { envName, scopedEnvName } from './names.js';
 import { PIPELINE_DEFAULTS } from './defaults.js';
+import { LOG_LEVELS } from '../logger.js';
 
 describe('registry integrity', () => {
   // Each of these is a declaration mistake that would otherwise surface as a
@@ -76,6 +77,15 @@ describe('registry integrity', () => {
     );
     expect(doubled).toEqual([]);
   });
+
+  it('accepts every level the logger implements, not a narrower hand-picked set', () => {
+    // Regression: `choices` used to be a hand-typed `['debug','info','error']`,
+    // so HANDBOOK_LOG_LEVEL=warn — a level `createLogger` has always handled —
+    // was rejected by the resolver for no reason but an incomplete list here.
+    // Declared by reference now, so this test would only fail if the registry
+    // stopped pointing at `LOG_LEVELS` — not a duplicate list of its own.
+    expect(settingByKey('logLevel')?.choices).toBe(LOG_LEVELS);
+  });
 });
 
 describe('registry agrees with the pipeline defaults', () => {
@@ -89,6 +99,9 @@ describe('registry agrees with the pipeline defaults', () => {
     expect(settingByKey('narrateWorkers')?.default).toBe(PIPELINE_DEFAULTS.narrateWorkers);
     expect(settingByKey('maxDoctorRounds')?.default).toBe(PIPELINE_DEFAULTS.maxDoctorRounds);
     expect(settingByKey('maxCharsPerFile')?.default).toBe(PIPELINE_DEFAULTS.maxCharsPerFile);
+    expect(settingByKey('detail')?.default).toBe(PIPELINE_DEFAULTS.detail);
+    expect(settingByKey('narrateLang')?.default).toBe(PIPELINE_DEFAULTS.narrateLang);
+    expect(settingByKey('synthMode')?.default).toBe(PIPELINE_DEFAULTS.synthMode);
   });
 
   it('leaves readBatchSize a pass-through, because its default depends on --detail', () => {

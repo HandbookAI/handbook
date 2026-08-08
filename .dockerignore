@@ -9,4 +9,5 @@ examples/work
 .git
 .superpowers
 .claude
-.env
+.env*
+!.env.example

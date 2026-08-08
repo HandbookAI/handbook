@@ -12,6 +12,16 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 
 const LEVEL_ORDER: Record<Exclude<LogLevel, 'silent'>, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
+/** Every level this logger implements, in ascending verbosity order — the one
+ *  place that enumerates `LogLevel`'s members at runtime, so the registry's
+ *  `logLevel.choices` can reference it instead of restating its own list
+ *  (which is exactly how a `warn`/`silent` HANDBOOK_LOG_LEVEL used to get
+ *  rejected by the resolver for a level this logger already handled). */
+export const LOG_LEVELS: readonly LogLevel[] = [
+  ...(Object.keys(LEVEL_ORDER) as Exclude<LogLevel, 'silent'>[]),
+  'silent',
+];
+
 function timestamp(): string {
   return new Date().toISOString().slice(11, 19);
 }
