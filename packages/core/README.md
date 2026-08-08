@@ -226,5 +226,5 @@ Fully offline, no fixtures beyond temp dirs. Coverage floor is enforced in
 
 ---
 
-Part of [Handbook](../../README.md) · [Architecture](../../docs/architecture.md) ·
+Part of [Handbook](../../README.md) · [Architecture](../../docs/content/docs/concepts/architecture.mdx) ·
 [Configuration reference](../../docs/content/docs/reference/configuration.md) · MIT

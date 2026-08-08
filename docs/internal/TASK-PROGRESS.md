@@ -132,7 +132,55 @@
 **全流程（generate→render→skill→validate）在 17 个仓库上跑通**，卡片覆盖率 100%，
 未归属文件 0，SKILL 校验全 OK。
 
-### Step 7 — 5 轮对抗 ⏳
+### Step 7 — 5 轮对抗 ✅
+
+每一轮都**先验证再下结论**——本轮有 3 次"疑似发现"最后证明是我的测量方法错了，全部作废而不是当成 bug 上报。
+
+**R1 文档断言 vs 实现**
+- ✅ 11 个子命令全部存在；61 个被文档化的 flag 全部真实存在；62 个真实 flag 全部有文档（双向核对）
+- ✅ docs 站点 35 页，内部链接 0 断裂；引用的图全部存在
+- ❌ **真 bug：22 个包 README 里 16 条断链**（我把 architecture/formats/prompts 迁进内容树后没跟着改）。
+  根 README 有守卫测试，包 README 没有 → **已修 + 新增守卫测试**（并验证"故意打断就会挂"）
+
+**R2 数字断言 vs 实测**
+- ✅ "18 种语言" = 实测 18；"11 个包" = 实测 11
+- ❌ **真问题：徽章写死 `tests-1334`，实际 1367**；`75 assertions`、OG 图里的 `1334 tests` 同类。
+  写死的数字是"没人能维持为真"的断言 → 全部改成不会腐烂的表述（`tests-offline, no API key`）
+
+**R3 agent 配置对抗**
+- ✅ 空输入/非 JSON/null/超长路径/`../../../etc/passwd` 喂给 4 个 hook，退出码全在 {0,1,2}，无崩溃
+- ✅ 6 个生成物全部拦截；5 个普通文件全部放行；相对路径与绝对路径行为一致
+- ✅ settings.json / config.toml / 6 个 .mdc / 3 个 agent / 4 个 skill 的 frontmatter 全部合法
+- 无缺陷
+
+**R4 SEO 与站点实测**（起真实服务器抓 HTML）
+- ✅ 25 个 head 断言中 23 个直接命中；`itemProp`/`hrefLang` 是 React 的驼峰输出，
+  HTML5 属性名大小写不敏感，**核实后判定非缺陷**
+- ✅ og:image / og:url / twitter:image / canonical 全为绝对 URL；JSON-LD 合法且含 3 个 @type
+- ✅ sitemap 35 条全绝对、robots 含 GPTBot、rss 34 条格式正确、llms.txt / llms-full.txt(280KB)
+  / oembed / manifest / 每页 markdown 孪生 全部 200
+- ❌ **真问题：每页 OG 卡片用的是框架默认模板**，紫粉配色和站点品牌完全不搭，
+  分享出去像两个产品 → **已重写为品牌配色**，颜色从 `lib/shared` 读取，不会再漂移
+
+**R5 安全不变量对抗**
+- ✅ Studio Host 头守卫：raw HTTP 实测 9 种 Host，含 `localhost.evil.com`、`localhost:4901.evil.com`
+  两种伪装，全部正确（**注意：用 fetch 测是无效的，Node 会忽略自定义 Host 头——我第一次就踩了这个坑**）
+- ✅ 非 JSON 的 POST → 415；三种路径穿越 → 404
+- ✅ 带金丝雀值的 API Key：所有产物 + 所有渲染输出中出现 0 次
+- ✅ 渲染输出中不含任何本机绝对路径
+- ✅ 经软链接父目录创建 → 拒绝且未落盘；替换软链接目标 → 拒绝且目标未变
+- ✅ 同一 work dir 并发 generate → 第二个被拒，错误信息含 pid/主机/时间/补救办法
+- ✅ 运行中 SIGINT → 退出码 130、**不写 run manifest**、已完成产物保留、下次 `--resume` 能恢复
+- ✅ 损坏的 graph.json → 响亮报错并指名文件
+- 无缺陷（3 次疑似全部证伪：两次是 fixture 跑太快、一次是 fetch 忽略 Host 头）
+
+## 最终验收
+
+- `pnpm check` 全绿（typecheck / workspace 不变量 / eslint 0 告警 / prettier / 覆盖率下限）
+- `pnpm check:cli` **75/75**
+- `pnpm demo` 全流程通过
+- docs 站点构建通过（113 条路由）
+- 17 个真实仓库 analyze + 全流程通过
 
 ## 关键实现事实速查（写文档时直接引用，不要凭记忆）
 

@@ -40,8 +40,8 @@ and before a release rather than in every local loop.
 ### What `check:cli` covers
 
 `scripts/smoke-cli.sh` drives the **real** binary end to end against the bundled mock
-LLM: 75 assertions over every subcommand, every configuration layer and, most
-importantly, the refusals.
+LLM, asserting on exit codes and artifacts across every subcommand, every configuration
+layer and — most importantly — the refusals.
 
 - Every `--help` surface, and an unknown subcommand exiting `1`
 - `config` provenance, `--json`, and `--check` exiting `2` on a missing required value

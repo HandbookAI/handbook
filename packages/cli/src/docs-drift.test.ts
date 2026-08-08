@@ -156,6 +156,48 @@ describe('every relative markdown link in both READMEs points at a tracked file'
   }
 });
 
+describe('every relative link in a package README points at a tracked file', () => {
+  // The two root READMEs already had this guard; the twenty-two package READMEs
+  // did not, and moving three documents into the docs site left SIXTEEN dead
+  // links behind — every one of them in a file a reader reaches straight from
+  // npm. Same rule, same reason: `git ls-files`, because a file present only in
+  // one working tree is exactly the breakage this is meant to catch.
+  const repoRoot2 = repoRoot;
+  const tracked = new Set(
+    execFileSync('git', ['ls-files'], { cwd: repoRoot2, encoding: 'utf8' }).split('\n').filter(Boolean),
+  );
+  const isTracked = (relPath: string): boolean => {
+    if (tracked.has(relPath)) return true;
+    const prefix = relPath.endsWith('/') ? relPath : `${relPath}/`;
+    return [...tracked].some((f) => f.startsWith(prefix));
+  };
+
+  const readmes = readdirSync(join(repoRoot2, 'packages'))
+    .flatMap((pkg) => ['README.md', 'README.zh-CN.md'].map((name) => `packages/${pkg}/${name}`))
+    .filter((rel) => existsSync(join(repoRoot2, rel)));
+
+  it('finds a README pair for every package', () => {
+    const packages = readdirSync(join(repoRoot2, 'packages'));
+    expect(readmes).toHaveLength(packages.length * 2);
+  });
+
+  for (const rel of readmes) {
+    it(`${rel} links no path missing from git`, () => {
+      const dir = dirname(rel);
+      const targets = [...read(rel).matchAll(/]\(([^)]+)\)/g)]
+        .map((m) => m[1] as string)
+        .filter((target) => !/^[a-z]+:/i.test(target) && !target.startsWith('#'));
+      const missing = targets.filter((target) => {
+        // Resolve relative to the README, then normalise away the `../` hops so
+        // the result is a repo-relative path git can be asked about.
+        const resolved = join(dir, target.split('#')[0] as string).replace(/\\/g, '/');
+        return !isTracked(resolved);
+      });
+      expect(missing, `${rel} links path(s) not tracked in git: ${missing.join(', ')}`).toEqual([]);
+    });
+  }
+});
+
 describe('generated configuration surfaces are current', () => {
   // Hand-editing any of these is the drift this catches: the registry is the
   // source, `pnpm run config:docs` is the regeneration.

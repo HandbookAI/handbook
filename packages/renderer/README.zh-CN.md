@@ -217,4 +217,4 @@ pnpm --filter @handbook/renderer test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/formats.md) · MIT
+[Handbook](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/content/docs/reference/artifacts.mdx) · MIT

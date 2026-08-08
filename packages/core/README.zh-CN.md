@@ -210,5 +210,5 @@ pnpm --filter @handbook/core test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/architecture.md) ·
+[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/content/docs/concepts/architecture.mdx) ·
 [配置参考](../../docs/content/docs/reference/configuration.md) · MIT

@@ -246,5 +246,5 @@ catastrophic regexes.
 
 ---
 
-Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/prompts.md) ·
+Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) ·
 [`@handbook/patcher`](../patcher/README.md) applies what this produces · MIT

@@ -246,5 +246,5 @@ mid-run aborts and resume. **No test needs an API key.**
 
 ---
 
-Part of [Handbook](../../README.md) · [Artifact formats](../../docs/formats.md) ·
-[Prompt catalogue](../../docs/prompts.md) · MIT
+Part of [Handbook](../../README.md) · [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) ·
+[Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) · MIT

@@ -219,4 +219,4 @@ pnpm --filter @handbook/llm test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/prompts.md) · MIT
+[Handbook](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/content/docs/reference/prompts.mdx) · MIT
