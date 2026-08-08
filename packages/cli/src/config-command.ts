@@ -4,12 +4,54 @@
  * instead of merely claimed: run it twice, once with a flag and once with the
  * env var, and compare.
  */
+import { basename } from 'node:path';
 import { keysFor, settingByKey, type ResolveResult, type Source } from '@handbook/core';
+
+/**
+ * The environment cascade, for display — what `main.ts`'s preAction hook
+ * resolved before this command ran. Four value layers were already a lot to
+ * audit; a cascade adds up to eight possible sources, so `handbook config`
+ * must show exactly which environment is active, which files it loaded (in
+ * precedence order), and which config file that environment resolved to. A
+ * layer this command cannot show is indistinguishable from a layer that does
+ * not work — same lesson as the studio flags that reached nothing (P0-1).
+ */
+export interface EnvironmentDisplay {
+  readonly name?: string;
+  /** Where `name` came from — absent when neither `--env` nor `HANDBOOK_ENV` was set. */
+  readonly source?: 'flag' | 'env';
+  /** Env files actually loaded, highest precedence first. */
+  readonly envFiles: readonly string[];
+  readonly configFile?: string;
+}
 
 /** Enough of a key to recognise it, never enough to use it. */
 export function maskSecret(value: string): string {
   if (value === '') return '';
   return value.length > 8 ? `${value.slice(0, 3)}…${value.slice(-4)}` : '***';
+}
+
+/**
+ * `environment: prod  (--env)` / `env files:   .env.prod, .env.local, .env` /
+ * `config file: /repo/handbook.config.prod.yaml` — three left-padded lines,
+ * label width shared so the values line up regardless of which label is
+ * longest.
+ */
+function environmentBlock(env: EnvironmentDisplay | undefined): string {
+  const sourceLabel = env?.source === 'flag' ? '--env' : env?.source === 'env' ? 'HANDBOOK_ENV' : undefined;
+  const files = env?.envFiles ?? [];
+  const rows: [string, string][] = [
+    ['environment:', env?.name ? `${env.name}  (${sourceLabel})` : '(not set)'],
+    [
+      'env files:',
+      files.length
+        ? `${files.map((f) => basename(f)).join(', ')} (highest precedence first)`
+        : '(none loaded)',
+    ],
+    ['config file:', env?.configFile ?? '(none)'],
+  ];
+  const width = Math.max(...rows.map(([label]) => label.length)) + 1;
+  return `${rows.map(([label, value]) => `${label.padEnd(width)}${value}`).join('\n')}\n\n`;
 }
 
 function describeSource(source: Source): string {
@@ -46,14 +88,18 @@ function display(key: string, result: ResolveResult): string {
   return settingByKey(key)?.secret ? maskSecret(text) : text;
 }
 
-export function renderConfigTable(result: ResolveResult, command: string): string {
+export function renderConfigTable(
+  result: ResolveResult,
+  command: string,
+  environment?: EnvironmentDisplay,
+): string {
   const rows = keysFor(command).map((key) => [key, display(key, result), sourceText(key, command, result)]);
   const width = (i: number): number => Math.max(0, ...rows.map((r) => (r[i] as string).length));
   const [w0, w1] = [width(0), width(1)];
   const lines = rows.map(
     ([k, v, s]) => `${(k as string).padEnd(w0)}  ${(v as string).padEnd(w1)}  ${s as string}`,
   );
-  return `${lines.join('\n')}\n`;
+  return `${environmentBlock(environment)}${lines.join('\n')}\n`;
 }
 
 /** Machine-readable value: masked when secret, `null` when no layer supplied
@@ -64,10 +110,27 @@ function jsonValue(key: string, result: ResolveResult): unknown {
   return settingByKey(key)?.secret ? maskSecret(String(value)) : value;
 }
 
-export function renderConfigJson(result: ResolveResult, command: string): string {
+export function renderConfigJson(
+  result: ResolveResult,
+  command: string,
+  environment?: EnvironmentDisplay,
+): string {
   const settings: Record<string, { value: unknown; source: string }> = {};
   for (const key of keysFor(command)) {
     settings[key] = { value: jsonValue(key, result), source: sourceText(key, command, result) };
   }
-  return `${JSON.stringify({ command, settings, errors: result.errors }, null, 2)}\n`;
+  const sourceLabel =
+    environment?.source === 'flag' ? '--env' : environment?.source === 'env' ? 'HANDBOOK_ENV' : null;
+  return `${JSON.stringify(
+    {
+      command,
+      environment: environment?.name ? { name: environment.name, source: sourceLabel } : null,
+      envFiles: environment?.envFiles ?? [],
+      configFile: environment?.configFile ?? null,
+      settings,
+      errors: result.errors,
+    },
+    null,
+    2,
+  )}\n`;
 }

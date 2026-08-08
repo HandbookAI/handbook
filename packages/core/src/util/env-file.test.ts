@@ -2,7 +2,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyEnvFile, parseEnvFile } from './env-file.js';
+import { applyEnvFile, applyEnvFiles, parseEnvFile } from './env-file.js';
+
+const tmp = (): string => mkdtempSync(join(tmpdir(), 'hb-env-'));
 
 describe('parseEnvFile', () => {
   it('parses plain, exported, quoted, and commented lines', () => {
@@ -97,7 +99,7 @@ describe('parseEnvFile — empty values, comments, and line endings (adversarial
 
 describe('applyEnvFile', () => {
   it('applies file values but never overrides existing env', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hb-env-'));
+    const dir = tmp();
     const path = join(dir, '.env');
     writeFileSync(path, 'OPENAI_API_KEY=from-file\nOPENAI_MODEL=file-model\n');
     const env: NodeJS.ProcessEnv = { OPENAI_API_KEY: 'from-shell' };
@@ -109,5 +111,43 @@ describe('applyEnvFile', () => {
 
   it('throws on a missing file', () => {
     expect(() => applyEnvFile('/nonexistent/.env', {})).toThrow();
+  });
+});
+
+describe('applyEnvFiles cascade', () => {
+  it('lets a more specific file win, and never overrides the shell', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, '.env'), 'A=base\nB=base\nC=base\n');
+    writeFileSync(join(dir, '.env.local'), 'B=local\nC=local\n');
+    writeFileSync(join(dir, '.env.prod'), 'C=prod\nD=prod\n');
+    const env: NodeJS.ProcessEnv = { A: 'shell' };
+    const loaded = applyEnvFiles(dir, 'prod', env);
+    expect(env.A).toBe('shell'); // shell always wins
+    expect(env.B).toBe('local'); // .env.local beats .env
+    expect(env.C).toBe('prod'); // .env.prod beats both
+    expect(env.D).toBe('prod');
+    expect(loaded).toEqual([join(dir, '.env.prod'), join(dir, '.env.local'), join(dir, '.env')]);
+  });
+
+  it('loads only .env.local and .env when no environment is named', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, '.env'), 'A=base\n');
+    writeFileSync(join(dir, '.env.prod'), 'A=prod\n');
+    const env: NodeJS.ProcessEnv = {};
+    expect(applyEnvFiles(dir, undefined, env)).toEqual([join(dir, '.env')]);
+    expect(env.A).toBe('base'); // an unnamed run must not pick up .env.prod
+  });
+
+  it('is silent about files that do not exist', () => {
+    expect(applyEnvFiles(tmp(), 'nope', {})).toEqual([]);
+  });
+
+  it('also tries .env.<name>.local ahead of .env.<name>', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, '.env.prod'), 'A=team\n');
+    writeFileSync(join(dir, '.env.prod.local'), 'A=personal\n');
+    const env: NodeJS.ProcessEnv = {};
+    expect(applyEnvFiles(dir, 'prod', env)).toEqual([join(dir, '.env.prod.local'), join(dir, '.env.prod')]);
+    expect(env.A).toBe('personal');
   });
 });

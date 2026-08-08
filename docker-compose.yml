@@ -9,6 +9,14 @@ services:
       # host — a LAN IP or the container name is refused by design.
       HANDBOOK_STUDIO_HOST: 0.0.0.0
       HANDBOOK_STUDIO_STATE_DIR: /work/.handbook-studio
+      # Unset by default — the same image serves every environment; pass
+      # HANDBOOK_ENV=prod on the host (`HANDBOOK_ENV=prod docker compose up
+      # studio`) to select .env.prod/.env.prod.local and
+      # handbook.config.prod.yaml inside the container. Prefer
+      # `docker run --env-file .env.prod ... handbook:local generate` or
+      # `-e HANDBOOK_ENV=prod` plus a config-file mount for one-off runs
+      # outside compose.
+      HANDBOOK_ENV: ${HANDBOOK_ENV:-}
     volumes:
       - ./:/src:ro
       - handbook-work:/work

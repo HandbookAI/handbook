@@ -216,3 +216,81 @@ describe('preAction hook (P2-16)', () => {
     expect(debugLines.some((line: string) => line.includes('[config] loaded'))).toBe(false);
   });
 });
+
+describe('--env cascade (Task 13)', () => {
+  // applyEnvFiles writes into the REAL process.env (it is the default `env`
+  // param), and never overrides an existing key — so a value one test's .env
+  // sets would otherwise survive into the next test's cascade and mask it,
+  // exactly the kind of leak `setConfigFile(undefined)` above guards against
+  // for the config-file layer.
+  afterEach(() => {
+    delete process.env.HANDBOOK_LLM_MODEL;
+  });
+
+  it('with no --env and no HANDBOOK_ENV, loads only .env.local and .env — unchanged from before the cascade existed', async () => {
+    writeFileSync(join(cwd, '.env'), 'HANDBOOK_LLM_MODEL=from-base\n');
+    writeFileSync(join(cwd, '.env.prod'), 'HANDBOOK_LLM_MODEL=from-prod\n');
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+      from: 'node',
+    });
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      environment: unknown;
+      envFiles: string[];
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.environment).toBeNull();
+    expect(parsed.envFiles).toEqual([join(cwd, '.env')]); // .env.prod must NOT be picked up
+    expect(parsed.settings.llmModel?.value).toBe('from-base');
+  });
+
+  it('--env prod loads .env.prod ahead of .env, and reports both in precedence order', async () => {
+    writeFileSync(join(cwd, '.env'), 'HANDBOOK_LLM_MODEL=from-base\n');
+    writeFileSync(join(cwd, '.env.prod'), 'HANDBOOK_LLM_MODEL=from-prod\n');
+    await program.parseAsync(
+      ['node', 'handbook', '--env', 'prod', 'config', '--command', 'generate', '--json'],
+      { from: 'node' },
+    );
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      environment: { name: string; source: string };
+      envFiles: string[];
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.environment).toEqual({ name: 'prod', source: '--env' });
+    expect(parsed.envFiles).toEqual([join(cwd, '.env.prod'), join(cwd, '.env')]);
+    expect(parsed.settings.llmModel?.value).toBe('from-prod');
+  });
+
+  it('HANDBOOK_ENV selects the same cascade as --env, and is labelled distinctly in `config`', async () => {
+    writeFileSync(join(cwd, '.env'), 'HANDBOOK_LLM_MODEL=from-base\n');
+    writeFileSync(join(cwd, '.env.prod'), 'HANDBOOK_LLM_MODEL=from-prod\n');
+    process.env.HANDBOOK_ENV = 'prod';
+    try {
+      await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+        from: 'node',
+      });
+    } finally {
+      delete process.env.HANDBOOK_ENV;
+    }
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      environment: { name: string; source: string };
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.environment).toEqual({ name: 'prod', source: 'HANDBOOK_ENV' });
+    expect(parsed.settings.llmModel?.value).toBe('from-prod');
+  });
+
+  it('prefers handbook.config.prod.yaml over the plain handbook.config.yaml when --env prod is set', async () => {
+    writeFileSync(join(cwd, 'handbook.config.yaml'), 'llm:\n  model: from-plain-file\n');
+    writeFileSync(join(cwd, 'handbook.config.prod.yaml'), 'llm:\n  model: from-prod-file\n');
+    await program.parseAsync(
+      ['node', 'handbook', '--env', 'prod', 'config', '--command', 'generate', '--json'],
+      { from: 'node' },
+    );
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      configFile: string;
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.configFile).toBe(join(cwd, 'handbook.config.prod.yaml'));
+    expect(parsed.settings.llmModel?.value).toBe('from-prod-file');
+  });
+});

@@ -54,8 +54,16 @@ Kotlin、Scala、Zig、Objective-C、OCaml。
 不想每次 export？CLI 会自动加载运行目录下的 `./.env`（shell 变量优先；模板见
 [.env.example](.env.example)），也可用 `--env-file <path>` 显式指定。
 
+多环境？`--env prod`（或 `HANDBOOK_ENV=prod`）会让 `.env.prod` 优先于 `.env` 生效，配置文件
+也优先选中 `handbook.config.prod.yaml` 而不是不带环境名的那个：
+
+```bash
+handbook generate --env prod --source ~/code/proj --work work/proj
+```
+
 每一项配置都同时是命令行参数、环境变量和配置文件键 —— 完整清单见
-[docs/configuration.md](docs/configuration.md)，或运行 `handbook config` 查看当前取值及其来源。
+[docs/configuration.md](docs/configuration.md)，或运行 `handbook config` 查看当前取值及其来源
+（包括当前激活的环境，以及它加载过的每一个文件）。
 
 更喜欢点而不是敲？`handbook studio` 在 http://127.0.0.1:4860 打开本地 Web 界面——仓库注册、
 带实时日志的生成、手册浏览、影响图、源码查看，以及完整的
@@ -195,6 +203,12 @@ docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
 # --env-file 与工具链自带的 .env 加载是叠加关系（两者都生效；--env-file 里的
 # OPENAI_* 变量跟 shell 里 export 的效果一样能被读到）：
 docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
+
+# 同一个镜像服务所有环境（.env* 从不烘进镜像层——见 .dockerignore）。运行时
+# 用 docker 自己的 --env-file 指向对应环境的文件来选择环境，或用 HANDBOOK_ENV
+# 加一个挂载进去的配置文件：
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
 ```
 
 Studio 通过 `docker compose` 启动（见 `docker-compose.yml`）：

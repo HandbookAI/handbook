@@ -13,14 +13,29 @@ import { ConfigError } from './coerce.js';
 import { SETTINGS } from './registry.js';
 import type { ConfigFileData } from './resolve.js';
 
-const FILENAMES = ['handbook.config.yaml', 'handbook.config.yml', 'handbook.config.json'] as const;
+const EXTENSIONS = ['yaml', 'yml', 'json'] as const;
+const FILENAMES = EXTENSIONS.map((ext) => `handbook.config.${ext}`);
 
-/** Nearest config file at or above `from`, not crossing out of a git root. */
-export function discoverConfigFile(from: string): string | undefined {
+/**
+ * Nearest config file at or above `from`, not crossing out of a git root.
+ *
+ * When `name` is given, every directory visited on the way up is checked for
+ * `handbook.config.<name>.{yaml,yml,json}` before the plain `handbook.config.*`
+ * — so an environment-named file always wins over a plain one sitting right
+ * next to it, even if a plain file exists closer to `from`. With no `name`,
+ * discovery is exactly what it was before environments existed.
+ */
+export function discoverConfigFile(from: string, name?: string): string | undefined {
   let dir = from;
   for (;;) {
-    for (const name of FILENAMES) {
-      const candidate = join(dir, name);
+    if (name) {
+      for (const ext of EXTENSIONS) {
+        const candidate = join(dir, `handbook.config.${name}.${ext}`);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    for (const filename of FILENAMES) {
+      const candidate = join(dir, filename);
       if (existsSync(candidate)) return candidate;
     }
     // A repo boundary is a project boundary: do not inherit a parent project's

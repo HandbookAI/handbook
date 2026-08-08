@@ -8,7 +8,8 @@
  * Loading NEVER overrides variables already present in the environment —
  * the shell always wins over the file.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // The value is captured WITHOUT consuming the whitespace after `=`, so an empty
 // value trailed by a comment (`KEY= # note`) keeps the space that marks the
@@ -81,4 +82,43 @@ export function applyEnvFile(path: string, env: NodeJS.ProcessEnv = process.env)
     applied.push(key);
   }
   return applied;
+}
+
+/**
+ * Loads the per-environment `.env*` cascade in `dir`, highest precedence
+ * first — personal beats team, and this environment beats the baseline:
+ *
+ *   .env.<name>.local   personal, this environment only (gitignored)
+ *   .env.<name>         team, this environment only (committed)
+ *   .env.local          personal, every environment (gitignored)
+ *   .env                team baseline (committed)
+ *
+ * `name` is undefined when neither `--env` nor `HANDBOOK_ENV` names one, in
+ * which case only the last two files are tried — the exact pair that loaded
+ * before this cascade existed, so a run that does not name an environment
+ * sees no behaviour change. `applyEnvFile`'s own "never override" rule is
+ * what makes a cascade nothing more than "call it in this order, first
+ * writer wins": the shell keeps outranking every file with no extra logic
+ * here, and a more specific file simply gets first refusal on every key.
+ *
+ * Silent about a candidate that does not exist — that is the normal case for
+ * most of these files on most machines. Returns the paths that were actually
+ * loaded, in the same highest-first order, for `handbook config` to display.
+ */
+export function applyEnvFiles(
+  dir: string,
+  name: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const candidates = name
+    ? [`.env.${name}.local`, `.env.${name}`, '.env.local', '.env']
+    : ['.env.local', '.env'];
+  const loaded: string[] = [];
+  for (const file of candidates) {
+    const path = join(dir, file);
+    if (!existsSync(path)) continue;
+    applyEnvFile(path, env);
+    loaded.push(path);
+  }
+  return loaded;
 }

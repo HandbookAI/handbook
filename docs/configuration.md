@@ -12,7 +12,31 @@ One camelCase `key` in the registry drives all three surfaces at once: a flag, a
 
 ## Bootstrap
 
-Two top-level flags point at two of the layers above, and are themselves outside the registry — flag-only, with no environment-variable form: `--env-file <path>` (default: `./.env` if present) names the file the **`.env`** layer loads, and `--config <path>` (default: the nearest `handbook.config.yaml` found by walking up from the working directory, stopping at a repo boundary) names the file the **`handbook.config.yaml`** layer loads. Both run once, before every other setting resolves — which is also why neither can be set by the thing it loads: an `--env-file` line inside `.env`, or a `--config` key inside `handbook.config.yaml`, would have nothing left to read it.
+Three top-level settings point at the layers above, and are themselves outside the registry, resolved once before every other setting — which is also why none of them can be set by the thing they load: an `--env` key inside `handbook.config.yaml`, an `--env-file` line inside `.env`, or a `--config` key inside that same file would have nothing left to read it.
+
+- `--env <name>` (or `HANDBOOK_ENV`) selects a per-environment cascade — the only one of the three with both a flag and an environment-variable form, since it names an environment rather than pointing at one exact file.
+- `--env-file <path>` loads exactly that one file, bypassing the cascade below.
+- `--config <path>` names one exact config file, bypassing the environment-aware discovery below (default: the nearest `handbook.config.yaml`-family file found by walking up from the working directory, stopping at a repo boundary).
+
+### The `.env` cascade
+
+With no `--env-file`, the CLI loads a cascade of `.env*` files instead of one fixed file, highest precedence first. The existing `applyEnvFile` rule — never override a key already set — is what makes a cascade nothing more than "call it in this order, first file to set a key wins":
+
+| # | file | who | scope | committed? |
+| --- | --- | --- | --- | --- |
+| 1 | shell environment | — | — | always wins |
+| 2 | `.env.<name>.local` | personal | this environment only | no (gitignored) |
+| 3 | `.env.<name>` | team | this environment only | yes |
+| 4 | `.env.local` | personal | every environment | no (gitignored) |
+| 5 | `.env` | team | baseline | yes |
+
+Rows 2 and 3 only apply when `--env`/`HANDBOOK_ENV` names an environment. **With neither set, only rows 4 and 5 load — exactly what loaded before this cascade existed, so an existing setup with no `.env.local` sees no change at all.**
+
+### Config-file discovery with an environment
+
+`--config` aside, discovery still walks up from the working directory and stops at a repo boundary, but at every directory visited it now checks first for `handbook.config.<name>.{yaml,yml,json}` (only when an environment is named) before the plain `handbook.config.yaml` et al. — so a named file always wins over a plain file sitting in that same directory, even when a plain file exists at a level closer to the working directory. With no environment named, discovery is unchanged.
+
+Run `handbook config` to see which environment is active and exactly which files it loaded, in precedence order — a cascade on top of four value layers is too many possible sources to track from memory, and a layer this command cannot show is no different from a layer that does not work.
 
 Worked example for `readWorkers` (flag `--read-workers <n>`, default `12`):
 

@@ -20,6 +20,32 @@ export function currentConfigFile(): ConfigFileData | undefined {
   return configFile;
 }
 
+/**
+ * `--env`/`HANDBOOK_ENV` and the cascade it selected — bootstrap state, same
+ * shape of problem as `configFile` above: computed once in the preAction
+ * hook (before any action runs), and the `config` action is the one place
+ * that needs to read it back, to make the cascade auditable instead of
+ * guessed at (see config-command.ts).
+ */
+export interface EnvironmentInfo {
+  readonly name?: string;
+  /** Where `name` came from — absent when neither was set. */
+  readonly source?: 'flag' | 'env';
+  /** Env files actually loaded, highest precedence first. */
+  readonly envFiles: readonly string[];
+}
+
+let environment: EnvironmentInfo = { envFiles: [] };
+
+/** Set once by the preAction hook, before any action runs. */
+export function setEnvironment(info: EnvironmentInfo): void {
+  environment = info;
+}
+
+export function currentEnvironment(): EnvironmentInfo {
+  return environment;
+}
+
 export function resolveOrThrow(command: string, flags: Record<string, unknown>): Record<string, unknown> {
   const result = resolveConfig({ command, flags, env: process.env, file: configFile });
   if (result.errors.length > 0) {
