@@ -349,6 +349,28 @@ demo fixture 与 ripgrep 各 **32/32**。
 dependabot 补 `/docs`（它的 lockfile 之前永远不会被更新）、
 新增 `ci-ok` 汇总 job 供分支保护使用（matrix 一改，逐个 job 的保护规则就会静默失效）。
 
+## 五语言仓库 × 静态/LLM 双路径验证（新 UI 渲染器）
+
+java=gson / js=express / ts=zod / python=requests / go=cobra，每个仓库两条路径：
+
+- **LLM 路径**：`work-real/<repo>`（真实端点生成的 phase 产物）用新渲染器重渲
+- **静态路径**：`work-mock/<repo>`，用 `examples/mock-llm-server.mjs` 全离线重新
+  generate + render（mock 的 overview 会诚实声明自己是占位散文，结构是真的）
+
+结果（`scripts/browser/handbook-html.mjs`，真 Chrome，`file://`）：
+
+| 仓库 | REAL | MOCK |
+|---|---|---|
+| gson (java) | 32/32 | 32/32 |
+| express (js) | 32/32 | 32/32 |
+| zod (ts) | 32/32 | 32/32 |
+| requests (py) | 32/32 | 32/32 |
+| cobra (go) | 32/32 | 32/32 |
+
+内容级检查：5 个 REAL 手册卡片覆盖率全部 **100%**（264/141/407/37/19 个文件，
+0 missing）；10 份输出 × 全部页面 **0 死链、0 空描述占位**。截图目检 gson 总览、
+requests 阶段页、express mock 总览——排版、编号、芯片、目录高亮均正常。
+
 ## 最终验收
 
 - `pnpm check` 全绿（typecheck / workspace 不变量 / eslint 0 告警 / prettier / 覆盖率下限）
