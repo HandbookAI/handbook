@@ -1,8 +1,24 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { appName, repoUrl } from './shared';
+import { i18n } from './i18n';
+import { ui } from './ui-strings';
 
-export function baseOptions(): BaseLayoutProps {
+/**
+ * `locale` is required, not optional: a nav bar that silently falls back to
+ * English is the failure mode i18n exists to prevent, and making the caller
+ * pass it means a new layout cannot forget.
+ */
+export function baseOptions(locale: string): BaseLayoutProps {
+  const t = ui(locale);
+  const prefix = locale === i18n.defaultLanguage ? '' : `/${locale}`;
+
   return {
+    // `true`, not the config object: `defineI18n` attaches a `translations`
+    // FUNCTION to it, and these options are handed to a Client Component, which
+    // cannot receive a function across the boundary. `true` tells the layout to
+    // render the language menu using the config the RootProvider already put in
+    // context — where it lives on the server side of the line.
+    i18n: true,
     nav: {
       title: (
         <>
@@ -21,13 +37,14 @@ export function baseOptions(): BaseLayoutProps {
           <span style={{ fontWeight: 700 }}>{appName}</span>
         </>
       ),
+      url: prefix || '/',
     },
     githubUrl: repoUrl,
     links: [
-      { text: 'Docs', url: '/docs', active: 'nested-url' },
-      { text: 'Quick start', url: '/docs/getting-started/quickstart' },
-      { text: 'CLI reference', url: '/docs/reference/cli' },
-      { text: 'Configuration', url: '/docs/reference/configuration' },
+      { text: t.navDocs, url: `${prefix}/docs`, active: 'nested-url' },
+      { text: t.navQuickstart, url: `${prefix}/docs/getting-started/quickstart` },
+      { text: t.navCli, url: `${prefix}/docs/reference/cli` },
+      { text: t.navConfig, url: `${prefix}/docs/reference/configuration` },
     ],
   };
 }
