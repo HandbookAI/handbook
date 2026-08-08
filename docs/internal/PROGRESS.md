@@ -1,4 +1,4 @@
-# Codewiki 项目进度追踪（内部）
+# Handbook 项目进度追踪（内部）
 
 > 本文件用于跨会话恢复进度。每完成一个里程碑就更新。
 > 约束：新项目不得提及/引用任何源参考项目的名称、链接、论文、示例项目名。
@@ -24,7 +24,9 @@
 ## 状态（随做随更）
 
 - [x] 环境与依赖可行性验证（web-tree-sitter 必须锁 ~0.25.10，0.26 与 tree-sitter-wasms ABI 不兼容）
-- [x] 三份功能规格已固化：docs/internal/research/spec-{generate-large,generate-small,helper-and-skill}.md（实现每个包前先精读对应章节）
+- [x] 实现前完成对参考实现的调研：三份内部功能规格（generate 的两种策略 + helper/skill 打包），
+  逐章精读后再实现对应包。规格本身是对参考实现的逐行转录，价值只在调研阶段；实现完成后已删除，
+  不保留在仓库里（遵守本文件第 4 行的约束）。
 - [x] 设计文档：docs/internal/specs/2026-08-02-handbook-design.md（分包/依赖方向/算法提要/CLI 全在这里）
 - [x] monorepo 骨架（pnpm + tsc -b composite + vitest 根配置 + eslint/prettier；根目录 /Users/jack/Desktop/share/handbook，已 git init，main 分支）
 - [x] @handbook/core 完成（ir.ts/model.ts/errors/logger/util/*，17 测试绿）

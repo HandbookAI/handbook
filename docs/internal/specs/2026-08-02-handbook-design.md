@@ -75,7 +75,7 @@ Handbook     { overview, index, registers, stagePages }             // 渲染输
 所有产物文件：`graph.json` / `cards/**.json` / `skeleton.yaml` / `assignment.json` /
 `organization.yaml` / `registers.json` / 渲染输出 `handbook/`。每个 schema 带 `version` 字段。
 
-## 5. 管线算法（提要；细节见 docs/internal/research/*）
+## 5. 管线算法（提要；调研阶段的详细规格已在实现完成后删除，不保留在仓库里）
 
 - **Phase 1**（无 LLM）：adapter 按扩展名发现文件（跳过 vendor/node_modules 等）→ 每语言两遍扫描
   （声明收集 → 调用解析：self/attr/param/import 规则）→ 未解析边分流到 dropped-calls → 产出
