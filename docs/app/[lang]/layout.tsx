@@ -1,4 +1,4 @@
-import { RootProvider } from 'fumadocs-ui/provider/next';
+import { RootProvider } from '@/components/provider';
 import { defineI18nUI } from 'fumadocs-ui/i18n';
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
