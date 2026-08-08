@@ -46,7 +46,14 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
 export const config = {
   // Everything except Next internals and the machine-readable surfaces, which
   // are locale-independent by design: one sitemap, one robots.txt, one feed.
+  //
+  // `_next` is excluded WHOLESALE, not just `_next/static` and `_next/image`.
+  // Locale routing has no business anywhere under it, and the paths that live
+  // there are not a fixed list: `next dev` serves its hot-reload socket from
+  // `/_next/hmr`, which this matcher used to claim — the i18n middleware then
+  // rewrote it to `/en/_next/hmr`, the upgrade never reached the dev server and
+  // the handshake failed with ERR_INVALID_HTTP_RESPONSE on every page load.
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon|og\\.png|og-square\\.png|sitemap\\.xml|robots\\.txt|rss\\.xml|oembed\\.json|manifest\\.webmanifest|llms\\.txt|llms-full\\.txt|llms\\.mdx|og/|diagrams/|browserconfig\\.xml|apple-touch-icon|favicon-).*)',
+    '/((?!api|_next|favicon|og\\.png|og-square\\.png|sitemap\\.xml|robots\\.txt|rss\\.xml|oembed\\.json|manifest\\.webmanifest|llms\\.txt|llms-full\\.txt|llms\\.mdx|og/|diagrams/|browserconfig\\.xml|apple-touch-icon|favicon-).*)',
   ],
 };
