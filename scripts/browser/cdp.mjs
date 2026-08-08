@@ -39,10 +39,38 @@ export function findChrome() {
   return hit;
 }
 
-export async function launch({ headless = true, width = 1440, height = 900 } = {}) {
-  // Not Math.random(): a fixed-seed harness should still not collide with a
-  // second instance started in the same second.
-  const port = 9000 + Number(process.hrtime.bigint() % 900n);
+/**
+ * Ask the OS for a port nobody is using, rather than picking one and hoping.
+ * These suites start a fresh browser per feature area, so "probably free" turns
+ * into an occasional unexplained launch failure — which in CI reads as a broken
+ * site rather than as a broken harness.
+ */
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((res, rej) => {
+    const server = createServer();
+    server.on('error', rej);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => res(port));
+    });
+  });
+}
+
+export async function launch(options = {}) {
+  // One retry: the port is free when we ask for it, but another process can
+  // still take it in the moment between closing the probe and Chrome binding.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await launchOnce(options);
+    } catch (error) {
+      if (attempt >= 2) throw error;
+    }
+  }
+}
+
+async function launchOnce({ headless = true, width = 1440, height = 900 } = {}) {
+  const port = await freePort();
   const profile = mkdtempSync(join(tmpdir(), 'hb-cdp-'));
   const args = [
     `--remote-debugging-port=${port}`,
