@@ -1,0 +1,156 @@
+---
+title: Installation
+description: Node 20.11 and pnpm are the whole list. No native compilation, no Python, no node-gyp — the parsers are WebAssembly.
+---
+
+## Requirements
+
+|                     |                                                     |
+| ------------------- | --------------------------------------------------- |
+| **Node.js**         | ≥ 20.11                                             |
+| **pnpm**            | ≥ 9                                                 |
+| **An LLM endpoint** | Only for phases 2 and 3. Any OpenAI-compatible one. |
+
+That is genuinely the whole list. There is **no native compilation step** — the language
+parsers ship as WebAssembly, so no `node-gyp`, no compiler toolchain, no Python.
+
+<Callout type="info">
+  Check your Node version with `node --version`. If you use `nvm`, the repo ships an `.nvmrc`, so `nvm use`
+  picks the right one.
+</Callout>
+
+## Option 1 — from a clone (recommended while evaluating)
+
+```bash
+git clone <this repo>
+cd handbook
+pnpm install
+pnpm build
+```
+
+Then make the CLI convenient to call:
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+handbook --help
+```
+
+Or skip the alias entirely and use the pnpm shortcuts, which do an incremental build
+first (about 0.4 s once warm) and forward flags straight through:
+
+```bash
+pnpm analyze --source ~/code/myrepo --work work/myrepo
+pnpm handbook --help
+```
+
+<Callout title="Why the shortcuts build first">
+  Every `pnpm <command>` runs `tsc -b` before the CLI. It is the difference between
+  debugging your code and debugging a stale `dist/` — which costs an hour the first time
+  it happens.
+</Callout>
+
+## Option 2 — as a global CLI
+
+```bash
+npm i -g @handbook/cli
+handbook --help
+```
+
+## Option 3 — Docker, with no local Node at all
+
+```bash
+docker build -t handbook:local .
+
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked into the image,
+# so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+See the [Docker guide](/docs/guides/docker) for Studio, environments and the
+`localhost`-only caveat.
+
+## Option 4 — as libraries
+
+Every capability is a published package you can use on its own. The analyzer, renderer,
+skill packager and patcher never touch an LLM, so they work standalone:
+
+```bash
+pnpm add @handbook/analyzer   # static call graphs, 18 languages
+pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+```
+
+See the [package index](/docs/reference/packages).
+
+## Configuring the LLM endpoint
+
+Phase 1 — static analysis — **never needs a key**. Everything else does.
+
+```bash
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
+export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
+```
+
+<Callout title="Local and keyless endpoints">
+  Use `OPENAI_API_KEY=EMPTY` for endpoints that do not authenticate — vLLM, Ollama's OpenAI-compatible shim, a
+  local LiteLLM. The client needs *something* there; `EMPTY` is the agreed way to say "deliberately none", and
+  it produces a clear error instead of a confusing 401 if you point it at a real provider by mistake.
+</Callout>
+
+### Prefer a file over shell exports
+
+The CLI auto-loads `./.env` from the directory you run it in. Shell variables always
+win, so a `.env` is a default, not an override.
+
+```bash title=".env"
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+Copy `.env.example` — it is generated from the settings registry, so it lists every
+variable that actually exists, with its default, and every line starts commented out so
+copying it is safe.
+
+For several environments, per-command overrides and `handbook.config.yaml`, see
+[Configuration](/docs/reference/configuration).
+
+## Verify the install
+
+Two commands, in this order.
+
+**1. Does the toolchain run at all?**
+
+```bash
+pnpm demo
+```
+
+Full pipeline, offline, against a bundled sample project and a bundled mock LLM. If this
+passes, your install is fine.
+
+**2. Is my endpoint reachable and configured?**
+
+```bash
+handbook config --command generate
+```
+
+This prints every setting, its resolved value, and **which layer it came from** — flag,
+environment variable, config file or default. Secrets are masked.
+
+```bash
+handbook config --check    # exit code 2 if anything is invalid or missing
+```
+
+<Callout type="warn" title="Do this before a long run">
+  A typo'd environment variable used to mean "silently ran at the default". `--check` turns it into a failure
+  with the variable named in the message — which is much cheaper to discover now than forty minutes into a
+  generation.
+</Callout>
+
+## Next
+
+<Cards>
+  <Card title="Quick start — the offline demo" href="/docs/getting-started/quickstart" />
+  <Card title="Your first real handbook" href="/docs/getting-started/first-handbook" />
+</Cards>

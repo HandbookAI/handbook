@@ -1,0 +1,151 @@
+---
+title: Planning a change
+description: Give the planner a request and a handbook; get back a byte-exact edit plan and a machine-readable declaration of what it touches.
+---
+
+```bash
+handbook plan --source <repo> --handbook <dir> --request "<text>" --out plan.md
+```
+
+The planner is a **read-only** agent. It lists, reads and greps — it has no write tool at
+all, not even a disabled one — and its output is a plan for something else to execute.
+
+## The loop
+
+1. Route with the handbook: which files, functions and state are in scope?
+2. Read the **real source** at every address it found.
+3. Emit `### EDIT n` blocks with byte-exact `old` and `new` text.
+4. Finish with a JSON declarations block.
+
+<Callout title="Two artifacts, two roles">
+  The **handbook** is a location index: it surfaces the scattered, non-obvious sites a text search misses —
+  mirror implementations, every read and write of a piece of state, cross-subsystem touch points. The **real
+  source** is ground truth for what to change. The handbook gives the address; the code at that address gives
+  the bytes.
+</Callout>
+
+## Writing a good request
+
+| Weak                 | Strong                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| "Fix the upload bug" | "Uploads that fail with a 503 should retry three times with exponential backoff before surfacing an error" |
+| "Add logging"        | "Log the request id and duration at INFO on every completed HTTP request, using the existing logger"       |
+| "Make it faster"     | "Cache the result of `resolveTenant` for 60 seconds, keyed by tenant id"                                   |
+
+State **the behaviour you want**, not the file you think it is in. Naming a file narrows
+the planner's search to the place you already thought of — which defeats the point.
+
+## Reading the plan
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+### EDIT 2
+
+- file: `src/upload.py`
+- where: `Uploader` — add the helper
+
+```old
+    def send(self, url, data):
+```
+
+```new
+    def _retry(self, call, attempts):
+        last = None
+        for _ in range(attempts):
+            try:
+                return call()
+            except TransientError as exc:
+                last = exc
+        raise last
+
+    def send(self, url, data):
+```
+
+Both call sites now share one retry policy.
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+Rules the format obeys:
+
+- `old` must be **byte-exact** and appear **exactly once** in the file.
+- An **empty** `old` means "create this file".
+- Edits are numbered and **ascend**, top to bottom.
+- The trailing `json` block is consumed by `resync` to sharpen its refresh scope.
+
+**Read the plan before applying it.** The dry run tells you whether it _would_ apply; only
+you can tell whether it _should_.
+
+## When it gives up
+
+`plan` **exits non-zero** — it does not write an apology into `plan.md` for a script to
+feed into `apply`.
+
+| `aborted`     | What happened                                                                                         | What to do                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `fabrication` | The reply invented `## Tool result` sections three times — it was reasoning on imagined file contents | Use a stronger model. Nothing from that run is trustworthy                |
+| `turn-limit`  | Ran out of turns with no EDIT blocks                                                                  | Raise `--max-turns`, or narrow the request                                |
+| `no-plan`     | Called `finish` with nothing usable                                                                   | Usually a request that needs no code change, or one too vague to localize |
+
+<Callout type="warn" title="Why fabrication is rejected outright">
+  One observed reply contained thirteen fabricated tool results and a plan built from a line that does not
+  exist in the file. The planner refuses that reply entirely — **including the plan at the end of it**,
+  because the plan was derived from fiction.
+</Callout>
+
+## Tuning it
+
+| Flag               | Default       | When to change it                                            |
+| ------------------ | ------------- | ------------------------------------------------------------ |
+| `--max-turns <n>`  | `30`          | Raise for a large repo or a broad change; lower to cap cost  |
+| `--model <id>`     | `gpt-4o-mini` | This is the command that benefits most from a stronger model |
+| `--handbook <dir>` | —             | Always pass it. Without it the planner explores blind        |
+| `--out <file>`     | _(stdout)_    | Omit to pipe                                                 |
+
+## Without a handbook
+
+```bash
+handbook plan --source ~/code/api --request "…"
+```
+
+It works — the planner falls back to exploring the source directly — but this is the
+degraded mode. The handbook exists precisely because unguided exploration finds the
+obvious sites and misses the scattered ones.
+
+## What the sandbox allows
+
+```ts
+list_dir(path)
+read_file(path, start_line?, end_line?)
+grep(pattern, path)
+finish(plan)
+```
+
+- Every path resolves inside the sandbox root; escapes, including through symlinks, are
+  rejected.
+- The handbook is mounted read-only at `__handbook__/`, a **separate** sandbox from the
+  source.
+- Reads cap at 60,000 characters; grep caps at 100 hits and skips files over 5 MB.
+- Catastrophic regexes — an unbounded quantifier over a group that contains one, like
+  `(a+)+` or `(.*)*` — are refused with a graceful tool error rather than hanging the run.
+
+## Next
+
+<Cards>
+  <Card title="Applying a plan safely" href="/docs/guides/applying-changes" />
+  <Card title="Keeping the handbook current" href="/docs/guides/keeping-current" />
+</Cards>

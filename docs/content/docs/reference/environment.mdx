@@ -1,0 +1,152 @@
+---
+title: Environment variables
+description: Every variable Handbook reads, the naming rule that generates them, the .env cascade, and which ones must never enter a config file.
+---
+
+## The naming rule
+
+Every setting has **one** camelCase key in the registry. Three names are derived from it
+by the same transform:
+
+| Surface         | From `readWorkers`      | Scoped to `generate`                                          |
+| --------------- | ----------------------- | ------------------------------------------------------------- |
+| Flag            | `--read-workers <n>`    | —                                                             |
+| Environment     | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS`                              |
+| Config-file key | `readWorkers`           | `generateReadWorkers`, or nested `generate: { readWorkers: }` |
+
+**The scoped form always wins over the flat one.** That is what lets you say "narrate in
+Chinese, but only when generating" without touching anything else.
+
+```bash
+export HANDBOOK_NARRATE_LANG=en              # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
+```
+
+A few settings are **scoped-only**, because their meaning changes per command:
+`--out` (`HANDBOOK_RENDER_OUT`, `HANDBOOK_SKILL_OUT`, `HANDBOOK_PLAN_OUT`),
+`--handbook` (`HANDBOOK_SKILL_HANDBOOK`, `HANDBOOK_PLAN_HANDBOOK`),
+`skill`'s `--lang` (`HANDBOOK_SKILL_BODY_LANG`), and `resync`'s `--detail` /
+`--narrate-lang` (`HANDBOOK_RESYNC_CARD_DETAIL`, `HANDBOOK_RESYNC_PROSE_LANG`).
+
+## Vendor aliases
+
+Five settings also accept the names people already have exported:
+
+| Setting        | Alias               |
+| -------------- | ------------------- |
+| `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmModel`     | `OPENAI_MODEL`      |
+| `llmBaseUrl`   | `OPENAI_BASE_URL`   |
+| `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
+| `llmTimeout`   | `OPENAI_TIMEOUT`    |
+| `llmExtraBody` | `OPENAI_EXTRA_BODY` |
+
+Lookup order is: scoped `HANDBOOK_<CMD>_<KEY>` → flat `HANDBOOK_<KEY>` → the vendor alias.
+
+## Bootstrap variables
+
+Three settings are resolved **before** everything else, because everything else depends on
+them. None of them can be set by the thing they load — an `--env` key inside
+`handbook.config.yaml` would have nothing left to read it.
+
+| Variable / flag                 | What it does                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>` | Selects a per-environment `.env` cascade and prefers `handbook.config.<name>.yaml`     |
+| `--env-file <path>`             | Loads exactly that one file, **bypassing the cascade**. A missing file is a loud error |
+| `--config <path>`               | Names one exact config file, bypassing discovery                                       |
+
+## The `.env` cascade
+
+With no `--env-file`, the CLI loads a cascade of `.env*` files from the **current
+directory**, highest precedence first:
+
+|  #  | File                    | Who      | Scope                 | Committed?      |
+| :-: | ----------------------- | -------- | --------------------- | --------------- |
+|  1  | _the shell environment_ | —        | —                     | always wins     |
+|  2  | `.env.<name>.local`     | personal | this environment only | no (gitignored) |
+|  3  | `.env.<name>`           | team     | this environment only | yes             |
+|  4  | `.env.local`            | personal | every environment     | no (gitignored) |
+|  5  | `.env`                  | team     | baseline              | yes             |
+
+Rows 2 and 3 only apply when `--env`/`HANDBOOK_ENV` names an environment. **With neither
+set, only rows 4 and 5 load.**
+
+The whole cascade is "call it in this order, first writer wins", because loading a file
+never overrides a key that is already set. That one rule is what keeps the shell
+outranking every file, with no extra logic anywhere.
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+# loads .env.prod.local → .env.prod → .env.local → .env
+# and prefers handbook.config.prod.yaml over handbook.config.yaml
+```
+
+<Callout type="warn" title="The cascade is cwd-only">
+  Unlike `handbook.config.yaml` — which is discovered by walking up to the git root — `.env` files are read
+  from the directory you run the command in. `.env` means "this machine, right now". Run LLM-backed commands
+  from the repo root, or pass `--env-file`.
+</Callout>
+
+### What the `.env` parser accepts
+
+`KEY=value`, an optional `export ` prefix, blank lines, `#` comment lines, single- and
+double-quoted values (quotes stripped), and a trailing ` #` inline comment on an unquoted
+value. CRLF, LF and bare-CR line endings all work. **No multiline values.**
+
+An **empty value reads as unset** — `HANDBOOK_TITLE=` will not produce an untitled
+handbook.
+
+## Secrets
+
+`llmApiKey` / `OPENAI_API_KEY` is marked `secret` in the registry, which means:
+
+- it is **never** a command-line flag (flags land in shell history and `ps` output);
+- it is **rejected** if it appears in a config file, with a message saying why — config
+  files get committed;
+- it is **masked** in `handbook config` output.
+
+```text
+handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
+— use .env or the shell environment instead
+```
+
+## Docker
+
+The image bakes in `HANDBOOK_SOURCE=/src` and `HANDBOOK_WORK=/work`, so you only mount
+volumes:
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Docker's own `--env-file` layers **on top of** the toolchain's `.env` loading — both
+apply, and an `OPENAI_*` variable passed that way is visible exactly as a shell export
+would be. `.env*` files are never baked into the image; see `.dockerignore`.
+
+## Seeing what actually resolved
+
+```bash
+handbook config --command generate
+```
+
+prints the active environment, every `.env` file the cascade loaded, the config file it
+resolved, and one row per setting with its provenance — `flag`, `env`, `file` or
+`default`.
+
+```bash
+handbook config --check    # exit 2 on the first invalid or missing value
+```
+
+<Callout title="Put --check in CI">
+  A typo'd variable used to mean "silently ran at the default". Now it is a failure with the variable named in
+  the message — which is much cheaper to find in CI than forty minutes into a generation run.
+</Callout>
+
+## The complete list
+
+Every variable, with its type, default and documentation, is on the
+[Configuration reference](/docs/reference/configuration) page — which is generated from
+the same registry the CLI reads, so it cannot drift.
+
+`.env.example` in the repo root is generated from that registry too. **Every line in it
+starts commented out**, so copying the whole file is safe.

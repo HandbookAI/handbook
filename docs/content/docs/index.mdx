@@ -1,0 +1,136 @@
+---
+title: What is Handbook?
+description: Handbook parses your repository with a real parser, turns it into a navigable map, and hands that map to your coding agent as a location index — then keeps it current as the code moves.
+icon: House
+---
+
+## The problem, stated plainly
+
+You have a repository. It is too big to hold in your head, and too big to hold in a
+context window.
+
+Ask a coding agent to _"retry failed uploads three times"_ and it will confidently patch
+the one upload function it found — and miss the retry-policy constant, the mirrored
+implementation in the batch worker, the metric that counts attempts, and the test that
+asserts the old behaviour.
+
+That is not a reasoning failure. It is a **routing** failure. The agent never saw a map.
+
+<Callout title="The one-sentence version">
+  Handbook reads your code with a real parser, builds a map of it, hands that map to the agent as a **location
+  index** — not a summary — and keeps the map current as the code moves.
+</Callout>
+
+## Try it before you read any further
+
+Nothing below matters if it does not run. This takes about thirty seconds, spends zero
+tokens, and needs no API key:
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install && pnpm build
+pnpm demo
+```
+
+`pnpm demo` runs the entire toolchain against a bundled sample project using a bundled
+mock LLM server. When it finishes you will have a rendered handbook, an HTML site, an
+agent locator index and a validated SKILL package sitting on disk.
+
+<Cards>
+  <Card title="Install it properly" href="/docs/getting-started/installation" />
+  <Card title="Walk the quick start" href="/docs/getting-started/quickstart" />
+  <Card title="Run it on your own repo" href="/docs/getting-started/first-handbook" />
+  <Card title="See every command" href="/docs/reference/cli" />
+</Cards>
+
+## The three ideas it is built on
+
+### 1. Facts come from a parser, not from a model
+
+Handbook parses every source file with [tree-sitter](https://tree-sitter.github.io/) and
+builds a typed call graph: functions, methods, call edges resolved through
+`self`/attributes/parameters/imports, calls that leave your code, and calls it could not
+resolve — quarantined into their own file, never guessed at.
+
+**This layer never touches an LLM.** Run it twice, get the same graph twice.
+
+### 2. Prose is layered on top of facts, and labelled
+
+An LLM writes the human-readable part: what a file is for, how a subsystem hangs
+together, which state flows across which stages. It is always anchored to the graph, and
+where it fails, the structure still ships — with an empty description.
+
+**A missing sentence is better than an invented one.**
+
+### 3. The map is built for routing, not for reading
+
+The output is not a summary of your code. It is an index that answers _"which files,
+functions and state does this change have to touch?"_ — including the scattered,
+non-obvious ones. The planner then uses that index, reads the real source at every
+address it found, and emits an edit plan byte-exact enough to apply mechanically.
+
+## What one run gives you
+
+<img
+  src="/diagrams/outputs.svg"
+  alt="Outputs: markdown handbook, HTML site, single page, agent locator index, llms.txt, SKILL package"
+  className="rounded-xl border"
+/>
+
+| Output                                                                              | Who it is for |
+| ----------------------------------------------------------------------------------- | ------------- |
+| Markdown handbook — overview, stage index, one page per stage, state-register table | humans        |
+| Multi-page HTML site — sticky TOC, breadcrumbs, theme toggle, works over `file://`  | humans        |
+| One self-contained HTML page you can email                                          | humans        |
+| Agent locator index — duty, entry concepts, state, exemplars, co-change hints       | agents        |
+| `llms.txt` + `llms-full.txt`                                                        | agents        |
+| A SKILL package with a content hash per file, so drift is detectable                | agents        |
+
+## Who this is for
+
+| You are…                                           | You get…                                                                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| An engineer who just inherited a 200k-line service | A stage-by-stage walkthrough you can actually read, plus an HTML site to share |
+| Someone running a coding agent on a big repo       | A SKILL package that stops the agent guessing where things live                |
+| A team lead onboarding people                      | Documentation that regenerates instead of rotting                              |
+| Someone maintaining a polyglot monorepo            | One pass over 18 languages, with the analysis fidelity disclosed per language  |
+
+## What it costs you
+
+- **Node.js ≥ 20.11 and pnpm.** That is the whole install. No native compilation, no
+  Python, no `node-gyp` — the parsers are WebAssembly.
+- **An OpenAI-compatible endpoint** for the LLM phases. Hosted OpenAI, Azure, vLLM,
+  Ollama, LiteLLM, an internal proxy — anything that speaks `/v1/chat/completions`. It
+  can be a model running on your own machine.
+- **Nothing at all** for `handbook analyze`, which is the command you should run first.
+
+<Callout type="info" title="Does my code leave the building?">
+  Phase 1 is entirely local. Phases 2 and 3 send file contents to whatever endpoint *you* configured — which
+  can be localhost. Nothing else leaves, and `--max-chars-per-file` caps how much of any single file is ever
+  sent. See the [trust model](/docs/concepts/trust-model).
+</Callout>
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="Why this exists"
+    description="The routing problem, and why summarizing a codebase does not solve it."
+    href="/docs/concepts/why"
+  />
+  <Card
+    title="How generation works"
+    description="Five phases, what each costs, and what degrades when one fails."
+    href="/docs/concepts/pipeline"
+  />
+  <Card
+    title="Configuration"
+    description="Flags, env vars, .env cascades and handbook.config.yaml — one registry."
+    href="/docs/reference/configuration"
+  />
+  <Card
+    title="Troubleshooting"
+    description="The things that actually go wrong, and what to do about them."
+    href="/docs/guides/troubleshooting"
+  />
+</Cards>

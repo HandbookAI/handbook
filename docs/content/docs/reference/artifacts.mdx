@@ -1,4 +1,7 @@
-# Artifact formats
+---
+title: Artifact formats
+description: Every file the pipeline writes, its schema, and what validates it on read.
+---
 
 Every artifact the toolchain reads or writes, in pipeline order. All JSON/YAML artifacts
 carry a `version` field and are validated with zod schemas from `@handbook/core` on read.
@@ -114,7 +117,7 @@ in dropped-calls.json).
 Categories: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `builtin`,
 `local_var_method`, `bare_name`.
 
-## phase2/cards/<rel>.json — FileCard
+## `phase2/cards/<rel>.json` — FileCard
 
 ```jsonc
 {

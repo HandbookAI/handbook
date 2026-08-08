@@ -1,0 +1,172 @@
+---
+title: Applying and rolling back
+description: A mechanical executor with four safety rules, a backup that can prove what it restores, and a parser that refuses anything ambiguous.
+---
+
+```bash
+handbook apply --source <repo> --plan plan.md --dry-run   # verify only
+handbook apply --source <repo> --plan plan.md             # for real
+handbook rollback --backup <dir>                          # undo
+```
+
+**No LLM is involved.** `apply` substitutes exact text for exact text. Everything
+interesting about it is what it refuses to do.
+
+## Always dry-run first
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run
+```
+
+```json
+{
+  "ok": true,
+  "dryRun": true,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 },
+    { "index": 2, "file": "src/upload.py", "where": "Uploader", "status": "applied", "line": 71 }
+  ],
+  "changedFiles": [],
+  "problems": []
+}
+```
+
+`ok: true` means every anchor resolved. `changedFiles` is empty because nothing was
+written. **`--dry-run` never touches the filesystem.**
+
+## The four safety rules
+
+### 1. Verify everything, then write in two phases
+
+The plan is resolved against current file contents first. **One failure aborts the whole
+application**, before a byte is written. The write then stages every file as a temp file
+and only renames once _all_ staging succeeded — and if a rename fails midway, the
+already-renamed files are restored from the backup taken moments earlier.
+
+There is no state in which half a plan has landed.
+
+### 2. `old` must match byte-exactly and uniquely
+
+| Matches | Result                                                    |
+| :-----: | --------------------------------------------------------- |
+|    0    | `no-match` — the code moved on since the plan was written |
+|    1    | applied                                                   |
+|   2+    | `ambiguous` — the anchor does not identify a single site  |
+
+Both failures refuse. **Neither picks one.** "Take the first occurrence" is exactly how a
+patch lands in the wrong function.
+
+### 3. Every touched file is backed up with its pre-patch hash
+
+```text
+<source>/.handbook-patches/
+  .gitignore                     written automatically — backups never enter git
+  2026-08-08T14-05-11-204Z/
+    manifest.json                source root, timestamp, per-file pre/post hashes
+    files/…                      the original bytes
+```
+
+The hash is what lets rollback **prove** it is restoring the bytes this patch replaced,
+rather than trusting a filename.
+
+### 4. No path escapes the source root
+
+`..`, absolute paths, drive-absolute Windows paths — and escapes through a **symlinked
+parent directory** when the file itself does not exist yet. That last one is the subtle
+case: realpath is taken on the deepest _existing_ ancestor, so a missing leaf cannot skip
+the check. Symlinked targets are never replaced.
+
+## Outcome statuses
+
+| Status         | Meaning                                               |
+| -------------- | ----------------------------------------------------- |
+| `applied`      | Replaced, with the 1-based line where `old` was found |
+| `created`      | `old` was empty; the file was created                 |
+| `no-match`     | `old` is not in the file                              |
+| `ambiguous`    | `old` appears more than once                          |
+| `file-missing` | Non-empty `old`, but no such file                     |
+| `not-a-file`   | The path is a directory or a symlink                  |
+| `unsafe-path`  | The path escapes the source root                      |
+| `undecodable`  | The file is not valid UTF-8                           |
+| `skipped`      | An earlier failure aborted the run                    |
+
+`apply` **exits `2`** when `ok` is false.
+
+## Rolling back
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z \
+                  --source $REPO
+```
+
+- **Refuses any file changed after the patch.** Its current hash no longer matches the
+  post-patch hash in the manifest, which means someone edited it since — restoring it
+  would silently destroy that work. `--force` overrides, deliberately explicitly.
+- **`--source` guards the other direction:** pointing rollback at a backup taken from a
+  different tree is a mistake, not a feature.
+- **File modes, line endings and the final newline are preserved** throughout. The patcher
+  does not normalize anything it was not asked to change.
+- **Empty directories the rollback itself created are cleaned up.**
+
+```bash
+ls -1t $REPO/.handbook-patches/     # newest first
+```
+
+## Why the parser is hostile to ambiguity
+
+Fence tracking follows CommonMark for both backtick and tilde fences: a block opened with
+a run of N markers closes only on a line whose run is ≥ N _and_ carries no info string.
+So `### EDIT n` inside a fenced region is **content, never a heading** — a plan that
+quotes an example edit cannot smuggle a phantom edit into the run.
+
+| Refused                                                                                  | The message tells you                                                                         |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Content between an edit's fenced blocks                                                  | An inner fence probably closed `old`/`new` early — open them with a longer fence              |
+| An untagged ``` block                                                                    | Same cause; refused wherever it sits, so a truncated anchor cannot slip through as "epilogue" |
+| Not exactly one `old` and one `new`                                                      | How many of each it found                                                                     |
+| `new` before `old`                                                                       | Write the anchor first, then the replacement                                                  |
+| `old` identical to `new`                                                                 | Nothing to do                                                                                 |
+| Missing or duplicated `- file:` line                                                     | Exactly one is required                                                                       |
+| Edit numbers out of order or duplicated                                                  | They must ascend                                                                              |
+| A path with whitespace, backticks, control characters, backslashes, `~` or a leading `/` | Which rule it broke                                                                           |
+| A near-miss heading (`## EDIT 1`)                                                        | It looks like a heading but is not `### EDIT <n>`                                             |
+
+Trailing prose and the declarations block **after** the last `old`/`new` pair are expected
+output and are ignored, not refused.
+
+## Writing a plan by hand
+
+Nothing requires a plan to come from `handbook plan`. The format is small enough to write
+directly, which makes `apply` a useful mechanical patcher on its own:
+
+````markdown
+### EDIT 1
+
+- file: `src/config.py`
+- where: `DEFAULTS` — bump the timeout
+
+```old
+TIMEOUT_SECONDS = 30
+```
+
+```new
+TIMEOUT_SECONDS = 60
+```
+````
+
+Lint it without applying:
+
+```ts
+import { parsePlan } from '@handbook/patcher';
+console.log(parsePlan(planText).problems);
+```
+
+## After it lands
+
+The handbook is now behind the code. Roll it forward:
+
+```bash
+handbook resync --case cases/upload-retry --work work/api
+```
+
+See [Keeping it current](/docs/guides/keeping-current).

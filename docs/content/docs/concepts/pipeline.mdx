@@ -1,0 +1,226 @@
+---
+title: The five phases
+description: What each generation phase does, what it costs, what it degrades to when it fails, and how to re-run just one of them.
+---
+
+`handbook generate` runs five phases. Only the first is free; the rest talk to your LLM
+endpoint.
+
+| Phase  | Produces                                | LLM? | Re-runnable alone? |
+| :----: | --------------------------------------- | :--: | :----------------: |
+| **1**  | the call graph                          |  ❌  |         ✅         |
+| **2a** | one card per source file                |  ✅  |         ✅         |
+| **2b** | stage skeleton + file assignment        |  ✅  |         ✅         |
+| **2c** | intra-stage grouping and ordering       |  ✅  |         ✅         |
+| **3**  | narration + cross-stage state registers |  ✅  |         ✅         |
+
+```bash
+--phase all        # everything (default)
+--phase 1          # just the call graph
+--phase 2          # 2a + 2b + 2c
+--phase 2a         # one phase
+--phase 2c,3       # a comma list
+```
+
+---
+
+## Phase 1 — the call graph
+
+**No LLM. Deterministic. Free.**
+
+Language adapters parse every file with tree-sitter and produce one language-agnostic
+intermediate representation. The graph builder then partitions edges into kept and
+dropped, annotates in/out degree, and synthesizes nodes for constructors that are
+referenced but never explicitly defined.
+
+It also stamps a **content hash per scanned file**. That hash is what lets `resync` later
+detect an in-place body edit that leaves line numbers and signatures untouched — the case
+a purely structural diff misses entirely.
+
+**Output:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+
+<Callout title="Run this first, always">
+  `handbook analyze` is exactly this phase. It costs nothing and it is the only way to find out that you are
+  scanning `node_modules`, or missing a whole language, *before* you spend tokens.
+</Callout>
+
+---
+
+## Phase 2a — file cards
+
+**LLM. Usually the most expensive phase.**
+
+Every source file gets a card:
+
+- **purpose** — one or two plain-language sentences
+- **role** — from a closed vocabulary (`entrypoint`, `domain_logic`, `io_transport`, …)
+- **lifecycle** — `startup`, `main loop`, `cross-cutting`, `none`, …
+- and in `--detail deep`: a 120–300-word walkthrough, plus per-function purpose, data
+  flow and relations merged onto the graph facts
+
+### How it is batched
+
+`--read-batch-size` files per request, `--read-workers` batches in flight. Deep mode
+defaults to **one file per batch**, because a deep card is a lot of output and packing
+several into one reply is how replies get truncated.
+
+### Three-tier degradation
+
+If a batch reply does not parse:
+
+1. retry the batch **split into single files**;
+2. for an oversized single file, retry **per function chunk**;
+3. if that still fails, write an **honest empty card** — structure only, no prose.
+
+**A file never disappears from the handbook because its prose failed.** Every miss is
+listed in `phase2/cards/_coverage.json`, and the replies that produced nothing usable are
+kept (capped at 20, hash-named) under `phase2/cards/_rejected/` so you can _read_ what
+went wrong instead of guessing.
+
+### Resuming
+
+Cards are written as they complete. `Ctrl-C` is safe, and `--resume` skips files that
+already have a complete card at the requested depth.
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+---
+
+## Phase 2b — skeleton and assignment
+
+**LLM. The phase that decides what the handbook _is_.**
+
+Two modes.
+
+### `--synth-mode oneshot` (default)
+
+Synthesize a stage skeleton from the nav-pack (directory rollups + entry points), then
+assign every file to exactly one stage, in batches.
+
+Cheap, and usually good enough to judge whether the shape is right.
+
+### `--synth-mode doctor`
+
+An actor–critic repair loop. Each round:
+
+1. the **actor** proposes at most three structural changes — split, merge, move, retitle,
+   reparent — against ground-truth statistics from the real graph;
+2. three **critics** review in parallel, each looking for a different failure:
+
+   | Critic    | Looks for                                                                               |
+   | --------- | --------------------------------------------------------------------------------------- |
+   | engineer  | Does this match what the code actually does? Are the referenced items real?             |
+   | architect | Unclear boundaries, bloated stages, starved stages, misplaced cross-cutting concerns    |
+   | reader    | Is the result _more readable_? Cohesive pages, intuitive titles, a followable narrative |
+
+3. surviving changes are **re-validated mechanically** against the graph — a change
+   naming a stage that does not exist, or one that would orphan files, is rejected before
+   it touches the skeleton;
+4. affected files are re-assigned.
+
+It stops when nothing is unassigned and no change survives review, or at
+`--max-doctor-rounds` (default 6), or after two rounds with no progress.
+
+<Callout type="info">
+  A critic whose reply fails to parse counts as `REJECT`. A broken reviewer must never wave a change through.
+</Callout>
+
+### Bringing your own skeleton
+
+```bash
+handbook generate --source $REPO --work $WORK --skeleton my-skeleton.yaml
+```
+
+Files are assigned to _your_ stages. With `--strategy member`, individual functions are
+classified instead, and the file-level artifacts are derived from that.
+
+**Output:** `phase2/skeleton.yaml`, `phase2/assignment.json`, `phase2/strategy.json`.
+
+---
+
+## Phase 2c — organization
+
+**LLM, but cheap. Degrades to a deterministic order.**
+
+Within each stage, files are ordered by call-graph topology and grouped into 2–8 titled
+sub-groups with a one-line summary each.
+
+**Every failure degrades to a deterministic flat order. Files are never dropped.** That
+invariant is what the whole phase is written around: an unreadable grouping is a
+cosmetic problem, a missing file is a correctness problem.
+
+With `--strategy member`, this phase is a **no-op** — the organization was already derived
+deterministically at 2b, so a bare `--phase 2c` run needs no LLM at all.
+
+**Output:** `phase2/organization.yaml`.
+
+---
+
+## Phase 3 — narration and registers
+
+**LLM. Heavily cached.**
+
+### Narration, bottom-up
+
+Leaf stages first, then parents — so a parent's summary is written knowing what its
+children say — then the system overview, written knowing everything.
+
+Every prose call is cached under `phase3/cache/`, keyed by prompt version, language and
+the full prompt hash. Re-running phase 3 after touching one stage re-narrates **one
+stage**.
+
+### State registers
+
+A "register" is a piece of state that flows across stages — a connection pool, a feature
+flag, a retry budget, an auth token. Extraction runs a **loop-until-dry gap pass**: it
+keeps asking until a round finds nothing new.
+
+This is the single most useful artifact for fan-out changes, because _"which stages touch
+this state"_ is exactly the question a scattered change asks.
+
+**Output:** `phase3/narration.json`, `phase3/registers.json`.
+
+---
+
+## The two strategies
+
+|           | `--strategy file` (default) | `--strategy member`                               |
+| --------- | --------------------------- | ------------------------------------------------- |
+| Skeleton  | synthesized by the LLM      | **you author** `skeleton.yaml`                    |
+| Leaf unit | one source file             | one function or method                            |
+| Phase 2b  | assign files to stages      | classify every member, then derive file artifacts |
+| Phase 2c  | LLM grouping                | already done — deterministic                      |
+| Best for  | a repo you do not know yet  | a repo whose shape you already know               |
+| Cost      | lower                       | higher — every member is classified               |
+
+The chosen strategy is recorded in `phase2/strategy.json`. A partial re-run with a
+different `--strategy` and no `--phase 2b` is **refused**, because the file-strategy
+default silently overwriting a member-derived organization is exactly the kind of
+corruption that is hard to notice afterwards.
+
+## What a run records about itself
+
+```json title="<work>/run-manifest.json"
+{
+  "version": 1,
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 },
+  "stats": { "phasesRun": ["1", "2a", "2b", "2c", "3"], "nCards": 412, "nStages": 9, "nRegisters": 6 }
+}
+```
+
+It describes the **last successful** run. A failed run leaves the previous manifest
+untouched, and an aborted run writes none at all.
+
+## Next
+
+<Cards>
+  <Card title="The work directory" href="/docs/concepts/work-directory" />
+  <Card title="Generating in practice" href="/docs/guides/generating" />
+  <Card title="Cost and performance" href="/docs/guides/cost-and-performance" />
+</Cards>

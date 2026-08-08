@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.source/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Copied from ../assets at build time by scripts/sync-generated.mjs.
+public/diagrams/

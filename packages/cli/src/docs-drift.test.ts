@@ -161,7 +161,7 @@ describe('generated configuration surfaces are current', () => {
   // source, `pnpm run config:docs` is the regeneration.
   for (const [rel, render] of [
     ['.env.example', renderEnvExample],
-    ['docs/configuration.md', renderConfigDocs],
+    ['docs/content/docs/reference/configuration.md', renderConfigDocs],
     ['handbook.config.example.yaml', renderConfigExampleYaml],
   ] as const) {
     it(`${rel} matches the registry byte for byte`, () => {

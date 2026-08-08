@@ -213,4 +213,4 @@ handbook config --json | jq '.settings[] | select(.source.kind == "env")'
 ---
 
 Part of [Handbook](../../README.md) ·
-[Configuration reference](../../docs/configuration.md) · MIT
+[Configuration reference](../../docs/content/docs/reference/configuration.md) · MIT

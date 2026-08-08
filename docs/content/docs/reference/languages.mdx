@@ -1,0 +1,123 @@
+---
+title: Language support
+description: 18 languages across two analysis tiers — which extensions each claims, what the generic tier gives up, and the two caveats worth knowing before you hit them.
+---
+
+`--lang auto` (the default) detects and merges **every** language in one pass. You almost
+never need to name one.
+
+```bash
+handbook analyze --source ~/code/polyglot-repo --work work/poly   # one pass, all languages
+handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
+```
+
+## Full tier
+
+Hand-written adapters: type-driven call resolution, inherited members, per-attribute state
+tracking, statement spans.
+
+| Language                      | Extensions                                               | Registry key |
+| ----------------------------- | -------------------------------------------------------- | ------------ |
+| Python                        | `.py`                                                    | `python`     |
+| TypeScript _(and JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` |
+| Go                            | `.go`                                                    | `go`         |
+| Rust                          | `.rs`                                                    | `rust`       |
+| Java                          | `.java`                                                  | `java`       |
+| C#                            | `.cs`                                                    | `csharp`     |
+| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        |
+| Ruby                          | `.rb` `.rake` `.gemspec`                                 | `ruby`       |
+| PHP                           | `.php` `.phtml`                                          | `php`        |
+| Swift                         | `.swift`                                                 | `swift`      |
+| Dart                          | `.dart`                                                  | `dart`       |
+| Solidity                      | `.sol`                                                   | `solidity`   |
+| Shell                         | `.sh` `.bash`                                            | `shell`      |
+
+<Callout type="info" title="JavaScript has no separate adapter">
+  It is covered by the TypeScript one. There is nothing to pick — `.js`, `.jsx`, `.mjs` and `.cjs` are claimed
+  automatically.
+</Callout>
+
+<Callout type="info" title="One C-family adapter, not two">
+  The `cpp` grammar handles C as well; the `c` grammar does not handle C++ at all. So one adapter claims both,
+  and `--lang cpp` is correct for a pure-C project.
+</Callout>
+
+## Generic tier
+
+One config-driven engine, one declarative spec per language. **File and function
+inventory is exact**; call relations are best-effort.
+
+| Language    | Extensions     | Registry key |
+| ----------- | -------------- | ------------ |
+| Kotlin      | `.kt` `.kts`   | `kotlin`     |
+| Scala       | `.scala` `.sc` | `scala`      |
+| Zig         | `.zig`         | `zig`        |
+| Objective-C | `.m`           | `objc`       |
+| OCaml       | `.ml`          | `ocaml`      |
+
+A handbook whose analysis mixes tiers **says so in its overview**. See
+[Analysis fidelity](/docs/concepts/analysis-fidelity) for exactly what degrades.
+
+## Two caveats, stated before you hit them
+
+### Swift aborts the process on V8 ≥ 13
+
+The bundled Swift grammar causes a fatal out-of-memory abort once V8 tiers the WASM module
+up — measured fatal 5 times out of 5 on Node 24, fine on Node 21, and unique to that one
+grammar among nineteen.
+
+**The adapter refuses at discovery on such a runtime** and names the remedy rather than
+taking your whole run down:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work work/ios
+```
+
+`--liftoff-only` skips the tier-up compilation that triggers it. The repo's own test suite
+passes the same flag for exactly this reason.
+
+### Shell scripts containing `case` are skipped
+
+That grammar throws on a `case` statement. The affected file is skipped and **reported in
+the scan log** — run with `-v` to see which ones.
+
+## What is skipped everywhere
+
+Every adapter honours one shared skip list:
+
+```text
+.git  .hg  .svn  node_modules  vendor  target  build  dist  out
+__pycache__  .mypy_cache  .pytest_cache  .ruff_cache  .tox
+venv  .venv  env  .env  site-packages  .idea  .vscode  .handbook-patches
+```
+
+If your build output lives somewhere else, point `--source` at the real source root rather
+than the repository root.
+
+## When one file could belong to two languages
+
+Discovery runs adapters in a fixed order and **the first one to claim a file keeps it**;
+extension matching prefers the longest match. In practice this only matters for `.h`
+(claimed by the C/C++ adapter) and `.m` (Objective-C).
+
+## Reading what actually got scanned
+
+```bash
+handbook analyze --source ~/code/repo --work work/x -v
+# [scan] auto root=/Users/me/code/repo
+# [scan] typescript: 284 files
+# [scan] python: 96 files
+# [scan] shell: 12 files
+# [build] functions=3187 kept=9042 dropped=611
+```
+
+```bash
+jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
+jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+```
+
+## Adding a language
+
+Adding a **generic-tier** language is a declarative spec, not a parser — and needs no new
+dependency, because the grammars already ship. See
+[Adding a language](/docs/contributing/adding-a-language).

@@ -1,0 +1,246 @@
+/**
+ * Every SEO surface, in one place.
+ *
+ * Two exports:
+ *
+ *   `siteMetadata()`  — the Next.js `Metadata` object: canonical URL, Open Graph,
+ *                       Twitter/X cards, icons, manifest, robots directives and
+ *                       search-console verification.
+ *   `<PlatformMeta/>` — the tags Next's Metadata API has no field for, which is
+ *                       where most of the long tail of platforms actually lives:
+ *                       WeChat, Baidu, Sogou, 360, Naver, Pinterest rich pins,
+ *                       Apple and Microsoft web-app hints, oEmbed discovery.
+ *
+ * Why bother with the long tail: an unfurl is the first impression for a link
+ * pasted into Slack, Discord, Teams, WhatsApp, Telegram, LinkedIn, Reddit or a
+ * WeChat chat, and each of those reads a slightly different subset. Getting one
+ * right and the rest wrong means the link looks broken exactly where it travels.
+ */
+import type { Metadata } from 'next';
+import {
+  appName,
+  brand,
+  description,
+  keywords,
+  repoUrl,
+  shortDescription,
+  siteUrl,
+  social,
+  tagline,
+  verification,
+} from './shared';
+
+const ogImage = {
+  url: '/og.png',
+  width: 1200,
+  height: 630,
+  alt: `${appName} — ${tagline}`,
+  type: 'image/png',
+};
+
+/** Square art, for the platforms that crop a wide card into a thumbnail. */
+const squareImage = {
+  url: '/og-square.png',
+  width: 1200,
+  height: 1200,
+  alt: `${appName} — ${tagline}`,
+  type: 'image/png',
+};
+
+export function siteMetadata(): Metadata {
+  return {
+    metadataBase: new URL(siteUrl),
+    title: {
+      default: `${appName} — ${tagline}`,
+      template: `%s · ${appName}`,
+    },
+    description,
+    keywords,
+    applicationName: appName,
+    category: 'technology',
+    authors: [{ name: `${appName} contributors`, url: repoUrl }],
+    creator: `${appName} contributors`,
+    publisher: appName,
+    generator: 'Next.js + Fumadocs',
+    referrer: 'origin-when-cross-origin',
+
+    alternates: {
+      canonical: '/',
+      types: {
+        'application/rss+xml': [{ url: '/rss.xml', title: `${appName} — documentation updates` }],
+        // Plain-markdown twins of every docs page, for agents that ask for them.
+        'text/plain': [{ url: '/llms.txt', title: `${appName} — llms.txt` }],
+      },
+    },
+
+    // Open Graph is the widest-reach format by far: Facebook, LinkedIn, Slack,
+    // Discord, Telegram, WhatsApp, Signal, Teams, Reddit, Pinterest, Notion,
+    // Confluence, Line, Viber, Skype, Mastodon, Bluesky and iMessage all read it.
+    openGraph: {
+      type: 'website',
+      siteName: appName,
+      title: `${appName} — ${tagline}`,
+      description,
+      url: siteUrl,
+      locale: 'en_US',
+      alternateLocale: ['zh_CN'],
+      images: [ogImage, squareImage],
+    },
+
+    twitter: {
+      card: 'summary_large_image',
+      title: `${appName} — ${tagline}`,
+      description: shortDescription,
+      images: [ogImage.url],
+      ...(social.twitter ? { site: social.twitter, creator: social.twitter } : {}),
+    },
+
+    icons: {
+      icon: [
+        { url: '/favicon.svg', type: 'image/svg+xml' },
+        { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+        { url: '/favicon-16.png', sizes: '16x16', type: 'image/png' },
+      ],
+      apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+      shortcut: ['/favicon.svg'],
+    },
+
+    manifest: '/manifest.webmanifest',
+
+    appleWebApp: {
+      capable: true,
+      title: appName,
+      statusBarStyle: 'black-translucent',
+    },
+
+    formatDetection: { telephone: false, address: false, email: false },
+
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+        'max-video-preview': -1,
+      },
+    },
+
+    verification: {
+      ...(verification.google ? { google: verification.google } : {}),
+      ...(verification.yandex ? { yandex: verification.yandex } : {}),
+      other: {
+        ...(verification.bing ? { 'msvalidate.01': verification.bing } : {}),
+        ...(verification.baidu ? { 'baidu-site-verification': verification.baidu } : {}),
+        ...(verification.sogou ? { sogou_site_verification: verification.sogou } : {}),
+        ...(verification.so360 ? { '360-site-verification': verification.so360 } : {}),
+        ...(verification.naver ? { 'naver-site-verification': verification.naver } : {}),
+        ...(verification.pinterest ? { 'p:domain_verify': verification.pinterest } : {}),
+        ...(verification.facebook ? { 'facebook-domain-verification': verification.facebook } : {}),
+      },
+    },
+  };
+}
+
+/**
+ * Tags with no Metadata-API field. Rendered inside `<head>` by the root layout.
+ *
+ * Grouped by who reads them so the next person can tell at a glance whether a
+ * tag is load-bearing for a platform they care about, or safe to drop.
+ */
+export function PlatformMeta() {
+  return (
+    <>
+      {/* ── Chinese platforms ─────────────────────────────────────────────
+          WeChat's in-app browser and Baidu both fall back to these rather
+          than to Open Graph, and Baidu additionally wants an explicit
+          statement that the page is responsive instead of having a separate
+          mobile host. */}
+      <meta name="applicable-device" content="pc,mobile" />
+      <meta name="MobileOptimized" content="width" />
+      <meta name="HandheldFriendly" content="true" />
+      <meta httpEquiv="Cache-Control" content="no-transform" />
+      <meta name="baidu-site-verification-type" content="html" />
+      {/* WeChat / QQ share cards read itemprop, not og:, when the page is not
+          registered with an official account. */}
+      <meta itemProp="name" content={appName} />
+      <meta itemProp="description" content={shortDescription} />
+      <meta itemProp="image" content={`${siteUrl}/og.png`} />
+
+      {/* ── Pinterest ────────────────────────────────────────────────────── */}
+      <meta name="pinterest-rich-pin" content="true" />
+
+      {/* ── Microsoft: Windows tiles and the Edge/IE pinned-site UI ──────── */}
+      <meta name="msapplication-TileColor" content={brand.background} />
+      <meta name="msapplication-TileImage" content="/apple-touch-icon.png" />
+      <meta name="msapplication-config" content="/browserconfig.xml" />
+      <meta name="msapplication-tap-highlight" content="no" />
+
+      {/* ── Apple ────────────────────────────────────────────────────────── */}
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="mobile-web-app-capable" content="yes" />
+
+      {/* ── Discord, and anything else that follows oEmbed discovery ─────── */}
+      <link rel="alternate" type="application/json+oembed" href={`${siteUrl}/oembed.json`} title={appName} />
+
+      {/* ── Feed readers ─────────────────────────────────────────────────── */}
+      <link rel="alternate" type="application/rss+xml" title={`${appName} updates`} href="/rss.xml" />
+
+      {/* ── Language alternates ──────────────────────────────────────────── */}
+      <link rel="alternate" hrefLang="en" href={siteUrl} />
+      <link rel="alternate" hrefLang="x-default" href={siteUrl} />
+
+      {/* ── Structured data: Google, Bing, DuckDuckGo rich results ───────── */}
+      <script
+        type="application/ld+json"
+        // The payload is a literal built from module constants — no user input
+        // reaches it, and JSON.stringify escapes what little punctuation it has.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData()) }}
+      />
+    </>
+  );
+}
+
+function structuredData() {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'SoftwareApplication',
+        '@id': `${siteUrl}/#software`,
+        name: appName,
+        description,
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'macOS, Linux, Windows',
+        url: siteUrl,
+        downloadUrl: repoUrl,
+        codeRepository: repoUrl,
+        programmingLanguage: 'TypeScript',
+        license: 'https://opensource.org/licenses/MIT',
+        softwareRequirements: 'Node.js >= 20.11',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${siteUrl}/#website`,
+        url: siteUrl,
+        name: appName,
+        description: tagline,
+        inLanguage: 'en',
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: { '@type': 'EntryPoint', urlTemplate: `${siteUrl}/docs?q={search_term_string}` },
+          'query-input': 'required name=search_term_string',
+        },
+      },
+      {
+        '@type': 'Organization',
+        '@id': `${siteUrl}/#org`,
+        name: appName,
+        url: siteUrl,
+        logo: `${siteUrl}/og-square.png`,
+      },
+    ],
+  };
+}

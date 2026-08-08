@@ -13,7 +13,7 @@ import { renderConfigDocs, renderConfigExampleYaml, renderEnvExample } from '../
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const files = [
   ['.env.example', renderEnvExample()],
-  ['docs/configuration.md', renderConfigDocs()],
+  ['docs/content/docs/reference/configuration.md', renderConfigDocs()],
   ['handbook.config.example.yaml', renderConfigExampleYaml()],
 ];
 for (const [rel, content] of files) {

@@ -1,0 +1,187 @@
+---
+title: Configuring Handbook
+description: Five precedence layers, one registry, and a command that tells you exactly which layer won.
+---
+
+<div className="not-prose">
+  <img
+    src="/diagrams/config-cascade.svg"
+    alt="Configuration cascade: flag, environment, .env files, handbook.config.yaml, default"
+    className="rounded-xl border"
+  />
+</div>
+
+Every setting is declared **once**, in one registry table. The CLI flags, the environment
+variable names, the config-file keys, `.env.example`, `handbook.config.example.yaml` and
+the [configuration reference](/docs/reference/configuration) are all _generated_ from it —
+so they cannot drift apart, and a drift test fails the build if anyone tries.
+
+## Precedence, highest first
+
+1. **CLI flag** — `--read-workers 4`
+2. **Shell environment** — `HANDBOOK_GENERATE_READ_WORKERS`, then `HANDBOOK_READ_WORKERS`,
+   then a vendor alias like `OPENAI_MODEL`
+3. **The `.env` cascade** — merged into the environment before anything reads it
+4. **`handbook.config.yaml`** — discovered by walking up from the cwd, stopping at the git root
+5. **Registry default**
+
+The first layer that supplies a value wins; every layer below is ignored _for that
+setting_.
+
+## `handbook.config.yaml`
+
+Put it at the repository root and commit it. Discovery walks up from the working
+directory and **stops at a repo boundary** — so a project with no config file does not
+inherit its parent's.
+
+```yaml title="handbook.config.yaml"
+# Paths are resolved relative to THIS FILE, so the config stays portable.
+source: ./src
+work: ./.handbook
+
+llm:
+  model: gpt-4o-mini
+  baseUrl: https://api.openai.com/v1
+  maxTokens: 16000
+  concurrency: 16
+
+generate:
+  detail: deep
+  synthMode: doctor
+  narrateLang: en
+  readWorkers: 12
+
+render:
+  title: Payments API Handbook
+  html: true
+  agentSite: true
+  llmsTxt: true
+  sourceBaseUrl: https://github.com/me/api/blob/main
+
+studio:
+  port: 4860
+```
+
+Two things to know:
+
+- **Nesting and flattening are the same thing.** `generate: { detail: deep }` and a flat
+  `generateDetail: deep` mean exactly the same, because the file is flattened by camelCase
+  join before it is read.
+- **Relative `path` values resolve against the config file's own directory**, not the cwd.
+  That is what keeps a committed config file working no matter where you run the command
+  from.
+
+<Callout type="warn" title="Secrets are rejected here">
+  `llmApiKey` / `OPENAI_API_KEY` must never appear in a config file — config files get committed. The loader
+  refuses the file outright and says why. Put it in `.env` or the shell environment.
+</Callout>
+
+Copy `handbook.config.example.yaml` to start; it is generated from the registry, so it
+lists every key that actually exists.
+
+## Per-command scoping
+
+Any setting can be scoped to one subcommand, on **all three** surfaces, with the same
+transform:
+
+```bash
+export HANDBOOK_NARRATE_LANG=en            # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh   # …except generate
+```
+
+```yaml
+narrateLang: en
+generate:
+  narrateLang: zh
+```
+
+The scoped form always wins over the flat one.
+
+## Multiple environments
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+```
+
+`--env prod` (or `HANDBOOK_ENV=prod`) does two things:
+
+1. Loads `.env.prod.local` → `.env.prod` → `.env.local` → `.env`, first writer wins.
+2. Prefers `handbook.config.prod.yaml` over the plain file — at **every** directory
+   visited on the way up, so a named file beats a plain one even if the plain one sits
+   closer.
+
+A typical layout:
+
+```text
+.env                     # team baseline, committed
+.env.local               # your machine, gitignored
+.env.prod                # team prod settings, committed (no secrets)
+.env.prod.local          # your prod credentials, gitignored
+handbook.config.yaml     # defaults
+handbook.config.prod.yaml
+```
+
+`--env-file <path>` bypasses the cascade entirely and loads exactly that one file. **A
+missing file there is a loud error, not a fallback** — you asked for a specific file.
+
+## Ask what actually resolved
+
+```bash
+handbook config --command generate
+```
+
+```text
+environment   prod  (--env)
+env files     .env.prod, .env
+config file   /repo/handbook.config.prod.yaml
+
+SETTING            VALUE                     FROM
+source             /Users/me/code/api        flag --source
+llmModel           gpt-4o                    env HANDBOOK_LLM_MODEL
+llmApiKey          sk-••••••                 env OPENAI_API_KEY
+readWorkers        4                         handbook.config.prod.yaml (generate.readWorkers)
+detail             deep                      handbook.config.prod.yaml (generate.detail)
+narrateLang        en                        default
+```
+
+```bash
+handbook config --json                # machine-readable
+handbook config --check               # exit 2 on the first invalid or missing value
+```
+
+<Callout title="Put --check in CI">
+  A typo'd variable used to mean "silently ran at the default". `--check` turns it into a failure with the
+  variable named in the message — much cheaper than discovering it forty minutes into a generation run.
+</Callout>
+
+`config` deliberately uses the non-throwing resolver: **its job is to show configuration,
+including when it is broken.** A missing `--source` renders as a visible
+`— unset (required)` row rather than taking down the one tool you would use to debug that
+exact problem.
+
+## What the resolver enforces
+
+- **An empty value reads as unset.** `HANDBOOK_TITLE=` cannot produce an untitled handbook.
+- **A supplied-but-invalid value never falls through to a default.** A typo'd number is an
+  error, not a silent 12.
+- **Types are checked at the boundary**, with the source named in the message:
+
+  ```text
+  env HANDBOOK_READ_WORKERS: readWorkers must be an integer >= 1, got "twelve"
+  handbook.config.yaml (generate.detail): detail must be one of brief | deep, got "verbose"
+  ```
+
+- **Required-ness is checked after every layer**, and the error lists every way you could
+  supply it:
+
+  ```text
+  source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+  or add it to handbook.config.yaml
+  ```
+
+## Full reference
+
+<Cards>
+  <Card title="Every setting, generated from the registry" href="/docs/reference/configuration" />
+  <Card title="Environment variables and the .env cascade" href="/docs/reference/environment" />
+</Cards>

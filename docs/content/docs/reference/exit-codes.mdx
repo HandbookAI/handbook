@@ -1,0 +1,148 @@
+---
+title: Exit codes and output
+description: What each exit code means, what goes to stdout versus stderr, and how to script against both.
+---
+
+## Exit codes
+
+| Code | Meaning                                                                                    | Emitted by                            |
+| :--: | ------------------------------------------------------------------------------------------ | ------------------------------------- |
+| `0`  | Success                                                                                    | every command                         |
+| `1`  | An error: invalid configuration, a missing artifact, a failed run, an unreachable endpoint | every command                         |
+| `2`  | A **check** failed — the tool worked, and the answer is no                                 | `validate`, `apply`, `config --check` |
+
+The distinction between `1` and `2` is load-bearing in scripts:
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+case $? in
+  0) echo "fresh" ;;
+  2) echo "the handbook has drifted — schedule a resync" ;;
+  *) echo "something is broken" >&2; exit 1 ;;
+esac
+```
+
+### Which commands can exit 2
+
+- **`validate`** — the SKILL package failed a structural check, or source hashes moved.
+- **`apply`** — one or more edits did not land (`no-match`, `ambiguous`, `unsafe-path`, …).
+  In `--dry-run` this means "this plan would not apply cleanly".
+- **`config --check`** — a setting is invalid or a required one is missing.
+
+`plan` exits **`1`** when the planner gave up, not `2`: an abandoned run is an error, not
+a negative answer.
+
+## stdout versus stderr
+
+| Stream     | Carries                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **stdout** | The command's result, as JSON — except `plan` without `--out`, which writes the plan itself, and `config` without `--json`, which writes a table |
+| **stderr** | All logging, all progress, all warnings, and every error message                                                                                 |
+
+That split is what makes piping safe:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env") | .key'
+handbook plan --source ~/code/api --request "…" > plan.md     # logs still visible
+```
+
+Errors are prefixed so they are greppable:
+
+```text
+handbook: error: invalid configuration:
+  - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml
+```
+
+## Log levels
+
+| How                        | Level                        |
+| -------------------------- | ---------------------------- |
+| default                    | `info`                       |
+| `-v` / `--verbose`         | `debug`                      |
+| `-q` / `--quiet`           | `error` — **wins over `-v`** |
+| `HANDBOOK_LOG_LEVEL=debug` | `debug`, without a flag      |
+
+`HANDBOOK_LOG_LEVEL` also affects the two bootstrap lines that report which `.env` files
+and which config file were loaded — useful when a value is coming from somewhere you did
+not expect.
+
+## Result shapes
+
+```json title="analyze"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+```json title="generate"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```json title="render"
+{
+  "outDir": "work/api/handbook",
+  "nStagePages": 9,
+  "agent": { "...": "…" },
+  "html": { "...": "…" },
+  "htmlSingle": { "...": "…" },
+  "llms": { "...": "…" }
+}
+```
+
+```json title="skill"
+{
+  "outDir": "skills/api",
+  "nStagePages": 9,
+  "references": [
+    "agent/how_to_use.md",
+    "agent/disambiguation.md",
+    "overview.md",
+    "index.md",
+    "registers.md",
+    "coverage.json"
+  ]
+}
+```
+
+```json title="plan (with --out)"
+{
+  "out": "plan.md",
+  "turns": 11,
+  "declarations": { "willModify": ["Uploader.send"], "willAdd": ["Uploader._retry"], "willRemove": [] }
+}
+```
+
+```json title="apply"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+```json title="resync"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["…"]
+}
+```
+
+`validate` is the exception: it writes human-readable lines to stderr and communicates
+through its exit code.

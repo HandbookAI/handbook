@@ -1,0 +1,164 @@
+---
+title: Keeping it current
+description: Resync diffs the old call graph against the new one and regenerates only what actually changed. Touch three files, pay for three files.
+---
+
+```bash
+handbook resync --case <case-dir> --work <workdir>
+```
+
+Documentation rots because updating it costs as much as writing it. Resync makes the
+update **proportional to the change**.
+
+## The case contract
+
+A **case** is a directory you assemble. It answers two questions: _what does the code look
+like now_, and _what was the change supposed to be_.
+
+```text
+cases/upload-retry/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — SHARPENS the scope
+  change.diff   unified diff vs the previous tree   optional — WIDENS the scope
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+git -C $REPO diff HEAD~1 > cases/upload-retry/change.diff
+
+handbook resync --case cases/upload-retry --work work/api
+```
+
+<Callout title="Declarations and diffs can only widen the set">
+  The graph diff is the floor: if a file's bytes changed, it gets refreshed whether or not the plan mentioned
+  it. **A plan that under-declares its own blast radius cannot cause a stale page.**
+</Callout>
+
+An **empty** `change.diff` means "nothing to do", and the run is skipped cleanly rather
+than treated as "everything changed".
+
+## What it actually does
+
+1. Re-analyze the edited tree — a fresh phase-1 graph.
+2. Diff old against new → changed / added / deleted files.
+3. Regenerate cards for changed and added files.
+4. Assign added files, drop deleted ones, reconcile the buckets.
+5. Rebuild organization for affected stages — deterministic, no LLM.
+6. Re-narrate affected stages and the system overview. The content-hash cache means an
+   unaffected stage is not re-narrated at all.
+7. Refresh registers.
+8. Refresh already-rendered outputs under `<work>/handbook` (`--no-render` to skip).
+
+```json title="stdout"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["work/api/handbook/overview.md", "work/api/handbook/stage-3.md"]
+}
+```
+
+## How the diff catches things
+
+| Signal                     | Detects                                                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Content hash**           | An in-place body edit that leaves line numbers and signatures untouched — the case a structural diff misses entirely |
+| Function set               | Added, removed or renamed functions                                                                                  |
+| Signatures and line ranges | Reshaped functions                                                                                                   |
+| Call edges                 | New or removed relationships, including into and out of untouched files                                              |
+| File set                   | Added and deleted files                                                                                              |
+
+The per-file hashes were stamped by phase 1 for exactly this purpose. A graph that
+predates them falls back to structure — degraded, but never wrong.
+
+## Working without an endpoint
+
+```bash
+handbook resync --case cases/x --work work/api --no-llm
+```
+
+Structural facts are refreshed — call graph, function inventory, assignment, ordering —
+and every affected card's purpose gets ` (stale: code changed since narration)` appended.
+
+**That is the honest degradation.** The alternative — leaving the prose untouched and
+unmarked — is a handbook that lies quietly.
+
+## Feeding corrections back in
+
+```bash
+handbook resync --case cases/x --work work/api \
+  --corrections skills/api/corrections.jsonl
+```
+
+Files named in `corrections.jsonl` join the refresh set **even if their bytes never
+changed**, because a claim the source contradicts is reason enough to re-describe that
+file. The consumed file is archived with a timestamp afterwards, so the same correction
+cannot be applied twice.
+
+Malformed lines are reported in `report.corrections.problems` and are never fatal — one
+bad line written by one agent must not block the refresh.
+
+## Detail and language stay put
+
+`--detail` and `--narrate-lang` are **unset by default**, and unset means _"match what
+this handbook already is"_. A resync never silently downgrades a deep handbook to brief,
+or flips a Chinese handbook to English.
+
+Pass them explicitly only when you actually want to change depth or language — and expect
+a mixed handbook until every card has been regenerated.
+
+## When to regenerate instead
+
+Resync rolls the **derived** layer forward. Regenerate when the _structure_ should change:
+
+| Situation                                   | Do this                                              |
+| ------------------------------------------- | ---------------------------------------------------- |
+| A few files changed                         | `resync`                                             |
+| A refactor moved code between modules       | `resync` — the graph diff handles it                 |
+| You added a whole new subsystem             | `resync`, then check whether the skeleton still fits |
+| The skeleton no longer describes the system | `generate --phase 2b,2c,3 --synth-mode doctor`       |
+| You changed narration language or depth     | `generate --phase 2a` / `--phase 3 --refresh`        |
+| Half the repo was rewritten                 | `generate` from scratch — cheaper than a huge resync |
+
+## Automating it
+
+```yaml title=".github/workflows/handbook-resync.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - run: |
+          mkdir -p case
+          cp -R . case/edited
+          git diff HEAD~1 > case/change.diff
+      - run: handbook resync --case case --work work/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - run: handbook validate --skill skills/api --source .
+```
+
+`edited/` can also be skipped entirely when you drive resync programmatically: the
+`editedRoot` option points at a live tree instead, which is how Studio runs it in place
+without copying the repository.
+
+## Safety
+
+- **The same directory lock as `generate`**, so a resync can never interleave with a
+  concurrent generation on the same artifacts.
+- **The phase-1 staging area is always cleaned up** — `<case>/.resync-phase1` never
+  outlives the call, on success or failure.
+- **Cards for deleted files are removed**, so a deleted file cannot linger in the handbook.
+- **Cancellable** — an `AbortSignal` is checked between steps and threaded into every LLM
+  pass.

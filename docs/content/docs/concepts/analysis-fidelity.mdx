@@ -1,0 +1,112 @@
+---
+title: Analysis fidelity
+description: Two analysis tiers produce identical-looking output. That is a trap, so every adapter declares what it can deliver and the handbook discloses it.
+---
+
+## The problem
+
+Handbook analyzes 18 languages with **two** engines:
+
+- **Full tier** — a hand-written adapter per language, with type-driven call resolution,
+  inherited members, per-attribute state tracking and statement spans.
+- **Generic tier** — one config-driven engine with a declarative spec per language. The
+  file and function inventory is exact; call relations are best-effort.
+
+Both produce the **same intermediate representation**. Nothing downstream can tell them
+apart by looking at nodes and edges.
+
+That is exactly the trap. A reader — and especially an agent — would take a generic-tier
+call edge for a Python-grade fact, and reason on it accordingly.
+
+## The fix: declare, record, disclose
+
+### 1. Every adapter declares what it can deliver
+
+```ts
+interface AdapterCapabilities {
+  tier: 'full' | 'generic';
+  callTypes: readonly CallType[]; // which edge kinds it can actually produce
+  selfAttrs: boolean; // can it track self/this attribute reads and writes?
+  statementSpans: boolean; // can it report statement spans (resync precision)?
+}
+```
+
+This field is **required**, not optional. Adapters can be registered by anyone, and a
+hand-rolled one that declares nothing simply gets left out of the graph metadata rather
+than having a fidelity claim invented for it.
+
+### 2. Phase 1 records it per language
+
+```json title="phase1/graph.json (excerpt)"
+{
+  "metadata": {
+    "language": "multi",
+    "languages": {
+      "typescript": { "tier": "full", "selfAttrs": true, "statementSpans": true, "callTypes": ["..."] },
+      "kotlin": { "tier": "generic", "selfAttrs": false, "statementSpans": false, "callTypes": ["..."] }
+    }
+  }
+}
+```
+
+Per language, not per graph — a multi-language run mixes tiers, and a single
+`language: "multi"` label would hide that completely.
+
+### 3. The handbook says so, where trust is formed
+
+When any generic-tier language is present, the overview gains one line, immediately under
+the system prose:
+
+> **Analysis fidelity** — call relations for Kotlin, Scala come from the generic
+> (config-driven) analyzer: they are best-effort and may be incomplete. The file
+> inventory and the structure of these languages are exact.
+
+And **nowhere at all** when every language is full-tier, so the common case stays
+noise-free. The same disclosure appears in the HTML site, the agent locator index and
+`llms-full.txt`.
+
+## Which tier is my language?
+
+**Full tier:** Python, TypeScript (and JavaScript), Go, Rust, Java, C#, C/C++, Ruby, PHP,
+Swift, Dart, Solidity, Shell.
+
+**Generic tier:** Kotlin, Scala, Zig, Objective-C, OCaml.
+
+See [Language support](/docs/reference/languages) for extensions and caveats.
+
+## What "best-effort" actually costs you
+
+|                                        | Full tier | Generic tier |
+| -------------------------------------- | --------- | ------------ |
+| File inventory                         | exact     | **exact**    |
+| Function and method inventory          | exact     | **exact**    |
+| Line ranges and signatures             | exact     | **exact**    |
+| Direct calls by name                   | exact     | mostly       |
+| `self.method()` / `this.method()`      | resolved  | often        |
+| `self.attr.method()` via a known type  | resolved  | no           |
+| `param.method()` via a type annotation | resolved  | no           |
+| Inherited members                      | resolved  | no           |
+| Per-attribute state tracking           | yes       | no           |
+| Statement spans (resync precision)     | yes       | no           |
+
+**The things you route on — where a file is, what functions it contains, what lines they
+occupy — are exact in both tiers.** What degrades is the _relationship_ graph, which
+affects grouping quality and co-change hints rather than addresses.
+
+## Two honest caveats
+
+**Swift.** The bundled grammar aborts the process on V8 ≥ 13 — measured fatal 5 times out
+of 5 on Node 24, fine on Node 21, and unique to that one grammar among nineteen. The
+adapter **refuses at discovery** on such a runtime and names the remedy
+(`node --liftoff-only`) rather than taking your whole run down with it.
+
+**Shell.** A script containing a `case` statement is skipped, because that grammar throws.
+
+Both are reported through the logger during the scan. Run with `-v` to see them.
+
+## Moving a language up a tier
+
+A generic-tier language is a declarative spec, not a parser — see
+[Adding a language](/docs/contributing/adding-a-language). Promoting one to full tier
+means implementing `LanguageAdapter` directly and declaring honest capabilities. The
+adapter contract is small on purpose.

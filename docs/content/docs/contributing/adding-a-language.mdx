@@ -1,0 +1,189 @@
+---
+title: Adding a language
+description: A generic-tier language is a declarative spec, not a parser. A full-tier one is a small interface. Both need no new dependency.
+---
+
+Handbook supports 18 languages through two mechanisms. Adding one to the **generic tier**
+is usually a single object literal, and needs **no new dependency** — the grammars already
+ship with `tree-sitter-wasms`.
+
+## Generic tier — a declarative spec
+
+Add one entry to `GENERIC_LANGUAGES` in `packages/analyzer/src/generic.ts`:
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+Then register it — the loop at the bottom of `packages/analyzer/src/register.ts` picks up
+every entry in `GENERIC_LANGUAGES` automatically, so there is nothing to add there.
+
+<Steps>
+
+<Step>
+### Check the grammar ships
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+If it is not there, the language needs a new dependency, which is a bigger conversation.
+
+</Step>
+
+<Step>
+### Find the node types
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+The printed s-expression is the node vocabulary you are writing the spec against.
+
+</Step>
+
+<Step>
+### Write the spec and a test
+
+Every language gets a test that builds a real mini-repo in a temp directory and asserts on
+real nodes and edges. Copy the shape of an existing one in
+`packages/analyzer/src/generic.test.ts`.
+
+**A mocked parse tree proves nothing about a grammar.** Parse real source.
+
+</Step>
+
+<Step>
+### Declare honest capabilities
+
+The generic engine sets these for you:
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+Do not inflate them. The whole point of the declaration is that a reader can tell a
+generic-tier edge from a Python-grade one. See
+[Analysis fidelity](/docs/concepts/analysis-fidelity).
+
+</Step>
+
+<Step>
+### Update the docs, or the build fails
+
+A drift test checks that **every registered language** appears in both READMEs. Add the
+display name to `DISPLAY` in `packages/cli/src/docs-drift.test.ts`, then to:
+
+- `README.md` and `README.zh-CN.md` — the language tables
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` and its Chinese twin
+
+That test exists because the list had already drifted six languages behind before anyone
+noticed.
+
+</Step>
+
+</Steps>
+
+## Full tier — implement the adapter
+
+Worth it when a language's call resolution genuinely needs type information: attribute
+types, parameter annotations, inheritance.
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+Register it in `packages/analyzer/src/register.ts`:
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+That is the entire contract. Every downstream phase works unchanged.
+
+### The two-pass rule
+
+**Pass 1** collects declarations and builds type indexes. **Pass 2** walks call sites with
+those indexes in hand.
+
+Resolving `self.attr.method()` or `param.method()` is impossible in one pass, because the
+type of `attr` is learned from a constructor assignment that may appear after the call.
+Every full-tier adapter follows this shape.
+
+### The resolution rule
+
+A call you cannot pin down becomes `unresolved`, and the graph builder quarantines it into
+`dropped-calls.json` with a category and its raw text.
+
+**Never guess.** A guessed edge is indistinguishable from a real one to everything
+downstream, which poisons grouping, co-change hints and the agent locator index all at
+once.
+
+## Registering an adapter from outside
+
+The registry is public, so you can add a language without forking:
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+An adapter that declares no capabilities, or declares junk, is simply **left out of the
+graph metadata** rather than having a fidelity claim invented for it.
+
+## Checklist
+
+- [ ] The grammar ships with `tree-sitter-wasms`
+- [ ] Spec or adapter written
+- [ ] Registered in `register.ts` (generic-tier entries are picked up automatically)
+- [ ] A test that parses **real** source in a temp directory
+- [ ] Capabilities declared honestly
+- [ ] Display name added to the drift test's `DISPLAY` map
+- [ ] Both READMEs, the analyzer READMEs and the language reference updated
+- [ ] `pnpm check` passes
+- [ ] A changeset added

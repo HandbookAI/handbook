@@ -1,0 +1,116 @@
+---
+title: Studio — the web UI
+description: The whole toolchain in a browser tab, with live logs and one-click rollback. Localhost only, by design.
+---
+
+```bash
+handbook studio                 # → http://127.0.0.1:4860
+handbook studio --port 5000     # or: pnpm studio --port 5000
+```
+
+Same code paths as the CLI, same config resolution, same artifacts on disk — just a
+different way to drive it.
+
+**Zero build step.** The UI is one hand-written HTML file with inlined CSS and vanilla JS.
+No bundler, no framework, nothing fetched from a CDN. It loads instantly and works with
+the network cable unplugged.
+
+## What you can do in it
+
+| Area                 | What it does                                                                    |
+| -------------------- | ------------------------------------------------------------------------------- |
+| **Repositories**     | Register a source tree + work dir under a URL-safe name                         |
+| **Generate**         | Full parameter set, logs streaming live over SSE, cancellable mid-run           |
+| **Handbook browser** | Read the rendered handbook in place                                             |
+| **Impact graph**     | Which files a stage owns, what calls in, what it calls out to                   |
+| **Source viewer**    | Open the real file behind any card, at the cited line                           |
+| **Plan**             | Type a request, watch the read-only agent work, read the plan                   |
+| **Apply / rollback** | Dry-run, apply, every backup listed, one-click rollback                         |
+| **Resync**           | Roll the handbook forward against the live tree — no case directory to assemble |
+| **History**          | Per-repo evolution: what each run changed, and when                             |
+
+## Jobs
+
+Generation, planning and resync run as **background jobs** with a captured log served over
+Server-Sent Events.
+
+- **One job per repository at a time.** The pipeline's artifacts are not safe for
+  concurrent writers on the same work dir; a second start is refused with a clear message.
+- **Cancellable.** Every job has an `AbortController` whose signal reaches in-flight LLM
+  requests. Cancel means cancel, not "stop showing me the log".
+- **Statuses:** `running` → `succeeded` | `failed` | `cancelled`. The full log is kept, so
+  you can read what happened after it finished.
+
+## Configuration
+
+Studio resolves its settings from the **same layers as every other command** — flags,
+environment, `.env` cascade, `handbook.config.yaml`, defaults:
+
+```bash
+handbook studio --model gpt-4o --base-url https://my-proxy/v1 --port 5000
+handbook --env prod studio
+```
+
+A generate job started from the UI sees the same config file layer the CLI would, so
+`detail`, `narrateLang`, `readWorkers` and the rest all work from YAML.
+
+## Security model
+
+Studio is a **local tool**. It is not hardened for exposure and does not pretend to be.
+
+- **Binds `127.0.0.1` by default.**
+- **The CSRF guard checks the `Host` request header**, not the socket. Only loopback host
+  names pass.
+- **`POST` requires `application/json`**, which blocks the classic cross-origin HTML form
+  attack.
+- **Repository names are validated** against `^[A-Za-z0-9][A-Za-z0-9._-]*$` before they
+  touch the filesystem, and paths are realpath-normalized.
+- **Source and handbook file serving is sandboxed** to the registered roots.
+
+### In a container
+
+```bash
+pnpm run docker:studio    # docker compose up --build studio
+```
+
+A container must bind `0.0.0.0` for the published port to be reachable at all
+(`HANDBOOK_STUDIO_HOST=0.0.0.0` in `docker-compose.yml`).
+
+<Callout type="warn" title="Only http://localhost:4860 works">
+  Not a LAN IP, not the container name. Browsing from the host still sends `Host: localhost:4860` and passes;
+  a request naming a LAN IP or the container hostname is refused with `403` **by design**. Remote access is a
+  deliberately unimplemented, separate feature — it would need an explicit allowlist — not a gap in this
+  defence.
+</Callout>
+
+## State
+
+```text
+~/.handbook-studio/
+  studio.json        the repository registry (schema-validated on read)
+  work/<name>/       auto-created work dirs for repos that did not bring their own
+```
+
+`--state-dir` moves it. Everything else — handbook artifacts, evolution history — lives in
+each repository's own work dir, so deleting the state directory loses the registry and
+nothing that matters.
+
+## Scripting against it
+
+The UI is just a client. The HTTP API is stable enough to script:
+
+```bash
+curl -s http://localhost:4860/api/repos | jq
+
+curl -s -X POST http://localhost:4860/api/repos \
+  -H 'content-type: application/json' \
+  -d '{"name":"api","sourceRoot":"/Users/me/code/api","workDir":"/Users/me/work/api"}'
+
+curl -s -X POST http://localhost:4860/api/repos/api \
+  -H 'content-type: application/json' \
+  -d '{"action":"analyze"}'
+
+curl -N http://localhost:4860/api/jobs/<job-id>    # SSE log stream
+```
+
+Full route table in the [package README](https://www.npmjs.com/package/@handbook/studio).
