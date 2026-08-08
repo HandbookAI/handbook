@@ -60,6 +60,19 @@ export function coerceValue(
       return Math.trunc(parsed);
     }
     case 'enum': {
+      // `dynamicChoices` settings (currently only `lang`) carry a fallback
+      // `choices` this package cannot expand — the real list comes from a
+      // runtime adapter registry one layer up (see registry.ts's comment on
+      // `lang`), which this package must not depend on. Validating against
+      // the fallback here would reject every real language but the one it
+      // happens to list, which is exactly the bug this replaces: `--lang
+      // python` failed with "lang must be one of auto" for every resolver
+      // caller, CLI included. Downstream (the analyzer) already reports an
+      // unknown language by name with its own real list.
+      if (setting.dynamicChoices) {
+        if (text.trim() === '') return fail(where, `${key} must not be empty`);
+        return text;
+      }
       const choices = setting.choices ?? [];
       if (!choices.includes(text)) {
         return fail(where, `${key} must be one of ${choices.join(' | ')}, got "${text}"`);

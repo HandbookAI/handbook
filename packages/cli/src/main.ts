@@ -28,6 +28,7 @@ import {
   discoverConfigFile,
   loadConfigFile,
   resolveConfig,
+  settingByKey,
   type LogLevel,
 } from '@handbook/core';
 import { renderConfigJson, renderConfigTable } from './config-command.js';
@@ -95,7 +96,7 @@ function logger(cfg?: Record<string, unknown>): ReturnType<typeof createLogger> 
     ? 'error'
     : opts.verbose
       ? 'debug'
-      : ((cfg?.logLevel as LogLevel | undefined) ?? 'info');
+      : ((cfg?.logLevel as LogLevel | undefined) ?? (settingByKey('logLevel')?.default as LogLevel));
   return createLogger('', level);
 }
 
@@ -360,7 +361,26 @@ addSettings(
   const host = cfg.host as string;
   const stateDir =
     (cfg.stateDir as string | undefined) ?? resolve(`${process.env.HOME ?? '.'}/.handbook-studio`);
-  await startStudio({ stateDir, port, host, logger: logger(cfg) });
+  await startStudio({
+    stateDir,
+    port,
+    host,
+    logger: logger(cfg),
+    // Resolved once, from the same flags/env/config-file layers as every other
+    // command — otherwise --model, --base-url and a config-file `llm:` block
+    // all silently do nothing for studio (P0-1), while --help and `handbook
+    // config` both claim they work. Receives the job logger, not the top-level
+    // one: a silent client hides retries and gateway blocks.
+    clientFactory: (jobLogger) =>
+      new OpenAiChatClient({
+        config: llmConfigFromValues(cfg),
+        concurrency: cfg.llmConcurrency as number | undefined,
+        logger: jobLogger,
+      }),
+    // Same file layer studio's own launch settings just used, so a generate
+    // job's parameters (detail, narrateLang, readWorkers, …) also see it.
+    configFile: currentConfigFile(),
+  });
   process.stderr.write(`handbook studio → http://${host}:${port}\n`);
   await new Promise(() => {}); // run until Ctrl-C
 });

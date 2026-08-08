@@ -14,11 +14,13 @@ import { fileURLToPath } from 'node:url';
 import {
   ensureDir,
   fileExists,
-  PIPELINE_DEFAULTS,
   readJsonFile,
+  resolveConfig,
+  settingByKey,
   silentLogger,
   truncate,
   writeJsonFile,
+  type ConfigFileData,
   type Logger,
 } from '@handbook/core';
 import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
@@ -39,14 +41,23 @@ import { JobRunner, type Job, type JobKind } from './jobs.js';
 export interface StudioOptions {
   /** Directory for studio.json and default work dirs. */
   stateDir: string;
-  /** Port to listen on. Default 4860. */
+  /** Port to listen on. Default: the registry default for `port`. */
   port?: number;
-  /** Bind address. Default 127.0.0.1 — a container passes 0.0.0.0. The Host-header
-   *  guard in createStudioServer is unaffected and must stay as it is. */
+  /** Bind address. Default: the registry default for `host` (loopback) — a
+   *  container passes 0.0.0.0. The Host-header guard in createStudioServer is
+   *  unaffected and must stay as it is. */
   host?: string;
   /** LLM client factory — injectable for tests; default reads OPENAI_* env. */
   /** Injectable LLM client. Receives the job logger so retries reach its log. */
   clientFactory?: (logger: Logger) => ChatClient;
+  /**
+   * The project config file (`handbook.config.yaml`), already discovered and
+   * loaded by the CLI's `preAction` hook. Passed through so a generate job's
+   * parameters — `detail`, `narrateLang`, `readWorkers`, etc. — see the same
+   * file layer as every other command, not just the environment. Absent when
+   * studio is embedded without one (e.g. tests, or no file present).
+   */
+  configFile?: ConfigFileData;
   logger?: Logger;
 }
 
@@ -54,6 +65,7 @@ interface Ctx {
   store: StateStore;
   jobs: JobRunner;
   clientFactory: (logger: Logger) => ChatClient;
+  configFile?: ConfigFileData;
   logger: Logger;
   /** Default parent dir for auto-created work dirs. */
   stateDirWork: string;
@@ -379,37 +391,47 @@ interface GenerateParams {
   title?: string;
 }
 
-/** Mirror the CLI's fail-loud toInt: absent → default, garbage → a 400, never a NaN'd loop. */
-function toInt(value: unknown, field: string, min: number, fallback: number): number {
-  if (value === undefined || value === null || value === '') return fallback;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < min) {
-    throw new Error(`"${field}" must be a number >= ${min}, got "${String(value)}"`);
-  }
-  return Math.trunc(parsed);
-}
-
 /**
  * Validate a generate request BEFORE the job starts: bad input is the
  * caller's bug and deserves a 400, not a job that fails ten seconds later.
- * Defaults mirror the CLI (`--read-workers 12`, `--max-doctor-rounds 6`).
+ *
+ * Routed through the shared `resolveConfig` — the same one the CLI's
+ * `generate` action uses — so a studio job honours `.env` and
+ * `handbook.config.yaml` exactly like the command line, and an invalid enum
+ * (`{"detail":"typo"}`) is a 400 naming the field, not a silent fallback to
+ * the default. `source`/`work` are supplied from the repo entry only to
+ * satisfy the resolver's required check for `generate`; studio manages those
+ * two itself and the resolved values are discarded below.
  */
-function parseGenerateParams(body: Record<string, unknown>): GenerateParams {
+function parseGenerateParams(
+  body: Record<string, unknown>,
+  repo: RepoEntry,
+  configFile?: ConfigFileData,
+): GenerateParams {
+  const { values, errors } = resolveConfig({
+    command: 'generate',
+    flags: { ...body, source: repo.sourceRoot, work: repo.workDir },
+    env: process.env,
+    file: configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
   return {
-    phase: typeof body.phase === 'string' && body.phase.trim() ? body.phase.trim() : 'all',
+    phase: values.phase as string,
     // Unspecified strategy stays undefined so the work dir's recorded one wins,
     // exactly like the CLI — a hard 'file' default would cross strategies.
-    strategy: body.strategy === 'member' ? 'member' : body.strategy === 'file' ? 'file' : undefined,
-    skeletonPath:
-      typeof body.skeleton === 'string' && body.skeleton.trim() ? resolve(body.skeleton.trim()) : undefined,
-    lang: typeof body.lang === 'string' && body.lang.trim() ? body.lang.trim() : 'auto',
-    narrateLang: body.narrateLang === 'zh' ? 'zh' : 'en',
-    detail: body.detail === 'deep' ? 'deep' : 'brief',
-    synthMode: body.synthMode === 'doctor' ? 'doctor' : 'oneshot',
-    maxDoctorRounds: toInt(body.maxDoctorRounds, 'maxDoctorRounds', 1, PIPELINE_DEFAULTS.maxDoctorRounds),
-    readWorkers: toInt(body.readWorkers, 'readWorkers', 1, PIPELINE_DEFAULTS.readWorkers),
-    resume: body.resume === true,
-    refresh: body.refresh === true,
+    strategy: values.strategy as 'file' | 'member' | undefined,
+    skeletonPath: values.skeleton as string | undefined,
+    lang: values.lang as string,
+    narrateLang: values.narrateLang as 'en' | 'zh',
+    detail: values.detail as 'brief' | 'deep',
+    synthMode: values.synthMode as 'oneshot' | 'doctor',
+    maxDoctorRounds: values.maxDoctorRounds as number,
+    readWorkers: values.readWorkers as number,
+    resume: values.resume as boolean,
+    refresh: values.refresh as boolean,
+    // `title` belongs to render/resync in the registry, not generate — generate
+    // only forwards it to the render step that runs at the end of the job, so it
+    // stays a plain pass-through rather than a resolved setting.
     title: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : undefined,
   };
 }
@@ -805,7 +827,7 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       const jobKind: JobKind = kind === 'analyze' ? 'generate' : (kind as JobKind);
       // Validate BEFORE the job exists: a garbage readWorkers must be a 400 on
       // this request, not a failed job discovered in the drawer later.
-      const genParams = kind === 'generate' ? parseGenerateParams(body) : undefined;
+      const genParams = kind === 'generate' ? parseGenerateParams(body, repo, ctx.configFile) : undefined;
       // A repo already running a job is a state CONFLICT (409), like DELETE and
       // cancel report — not a malformed request (400). Check before start(), whose
       // own throw would otherwise surface as a misleading 400 via the catch-all.
@@ -996,6 +1018,7 @@ export function createStudioServer(options: StudioOptions): Server {
     // Pass the job logger: a silent client hides retries, timeouts and
     // gateway blocks, which is how a failing run looks like a quiet one.
     clientFactory: options.clientFactory ?? ((logger: Logger) => new OpenAiChatClient({ logger })),
+    configFile: options.configFile,
     logger: options.logger ?? silentLogger,
     stateDirWork: join(options.stateDir, 'work'),
   };
@@ -1021,16 +1044,16 @@ export function createStudioServer(options: StudioOptions): Server {
 
 /** Start the server and return it once listening.
  *
- * Defaults to 127.0.0.1 — a container needs 0.0.0.0 or a published port is
- * unreachable from the host. The CSRF defence in createStudioServer checks
+ * Defaults to the registry's loopback default — a container needs 0.0.0.0 or
+ * a published port is unreachable from the host. The CSRF defence in createStudioServer checks
  * the Host *header*, not the socket, so binding wide does not widen who may
  * talk to it: browsing http://localhost:<port> still passes, and a LAN IP or
  * container name still gets 403.
  */
 export function startStudio(options: StudioOptions): Promise<Server> {
   const server = createStudioServer(options);
-  const port = options.port ?? 4860;
-  const host = options.host ?? '127.0.0.1';
+  const port = options.port ?? (settingByKey('port')?.default as number);
+  const host = options.host ?? (settingByKey('host')?.default as string);
   return new Promise((resolvePromise, reject) => {
     server.once('error', reject);
     server.listen(port, host, () => resolvePromise(server));
