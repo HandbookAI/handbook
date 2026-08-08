@@ -1,0 +1,130 @@
+---
+title: 'クイックスタート'
+description: 'ツールチェーン全体を約 30 秒でエンドツーエンドに実行します — オフラインで、API キーなし、トークン消費ゼロ。'
+---
+
+Handbook が何をするものかを理解する最短の方法は、実際に動くところを見ることです。
+これは**すべて**のパイプライン — 解析、生成、レンダリング、パッケージング、検証 — を、
+同梱のサンプルプロジェクトに対して、同梱のモック LLM サーバーで実行します。
+
+**API キー不要。ネットワーク不要。トークン消費ゼロ。**
+
+## ステップ 1 — 実行する
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm demo
+```
+
+## ステップ 2 — 出力された内容を読む
+
+```text
+== build ==
+== start mock LLM (offline; prose will be placeholder text) ==
+== 1. analyze (no LLM) ==
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+== 2. generate (phases 2+3) ==
+{ "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
+== 3. render markdown + HTML site + agent index + llms.txt ==
+== 4. package as an agent SKILL (with the agent locator pages) ==
+== 5. validate the SKILL ==
+validate: OK
+```
+
+<Callout type="warn" title="文章が意味不明なのは想定どおりです">
+  モック LLM はプレースホルダーテキストを返します。**構造は完全に本物です** — ステージ、ファイルの割り当て、
+  呼び出しの事実、行範囲、レジスタの表、すべてのリンク。偽物なのは文だけです。これこそが、このプロジェクトの
+  土台となる分離です: 事実はパーサーから、文章はモデルから。
+</Callout>
+
+## ステップ 3 — 結果を開く
+
+```bash
+open examples/work/demo/handbook/overview.md        # the markdown handbook
+open examples/work/demo/handbook/html/overview.html # the multi-page HTML site
+open examples/work/demo/handbook/handbook.html      # the whole thing in one file
+open examples/work/demo/skill/SKILL.md              # the agent SKILL package
+```
+
+特に見ておく価値があるもの:
+
+| これを開いて                          | 注目すべき点                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | コールグラフから生成された mermaid の**ステージマップ**                          |
+| `handbook/index.md`                   | すべてのステージが入れ子で並び、それぞれに段落が付いている                       |
+| `handbook/register.md`                | ステージ横断の状態と、それぞれに触れるステージ                                   |
+| `handbook/agent/index.md`             | エージェント用ロケーター形式 — 文章はなく、アドレスだけ                          |
+| `handbook/agent/disambiguation.md`    | 正当に複数のステージを指す用語                                                   |
+| `skill/references/coverage.json`      | ファイルごとのコンテンツハッシュ。これがドリフトのシグナルです                   |
+| `work/demo/phase1/dropped-calls.json` | アナライザーが解決**できなかった**呼び出し。推測せず、分類したうえで保持されます |
+
+## ステップ 4 — 内部をのぞく
+
+パイプラインが生成したものはすべて、作業ディレクトリ内のプレーンな JSON と YAML です:
+
+```bash
+ls examples/work/demo/
+# phase1/  phase2/  phase3/  handbook/  skill/  run-manifest.json
+
+cat examples/work/demo/phase1/graph.json | head -40
+cat examples/work/demo/phase2/skeleton.yaml
+cat examples/work/demo/run-manifest.json     # model, phases, timings, token usage
+```
+
+これらはすべて、読み込み時にスキーマ検証されます。手で編集して不正な状態にしても、
+次のコマンドがどのファイルがなぜ不正かを教えてくれます — 後段へは伝播しません。
+
+## その他のデモ
+
+```bash
+pnpm demo:self        # this repo as its own input, against the mock LLM
+pnpm demo:self:real   # same, but against the real endpoint from .env
+pnpm mock-llm         # just the mock server, on port 8099
+```
+
+読んで面白いのは `pnpm demo:self` のほうです: 11 個の実在する TypeScript パッケージを
+解析するため、生成されるステージ構造は、本物のコードベースの本物のマップになります。
+
+## いま何が起きたのか
+
+<div className="not-prose">
+  <img
+    src="/diagrams/pipeline.svg"
+    alt="Handbook のパイプライン: analyze、generate、render、skill、plan、apply、resync"
+    className="rounded-xl border"
+  />
+</div>
+
+1. **`analyze`** が、tree-sitter ですべてのファイルを解析して型付きコールグラフを
+   構築しました。LLM 不使用。
+2. **`generate`** が、ファイルごとにカードを書き、ステージのスケルトンを合成し、
+   すべてのファイルをステージに割り当て、グループ化して並べ、それからボトムアップで
+   ナレーションを書き、ステージ横断の状態レジスタを抽出しました。
+3. **`render`** が、それを markdown、HTML サイト、自己完結の 1 ページ、エージェント用
+   ロケーターインデックス、`llms.txt` に変換しました。LLM 不使用。
+4. **`skill`** が、ファイルごとのコンテンツハッシュを持つエージェント SKILL として
+   再パッケージしました。LLM 不使用。
+5. **`validate`** が、構造、フロントマターの契約、索引 ↔ ステージページのリンク、
+   ハッシュの鮮度を検査しました。LLM 不使用。
+
+デモはここで終わりです。残りの半分 — **`plan` → `apply` → `rollback` → `resync`** — は、
+[初めてのハンドブック](/docs/getting-started/first-handbook)と
+[変更の計画](/docs/guides/planning-changes)で扱います。
+
+## 次へ
+
+<Cards>
+  <Card
+    title="初めての本格的なハンドブック"
+    description="同じ手順を、あなたのリポジトリで。大規模な場合の対処も。"
+    href="/docs/getting-started/first-handbook"
+  />
+  <Card
+    title="用語集"
+    description="ステージ、カード、レジスタ、作業ディレクトリ、ケース — それぞれの言葉がここで意味するもの。"
+    href="/docs/getting-started/vocabulary"
+  />
+  <Card title="Studio" description="同じパイプラインを、クリック操作で。" href="/docs/guides/studio" />
+</Cards>

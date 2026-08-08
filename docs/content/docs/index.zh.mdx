@@ -1,0 +1,118 @@
+---
+title: 'Handbook 是什么？'
+description: 'Handbook 用真正的解析器解析你的仓库，把它变成一张可导航的地图，并把这张地图作为位置索引交给你的编码代理——之后随着代码变动持续保持最新。'
+icon: House
+---
+
+## 先把问题说清楚
+
+你有一个仓库。它大到装不进你的脑子，也大到塞不进一个上下文窗口。
+
+让编码代理去*“对失败的上传重试三次”*，它会信心满满地改掉它找到的那个上传函数——却漏掉真正的重试策略常量、批处理 worker 里的镜像实现、统计尝试次数的指标，以及断言旧行为的测试。
+
+这不是推理出了问题，而是**路由**出了问题。代理从头到尾都没见过地图。
+
+<Callout title="一句话版本">
+  Handbook
+  用真正的解析器读取你的代码，为它构建一张地图，并把这张地图作为**位置索引**——而不是摘要——交给代理，且随着代码变动持续更新这张地图。
+</Callout>
+
+## 先跑起来，再往下读
+
+下面说的一切，跑不起来就都不算数。这大约需要三十秒，花费零 token，也不需要任何 API key：
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install && pnpm build
+pnpm demo
+```
+
+`pnpm demo` 会用一个内置的示例项目和内置的 mock LLM 服务器跑完整条工具链。结束后，磁盘上会出现一份渲染好的手册、一个 HTML 站点、一份代理定位索引，以及一个通过校验的 SKILL 包。
+
+<Cards>
+  <Card title="正式安装" href="/docs/getting-started/installation" />
+  <Card title="过一遍快速上手" href="/docs/getting-started/quickstart" />
+  <Card title="在你自己的仓库上运行" href="/docs/getting-started/first-handbook" />
+  <Card title="查看全部命令" href="/docs/reference/cli" />
+</Cards>
+
+## 它建立在三个想法之上
+
+### 1. 事实来自解析器，而不是模型
+
+Handbook 用 [tree-sitter](https://tree-sitter.github.io/) 解析每一个源文件，构建一张带类型的调用图：函数、方法、通过 `self`/属性/参数/导入解析出来的调用边、离开你代码的调用，以及无法解析的调用——后者被隔离进单独的文件，绝不靠猜。
+
+**这一层从不接触 LLM。** 跑两次，得到两张一模一样的图。
+
+### 2. 文字叙述叠在事实之上，并且有明确标注
+
+LLM 负责写给人看的部分：一个文件是干什么的、一个子系统如何组织、哪些状态流经哪些阶段。这些内容始终锚定在调用图上；即便生成失败，结构依然照常产出——只是描述为空。
+
+**宁可缺一句话，也不要编一句话。**
+
+### 3. 这张地图为路由而建，不是为阅读而建
+
+产出不是代码摘要，而是一个索引，用来回答*“这次改动要碰哪些文件、函数和状态？”*——包括那些分散的、不显眼的地方。规划器随后使用这个索引，在它找到的每个地址上阅读真实源码，并产出一份精确到字节、可以机械化应用的编辑计划。
+
+## 一次运行能得到什么
+
+<img
+  src="/diagrams/outputs.svg"
+  alt="产出：markdown 手册、HTML 站点、单页文件、代理定位索引、llms.txt、SKILL 包"
+  className="rounded-xl border"
+/>
+
+| 产出                                                                  | 给谁用 |
+| --------------------------------------------------------------------- | ------ |
+| Markdown 手册——总览、阶段索引、每个阶段一页、状态寄存器表             | 人     |
+| 多页 HTML 站点——固定目录、面包屑、主题切换、可直接通过 `file://` 打开 | 人     |
+| 一个可以直接用邮件发出去的自包含 HTML 单页                            | 人     |
+| 代理定位索引——职责、入口概念、状态、示例、协同修改提示                | 代理   |
+| `llms.txt` + `llms-full.txt`                                          | 代理   |
+| 每个文件带内容哈希的 SKILL 包，让漂移可以被检测                       | 代理   |
+
+## 这是为谁准备的
+
+| 你是……                         | 你会得到……                                               |
+| ------------------------------ | -------------------------------------------------------- |
+| 刚接手一个 20 万行服务的工程师 | 一份真能读下去的逐阶段讲解，外加一个可以分享的 HTML 站点 |
+| 在大仓库上跑编码代理的人       | 一个让代理不再靠猜找代码的 SKILL 包                      |
+| 带新人的团队负责人             | 会重新生成而不是慢慢腐烂的文档                           |
+| 维护多语言 monorepo 的人       | 一次跑完 18 种语言，且每种语言的分析保真度都有披露       |
+
+## 你需要付出什么
+
+- **Node.js ≥ 20.11 和 pnpm。** 安装清单到此为止。没有原生编译、没有 Python、没有 `node-gyp`——解析器都是 WebAssembly。
+- **一个 OpenAI 兼容端点**，供 LLM 阶段使用。托管的 OpenAI、Azure、vLLM、Ollama、LiteLLM、内部代理——只要能说 `/v1/chat/completions` 的都行。它完全可以是跑在你自己机器上的模型。
+- **`handbook analyze` 什么都不需要**，而它正是你应该最先运行的命令。
+
+<Callout type="info" title="我的代码会离开本机吗？">
+  Phase 1 完全在本地进行。Phase 2 和 Phase 3 只把文件内容发到*你*配置的那个端点——它可以就是
+  localhost。除此之外什么都不会外发，并且 `--max-chars-per-file`
+  限定了任何单个文件最多发送多少内容。参见[信任模型](/docs/concepts/trust-model)。
+</Callout>
+
+## 接下来去哪
+
+<Cards>
+  <Card
+    title="为什么要有这个项目"
+    description="路由问题是什么，以及为什么摘要一个代码库解决不了它。"
+    href="/docs/concepts/why"
+  />
+  <Card
+    title="生成是如何工作的"
+    description="五个阶段，各自的成本，以及某一阶段失败时会降级成什么。"
+    href="/docs/concepts/pipeline"
+  />
+  <Card
+    title="配置"
+    description="标志、环境变量、.env 级联与 handbook.config.yaml——同一个注册表。"
+    href="/docs/reference/configuration"
+  />
+  <Card
+    title="疑难排查"
+    description="真正会出问题的地方，以及该怎么处理。"
+    href="/docs/guides/troubleshooting"
+  />
+</Cards>

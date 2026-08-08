@@ -1,0 +1,191 @@
+---
+title: 'Architektur'
+description: 'Elf Pakete in vier Schichten, eine strikt einbahnige Abhängigkeitsrichtung und die Grenzen, die die deterministische Hälfte eigenständig wiederverwendbar machen.'
+---
+
+## Die Schichtung
+
+<div className="not-prose">
+  <img
+    src="/diagrams/architecture.svg"
+    alt="Paketschichtung: Einstiegspunkte, Fähigkeiten, Engines, Fundament"
+    className="rounded-xl border"
+  />
+</div>
+
+| Schicht             | Pakete                                                          | Aufgabe                                         |
+| ------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| **Einstiegspunkte** | `cli`, `studio`                                                 | Was ein Mensch oder ein Container ausführt      |
+| **Fähigkeiten**     | `pipeline`, `renderer`, `skill`, `planner`, `patcher`, `resync` | Je eine Aufgabe, unabhängig nutzbar             |
+| **Engines**         | `analyzer`, `llm`                                               | Die zwei Dinge, auf denen alles andere aufbaut  |
+| **Fundament**       | `core`                                                          | Datenmodell, Konfigurations-Registry, Utilities |
+
+Abhängigkeiten zeigen **immer nur nach unten**:
+
+```text
+cli → pipeline / renderer / skill / planner / patcher / resync → analyzer / llm → core
+```
+
+## Drei Regeln, die es gesund halten
+
+### 1. Einbahn-Abhängigkeiten, erzwungen
+
+`core` importiert nichts Internes. Nichts importiert `cli`. Ein Zyklus oder ein Import
+nach oben lässt `pnpm check:workspace` fehlschlagen — das außerdem prüft, dass die
+TypeScript-Projektreferenzen jedes Pakets exakt seine `package.json`-Abhängigkeiten
+spiegeln. Eine fehlende Referenz lässt `tsc -b` in der falschen Reihenfolge bauen, und
+ein Root-Build versteckt das.
+
+### 2. LLM-Isolation ist eine Paketgrenze, keine Konvention
+
+Nur `llm`, `pipeline`, `planner` und `resync` dürfen mit einem Modell sprechen, und nur
+über die `ChatClient`-Schnittstelle:
+
+```ts
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
+```
+
+`analyzer`, `renderer`, `skill` und `patcher` **hängen überhaupt nicht von
+`@handbook/llm` ab**. Sie sind vollständig deterministisch und wiederverwendbar, ohne
+dass irgendwo ein LLM in Sicht wäre. Deshalb können `render`, `skill`, `validate`,
+`apply` und `rollback` bedenkenlos in CI laufen.
+
+Und deshalb läuft die gesamte Testsuite offline: eine Naht, ein Mock.
+
+### 3. Die Renderer-Grenze ist ein Typ
+
+`HandbookModel` (definiert in `core`) ist das Einzige, was der Renderer kennt.
+Pipeline-Interna liest er nie.
+
+```ts
+interface HandbookModel {
+  title: string;
+  lang: NarrateLang;
+  skeleton: Skeleton;
+  cards: Record<string, FileCard>;
+  assignment: Assignment;
+  organization: Organization;
+  narration: Narration;
+  registers: RegisterEntry[];
+}
+```
+
+**Jeder Erzeuger, der ein `HandbookModel` füllen kann, bekommt Rendering,
+Skill-Paketierung und Planung geschenkt.** Wer ein Handbuch auf anderem Weg generieren
+will: Das ist der gesamte Vertrag, der zu erfüllen ist.
+
+## Datenfluss
+
+```text
+source tree
+   │  analyzer — tree-sitter WASM, one adapter per language
+   ▼
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+   │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
+   ▼
+phase2/cards/<rel>.json + _coverage.json
+   │  pipeline 2b — skeleton synthesis (+ doctor loop) + file assignment
+   ▼
+phase2/skeleton.yaml + assignment.json
+   │  pipeline 2c — call-graph topological order + LLM grouping (flat fallback)
+   ▼
+phase2/organization.yaml
+   │  pipeline 3 — bottom-up narration + register extraction (content-hash cached)
+   ▼
+phase3/narration.json + registers.json
+   │  loadHandbookModel()
+   ▼
+HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.html · agent/ · llms.txt)
+                     │
+                     └──▶ skill ──▶ SKILL.md + references/ (+ coverage.json)
+```
+
+**Der Arbeitsverzeichnis-Vertrag:** Jede Phase liest nur ihre vorgelagerten Artefakte
+und schreibt nur ihre eigenen — alle beim Lesen schema-validiert, mit einem
+`version`-Feld. Jede Phase kann allein erneut laufen. Abstürze sind fortsetzbar — Karten
+werden pro Batch geschrieben, der Erzähltext ist per Content-Hash gecacht.
+
+## Im Inneren des Analyzers
+
+Jede Sprache implementiert einen `LanguageAdapter`: `discover`, `analyze` und optional
+`statementSpans`. Jede Grammatik ist WebAssembly — die Installation kompiliert also nie
+nativen Code.
+
+Adapter machen **zwei Durchgänge** pro Modul:
+
+1. **Scan** — Deklarationen, Imports, Klassen und Methoden sowie Fakten pro Funktion:
+   Signatur, Zeilenbereich, Async-heit, Dekoratoren, `self`/`this`-Attributlese- und
+   -schreibzugriffe, typisierte Parameter und aus Konstruktorzuweisungen gelernte
+   Attributtypen.
+2. **Resolve** — jede Aufrufstelle wird zu einer typisierten Kante: `self_method`,
+   `self_attr_method`, `param_method`, `internal_func`, `internal_constructor`,
+   `boundary`, `boundary_constructor` — oder `unresolved`, was der Graph-Builder mit
+   einer Kategorie in `dropped-calls.json` in Quarantäne stellt.
+
+**Der behaltene Graph enthält ausschließlich aufgelöste, benannte Aufrufziele.** Genau
+das macht eine Kante darin vertrauenswürdig.
+
+Das **Nav-Pack** ist eine deterministische Orientierungszusammenfassung aus dem
+Graphen — Verzeichnis-Rollups, Einstiegspunkt-Kandidaten, Fan-out, externe Subsysteme.
+Es ist die _einzige_ Sicht auf die Codebasis, die der Skelett-Synthesizer bekommt, was
+diesen Prompt klein und geerdet hält.
+
+## Die Qualitätsmaschinerie der Pipeline
+
+**Dreistufige Kartendegradation (2a).** Ganzer Batch → einzelne Datei → Chunks pro
+Funktion für übergroße Dateien. Dateien, die dann noch scheitern, bekommen eine ehrliche
+leere Karte und stehen in `_coverage.json`. Die Abdeckung ist _per Konstruktion_
+vollständig; Lücken sind sichtbar statt still.
+
+**Actor-Critic-Skelettdoktor (2b).** Der Actor schlägt höchstens drei Strukturänderungen
+gegen Ground-Truth-Statistiken vor; drei rollenspielende Kritiker (Ingenieur, Architekt,
+Leser) begutachten parallel; jede überlebende Änderung wird vor der Anwendung
+**mechanisch** re-validiert; betroffene Dateien werden neu zugeordnet. Die Schleife
+stoppt bei Konvergenz oder nach zwei Runden ohne Fortschritt. Ein kaputter Kritiker
+zählt als `REJECT` — ein ausfallender Gutachter darf Änderungen niemals durchwinken.
+
+**Deterministische Fallbacks überall (2c, 3).** Die Organisation fällt auf die
+Aufrufgraph-Reihenfolge zurück. Der Erzähltext fällt auf die Etappenbeschreibung zurück.
+Eine gescheiterte Registerextraktion ergibt eine leere Liste. Ein Generierungslauf
+**degradiert; er blockiert nicht.**
+
+**Content-Hash-Caches (3).** Etappen- und Systemprosa wird unter `phase3/cache/`
+gecacht, geschlüsselt nach Prompt-Version, Sprache und dem vollen Prompt-Hash —
+Wiederholungsläufe und Resyncs zahlen so nur für das, was sich wirklich geändert hat.
+
+## Nebenläufigkeit und Sicherheit
+
+- **Ein Lauf pro Arbeitsverzeichnis.** `generateHandbook` und `resyncHandbook` nehmen
+  dieselbe reentrante Verzeichnissperre, sodass ein CLI-Lauf und ein Studio-Job ihre
+  Schreibzugriffe auf dieselben Artefakte nicht verschränken können.
+- **Atomare Schreibvorgänge.** Jedes Artefakt wird in eine Temp-Datei geschrieben und
+  umbenannt. Ein Absturz hinterlässt nie eine halb geschriebene Datei, an der der
+  nächste Lauf erstickt.
+- **Kooperativer Abbruch.** Ein `AbortSignal` wird zwischen den Phasen und an jedem
+  Batch-Checkpoint geprüft und in jeden LLM-Aufruf durchgereicht, sodass laufende
+  Anfragen abbrechen. Ein abgebrochener Lauf behält, was er gespeichert hat, und
+  schreibt **kein** Run-Manifest.
+
+## Entscheidungen, die man kennen sollte
+
+| #   | Entscheidung                           | Warum                                                                                                                                                            |
+| --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Nur-WASM-tree-sitter                   | Null native Builds; ein Ladepfad für jede Sprache; versionsfixierte Grammatiken                                                                                  |
+| 2   | Handgerollter `fetch`-LLM-Client       | OpenAI-kompatible Endpunkte variieren; ein dünner Client mit explizitem Retry schlägt eine SDK-Abhängigkeit. Die Schnittstellennaht zählt mehr als der Transport |
+| 3   | Eine Pipeline, zwei Strategien         | Getrennte Groß-/Klein-Pipelines duplizieren Adapter, Kritiker, Clients und Renderer; ein Strategie-Flag entfernt rund 40 % dieser Fläche                         |
+| 4   | zod-validierte Artefakte mit `version` | Korrupte oder handeditierte Artefakte scheitern laut an der Grenze, statt spätere Phasen zu vergiften                                                            |
+| 5   | Fakten/Prosa-Trennung in den Karten    | Das Modell annotiert ein vollständiges, aus dem Graphen abgeleitetes Inventar. Prosa darf leer sein; Fakten dürfen nicht falsch sein                             |
+| 6   | Single-Turn-Planner-Protokoll          | Funktioniert auf jedem Endpunkt, trivial mockbar, und das Transkript ist inspizierbar. Der Preis — Tokens erneut senden — ist im Planner-Maßstab akzeptabel      |
+| 7   | ESM + `tsc -b`, kein Bundler           | Bibliotheken liefern typgeprüftes `dist/` und `.d.ts`; Composite-Referenzen geben inkrementelle Builds ohne zusätzliches Tooling                                 |
+| 8   | Eine Konfigurations-Registry           | Flags, Env-Namen, YAML-Schlüssel und drei generierte Dokumente stammen alle aus einer Tabelle und können daher nicht auseinanderdriften                          |
+
+## Weiter
+
+<Cards>
+  <Card title="Die fünf Phasen im Detail" href="/docs/concepts/pipeline" />
+  <Card title="Das Arbeitsverzeichnis" href="/docs/concepts/work-directory" />
+  <Card title="Paket-API-Index" href="/docs/reference/packages" />
+</Cards>

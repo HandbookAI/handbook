@@ -1,0 +1,227 @@
+---
+title: 'आपका पहला असली handbook'
+description: 'एक कभी न पढ़ी repository से apply करने लायक़ change plan तक के आठ क़दम — सस्ते checkpoints सही जगहों पर रखते हुए।'
+---
+
+यह एक असली repository पर पूरा loop है। इसे क्रम से follow करने के लिए लिखा गया है, और यह
+जान-बूझकर **मुफ़्त** जाँचों को महँगी जाँचों से पहले रखता है।
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+export REPO=~/code/myrepo
+export WORK=work/myrepo
+```
+
+---
+
+## Step 1 — छलाँग से पहले देखिए
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**यह मुफ़्त है और यही आपका smoke test है।** कोई LLM नहीं, कोई key नहीं, कोई tokens नहीं।
+
+<Callout type="warn" title="आगे बढ़ने से पहले ये आँकड़े पढ़िए">
+  - **`files` उम्मीद से बहुत कम?** कोई पूरी language skip हो रही है, या आपका source root ग़लत है। `-v` के साथ
+  scan log देखिए। - **`files` बहुत ज़्यादा?** आप `node_modules`, `vendor` या कोई build directory analyze कर
+  रहे हैं। आम directories अपने आप skip होती हैं; अगर आपकी नहीं हो रही, तो `--source` को repo root के बजाय असली
+  source root की ओर कीजिए। - **`edgesDropped`, `edgesKept` की तुलना में बहुत बड़ा?** Dynamic languages के लिए
+  सामान्य है। `phase1/dropped-calls.json` देखिए — हर unresolved call वहाँ categorized है, छिपाई नहीं गई।
+</Callout>
+
+ऊपर की जो भी गड़बड़ी हो, उसे **अभी** ठीक कीजिए। यहाँ की हर समस्या आगे चलकर और महँगी समस्या
+बनती है।
+
+## Step 2 — handbook generate कीजिए
+
+यही वह step है जिसमें tokens खर्च होते हैं। मध्यम आकार की repository पर कुछ मिनट लगने की
+उम्मीद रखिए।
+
+सस्ते से शुरू कीजिए:
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+यह `--detail brief` और `--synth-mode oneshot` है: हर file का एक छोटा card और single-pass
+skeleton। यह देखने का सबसे तेज़ तरीक़ा है कि handbook की _shape_ सही है या नहीं।
+
+`$WORK/phase2/skeleton.yaml` देखिए। क्या stage की सूची आपके system जैसी दिखती है? हाँ, तो
+upgrade कीजिए:
+
+```bash
+handbook generate --source $REPO --work $WORK \
+    --phase 2a --detail deep --resume
+```
+
+`--phase 2a --resume` **सिर्फ़ cards** को गहरा करता है, और जिन files का पूरा card पहले से है
+उन्हें छोड़ देता है। जो skeleton आप validate कर चुके हैं, वह बना रहता है।
+
+अगर skeleton _ग़लत_ है, तो इसके बजाय 2b को actor–critic loop के साथ दोबारा चलाइए:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+<Callout title="यह resumable, cancellable और cached है">
+  Cards पूरे होते ही लिखे जाते हैं। `Ctrl-C` सुरक्षित है। `--resume` वहीं से आगे बढ़ता है जहाँ रुका था,
+  `--llm-cache` दोबारा चलाना लगभग मुफ़्त कर देता है, और `run-manifest.json` दर्ज करता है कि पिछले सफल run की
+  लागत tokens में क्या रही।
+</Callout>
+
+## Step 3 — render कीजिए
+
+```bash
+handbook render --work $WORK --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt
+```
+
+**कोई LLM नहीं।** जितनी बार चाहें चलाइए — CI में, हर commit पर।
+
+`--source-base-url https://github.com/me/myrepo/blob/main` जोड़ने पर handbook का हर file
+path असली file के link में बदल जाता है। इसके बिना output में कोई बाहरी URL नहीं होता — private
+codebase के लिए यह मायने रखता है।
+
+`$WORK/handbook/html/overview.html` खोलिए और पढ़िए। यह आँकने का यही क्षण है कि handbook
+अच्छा बना भी है या नहीं।
+
+## Step 4 — इसे अपने agent के लिए package कीजिए
+
+```bash
+handbook skill --handbook $WORK/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work $WORK --source $REPO \
+    --agent-dir $WORK/handbook/agent
+```
+
+`--work` + `--source` मिलकर `coverage.json` बनाते हैं: हर file का एक content hash। **यही
+चीज़ है जो handbook के drift को detect करने लायक़ बनाती है** — वरना वह बाद में चुपचाप ग़लत होता
+रहता।
+
+`--agent-dir` locator pages साथ भेजता है, और SKILL के routing protocol में एक
+disambiguation step जोड़ता है।
+
+## Step 5 — validate कीजिए
+
+```bash
+handbook validate --skill skills/myrepo --source $REPO
+```
+
+यह structure, frontmatter contract, index ↔ stage-page consistency जाँचता है, और आपका
+source दोबारा hash करके बताता है कि कौन-से pages पीछे रह गए हैं। **विफलता पर exit code `2`**
+— इसलिए CI में डालने लायक़ command यही है।
+
+## Step 6 — एक असली बदलाव plan कीजिए
+
+```bash
+handbook plan --source $REPO --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
+
+एक **read-only** agent loop: यह list, read और grep करता है — इसके पास कोई write tool है ही
+नहीं — handbook से route करता है, असली source से verify करता है, और `plan.md` लिखता है।
+
+Plan पढ़िए। सचमुच पढ़िए। इसका अंत एक machine-readable declarations block से होता है:
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+<Callout type="info" title="हार मानने वाला planner non-zero exit करता है">
+  अगर वह कोई काम का plan नहीं बना पाता — वह file contents गढ़ता रह गया, या उसकी turns ख़त्म हो गईं — तो वह
+  `plan.md` में माफ़ीनामा लिखने के बजाय ज़ोर से fail होता है, वरना कोई script उसे ख़ुशी-ख़ुशी `apply` में भेज
+  देती।
+</Callout>
+
+## Step 7 — apply कीजिए, वापसी का रास्ता रखते हुए
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run   # verify only, never writes
+handbook apply --source $REPO --plan plan.md             # for real
+```
+
+Dry run भावना की दृष्टि से optional नहीं है। यह हर anchor को file के मौजूदा contents से resolve
+करता है और ठीक-ठीक बताता है कि कौन-से edits लगेंगे।
+
+Apply करने पर backup directory का पता छपता है। **ज़रूरत पड़ने से पहले ही उसे कहीं copy कर
+लीजिए:**
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z
+```
+
+Rollback patch के _बाद_ बदली किसी भी file के लिए मना कर देता है, जब तक आप `--force` न दें —
+क्योंकि उसे restore करना उस काम को चुपचाप मिटा देता। चारों safety rules के लिए देखें
+[बदलाव apply करना](/docs/guides/applying-changes)।
+
+## Step 8 — handbook को आगे बढ़ाइए
+
+Code आगे बढ़ गया। दोबारा generate मत कीजिए — resync कीजिए।
+
+**case** एक directory है जिसे आप ख़ुद जोड़कर बनाते हैं:
+
+```text
+cases/upload-retry/
+  edited/       copy of the repo after the change   (required)
+  plan.md       the plan from step 6                (optional — sharpens scope)
+  change.diff   unified diff of the change          (optional — widens scope)
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work $WORK
+```
+
+Resync edited tree का दोबारा विश्लेषण करता है, पुराने graph का नए से diff करता है, और **सिर्फ़
+जो बदला** उसे regenerate करता है। `$WORK/handbook` के नीचे पहले से rendered outputs अपने आप
+refresh हो जाते हैं।
+
+कोई endpoint हाथ में नहीं? `--no-llm` structural facts को refresh करता है और prose को stale
+mark कर देता है — उसके current होने का दिखावा नहीं करता।
+
+---
+
+## अगर आपकी repository बहुत बड़ी है
+
+| लक्षण                                | क्या करें                                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| हज़ारों files                        | `--detail brief` से शुरू कीजिए। चुने हुए phases को बाद में `--phase 2a --detail deep --resume` से गहरा कीजिए। |
+| Run धीमा है                          | `--read-workers` / `--assign-workers` / `--narrate-workers` बढ़ाइए, सब `--llm-concurrency` की सीमा में।       |
+| Rate limits                          | `--llm-concurrency` घटाइए। `--llm-retries` और `--llm-retry-backoff` बढ़ाइए।                                   |
+| बहुत बड़ी generated files            | `--max-chars-per-file 20000` सीमित करता है कि हर file का कितना हिस्सा भेजा जाए।                               |
+| आपको सिर्फ़ एक subsystem की परवाह है | `--source` को उसी subdirectory की ओर कीजिए। Graph उसी से बनता है जो आप scan करते हैं।                         |
+| Iterate करते हुए दोबारा चलाना        | `--llm-cache`, और जब जान-बूझकर caches की अनदेखी करनी हो तो `--refresh`।                                       |
+
+और जानकारी [Cost and performance](/docs/guides/cost-and-performance) में।
+
+## आगे
+
+<Cards>
+  <Card title="Generation, गहराई से" href="/docs/guides/generating" />
+  <Card title="बदलावों की planning" href="/docs/guides/planning-changes" />
+  <Card title="इसे current रखना" href="/docs/guides/keeping-current" />
+  <Card title="Troubleshooting" href="/docs/guides/troubleshooting" />
+</Cards>

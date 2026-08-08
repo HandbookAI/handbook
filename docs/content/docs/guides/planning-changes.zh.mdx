@@ -1,0 +1,145 @@
+---
+title: '规划一次修改'
+description: '把请求和手册交给规划器，拿回一份字节级精确的编辑计划，以及一份机器可读的影响声明。'
+---
+
+```bash
+handbook plan --source <repo> --handbook <dir> --request "<text>" --out plan.md
+```
+
+规划器是一个**只读**智能体。它只会列目录、读文件、grep——它根本没有写工具，连禁
+用状态的都没有——它的输出是一份计划，交给别的东西去执行。
+
+## 循环
+
+1. 用手册路由：哪些文件、函数和状态在范围之内？
+2. 在找到的每个地址上读取**真实源码**。
+3. 产出 `### EDIT n` 块，其中的 `old` 与 `new` 文本字节级精确。
+4. 以一个 JSON 声明块收尾。
+
+<Callout title="两种工件，两种角色">
+  **手册**是位置索引：它能浮现出文本搜索会漏掉的那些分散、不显眼的位置——镜像实现、某个状态的
+  每一次读写、跨子系统的接触点。**真实源码**才是改什么的事实依据。手册给出地址；地址上的代码给 出字节。
+</Callout>
+
+## 写一个好请求
+
+| 弱               | 强                                                                      |
+| ---------------- | ----------------------------------------------------------------------- |
+| “修一下上传 bug” | “以 503 失败的上传应按指数退避重试三次，之后再向上报错”                 |
+| “加点日志”       | “用现有 logger，在每个完成的 HTTP 请求上以 INFO 记录 request id 和耗时” |
+| “让它快一点”     | “把 `resolveTenant` 的结果按 tenant id 作键缓存 60 秒”                  |
+
+说出**你想要的行为**，而不是你以为它所在的文件。点名文件会把规划器的搜索收窄到你
+已经想到的那个地方——这恰恰违背了初衷。
+
+## 读懂计划
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+### EDIT 2
+
+- file: `src/upload.py`
+- where: `Uploader` — add the helper
+
+```old
+    def send(self, url, data):
+```
+
+```new
+    def _retry(self, call, attempts):
+        last = None
+        for _ in range(attempts):
+            try:
+                return call()
+            except TransientError as exc:
+                last = exc
+        raise last
+
+    def send(self, url, data):
+```
+
+Both call sites now share one retry policy.
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+这个格式遵守的规则：
+
+- `old` 必须**字节级精确**，并且在文件中**恰好出现一次**。
+- **空的** `old` 表示“创建这个文件”。
+- 编辑块带编号，并且**自上而下递增**。
+- 结尾的 `json` 块会被 `resync` 消费，用来收窄它的刷新范围。
+
+**应用之前先读计划。** 试运行只告诉你它*能不能*应用；它*该不该*应用，只有你能判
+断。
+
+## 它放弃的时候
+
+`plan` 会**以非零码退出**——它不会往 `plan.md` 里写一段道歉文字，让脚本原样喂给
+`apply`。
+
+| `aborted`     | 发生了什么                                                             | 怎么办                                         |
+| ------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| `fabrication` | 回复三次凭空捏造 `## Tool result` 小节——它在基于想象出来的文件内容推理 | 换更强的模型。那次运行的任何产物都不可信       |
+| `turn-limit`  | 轮次用尽，仍没有任何 EDIT 块                                           | 调高 `--max-turns`，或把请求收窄               |
+| `no-plan`     | 调用 `finish` 时没有任何可用内容                                       | 通常是请求根本无需改代码，或者太模糊而无法定位 |
+
+<Callout type="warn" title="为什么捏造会被整体拒绝">
+  观察到的一次回复里包含十三个捏造的工具结果，以及一份基于文件中并不存在的一行代码构建出的计
+  划。规划器整体拒绝那个回复——**连同它结尾的那份计划**，因为计划源自虚构。
+</Callout>
+
+## 调优
+
+| 标志               | 默认值        | 何时调整                                   |
+| ------------------ | ------------- | ------------------------------------------ |
+| `--max-turns <n>`  | `30`          | 大仓库或大范围修改时调高；想封顶成本时调低 |
+| `--model <id>`     | `gpt-4o-mini` | 这是从更强模型中获益最大的命令             |
+| `--handbook <dir>` | —             | 永远带上它。没有它，规划器只能盲目探索     |
+| `--out <file>`     | _(stdout)_    | 省略则可用于管道                           |
+
+## 不带手册
+
+```bash
+handbook plan --source ~/code/api --request "…"
+```
+
+也能用——规划器会退回到直接探索源码——但这是降级模式。手册之所以存在，正是因为
+无引导的探索只找得到显眼的位置，而漏掉分散的位置。
+
+## 沙箱允许什么
+
+```ts
+list_dir(path)
+read_file(path, start_line?, end_line?)
+grep(pattern, path)
+finish(plan)
+```
+
+- 每个路径都必须解析在沙箱根之内；越界（包括经由符号链接的）一律拒绝。
+- 手册以只读方式挂载在 `__handbook__/`，与源码是**相互独立**的沙箱。
+- 单次读取上限 60,000 字符；grep 上限 100 个命中，并跳过超过 5 MB 的文件。
+- 灾难性正则——对一个本身含无界量词的分组再套一层无界量词，如 `(a+)+` 或
+  `(.*)*`——会得到一个体面的工具错误而被拒绝，而不是把整次运行挂死。
+
+## 下一步
+
+<Cards>
+  <Card title="安全地应用计划" href="/docs/guides/applying-changes" />
+  <Card title="让手册保持最新" href="/docs/guides/keeping-current" />
+</Cards>

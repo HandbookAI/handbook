@@ -1,0 +1,91 @@
+---
+title: '分析保真度'
+description: '两个分析层级产出的东西看起来一模一样。这是个陷阱，所以每个适配器都要声明自己能交付什么，手册也会如实披露。'
+---
+
+## 问题
+
+Handbook 用**两套**引擎分析 18 种语言：
+
+- **full 层级**——每种语言一个手写适配器，具备类型驱动的调用解析、继承成员、按属性的状态跟踪和语句范围。
+- **generic 层级**——一套配置驱动引擎，每种语言一份声明式规格。文件和函数清单是精确的；调用关系是尽力而为。
+
+两者产出**同一种中间表示**。下游任何环节都无法从节点和边上区分它们。
+
+而这正是陷阱所在。读者——尤其是代理——会把 generic 层级的调用边当成 Python 级别的事实，并据此推理。
+
+## 解法：声明、记录、披露
+
+### 1. 每个适配器声明自己能交付什么
+
+```ts
+interface AdapterCapabilities {
+  tier: 'full' | 'generic';
+  callTypes: readonly CallType[]; // which edge kinds it can actually produce
+  selfAttrs: boolean; // can it track self/this attribute reads and writes?
+  statementSpans: boolean; // can it report statement spans (resync precision)?
+}
+```
+
+这个字段是**必填**的，不是可选项。任何人都可以注册适配器，而一个什么都不声明的手搓适配器只会被排除在图元数据之外——绝不会有人替它编造一个保真度声明。
+
+### 2. Phase 1 按语言记录
+
+```json title="phase1/graph.json (excerpt)"
+{
+  "metadata": {
+    "language": "multi",
+    "languages": {
+      "typescript": { "tier": "full", "selfAttrs": true, "statementSpans": true, "callTypes": ["..."] },
+      "kotlin": { "tier": "generic", "selfAttrs": false, "statementSpans": false, "callTypes": ["..."] }
+    }
+  }
+}
+```
+
+按语言记录，而不是按整张图——多语言运行会混合层级，一个笼统的 `language: "multi"` 标签会把这一点完全藏起来。
+
+### 3. 手册在建立信任的地方明说
+
+只要存在任何 generic 层级的语言，总览就会在系统叙述的正下方多出一行：
+
+> **分析保真度**——Kotlin、Scala 的调用关系来自 generic（配置驱动）分析器：它们是尽力而为的，可能不完整。这些语言的文件清单与结构是精确的。
+
+而当所有语言都是 full 层级时，这一行**完全不出现**，让常见情形保持零噪音。同样的披露也出现在 HTML 站点、代理定位索引和 `llms-full.txt` 中。
+
+## 我的语言是哪个层级？
+
+**full 层级：** Python、TypeScript（含 JavaScript）、Go、Rust、Java、C#、C/C++、Ruby、PHP、Swift、Dart、Solidity、Shell。
+
+**generic 层级：** Kotlin、Scala、Zig、Objective-C、OCaml。
+
+扩展名与注意事项见[语言支持](/docs/reference/languages)。
+
+## “尽力而为”到底会让你损失什么
+
+|                                     | full 层级 | generic 层级 |
+| ----------------------------------- | --------- | ------------ |
+| 文件清单                            | 精确      | **精确**     |
+| 函数与方法清单                      | 精确      | **精确**     |
+| 行号范围与签名                      | 精确      | **精确**     |
+| 按名字的直接调用                    | 精确      | 大多数       |
+| `self.method()` / `this.method()`   | 可解析    | 常常可以     |
+| 经由已知类型的 `self.attr.method()` | 可解析    | 否           |
+| 经由类型注解的 `param.method()`     | 可解析    | 否           |
+| 继承成员                            | 可解析    | 否           |
+| 按属性的状态跟踪                    | 有        | 无           |
+| 语句范围（resync 精度）             | 有        | 无           |
+
+**你用来路由的东西——文件在哪、包含哪些函数、占据哪些行——在两个层级都是精确的。** 退化的是*关系*图，它影响的是分组质量和协同修改提示，而不是地址。
+
+## 两条实话实说的注意事项
+
+**Swift。** 内置的语法在 V8 ≥ 13 上会让进程中止——在 Node 24 上实测 5 次全部致命，在 Node 21 上正常，而且在十九个语法中仅此一家。适配器会在这种运行时上**于发现阶段就拒绝**，并指出解决办法（`node --liftoff-only`），而不是把你的整个运行拖下水。
+
+**Shell。** 含 `case` 语句的脚本会被跳过，因为那个语法会抛出异常——它的外部扫描器导入了一个固定版本 WASM 链接器不提供的符号。由于 `case` 无处不在，多数非平凡脚本都会中招（在 `nvm` 上实测：全部 6 个文件、全部 122 个函数），所以**请把 shell 的覆盖率当作部分覆盖**。扫描日志会写明原因。
+
+两者都会在扫描期间通过日志器报告。用 `-v` 运行即可看到。
+
+## 让一门语言升级层级
+
+generic 层级的语言是一份声明式规格，不是一个解析器——见[新增一门语言](/docs/contributing/adding-a-language)。把它升到 full 层级，意味着直接实现 `LanguageAdapter` 并如实声明能力。适配器契约刻意做得很小。

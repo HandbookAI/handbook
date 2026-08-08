@@ -1,0 +1,141 @@
+---
+title: 'Was ist Handbook?'
+description: 'Handbook parst das Repository mit einem echten Parser, verwandelt es in eine navigierbare Karte und übergibt diese Karte dem Coding-Agenten als Ortsindex — und hält sie aktuell, während sich der Code weiterbewegt.'
+icon: House
+---
+
+## Das Problem, klar benannt
+
+Da ist ein Repository. Es ist zu groß, um es im Kopf zu behalten, und zu groß für ein
+Kontextfenster.
+
+Wer einen Coding-Agenten bittet, _„fehlgeschlagene Uploads dreimal zu wiederholen“_,
+bekommt selbstbewusst die eine gefundene Upload-Funktion gepatcht — und verpasst die
+Konstante mit der Retry-Policy, die gespiegelte Implementierung im Batch-Worker, die
+Metrik, die die Versuche zählt, und den Test, der das alte Verhalten festschreibt.
+
+Das ist kein Denkfehler. Es ist ein **Routing**-Fehler. Der Agent hat nie eine Karte gesehen.
+
+<Callout title="Die Ein-Satz-Version">
+  Handbook liest den Code mit einem echten Parser, baut daraus eine Karte, übergibt diese Karte dem Agenten
+  als **Ortsindex** — nicht als Zusammenfassung — und hält die Karte aktuell, während sich der Code
+  weiterbewegt.
+</Callout>
+
+## Erst ausprobieren, dann weiterlesen
+
+Alles Weitere ist bedeutungslos, wenn es nicht läuft. Das hier dauert etwa dreißig
+Sekunden, verbraucht null Tokens und braucht keinen API-Schlüssel:
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install && pnpm build
+pnpm demo
+```
+
+`pnpm demo` lässt die gesamte Toolchain gegen ein mitgeliefertes Beispielprojekt laufen,
+mit einem mitgelieferten Mock-LLM-Server. Am Ende liegen ein gerendertes Handbuch, eine
+HTML-Site, ein Agenten-Locator-Index und ein validiertes SKILL-Paket auf der Platte.
+
+<Cards>
+  <Card title="Richtig installieren" href="/docs/getting-started/installation" />
+  <Card title="Den Schnellstart durchgehen" href="/docs/getting-started/quickstart" />
+  <Card title="Auf dem eigenen Repo ausführen" href="/docs/getting-started/first-handbook" />
+  <Card title="Alle Befehle ansehen" href="/docs/reference/cli" />
+</Cards>
+
+## Die drei Ideen dahinter
+
+### 1. Fakten kommen aus einem Parser, nicht aus einem Modell
+
+Handbook parst jede Quelldatei mit [tree-sitter](https://tree-sitter.github.io/) und
+baut einen typisierten Aufrufgraphen: Funktionen, Methoden, über
+`self`/Attribute/Parameter/Imports aufgelöste Aufrufkanten, Aufrufe, die den eigenen Code
+verlassen, und Aufrufe, die nicht aufgelöst werden konnten — in eine eigene Datei in
+Quarantäne gestellt, niemals geraten.
+
+**Diese Schicht berührt nie ein LLM.** Zweimal ausführen, zweimal denselben Graphen bekommen.
+
+### 2. Prosa liegt über den Fakten — und ist als solche gekennzeichnet
+
+Ein LLM schreibt den menschenlesbaren Teil: wozu eine Datei da ist, wie ein Subsystem
+zusammenhängt, welcher Zustand über welche Etappen fließt. Die Prosa ist immer im Graphen
+verankert, und wo sie scheitert, wird die Struktur trotzdem ausgeliefert — mit leerer
+Beschreibung.
+
+**Ein fehlender Satz ist besser als ein erfundener.**
+
+### 3. Die Karte ist zum Routen gebaut, nicht zum Lesen
+
+Die Ausgabe ist keine Zusammenfassung des Codes. Sie ist ein Index, der die Frage
+beantwortet: _„Welche Dateien, Funktionen und Zustände muss diese Änderung anfassen?“_ —
+einschließlich der verstreuten, nicht offensichtlichen. Der Planner nutzt anschließend
+diesen Index, liest an jeder gefundenen Adresse den echten Quelltext und erzeugt einen
+Änderungsplan, der byte-genau genug ist, um mechanisch angewendet zu werden.
+
+## Was ein Lauf liefert
+
+<img
+  src="/diagrams/outputs.svg"
+  alt="Ausgaben: Markdown-Handbuch, HTML-Site, Einzelseite, Agenten-Locator-Index, llms.txt, SKILL-Paket"
+  className="rounded-xl border"
+/>
+
+| Ausgabe                                                                                                       | Für wen  |
+| ------------------------------------------------------------------------------------------------------------- | -------- |
+| Markdown-Handbuch — Überblick, Etappenindex, eine Seite pro Etappe, Zustandsregister-Tabelle                  | Menschen |
+| Mehrseitige HTML-Site — Sticky-Inhaltsverzeichnis, Breadcrumbs, Theme-Umschalter, funktioniert über `file://` | Menschen |
+| Eine eigenständige HTML-Seite, die sich per E-Mail verschicken lässt                                          | Menschen |
+| Agenten-Locator-Index — Zuständigkeit, Einstiegskonzepte, Zustand, Beispiele, Co-Change-Hinweise              | Agenten  |
+| `llms.txt` + `llms-full.txt`                                                                                  | Agenten  |
+| Ein SKILL-Paket mit einem Content-Hash pro Datei, damit Drift erkennbar ist                                   | Agenten  |
+
+## Für wen das ist
+
+| Wer…                                                | Bekommt…                                                                                           |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Gerade einen Service mit 200k Zeilen geerbt         | Einen Etappe-für-Etappe-Rundgang, der sich tatsächlich lesen lässt, plus eine HTML-Site zum Teilen |
+| Betreibt einen Coding-Agenten auf einem großen Repo | Ein SKILL-Paket, das den Agenten davon abhält zu raten, wo die Dinge liegen                        |
+| Teamlead beim Onboarding                            | Dokumentation, die sich neu generiert, statt zu verrotten                                          |
+| Pflegt ein polyglottes Monorepo                     | Einen Durchlauf über 18 Sprachen, mit pro Sprache offengelegter Analysetreue                       |
+
+## Was es kostet
+
+- **Node.js ≥ 20.11 und pnpm.** Das ist die ganze Installation. Keine native Kompilierung,
+  kein Python, kein `node-gyp` — die Parser sind WebAssembly.
+- **Ein OpenAI-kompatibler Endpunkt** für die LLM-Phasen. Gehostetes OpenAI, Azure, vLLM,
+  Ollama, LiteLLM, ein interner Proxy — alles, was `/v1/chat/completions` spricht. Auch
+  ein Modell auf der eigenen Maschine.
+- **Gar nichts** für `handbook analyze` — der Befehl, der zuerst laufen sollte.
+
+<Callout type="info" title="Verlässt mein Code das Haus?">
+  Phase 1 ist vollständig lokal. Die Phasen 2 und 3 senden Dateiinhalte an den Endpunkt, der *selbst*
+  konfiguriert wurde — das kann localhost sein. Sonst verlässt nichts die Maschine, und `--max-chars-per-file`
+  begrenzt, wie viel von einer einzelnen Datei je gesendet wird. Siehe das
+  [Vertrauensmodell](/docs/concepts/trust-model).
+</Callout>
+
+## Wohin als Nächstes
+
+<Cards>
+  <Card
+    title="Warum es das gibt"
+    description="Das Routing-Problem, und warum eine Zusammenfassung der Codebasis es nicht löst."
+    href="/docs/concepts/why"
+  />
+  <Card
+    title="Wie die Generierung funktioniert"
+    description="Fünf Phasen, was jede kostet und was degradiert, wenn eine fehlschlägt."
+    href="/docs/concepts/pipeline"
+  />
+  <Card
+    title="Konfiguration"
+    description="Flags, Umgebungsvariablen, .env-Kaskaden und handbook.config.yaml — eine Registry."
+    href="/docs/reference/configuration"
+  />
+  <Card
+    title="Fehlerbehebung"
+    description="Die Dinge, die wirklich schiefgehen, und was dann zu tun ist."
+    href="/docs/guides/troubleshooting"
+  />
+</Cards>

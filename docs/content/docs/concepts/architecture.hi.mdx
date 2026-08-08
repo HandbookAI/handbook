@@ -1,0 +1,185 @@
+---
+title: 'Architecture'
+description: 'चार layers में ग्यारह packages, सख़्ती से एकतरफ़ा dependency दिशा, और वे boundaries जो deterministic आधे हिस्से को अकेले भी reusable बनाती हैं।'
+---
+
+## Layering
+
+<div className="not-prose">
+  <img
+    src="/diagrams/architecture.svg"
+    alt="Packages की layering: entry points, capabilities, engines, foundation"
+    className="rounded-xl border"
+  />
+</div>
+
+| Layer            | Packages                                                        | काम                                               |
+| ---------------- | --------------------------------------------------------------- | ------------------------------------------------- |
+| **Entry points** | `cli`, `studio`                                                 | जो इंसान या container चलाता है                    |
+| **Capabilities** | `pipeline`, `renderer`, `skill`, `planner`, `patcher`, `resync` | हरेक का एक काम, स्वतंत्र रूप से इस्तेमाल के लायक़ |
+| **Engines**      | `analyzer`, `llm`                                               | वे दो चीज़ें जिन पर बाक़ी सब बना है               |
+| **Foundation**   | `core`                                                          | Data model, config registry, utilities            |
+
+Dependencies **हमेशा सिर्फ़ नीचे की ओर इशारा करती हैं**:
+
+```text
+cli → pipeline / renderer / skill / planner / patcher / resync → analyzer / llm → core
+```
+
+## तीन नियम जो इसे स्वस्थ रखते हैं
+
+### 1. एकतरफ़ा dependencies, enforced
+
+`core` कोई internal चीज़ import नहीं करता। कोई भी `cli` को import नहीं करता। Cycle या ऊपर की
+ओर import `pnpm check:workspace` को fail कर देता है, जो यह भी verify करता है कि हर package
+के TypeScript project references उसकी `package.json` dependencies का हूबहू आईना हों — कोई
+reference छूट जाए तो `tsc -b` ग़लत क्रम में build करता है, और root से build करना उसे छिपा देता
+है।
+
+### 2. LLM isolation package boundary है, convention नहीं
+
+सिर्फ़ `llm`, `pipeline`, `planner` और `resync` किसी model से बात कर सकते हैं, और वह भी सिर्फ़
+`ChatClient` interface के ज़रिये:
+
+```ts
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
+```
+
+`analyzer`, `renderer`, `skill` और `patcher` **`@handbook/llm` पर बिल्कुल निर्भर नहीं
+करते।** वे पूरी तरह deterministic हैं और कहीं भी किसी LLM के बिना reusable हैं। इसीलिए
+`render`, `skill`, `validate`, `apply` और `rollback` CI में बेझिझक चल सकते हैं।
+
+इसीलिए पूरा test suite offline चलता है: एक seam, एक mock।
+
+### 3. Renderer की boundary एक type है
+
+`HandbookModel` (`core` में परिभाषित) ही एकमात्र चीज़ है जिसे renderer जानता है। वह pipeline
+के internals कभी नहीं पढ़ता।
+
+```ts
+interface HandbookModel {
+  title: string;
+  lang: NarrateLang;
+  skeleton: Skeleton;
+  cards: Record<string, FileCard>;
+  assignment: Assignment;
+  organization: Organization;
+  narration: Narration;
+  registers: RegisterEntry[];
+}
+```
+
+**जो भी producer एक `HandbookModel` भर सकता है, उसे rendering, skill packaging और
+planning मुफ़्त मिल जाती है।** अगर आप handbook किसी और तरीक़े से generate करना चाहते हैं, तो
+आपको बस यही पूरा contract संतुष्ट करना है।
+
+## Data flow
+
+```text
+source tree
+   │  analyzer — tree-sitter WASM, one adapter per language
+   ▼
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+   │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
+   ▼
+phase2/cards/<rel>.json + _coverage.json
+   │  pipeline 2b — skeleton synthesis (+ doctor loop) + file assignment
+   ▼
+phase2/skeleton.yaml + assignment.json
+   │  pipeline 2c — call-graph topological order + LLM grouping (flat fallback)
+   ▼
+phase2/organization.yaml
+   │  pipeline 3 — bottom-up narration + register extraction (content-hash cached)
+   ▼
+phase3/narration.json + registers.json
+   │  loadHandbookModel()
+   ▼
+HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.html · agent/ · llms.txt)
+                     │
+                     └──▶ skill ──▶ SKILL.md + references/ (+ coverage.json)
+```
+
+**Work directory का contract:** हर phase सिर्फ़ अपने upstream artifacts पढ़ता है और सिर्फ़
+अपने artifacts लिखता है — सब पढ़ते समय `version` field के साथ schema-validated। कोई भी phase
+अकेला दोबारा चलाया जा सकता है। Crash के बाद resume होता है — cards हर batch पर लिखे जाते हैं,
+narration content-hash cached है।
+
+## Analyzer के भीतर
+
+हर language एक `LanguageAdapter` लागू करती है: `discover`, `analyze`, और वैकल्पिक रूप से
+`statementSpans`। हर grammar WebAssembly है, इसलिए installation कभी native code compile
+नहीं करती।
+
+Adapters हर module पर **दो passes** चलाते हैं:
+
+1. **Scan** — declarations, imports, classes और methods, और हर function के facts:
+   signature, line range, async होना, decorators, `self`/`this` attribute के reads और
+   writes, typed parameters, और constructor assignments से सीखे गए attribute types।
+2. **Resolve** — हर call site एक typed edge बनती है: `self_method`, `self_attr_method`,
+   `param_method`, `internal_func`, `internal_constructor`, `boundary`,
+   `boundary_constructor` — या `unresolved`, जिसे graph builder एक category के साथ
+   `dropped-calls.json` में quarantine करता है।
+
+**रखे गए graph में हमेशा सिर्फ़ resolved, named callees होते हैं।** इसी से उसका हर edge भरोसे
+लायक़ बनता है।
+
+**Nav-pack** graph से निकाली गई एक deterministic orientation summary है — directory
+rollups, entry-point candidates, fan-out, external subsystems। Skeleton synthesizer
+codebase का _सिर्फ़ यही_ रूप देखता है, जिससे वह prompt छोटा और grounded रहता है।
+
+## Pipeline की quality machinery
+
+**तीन-tier card degradation (2a)।** पूरा batch → अकेली file → oversized files के लिए
+per-function chunks। जो files फिर भी fail हों, उन्हें एक ईमानदार खाली card मिलता है और वे
+`_coverage.json` में listed होती हैं। Coverage _construction से ही_ complete है; चूकें दिखती
+हैं, चुप नहीं रहतीं।
+
+**Actor–critic skeleton doctor (2b)।** Actor ground-truth stats के विरुद्ध अधिकतम तीन
+structural बदलाव प्रस्तावित करता है; तीन role-played critics (engineer, architect, reader)
+समानांतर में review करते हैं; हर बचा हुआ बदलाव apply होने से पहले **यांत्रिक रूप से** दोबारा
+validate होता है; प्रभावित files दोबारा assign होती हैं। Loop convergence पर, या बिना प्रगति
+के दो rounds पर रुक जाता है। टूटा हुआ critic `REJECT` गिना जाता है — fail होता reviewer किसी
+बदलाव को कभी पास न कर दे।
+
+**हर जगह deterministic fallbacks (2c, 3)।** Organization call-graph क्रम पर गिरती है।
+Narration stage description पर। Register extraction की विफलता खाली सूची देती है। Generation
+run **degrade होता है; block नहीं होता।**
+
+**Content-hash caches (3)।** Stage और system की prose `phase3/cache/` में cache होती है,
+जिसकी key है prompt version, language और पूरे prompt का hash — इसलिए re-runs और resyncs
+सिर्फ़ उसी की क़ीमत चुकाते हैं जो सचमुच बदला।
+
+## Concurrency और safety
+
+- **हर work directory में एक run।** `generateHandbook` और `resyncHandbook` एक ही
+  re-entrant directory lock लेते हैं, इसलिए एक CLI run और एक Studio job एक ही artifacts पर
+  writes आपस में गूँथ नहीं सकते।
+- **Atomic writes।** हर artifact temp file में लिखा जाता है, फिर rename होता है। Crash कभी
+  आधी-लिखी file नहीं छोड़ता जिस पर अगला run अटक जाए।
+- **Cooperative cancellation।** Phases के बीच और हर batch checkpoint पर `AbortSignal`
+  जाँचा जाता है, और हर LLM call में पिरोया जाता है ताकि in-flight requests abort हों। Abort
+  हुआ run जो बचा चुका है वह रखता है, और **कोई** run manifest नहीं लिखता।
+
+## जानने लायक़ फ़ैसले
+
+| #   | फ़ैसला                                   | क्यों                                                                                                                                                       |
+| --- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | WASM-only tree-sitter                    | शून्य native builds; हर language के लिए एक ही loading path; version-locked grammars                                                                         |
+| 2   | हाथ से लिखा `fetch` LLM client           | OpenAI-compatible endpoints अलग-अलग होते हैं; explicit retry वाला पतला client SDK dependency से बेहतर है। Transport से ज़्यादा मायने interface seam रखती है |
+| 3   | एक pipeline, दो strategies               | अलग-अलग बड़ी/छोटी pipelines adapters, critics, clients और renderers की नक़ल करतीं; एक strategy flag उस surface का लगभग 40% हटा देता है                      |
+| 4   | `version` के साथ zod-validated artifacts | Corrupt या hand-edited artifacts boundary पर ही ज़ोर से fail होते हैं, बाद के phases में ज़हर नहीं फैलाते                                                   |
+| 5   | Cards में facts/prose का अलगाव           | Model graph से निकली पूरी inventory पर टिप्पणी करता है। Prose खाली हो सकती है; facts ग़लत नहीं हो सकते                                                      |
+| 6   | Single-turn planner protocol             | हर endpoint पर चलता है, आसानी से mock होता है, और transcript जाँची जा सकती है। लागत — tokens दोबारा भेजना — planner के पैमाने पर स्वीकार्य है               |
+| 7   | ESM + `tsc -b`, कोई bundler नहीं         | Libraries type-checked `dist/` और `.d.ts` ship करती हैं; composite references बिना किसी अतिरिक्त tooling के incremental builds देते हैं                     |
+| 8   | एक configuration registry                | Flags, env names, YAML keys और तीन generated documents एक ही table से निकलते हैं, इसलिए वे drift नहीं कर सकते                                               |
+
+## आगे
+
+<Cards>
+  <Card title="पाँच phases, विस्तार से" href="/docs/concepts/pipeline" />
+  <Card title="Work directory" href="/docs/concepts/work-directory" />
+  <Card title="Package API index" href="/docs/reference/packages" />
+</Cards>

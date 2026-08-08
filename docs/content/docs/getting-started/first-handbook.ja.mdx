@@ -1,0 +1,226 @@
+---
+title: はじめての本格的なハンドブック
+description: 一度も読んだことのないリポジトリから、適用できる変更プランまでの 8 ステップ — 安価なチェックポイントを適切な場所に配置しています。
+---
+
+これは実際のリポジトリを使った一連の流れの全体です。順番どおりに進められるように書かれており、
+**無料の**チェックを高価なものより先に置いているのは意図的です。
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+export REPO=~/code/myrepo
+export WORK=work/myrepo
+```
+
+---
+
+## ステップ 1 — 飛び込む前に見る
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**これは無料で、あなたのスモークテストです。** LLM なし、キーなし、トークンなし。
+
+<Callout type="warn" title="先へ進む前にこの数値を読んでください">
+  - **`files` が予想よりはるかに少ない?** 1
+  つの言語がまるごとスキップされているか、ソースルートが間違っています。 `-v`
+  でスキャンログを確認してください。 - **`files` がはるかに多い?** `node_modules` や `vendor`、あるいは
+  ビルドディレクトリを解析しています。よくあるものは自動でスキップされます。そうでない場合は、リポジトリの
+  ルートではなく本当のソースルートに `--source` を向けてください。 - **`edgesDropped` が `edgesKept` に比べて
+  非常に大きい?** 動的言語では正常です。`phase1/dropped-calls.json` を見てください —
+  解決できなかった呼び出しは すべてそこで分類されており、隠されてはいません。
+</Callout>
+
+上記の問題は**いま**直してください。ここでのすべての問題は、後でより高くつく問題になります。
+
+## ステップ 2 — ハンドブックを生成する
+
+これがトークンを消費するステップです。中規模のリポジトリなら数分を見込んでください。
+
+まずは安く始めます:
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+これは `--detail brief` と `--synth-mode oneshot` です: ファイルごとの短いカードと、
+シングルパスのスケルトン。ハンドブックの「形」が正しいかどうかを確かめる最速の方法です。
+
+`$WORK/phase2/skeleton.yaml` を見てください。ステージの一覧はあなたのシステムらしく
+見えますか? そうであれば、アップグレードします:
+
+```bash
+handbook generate --source $REPO --work $WORK \
+    --phase 2a --detail deep --resume
+```
+
+`--phase 2a --resume` は**カードだけ**を深掘りし、すでに完全なカードを持つファイルは
+スキップします。検証済みのスケルトンはそのまま保たれます。
+
+スケルトンが「間違っている」場合は、代わりにアクター–クリティックのループで 2b を再実行します:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+<Callout title="再開可能、中断可能、キャッシュあり">
+  カードは完成した順に書き込まれます。`Ctrl-C` は安全です。`--resume`
+  は止まったところから再開し、`--llm-cache` は再実行をほぼ無料にし、`run-manifest.json`
+  には最後に成功したランのトークンコストが記録されます。
+</Callout>
+
+## ステップ 3 — レンダリングする
+
+```bash
+handbook render --work $WORK --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt
+```
+
+**LLM なし。** 好きなだけ実行してください — CI でも、コミットごとでも。
+
+`--source-base-url https://github.com/me/myrepo/blob/main` を加えると、ハンドブック内の
+すべてのファイルパスが実ファイルへのリンクになります。指定しなければ、出力に外部 URL は
+一切含まれません — プライベートなコードベースでは重要な性質です。
+
+`$WORK/handbook/html/overview.html` を開いて読んでください。ハンドブックの出来を判断するのは
+この瞬間です。
+
+## ステップ 4 — エージェント向けにパッケージングする
+
+```bash
+handbook skill --handbook $WORK/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work $WORK --source $REPO \
+    --agent-dir $WORK/handbook/agent
+```
+
+`--work` と `--source` を一緒に渡すと `coverage.json` が生成されます: ファイルごとの
+コンテンツハッシュです。**これがあることで、ハンドブックのドリフトは後から検出可能になります**
+— 黙って間違ったままになるのではなく。
+
+`--agent-dir` はロケータページを同梱し、SKILL のルーティングプロトコルに曖昧さ解消の
+ステップを追加します。
+
+## ステップ 5 — 検証する
+
+```bash
+handbook validate --skill skills/myrepo --source $REPO
+```
+
+構造、frontmatter の契約、索引 ↔ ステージページの整合性をチェックし、ソースを再ハッシュして
+遅れをとったページを報告します。**失敗時は終了コード `2`** なので、CI に入れるべきはこの
+コマンドです。
+
+## ステップ 6 — 実際の変更を計画する
+
+```bash
+handbook plan --source $REPO --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
+
+**読み取り専用**のエージェントループです: 一覧を取り、読み、grep します — 書き込みツールは
+そもそも存在しません — ハンドブックでルーティングし、実ソースに照らして検証し、`plan.md` を
+書きます。
+
+プランを読んでください。本当に読んでください。末尾には機械可読な宣言ブロックがあります:
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+<Callout type="info" title="諦めたプランナーは非ゼロで終了します">
+  使えるプランを作れなかった場合 — ファイル内容を捏造し続けた、ターンを使い切った、など — は、スクリプトが
+  そのまま `apply` に流し込んでしまうような謝罪文を `plan.md` に書く代わりに、大きな音を立てて失敗します。
+</Callout>
+
+## ステップ 7 — 適用する。戻り道を確保して
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run   # verify only, never writes
+handbook apply --source $REPO --plan plan.md             # for real
+```
+
+ドライランは、その精神において省略可能ではありません。現在のファイル内容に対してすべての
+アンカーを解決し、どの編集が着地するのかを正確に教えてくれます。
+
+適用するとバックアップディレクトリが表示されます。**必要になる前に、どこかへコピーして
+おいてください:**
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z
+```
+
+ロールバックは、パッチの「後」に変更されたファイルを、`--force` を渡さない限り拒否します —
+復元すればその作業を黙って破壊してしまうからです。4 つの安全ルールすべては
+[変更の適用](/docs/guides/applying-changes) を参照してください。
+
+## ステップ 8 — ハンドブックを前進させる
+
+コードは動きました。再生成せず、resync してください。
+
+**ケース**とは、あなたが組み立てるディレクトリです:
+
+```text
+cases/upload-retry/
+  edited/       copy of the repo after the change   (required)
+  plan.md       the plan from step 6                (optional — sharpens scope)
+  change.diff   unified diff of the change          (optional — widens scope)
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work $WORK
+```
+
+resync は編集後のツリーを再解析し、新旧のグラフを差分比較して、**変わったものだけ**を
+再生成します。`$WORK/handbook` 配下のレンダリング済み出力は自動的に更新されます。
+
+手元にエンドポイントがない? `--no-llm` は構造的な事実を更新し、文章については最新のふりを
+させる代わりに「古い」と印を付けます。
+
+---
+
+## リポジトリが非常に大きい場合
+
+| 症状                         | 対処                                                                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| ファイルが数千ある           | まず `--detail brief` から。後で `--phase 2a --detail deep --resume` で選んだフェーズを深掘りします。             |
+| ランが遅い                   | `--read-workers` / `--assign-workers` / `--narrate-workers` を上げます。いずれも `--llm-concurrency` の範囲内で。 |
+| レート制限                   | `--llm-concurrency` を下げます。`--llm-retries` と `--llm-retry-backoff` を上げます。                             |
+| 巨大な生成ファイル           | `--max-chars-per-file 20000` がファイルごとの送信量を切り詰めます。                                               |
+| 1 つのサブシステムだけが対象 | そのサブディレクトリに `--source` を向けます。グラフはスキャンしたものから構築されます。                          |
+| 反復しながらの再実行         | `--llm-cache`、そして意図的にキャッシュを無視したいときは `--refresh`。                                           |
+
+詳しくは [コストとパフォーマンス](/docs/guides/cost-and-performance) を参照してください。
+
+## 次へ
+
+<Cards>
+  <Card title="生成を深く知る" href="/docs/guides/generating" />
+  <Card title="変更を計画する" href="/docs/guides/planning-changes" />
+  <Card title="最新に保つ" href="/docs/guides/keeping-current" />
+  <Card title="トラブルシューティング" href="/docs/guides/troubleshooting" />
+</Cards>

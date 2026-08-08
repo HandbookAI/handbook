@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbook 端到端流水线：analyze、generate、render、skill、plan、apply，以及 resync 反馈回路">
+  <title>Handbook — 端到端流水线</title>
+  <desc>源代码被分析成调用图，生成为手册，渲染成 markdown 与 HTML，打包为 agent 技能，用于规划一次变更，逐字节精确地应用，再由 resync 同步回手册。</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="55%" stop-color="#101733"/>
+      <stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <linearGradient id="cardG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2242"/>
+      <stop offset="100%" stop-color="#141B36"/>
+    </linearGradient>
+    <linearGradient id="srcG" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1E2A52"/>
+      <stop offset="100%" stop-color="#182140"/>
+    </linearGradient>
+    <linearGradient id="syncG" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2A1F45"/>
+      <stop offset="100%" stop-color="#1D1836"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6C7BB5"/>
+    </marker>
+    <marker id="arrowV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A78BFA"/>
+    </marker>
+    <style>
+      .t   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .m   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .h1  { fill:#F2F5FF; font-size:25px; font-weight:700; letter-spacing:-0.3px; }
+      .sub { fill:#8C9AC4; font-size:14px; }
+      .cmd { fill:#F2F5FF; font-size:19px; font-weight:700; }
+      .num { fill:#0B1020; font-size:13px; font-weight:800; }
+      .body{ fill:#AEBBDF; font-size:13.5px; }
+      .out { fill:#7F8DB8; font-size:12.5px; }
+      .tagT{ fill:#0B1020; font-size:11px; font-weight:800; letter-spacing:0.4px; }
+      .lbl { fill:#8C9AC4; font-size:12px; letter-spacing:0.6px; font-weight:700; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="660" rx="18" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="1119" height="659" rx="18" fill="none" stroke="#232C4E"/>
+
+  <!-- ── header ─────────────────────────────────────────────────────────── -->
+  <text class="t h1" x="40" y="48">从源代码到一本你的 AI 智能体真正能用来导航的手册</text>
+  <text class="t sub" x="40" y="72">青色 = 确定性执行，无 LLM、无网络  ·  琥珀色 = 由 LLM 驱动，带缓存、可续跑</text>
+
+  <!-- ── source band ────────────────────────────────────────────────────── -->
+  <rect x="40" y="94" width="1040" height="46" rx="12" fill="url(#srcG)" stroke="#2E3A66"/>
+  <circle cx="66" cy="117" r="6" fill="#60A5FA"/>
+  <text class="t body" x="84" y="122" fill="#CBD5F5">你的代码仓库 — 任意规模、任意语言组合 · 支持 18 种语言 · 除了你让 LLM 阅读的内容，什么都不会上传</text>
+
+  <!-- ── row 1 ──────────────────────────────────────────────────────────── -->
+  <!-- card 1: analyze -->
+  <rect x="40" y="172" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="40" y="172" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="68" cy="203" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="68" y="208" text-anchor="middle">1</text>
+  <text class="m cmd" x="90" y="209">analyze</text>
+  <rect x="272" y="192" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="307" y="206" text-anchor="middle">无 LLM</text>
+  <text class="t body" x="40" y="238"><tspan x="68">tree-sitter（WASM）解析每个文件，</tspan><tspan x="68" dy="18">得到带类型的调用图：函数、</tspan><tspan x="68" dy="18">已解析的边、边界调用。</tspan></text>
+  <text class="m out" x="68" y="303">→ phase1/graph.json</text>
+
+  <!-- card 2: generate -->
+  <rect x="400" y="172" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#3A3560"/>
+  <rect x="400" y="172" width="320" height="3" rx="1.5" fill="#FBBF24"/>
+  <circle cx="428" cy="203" r="13" fill="#FBBF24"/>
+  <text class="t num" x="428" y="208" text-anchor="middle">2</text>
+  <text class="m cmd" x="450" y="209">generate</text>
+  <rect x="646" y="192" width="52" height="20" rx="10" fill="#FBBF24"/>
+  <text class="t tagT" x="672" y="206" text-anchor="middle">LLM</text>
+  <text class="t body" x="400" y="238"><tspan x="428">2a 文件卡片 → 2b 骨架 + 分配</tspan><tspan x="428" dy="18">→ 2c 分组 → 3 叙述，以及</tspan><tspan x="428" dy="18">跨阶段状态寄存器。</tspan></text>
+  <text class="m out" x="428" y="303">→ phase2/ · phase3/</text>
+
+  <!-- card 3: render -->
+  <rect x="760" y="172" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="760" y="172" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="788" cy="203" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="788" y="208" text-anchor="middle">3</text>
+  <text class="m cmd" x="810" y="209">render</text>
+  <rect x="992" y="192" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="1027" y="206" text-anchor="middle">无 LLM</text>
+  <text class="t body" x="760" y="238"><tspan x="788">Markdown 页面、多页 HTML 站点、</tspan><tspan x="788" dy="18">单个自包含页面、给 AI 用的</tspan><tspan x="788" dy="18">定位索引，以及 llms.txt。</tspan></text>
+  <text class="m out" x="788" y="303">→ &lt;work&gt;/handbook/</text>
+
+  <!-- arrows row 1 -->
+  <line x1="366" y1="245" x2="394" y2="245" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="726" y1="245" x2="754" y2="245" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- wrap connector: render → skill -->
+  <path d="M 1080 318 L 1080 348 Q 1080 360 1068 360 L 52 360 Q 40 360 40 372 L 40 392" fill="none" stroke="#6C7BB5" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+
+  <!-- ── row 2 ──────────────────────────────────────────────────────────── -->
+  <!-- card 4: skill -->
+  <rect x="40" y="402" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="40" y="402" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="68" cy="433" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="68" y="438" text-anchor="middle">4</text>
+  <text class="m cmd" x="90" y="439">skill</text>
+  <rect x="272" y="422" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="307" y="436" text-anchor="middle">无 LLM</text>
+  <text class="t body" x="40" y="468"><tspan x="68">把手册重新打包为带内容哈希</tspan><tspan x="68" dy="18">的 agent SKILL，代码一旦漂移</tspan><tspan x="68" dy="18">就能被检测出来。</tspan></text>
+  <text class="m out" x="68" y="533">→ SKILL.md + references/</text>
+
+  <!-- card 5: plan -->
+  <rect x="400" y="402" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#3A3560"/>
+  <rect x="400" y="402" width="320" height="3" rx="1.5" fill="#FBBF24"/>
+  <circle cx="428" cy="433" r="13" fill="#FBBF24"/>
+  <text class="t num" x="428" y="438" text-anchor="middle">5</text>
+  <text class="m cmd" x="450" y="439">plan</text>
+  <rect x="646" y="422" width="52" height="20" rx="10" fill="#FBBF24"/>
+  <text class="t tagT" x="672" y="436" text-anchor="middle">LLM</text>
+  <text class="t body" x="400" y="468"><tspan x="428">一个只读智能体借助手册导航，</tspan><tspan x="428" dy="18">阅读真实源码，并产出逐字节</tspan><tspan x="428" dy="18">精确的 EDIT 块。</tspan></text>
+  <text class="m out" x="428" y="533">→ plan.md</text>
+
+  <!-- card 6: apply -->
+  <rect x="760" y="402" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="760" y="402" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="788" cy="433" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="788" y="438" text-anchor="middle">6</text>
+  <text class="m cmd" x="810" y="439">apply</text>
+  <rect x="992" y="422" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="1027" y="436" text-anchor="middle">无 LLM</text>
+  <text class="t body" x="760" y="468"><tspan x="788">全有或全无的补丁应用：锚点</tspan><tspan x="788" dy="18">唯一匹配、暂存写入、备份，</tspan><tspan x="788" dy="18">以及经过验证的回滚。</tspan></text>
+  <text class="m out" x="788" y="533">→ 已编辑的文件树 + 备份</text>
+
+  <!-- arrows row 2 -->
+  <line x1="366" y1="475" x2="394" y2="475" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="726" y1="475" x2="754" y2="475" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── resync band ────────────────────────────────────────────────────── -->
+  <rect x="40" y="580" width="1040" height="52" rx="13" fill="url(#syncG)" stroke="#4A3B7A"/>
+  <circle cx="68" cy="606" r="13" fill="#A78BFA"/>
+  <text class="t num" x="68" y="611" text-anchor="middle">7</text>
+  <text class="m cmd" x="90" y="612" font-size="17">resync</text>
+  <text class="t body" x="172" y="611">代码又往前走了？对调用图做 diff，只重新生成变化的部分，把叙述向前滚动 — 无需全量重建。</text>
+
+  <!-- feedback arc: apply → resync → back up into generate/render -->
+  <path d="M 1040 548 L 1040 566 Q 1040 580 1026 580" fill="none" stroke="#A78BFA" stroke-width="2" marker-end="url(#arrowV)"/>
+  <path d="M 40 606 L 34 606 Q 22 606 22 594 L 22 257 Q 22 245 34 245 L 34 245" fill="none" stroke="#A78BFA" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowV)"/>
+  <rect x="882" y="592" width="146" height="28" rx="14" fill="#3B2E63" stroke="#5B4A94"/>
+  <text class="t lbl" x="955" y="611" text-anchor="middle" fill="#C4B5FD" font-size="11.5">始终保持最新</text>
+</svg>

@@ -1,0 +1,117 @@
+---
+title: '快速上手'
+description: '大约三十秒内端到端跑完整条工具链——离线、无需 API key、零 token 消耗。'
+---
+
+理解 Handbook 在做什么，最快的方式就是看它做一遍。这一步会对一个内置示例项目、用内置的 mock LLM 服务器跑完**整条**流水线——分析、生成、渲染、打包、校验。
+
+**不需要 API key。不需要网络。零 token。**
+
+## 第 1 步——运行
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm demo
+```
+
+## 第 2 步——读它打印的内容
+
+```text
+== build ==
+== start mock LLM (offline; prose will be placeholder text) ==
+== 1. analyze (no LLM) ==
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+== 2. generate (phases 2+3) ==
+{ "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
+== 3. render markdown + HTML site + agent index + llms.txt ==
+== 4. package as an agent SKILL (with the agent locator pages) ==
+== 5. validate the SKILL ==
+validate: OK
+```
+
+<Callout type="warn" title="生成的文字会是胡话——这是正常的">
+  mock LLM
+  返回的是占位文本。**结构是完全真实的**——阶段、文件归属、调用事实、行号范围、寄存器表、每一个链接。只有句子是假的。而这正是本项目立足的分工：事实来自解析器，文字来自模型。
+</Callout>
+
+## 第 3 步——打开结果
+
+```bash
+open examples/work/demo/handbook/overview.md        # the markdown handbook
+open examples/work/demo/handbook/html/overview.html # the multi-page HTML site
+open examples/work/demo/handbook/handbook.html      # the whole thing in one file
+open examples/work/demo/skill/SKILL.md              # the agent SKILL package
+```
+
+值得专门看一看的东西：
+
+| 打开这个                              | 注意看                                             |
+| ------------------------------------- | -------------------------------------------------- |
+| `handbook/overview.md`                | 由调用图生成的 mermaid **阶段地图**                |
+| `handbook/index.md`                   | 每个阶段，层层嵌套，各配一段文字                   |
+| `handbook/register.md`                | 跨阶段状态，以及触碰每一项状态的阶段               |
+| `handbook/agent/index.md`             | 代理定位格式——没有叙述，只有地址                   |
+| `handbook/agent/disambiguation.md`    | 那些确实同时指向多个阶段的术语                     |
+| `skill/references/coverage.json`      | 每个文件一个内容哈希。这就是漂移信号。             |
+| `work/demo/phase1/dropped-calls.json` | 分析器**无法**解析的调用，被保留并分类，而不是靠猜 |
+
+## 第 4 步——掀开引擎盖
+
+流水线产出的一切都是工作目录里的普通 JSON 和 YAML：
+
+```bash
+ls examples/work/demo/
+# phase1/  phase2/  phase3/  handbook/  skill/  run-manifest.json
+
+cat examples/work/demo/phase1/graph.json | head -40
+cat examples/work/demo/phase2/skeleton.yaml
+cat examples/work/demo/run-manifest.json     # model, phases, timings, token usage
+```
+
+其中每一个文件在读取时都会做 schema 校验。如果你手改出了一个非法状态，下一条命令会告诉你是哪个文件、错在哪里——错误不会向下游传播。
+
+## 其他演示
+
+```bash
+pnpm demo:self        # this repo as its own input, against the mock LLM
+pnpm demo:self:real   # same, but against the real endpoint from .env
+pnpm mock-llm         # just the mock server, on port 8099
+```
+
+`pnpm demo:self` 更值得一读：它分析的是十一个真实的 TypeScript 包，所以它产出的阶段结构是一张真实代码库的真实地图。
+
+## 刚才发生了什么
+
+<div className="not-prose">
+  <img
+    src="/diagrams/pipeline.svg"
+    alt="Handbook 流水线：analyze、generate、render、skill、plan、apply、resync"
+    className="rounded-xl border"
+  />
+</div>
+
+1. **`analyze`** 用 tree-sitter 把每个文件解析成带类型的调用图。不用 LLM。
+2. **`generate`** 为每个文件写一张卡片，合成阶段骨架，把每个文件归入某个阶段，再分组排序，然后自底向上叙述，并提取跨阶段状态寄存器。
+3. **`render`** 把这些变成 markdown、一个 HTML 站点、一个自包含单页、代理定位索引和 `llms.txt`。不用 LLM。
+4. **`skill`** 把它重新打包成一个代理 SKILL，每个文件带内容哈希。不用 LLM。
+5. **`validate`** 检查结构、frontmatter 契约、索引 ↔ 阶段页的链接以及哈希新鲜度。不用 LLM。
+
+演示到此为止。另一半——**`plan` → `apply` → `rollback` → `resync`**——在[你的第一本真实手册](/docs/getting-started/first-handbook)和[规划改动](/docs/guides/planning-changes)中讲解。
+
+## 下一步
+
+<Cards>
+  <Card
+    title="你的第一本真实手册"
+    description="同样的步骤，换成你的仓库，以及仓库很大时该怎么办。"
+    href="/docs/getting-started/first-handbook"
+  />
+  <Card
+    title="词汇表"
+    description="阶段、卡片、寄存器、工作目录、case——每个词在这里的确切含义。"
+    href="/docs/getting-started/vocabulary"
+  />
+  <Card title="Studio" description="同一条流水线，但改成用点的。" href="/docs/guides/studio" />
+</Cards>

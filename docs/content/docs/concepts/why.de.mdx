@@ -1,0 +1,127 @@
+---
+title: 'Warum es das gibt'
+description: 'Eine Codebasis zusammenzufassen hilft einem Agenten nicht beim Finden. Routing schon. Das ist das Argument — und das Design, das daraus folgt.'
+---
+
+## Der Fehler, der schon bekannt vorkommt
+
+Ein Coding-Agent soll eine Änderung machen, die das ganze System durchzieht. Er greppt
+nach einem Symbol, findet eine plausible Stelle, editiert sie und meldet Erfolg.
+
+Verpasst hat er:
+
+- die Konstante, die das Verhalten tatsächlich steuert, drei Verzeichnisse weiter;
+- die gespiegelte Implementierung im Batch-Pfad;
+- die Metrik, die genau das zählt, was er gerade geändert hat;
+- den Test, der das alte Verhalten festschreibt.
+
+Der Agent war nicht verwirrt darüber, _wie_ der Code zu schreiben ist. Er war verwirrt
+darüber, **wo der Code liegt**. Und er hatte keine Möglichkeit, das herauszufinden, denn
+seine einzigen Werkzeuge waren Textsuche und ein Kontextfenster, das zu klein für das
+Repository ist.
+
+## Warum Zusammenfassungen das nicht beheben
+
+Die naheliegende Antwort lautet: „die Codebasis zusammenfassen und dem Agenten die
+Zusammenfassung geben“. Das scheitert aus einem bestimmten Grund:
+
+> **Eine Zusammenfassung beantwortet „Was ist das?“ Ein Agent braucht „Wo ist das?“**
+
+Ein wunderschön geschriebener Absatz über das Upload-Subsystem verrät einem Agenten
+nicht, dass das Retry-Budget auch in `worker/queue.py` liegt und von `metrics/emit.py`
+gelesen wird. Schlimmer noch: Eine Zusammenfassung ist _plausible Prosa_ — ein Agent
+argumentiert bereitwillig auf ihr aufbauend und kann nicht unterscheiden, welche Sätze
+tragende Fakten sind und welche die Paraphrase des Modells.
+
+Drei Fehlermodi folgen daraus:
+
+1. **Sie ist nicht adressierbar.** Prosa benennt Konzepte, keine Pfade und Zeilenbereiche.
+2. **Sie ist nicht überprüfbar.** Nichts darin unterscheidet einen geparsten Fakt von
+   einer Vermutung.
+3. **Sie verrottet.** In dem Moment, in dem sich der Code ändert, ist die Zusammenfassung
+   leise falsch — und nichts darin sagt das.
+
+## Was Handbook stattdessen tut
+
+### Es baut einen Index, keine Zusammenfassung
+
+Die Ausgabe beantwortet genau eine Frage: **Welche Dateien, Funktionen und
+Zustandsstücke muss diese Änderung anfassen?**
+
+Jeder Eintrag ist eine Adresse — ein Pfad, ein qualifizierter Name, ein Zeilenbereich —
+abgeleitet aus einem echten Parse. Die Prosa um diese Adressen herum hilft Menschen beim
+Lesen und ist ausdrücklich _nicht_ das, worauf ein Agent handeln soll. Das SKILL-Paket
+sagt das in seiner ersten Zeile:
+
+> Dieses Handbuch ist ein **Ortsindex** für die Codebasis, keine Codebeschreibung.
+> Es dient dazu zu entscheiden, WELCHE Dateien, Funktionen und Zustände eine Änderung
+> anfassen muss — danach den echten Quelltext lesen.
+
+### Es trennt Fakten von Prosa — per Konstruktion
+
+|                                                   | Stammt aus                     | Kann es falsch sein?                                    |
+| ------------------------------------------------- | ------------------------------ | ------------------------------------------------------- |
+| Dateien, Funktionen, Zeilenbereiche, Aufrufkanten | tree-sitter                    | Nein — es ist ein Parse                                 |
+| Welche Aufrufe **nicht** aufgelöst werden konnten | tree-sitter                    | Nein — sie werden in Quarantäne gestellt, nicht geraten |
+| Etappenstruktur                                   | LLM, dann mechanisch validiert | Strukturell nein; im Urteil ja                          |
+| Zweck, Rundgänge, Überblicke                      | LLM                            | Ja — und es ist als Prosa gekennzeichnet                |
+
+Die Trennung wird durch eine **Paketgrenze** erzwungen, nicht durch Konvention:
+Analyzer, Renderer, Skill-Packager und Patcher hängen überhaupt nicht vom LLM-Paket ab.
+
+### Es scheitert sichtbar
+
+Jede Designentscheidung hier folgt einer Regel: **Wenn etwas nicht funktioniert, wird
+das gesagt.**
+
+- Eine Datei, deren Kartengenerierung fehlgeschlagen ist, erscheint trotzdem — mit
+  leerer Beschreibung. Sie steht in `_coverage.json`. Sie wird nie verworfen und nie
+  erfunden.
+- Ein Aufruf, den der Analyzer nicht auflösen konnte, wandert mit Kategorie und Rohtext
+  nach `dropped-calls.json`. Er wird nie zu einer plausiblen Kante erraten.
+- Eine von der konfigurationsgetriebenen Engine analysierte Sprache wird **im Überblick
+  namentlich genannt**, damit „Best-Effort-Aufrufbeziehungen“ nicht als „exakt“ gelesen
+  werden können.
+- Ein Planner-Lauf, der aufgegeben hat, beendet sich mit Exit-Code ungleich null — kein
+  Skript hält seine Entschuldigung für einen Plan.
+- Ein Patch-Anker, der null Mal oder zweimal passt, verweigert. Er wählt nie einen aus.
+
+### Es bleibt zu proportionalen Kosten aktuell
+
+Dokumentation verrottet, weil ihre Aktualisierung so viel kostet wie ihr Schreiben.
+`resync` vergleicht den alten Aufrufgraphen mit dem neuen und regeneriert nur, was sich
+geändert hat — Karten für berührte Dateien, die Zuordnung für neue, Prosa für betroffene
+Etappen. Drei Dateien angefasst, für drei Dateien bezahlt.
+
+Den Rest erledigt der Content-Hash-Cache: Eine Etappe, deren Eingaben sich nicht
+geändert haben, wird gar nicht neu erzählt.
+
+## Die Ökonomie
+
+Die Generierung ist der teure Schritt, und sie passiert **einmal**. Alles danach — das
+Rendern zu Markdown, zur HTML-Site, zum Agentenindex, zu `llms.txt`, das Paketieren als
+SKILL, das Validieren dieses Pakets — ist deterministisch und kostenlos. Das kann bei
+jedem Commit laufen.
+
+Diese Trennung ist der Grund, warum `render` und `skill` eigene Befehle sind statt Flags
+an `generate` — und warum sie in Paketen leben, die ein LLM nicht einmal versehentlich
+erreichen können.
+
+## Was das nicht ist
+
+- **Kein Code-Suchwerkzeug.** Es ersetzt weder `grep` noch das LSP. Es sagt einem
+  Agenten, _wohin er sie richten soll_.
+- **Kein autonomer Coding-Agent.** Der Planner ist per Konstruktion rein lesend; er hat
+  kein Schreibwerkzeug. `apply` ist ein mechanischer Ausführer ohne Modell in der
+  Schleife. Dazwischen entscheidet ein Mensch.
+- **Kein Ersatz für die eigene Dokumentation.** Architekturentscheidungen,
+  Produktabsicht und Teamkonventionen lassen sich nicht aus einem Aufrufgraphen
+  ableiten, und Handbook tut auch nicht so.
+
+## Weiter
+
+<Cards>
+  <Card title="Wie es zusammengesetzt ist" href="/docs/concepts/architecture" />
+  <Card title="Die fünf Phasen" href="/docs/concepts/pipeline" />
+  <Card title="Was vertrauenswürdig ist" href="/docs/concepts/trust-model" />
+</Cards>

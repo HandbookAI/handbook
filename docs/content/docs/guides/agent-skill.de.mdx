@@ -1,0 +1,181 @@
+---
+title: 'Für Ihren Agenten paketieren'
+description: 'Ein gerendertes Handbook in ein SKILL-Paket mit Drift-Erkennung verwandeln und in einen Coding-Agenten einbinden.'
+---
+
+```bash
+handbook skill --handbook <rendered-dir> --out <skill-dir> --name <slug> [options]
+handbook validate --skill <skill-dir> --source <repo>
+```
+
+Beide sind deterministisch. **Kein LLM.**
+
+## Bauen
+
+```bash
+handbook skill \
+  --handbook work/api/handbook \
+  --out skills/api \
+  --name api \
+  --project "Payments API" \
+  --work work/api \
+  --source ~/code/api \
+  --agent-dir work/api/handbook/agent
+```
+
+| Flag                  | Warum Sie es wollen                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `--work` + `--source` | Erzeugt `coverage.json` mit einem **Inhalts-Hash pro Datei** — dem Drift-Signal                   |
+| `--agent-dir`         | Liefert die Locator-Seiten mit und ergänzt das Routing-Protokoll um einen Disambiguierungsschritt |
+| `--project`           | Der menschenlesbare Name in der Prosa. Standard ist `--name`                                      |
+| `--lang zh`           | Chinesischer **Textkörper**. Das Frontmatter bleibt Englisch — siehe unten                        |
+
+## Was Sie bekommen
+
+```text
+skills/api/
+  SKILL.md                    the routing guide
+  corrections.jsonl           agent-written feedback (created by the agent, never the build)
+  references/
+    overview.md               the system's shape
+    index.md                  every subsystem → its files
+    registers.md              cross-stage state
+    stages/<id>.md            one page per stage
+    agent/how_to_use.md
+    agent/disambiguation.md
+    coverage.json             file → stage + sha256
+```
+
+Das Paket ist **in sich geschlossen und teilbar**, und es bettet niemals Quellcode ein. Es
+liefert die Landkarte, nicht das Gelände.
+
+## Der SKILL.md-Vertrag
+
+```yaml
+---
+name: api-handbook
+description: Navigate the Payments API codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing Payments API work that is unfamiliar,
+  spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated
+  to Payments API or isolated edits where the exact file is already known and no
+  cross-cutting impact is plausible.
+---
+```
+
+<Callout type="warn" title="Das Frontmatter bleibt auch mit --lang zh Englisch">
+  Agent-Laufzeiten wählen Skills durch Abgleich mit dem Beschreibungstext aus, und der validierte Vertrag "Use
+  when … / Do not use …" ist Teil dieser Routing-Oberfläche. Ihn zu übersetzen würde die Auswahl
+  stillschweigend brechen. Der Textkörper wird übersetzt; die Routing-Oberfläche nicht.
+</Callout>
+
+Der Textkörper ist ein nummeriertes Protokoll:
+
+1. Lesen Sie `references/overview.md` für die Gestalt des Systems.
+2. Routen Sie über `references/index.md` — der Etappenindex bildet jedes Subsystem auf seine Dateien ab.
+3. Öffnen Sie nur die relevanten `references/stages/<id>.md`-Seiten.
+4. Prüfen Sie `references/registers.md` auf Querschnitts-Zustand — unbezahlbar bei Fan-out-Änderungen.
+5. _(mit `--agent-dir`)_ Disambiguieren Sie, wenn ein Begriff mehrdeutig ist.
+6. **Lesen Sie mit `read_file` die tatsächliche Quelle an jedem zitierten Pfad, bevor Sie Änderungen vorschlagen oder vornehmen.**
+
+Und seine erste Zeile sagt das Wichtigste:
+
+> Dieses Handbook ist ein **Ortsindex** für die Codebasis, keine Codebeschreibung.
+
+## Drift-Erkennung
+
+```json title="references/coverage.json"
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+```
+
+hasht die lebende Quelle erneut und warnt bei jeder Datei, deren Inhalt sich bewegt hat.
+**Exit-Code `2`** bei Fehlschlag, damit fällt das direkt in die CI:
+
+```yaml
+- run: handbook validate --skill skills/api --source .
+  continue-on-error: true # a warning, not a build break — then schedule a resync
+```
+
+## Die Korrekturschleife
+
+Wenn eine Behauptung des Handbooks der echten Quelle widerspricht, hängt der Agent eine
+Zeile an `corrections.jsonl` in der **Skill-Wurzel** an:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py",
+  "notedAt": "2026-08-08T12:00:00Z"
+}
+```
+
+Nur `file` ist erforderlich. Die Datei liegt in der Wurzel, nie unter `references/`, weil
+Planer diesen Baum schreibgeschützt einhängen.
+
+```bash
+handbook resync --case cases/x --work work/api --corrections skills/api/corrections.jsonl
+```
+
+Die genannten Dateien kommen in die Refresh-Menge, **selbst wenn sich ihre Bytes nie
+geändert haben** — eine Behauptung, der die Quelle widerspricht, ist Grund genug, diese
+Datei neu zu beschreiben. Die verbrauchte Datei wird anschließend mit Zeitstempel
+archiviert, sodass dieselbe Korrektur nicht zweimal angewendet werden kann.
+
+Ein Rebuild bewahrt ausstehende Korrekturen über das Aufräumen hinweg.
+
+## Einbindung in einen Agenten
+
+### Claude Code
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/api .claude/skills/api-handbook
+```
+
+Der Agent findet den Skill über die Beschreibung im Frontmatter.
+
+### Jeder Agent mit einem Dateisystem
+
+Zeigen Sie ihn auf das Verzeichnis und weisen Sie ihn an, zuerst `SKILL.md` zu lesen. Das
+Protokoll darin ist selbstbeschreibend und hängt an keiner bestimmten Laufzeitumgebung.
+
+### Der Planer
+
+```bash
+handbook plan --source ~/code/api --handbook skills/api/references \
+  --request "Retry failed uploads three times" --out plan.md
+```
+
+`--handbook` nimmt das Verzeichnis `references/` entgegen, das schreibgeschützt unter
+`__handbook__/` in der Sandbox des Planers eingehängt wird.
+
+## Verweigerungen, die der Build erzwingt
+
+- **`--out` darf nicht das Handbook-Verzeichnis sein, und auch kein Vorfahre davon.** Der
+  Build beginnt damit, `--out` zu leeren; das würde genau das löschen, was paketiert
+  werden soll, und dann stillschweigend einen leeren Skill erzeugen.
+- **Locator-Seiten werden als Paar ausgeliefert oder gar nicht.** `SKILL.md` darf niemals
+  zu einer Datei routen, die nicht da ist.
+- **Die Register-Seite existiert immer**, selbst für ein Handbook mit null Registern, weil
+  ein stabiles Referenzlayout Teil des Vertrags ist.
+
+## Frisch halten
+
+```bash
+handbook resync --case cases/latest --work work/api    # roll the handbook forward
+handbook skill  --handbook work/api/handbook --out skills/api --name api \
+                --work work/api --source ~/code/api --agent-dir work/api/handbook/agent
+handbook validate --skill skills/api --source ~/code/api
+```
+
+Resync ist inkrementell, und `skill` + `validate` sind kostenlos. Diese gesamte Sequenz
+ist billig genug, um sie nach Zeitplan laufen zu lassen.

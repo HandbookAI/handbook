@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="Handbook 一次运行的产出物：markdown 页面、HTML 站点、单文件页面、智能体定位索引、llms.txt 文件，以及打包好的智能体 SKILL">
+  <title>Handbook — 一次运行给你什么</title>
+  <desc>从同一个工作目录出发，render 产出 markdown 页面、多页 HTML 站点、一个自包含的 HTML 页面、智能体定位索引和 llms.txt；skill 再把这些重新打包成带内容哈希的智能体 SKILL。</desc>
+
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/><stop offset="60%" stop-color="#101733"/><stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <linearGradient id="cardH" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2242"/><stop offset="100%" stop-color="#141B36"/>
+    </linearGradient>
+    <marker id="fan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5C6AA0"/>
+    </marker>
+    <style>
+      .t   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .m   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .h1  { fill:#F2F5FF; font-size:25px; font-weight:700; letter-spacing:-0.3px; }
+      .sub { fill:#8C9AC4; font-size:14px; }
+      .ttl { fill:#F2F5FF; font-size:15px; font-weight:700; }
+      .path{ fill:#7DD3C8; font-size:11.5px; }
+      .body{ fill:#9FB0DC; font-size:12.5px; }
+      .who { fill:#0B1020; font-size:10.5px; font-weight:800; letter-spacing:0.5px; }
+      .cap { fill:#68779F; font-size:11.5px; font-weight:800; letter-spacing:1.2px; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="600" rx="18" fill="url(#bg4)"/>
+  <rect x="0.5" y="0.5" width="1119" height="599" rx="18" fill="none" stroke="#232C4E"/>
+
+  <text class="t h1" x="40" y="48">一个工作目录。六种可交付的格式。没有一个需要再用 LLM。</text>
+  <text class="t sub" x="40" y="72">生成是最贵的一步，而它只发生一次。下面的一切都是确定性的重渲染，可以在 CI 里跑。</text>
+
+  <!-- the work dir -->
+  <rect x="40" y="120" width="252" height="182" rx="13" fill="#1E2A52" stroke="#3D4E86"/>
+  <text class="t cap" x="60" y="148">唯一事实来源</text>
+  <text class="m ttl" x="60" y="176" font-size="14">&lt;work&gt;/</text>
+  <text class="m body" x="60" y="200">phase1/graph.json</text>
+  <text class="m body" x="60" y="220">phase2/cards/ · skeleton</text>
+  <text class="m body" x="60" y="240">phase2/assignment · org</text>
+  <text class="m body" x="60" y="260">phase3/narration · registers</text>
+  <text class="m body" x="60" y="284" fill="#7386B4">run-manifest.json</text>
+
+  <path d="M 292 211 L 316 211" stroke="#5C6AA0" stroke-width="2"/>
+  <path d="M 316 211 L 316 151 L 348 151" fill="none" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#fan)"/>
+  <path d="M 316 211 L 316 293 L 348 293" fill="none" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#fan)"/>
+
+  <!-- row 1 -->
+  <rect x="356" y="86" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="356" y="86" width="232" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="374" y="112">Markdown 手册</text>
+  <text class="m path" x="374" y="131">overview · index · &lt;stage&gt;.md</text>
+  <text class="t body" x="374" y="152">逐阶段的完整讲解，</text>
+  <text class="t body" x="374" y="169">一张 mermaid 阶段地图，</text>
+  <text class="t body" x="374" y="186">以及每个源文件一张卡片。</text>
+  <rect x="374" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="407" y="208" text-anchor="middle">给人看</text>
+
+  <rect x="604" y="86" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="604" y="86" width="232" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="622" y="112">多页 HTML 站点</text>
+  <text class="m path" x="622" y="131">handbook/html/ · --html</text>
+  <text class="t body" x="622" y="152">吸附式目录、面包屑导航、</text>
+  <text class="t body" x="622" y="169">主题切换、一键全部展开。</text>
+  <text class="t body" x="622" y="186">内联 CSS —— file:// 直接打开</text>
+  <rect x="622" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="655" y="208" text-anchor="middle">给人看</text>
+
+  <rect x="852" y="86" width="228" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="852" y="86" width="228" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="870" y="112">一个自包含的页面</text>
+  <text class="m path" x="870" y="131">handbook.html · --html-single</text>
+  <text class="t body" x="870" y="152">单个文件，可以用邮件发送、</text>
+  <text class="t body" x="870" y="169">附到工单里，或者</text>
+  <text class="t body" x="870" y="186">完全不需要服务器就能打开。</text>
+  <rect x="870" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="903" y="208" text-anchor="middle">给人看</text>
+
+  <!-- row 2 -->
+  <rect x="356" y="228" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="356" y="228" width="232" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="374" y="254">智能体定位索引</text>
+  <text class="m path" x="374" y="273">handbook/agent/ · --agent-site</text>
+  <text class="t body" x="374" y="294">职责 · 入口概念 · 状态</text>
+  <text class="t body" x="374" y="311">· 范例 · 共同变更提示。</text>
+  <text class="t body" x="374" y="328">空 = 没有信号，而非猜测。</text>
+  <rect x="374" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="404" y="350" text-anchor="middle">给 AI 用</text>
+
+  <rect x="604" y="228" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="604" y="228" width="232" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="622" y="254">llms.txt + llms-full.txt</text>
+  <text class="m path" x="622" y="273">--llms-txt</text>
+  <text class="t body" x="622" y="294">llms.txt 约定：一个</text>
+  <text class="t body" x="622" y="311">带链接的入口文件，外加</text>
+  <text class="t body" x="622" y="328">整本手册的扁平化全文。</text>
+  <rect x="622" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="652" y="350" text-anchor="middle">给 AI 用</text>
+
+  <rect x="852" y="228" width="228" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="852" y="228" width="228" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="870" y="254">智能体 SKILL 包</text>
+  <text class="m path" x="870" y="273">SKILL.md + references/</text>
+  <text class="t body" x="870" y="294">随附 coverage.json，内含</text>
+  <text class="t body" x="870" y="311">每个文件的内容哈希，因此</text>
+  <text class="t body" x="870" y="328">相对代码的漂移可以被检测。</text>
+  <rect x="870" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="900" y="350" text-anchor="middle">给 AI 用</text>
+
+  <!-- trust band -->
+  <rect x="40" y="380" width="1040" height="106" rx="13" fill="#141B36" stroke="#2A3357"/>
+  <text class="t cap" x="60" y="406">为什么你可以信任读到的内容</text>
+  <circle cx="68" cy="432" r="4" fill="#2DD4BF"/>
+  <text class="t body" x="82" y="437" font-size="13">结构性事实 —— 文件、函数、调用边、行号范围 —— 来自解析器。它们不是模型写出来的。</text>
+  <circle cx="68" cy="456" r="4" fill="#FBBF24"/>
+  <text class="t body" x="82" y="461" font-size="13">描述文字由模型撰写，并如实标注。卡片生成失败的文件仍会出现，只是描述为空 —— 绝不会被编造。</text>
+  <circle cx="68" cy="480" r="4" fill="#A78BFA"/>
+  <text class="t body" x="82" y="485" font-size="13">由通用引擎读取的语言会在总览中披露，因此“尽力而为的调用关系”绝不会被误读成“精确”。</text>
+
+  <!-- footer -->
+  <rect x="40" y="504" width="508" height="66" rx="12" fill="#16233F" stroke="#2F6F68"/>
+  <text class="t ttl" x="60" y="530" font-size="14">每个工件都是经过模式校验的 JSON/YAML</text>
+  <text class="t body" x="60" y="552">任何一个 phase 都能单独重跑。崩溃的运行会从停下的地方续跑。</text>
+
+  <rect x="572" y="504" width="508" height="66" rx="12" fill="#2A2440" stroke="#7A6535"/>
+  <text class="t ttl" x="592" y="530" font-size="14">这里没有任何东西需要第二次联网</text>
+  <text class="t body" x="592" y="552">离线、在 CI 里、在每次提交时：重新渲染、重新打包、重新校验。</text>
+</svg>

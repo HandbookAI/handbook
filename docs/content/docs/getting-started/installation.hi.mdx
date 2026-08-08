@@ -1,0 +1,157 @@
+---
+title: 'इंस्टॉलेशन'
+description: 'Node 20.11 और pnpm — पूरी सूची बस इतनी है। कोई native compilation नहीं, कोई Python नहीं, कोई node-gyp नहीं — parsers WebAssembly हैं।'
+---
+
+## आवश्यकताएँ
+
+|                     |                                                        |
+| ------------------- | ------------------------------------------------------ |
+| **Node.js**         | ≥ 20.11                                                |
+| **pnpm**            | ≥ 9                                                    |
+| **एक LLM endpoint** | सिर्फ़ phases 2 और 3 के लिए। कोई भी OpenAI-compatible। |
+
+सूची सचमुच बस इतनी ही है। **कोई native compilation step नहीं है** — language parsers
+WebAssembly के रूप में ship होते हैं, इसलिए न `node-gyp`, न compiler toolchain, न Python।
+
+<Callout type="info">
+  अपना Node version `node --version` से जाँचें। अगर आप `nvm` इस्तेमाल करते हैं, तो repo में `.nvmrc` शामिल है,
+  इसलिए `nvm use` सही version चुन लेता है।
+</Callout>
+
+## विकल्प 1 — clone से (मूल्यांकन के दौरान अनुशंसित)
+
+```bash
+git clone <this repo>
+cd handbook
+pnpm install
+pnpm build
+```
+
+फिर CLI को बुलाना सुविधाजनक बनाइए:
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+handbook --help
+```
+
+या alias को पूरी तरह छोड़कर pnpm shortcuts इस्तेमाल कीजिए, जो पहले एक incremental build करते
+हैं (warm होने पर लगभग 0.4 s) और flags सीधे आगे भेज देते हैं:
+
+```bash
+pnpm analyze --source ~/code/myrepo --work work/myrepo
+pnpm handbook --help
+```
+
+<Callout title="Shortcuts पहले build क्यों करते हैं">
+  हर `pnpm <command>` CLI से पहले `tsc -b` चलाता है। यही फ़र्क़ है अपने code को debug करने और एक stale
+  `dist/` को debug करने के बीच — जो पहली बार होने पर एक घंटा खा जाता है।
+</Callout>
+
+## विकल्प 2 — global CLI के रूप में
+
+```bash
+npm i -g @handbook/cli
+handbook --help
+```
+
+## विकल्प 3 — Docker, बिना किसी local Node के
+
+```bash
+docker build -t handbook:local .
+
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked into the image,
+# so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Studio, environments और `localhost`-only वाली सावधानी के लिए देखें
+[Docker guide](/docs/guides/docker)।
+
+## विकल्प 4 — libraries के रूप में
+
+हर capability एक published package है जिसे आप अकेले भी इस्तेमाल कर सकते हैं। Analyzer,
+renderer, skill packager और patcher कभी किसी LLM को नहीं छूते, इसलिए वे standalone काम करते
+हैं:
+
+```bash
+pnpm add @handbook/analyzer   # static call graphs, 18 languages
+pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+```
+
+देखें [package index](/docs/reference/packages)।
+
+## LLM endpoint configure करना
+
+Phase 1 — static analysis — को **कभी key की ज़रूरत नहीं पड़ती**। बाक़ी सबको पड़ती है।
+
+```bash
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
+export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
+```
+
+<Callout title="Local और keyless endpoints">
+  जो endpoints authenticate नहीं करते — vLLM, Ollama का OpenAI-compatible shim, कोई local LiteLLM — उनके लिए
+  `OPENAI_API_KEY=EMPTY` इस्तेमाल करें। Client को वहाँ *कुछ* चाहिए होता है; `EMPTY` "जान-बूझकर कुछ नहीं" कहने
+  का तय तरीक़ा है, और अगर आप उसे ग़लती से किसी असली provider की ओर मोड़ दें तो यह उलझाने वाले 401 के बजाय एक
+  साफ़ error देता है।
+</Callout>
+
+### Shell exports के बजाय file को तरजीह दें
+
+CLI जिस directory से चलाया जाता है वहाँ से `./.env` अपने आप load करता है। Shell variables
+हमेशा जीतते हैं, इसलिए `.env` एक default है, override नहीं।
+
+```bash title=".env"
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+`.env.example` copy कर लीजिए — यह settings registry से generate होती है, इसलिए इसमें हर वह
+variable listed है जो वाक़ई मौजूद है, अपने default के साथ, और हर line comment की हुई शुरू होती
+है, ताकि उसे copy करना सुरक्षित रहे।
+
+कई environments, per-command overrides और `handbook.config.yaml` के लिए देखें
+[Configuration](/docs/reference/configuration)।
+
+## Install की पुष्टि करें
+
+दो commands, इसी क्रम में।
+
+**1. क्या toolchain चलती भी है?**
+
+```bash
+pnpm demo
+```
+
+पूरी pipeline, offline, एक bundled sample project और bundled mock LLM पर। अगर यह पास हो
+गया, तो आपका install ठीक है।
+
+**2. क्या मेरा endpoint reachable और configured है?**
+
+```bash
+handbook config --command generate
+```
+
+यह हर setting, उसकी resolved value, और **वह किस layer से आई** — flag, environment
+variable, config file या default — छापता है। Secrets mask किए जाते हैं।
+
+```bash
+handbook config --check    # exit code 2 if anything is invalid or missing
+```
+
+<Callout type="warn" title="लंबे run से पहले यह ज़रूर करें">
+  पहले किसी environment variable में typo का मतलब होता था "चुपचाप default पर चलता रहा"। `--check` उसे एक ऐसी
+  विफलता में बदल देता है जिसके message में उस variable का नाम होता है — जिसे अभी पकड़ लेना generation के चालीस
+  मिनट बाद पकड़ने से कहीं सस्ता है।
+</Callout>
+
+## आगे
+
+<Cards>
+  <Card title="Quick start — offline demo" href="/docs/getting-started/quickstart" />
+  <Card title="आपका पहला असली handbook" href="/docs/getting-started/first-handbook" />
+</Cards>

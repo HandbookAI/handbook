@@ -1,0 +1,122 @@
+---
+title: 'Analysetreue'
+description: 'Zwei Analyse-Tiers erzeugen identisch aussehende Ausgabe. Das ist eine Falle — deshalb deklariert jeder Adapter, was er liefern kann, und das Handbook legt es offen.'
+---
+
+## Das Problem
+
+Handbook analysiert 18 Sprachen mit **zwei** Engines:
+
+- **Full-Tier** — ein handgeschriebener Adapter pro Sprache, mit typgetriebener
+  Aufrufauflösung, geerbten Membern, Zustandsverfolgung pro Attribut und Statement-Spans.
+- **Generic-Tier** — eine einzige konfigurationsgetriebene Engine mit einer deklarativen
+  Spezifikation pro Sprache. Das Datei- und Funktionsinventar ist exakt;
+  Aufrufbeziehungen sind Best-Effort.
+
+Beide erzeugen **dieselbe Zwischendarstellung**. Nichts Nachgelagertes kann sie anhand
+von Knoten und Kanten auseinanderhalten.
+
+Genau das ist die Falle. Ein Leser — und erst recht ein Agent — würde eine
+Generic-Tier-Aufrufkante für einen Fakt in Python-Qualität halten und entsprechend darauf
+schließen.
+
+## Die Lösung: deklarieren, festhalten, offenlegen
+
+### 1. Jeder Adapter deklariert, was er liefern kann
+
+```ts
+interface AdapterCapabilities {
+  tier: 'full' | 'generic';
+  callTypes: readonly CallType[]; // which edge kinds it can actually produce
+  selfAttrs: boolean; // can it track self/this attribute reads and writes?
+  statementSpans: boolean; // can it report statement spans (resync precision)?
+}
+```
+
+Dieses Feld ist **verpflichtend**, nicht optional. Adapter kann jeder registrieren, und
+ein handgestrickter Adapter, der nichts deklariert, fällt schlicht aus den
+Graph-Metadaten heraus, statt eine erfundene Treue-Angabe verpasst zu bekommen.
+
+### 2. Phase 1 hält sie pro Sprache fest
+
+```json title="phase1/graph.json (excerpt)"
+{
+  "metadata": {
+    "language": "multi",
+    "languages": {
+      "typescript": { "tier": "full", "selfAttrs": true, "statementSpans": true, "callTypes": ["..."] },
+      "kotlin": { "tier": "generic", "selfAttrs": false, "statementSpans": false, "callTypes": ["..."] }
+    }
+  }
+}
+```
+
+Pro Sprache, nicht pro Graph — ein mehrsprachiger Lauf mischt Tiers, und ein einzelnes
+`language: "multi"`-Label würde das vollständig verdecken.
+
+### 3. Das Handbook sagt es dort, wo Vertrauen entsteht
+
+Sobald irgendeine Generic-Tier-Sprache vorkommt, bekommt der Überblick eine zusätzliche
+Zeile, direkt unter der Systemprosa:
+
+> **Analysetreue** — die Aufrufbeziehungen für Kotlin, Scala stammen aus dem generischen
+> (konfigurationsgetriebenen) Analyzer: Sie sind Best-Effort und können unvollständig
+> sein. Das Dateiinventar und die Struktur dieser Sprachen sind exakt.
+
+Und **nirgendwo**, wenn jede Sprache Full-Tier ist — so bleibt der Normalfall frei von
+Rauschen. Dieselbe Offenlegung erscheint in der HTML-Site, im Agent-Locator-Index und in
+`llms-full.txt`.
+
+## Welches Tier hat meine Sprache?
+
+**Full-Tier:** Python, TypeScript (und JavaScript), Go, Rust, Java, C#, C/C++, Ruby, PHP,
+Swift, Dart, Solidity, Shell.
+
+**Generic-Tier:** Kotlin, Scala, Zig, Objective-C, OCaml.
+
+Dateiendungen und Einschränkungen stehen unter
+[Sprachunterstützung](/docs/reference/languages).
+
+## Was „Best-Effort" tatsächlich kostet
+
+|                                               | Full-Tier | Generic-Tier |
+| --------------------------------------------- | --------- | ------------ |
+| Dateiinventar                                 | exakt     | **exakt**    |
+| Funktions- und Methodeninventar               | exakt     | **exakt**    |
+| Zeilenbereiche und Signaturen                 | exakt     | **exakt**    |
+| Direkte Aufrufe per Name                      | exakt     | meistens     |
+| `self.method()` / `this.method()`             | aufgelöst | oft          |
+| `self.attr.method()` über einen bekannten Typ | aufgelöst | nein         |
+| `param.method()` über eine Typannotation      | aufgelöst | nein         |
+| Geerbte Member                                | aufgelöst | nein         |
+| Zustandsverfolgung pro Attribut               | ja        | nein         |
+| Statement-Spans (resync-Präzision)            | ja        | nein         |
+
+**Alles, wonach geroutet wird — wo eine Datei liegt, welche Funktionen sie enthält,
+welche Zeilen diese belegen — ist in beiden Tiers exakt.** Was degradiert, ist der
+_Beziehungs_-Graph, und der beeinflusst Gruppierungsqualität und Co-Change-Hinweise,
+keine Adressen.
+
+## Zwei ehrliche Vorbehalte
+
+**Swift.** Die mitgelieferte Grammatik bricht den Prozess auf V8 ≥ 13 ab — gemessen fatal
+in 5 von 5 Fällen auf Node 24, problemlos auf Node 21, und einzigartig unter den neunzehn
+Grammatiken. Der Adapter **verweigert bereits bei der Discovery** auf einem solchen
+Runtime und nennt die Abhilfe (`node --liftoff-only`), statt den ganzen Lauf mit sich zu
+reißen.
+
+**Shell.** Ein Skript mit einem `case`-Statement wird übersprungen, weil diese Grammatik
+wirft — ihr externer Scanner importiert ein Symbol, das der gepinnte WASM-Linker nicht
+bereitstellt. Da `case` allgegenwärtig ist, betrifft das die meisten nicht-trivialen
+Skripte (gemessen an `nvm`: alle 6 Dateien, alle 122 Funktionen) — **Shell-Abdeckung
+also als partiell behandeln**. Das Scan-Log nennt die Ursache.
+
+Beide Fälle werden während des Scans über den Logger gemeldet. Mit `-v` ausführen, um sie
+zu sehen.
+
+## Eine Sprache ein Tier höher heben
+
+Eine Generic-Tier-Sprache ist eine deklarative Spezifikation, kein Parser — siehe
+[Eine Sprache hinzufügen](/docs/contributing/adding-a-language). Sie zum Full-Tier zu
+befördern heißt, `LanguageAdapter` direkt zu implementieren und ehrliche Capabilities zu
+deklarieren. Der Adaptervertrag ist mit Absicht klein.

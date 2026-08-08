@@ -1,0 +1,110 @@
+---
+title: 'O diretório de trabalho'
+description: 'Cada artefato que o pipeline produz, onde ele vive, o que o valida e o que é seguro apagar.'
+---
+
+O diretório de trabalho (`--work`) é onde vive tudo o que o pipeline produz. Um por
+repositório que você está documentando.
+
+```text
+<work>/
+  phase1/
+    graph.json          the call graph — everything downstream reads this
+    functions.csv       every function, flat, for grepping or a spreadsheet
+    graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
+    dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+  phase2/
+    cards/<rel>.json    one card per source file, mirroring the source tree
+    cards/_coverage.json  how many files got prose, and which did not
+    cards/_rejected/    replies that produced no usable card (capped at 20)
+    skeleton.yaml       the stage spine
+    assignment.json     file → stage
+    organization.yaml   intra-stage groups + reading order
+    strategy.json       which strategy produced the above
+  phase3/
+    narration.json      stage and system prose
+    registers.json      cross-stage state registers
+    cache/              content-hash caches for prose and registers
+  handbook/             the rendered output, once you run `render`
+  run-manifest.json     model, phases, timings and token usage of the last good run
+```
+
+## Três propriedades nas quais vale a pena se apoiar
+
+### Tudo é validado por schema na leitura
+
+Cada artefato carrega um campo `version` e é validado com zod ao ser carregado. Um
+artefato corrompido ou editado à mão **falha ruidosamente e se identifica**:
+
+```text
+handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
+```
+
+Ele nunca se propaga para uma fase posterior.
+
+Duas exceções deliberadas, ambas por resiliência, não por frouxidão:
+
+- **Fichas** — um único arquivo de ficha que não parseia é _pulado_, não fatal. Do
+  contrário, um JSON alheio ou meio sincronizado no diretório de fichas quebraria o
+  resume, as Phases 2b/2c/3 e todo carregamento do modelo.
+- **Metadados `languages` em `graph.json`** — opcionais, porque não existe aqui um
+  mecanismo de migração de artefatos, e todo grafo escrito antes de existirem as
+  declarações de fidelidade precisa continuar validando.
+
+### Toda escrita é atômica
+
+Escreve-se em um arquivo temporário e depois renomeia-se. Um travamento no meio da
+escrita nunca deixa um artefato pela metade para a próxima execução engasgar.
+
+### Uma execução por diretório de trabalho
+
+`generate` e `resync` adquirem o mesmo lock reentrante de diretório. Uma execução
+concorrente da CLI e um job do Studio sobre os mesmos artefatos intercalariam escritas; o
+segundo é recusado com uma mensagem clara.
+
+## O que é seguro fazer
+
+| Ação                                   | Seguro? | Observação                                                                         |
+| -------------------------------------- | :-----: | ---------------------------------------------------------------------------------- |
+| Apagar o diretório de trabalho inteiro |   ✅    | Nada fora dele foi modificado. Regenere do zero.                                   |
+| Commitá-lo no git                      |   ✅    | É tudo texto. Útil para revisar o que uma regeneração mudou.                       |
+| Apagar `phase3/cache/`                 |   ✅    | Custa uma renarração completa na próxima execução.                                 |
+| Apagar `phase2/cards/_rejected/`       |   ✅    | Apenas diagnóstico. Limpo automaticamente no início de uma nova passada de fichas. |
+| Editar `skeleton.yaml` à mão           |   ✅    | Ele é validado na leitura, e `--skeleton` existe precisamente para isso.           |
+| Editar `graph.json` à mão              |   ⚠️    | Ele é gerado. Em vez disso, rode `analyze` de novo.                                |
+| Apagar `phase2/strategy.json`          |   ⚠️    | A próxima execução cai para `file`, o que pode não corresponder aos artefatos.     |
+| Compartilhá-lo publicamente            |   ⚠️    | As fichas citam e descrevem o seu código-fonte. Trate-o como código-fonte.         |
+
+## Lendo-o à mão
+
+O grafo é o mais interessante:
+
+```bash
+# how big is this codebase, really
+jq '.metadata | {files: (.scannedFiles|length), nInternalFunctions, nEdges}' phase1/graph.json
+
+# the busiest functions — where a change is most likely to fan out
+jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
+       | sort_by(-.value.nCallers) | .[:15]
+       | .[] | "\(.value.nCallers)\t\(.value.qualname)\t\(.value.file)"' phase1/graph.json
+
+# what could not be resolved, by category
+jq '.metadata.byCategory' phase1/dropped-calls.json
+
+# which files never got prose
+jq '.missing' phase2/cards/_coverage.json
+```
+
+O `functions.csv` está lá pela mesma razão — às vezes a ferramenta mais rápida é uma
+planilha.
+
+## Onde mais as coisas são escritas
+
+O Handbook escreve fora do diretório de trabalho em exatamente dois lugares, ambos
+ativados pelo comando que você executou:
+
+- **`<source>/.handbook-patches/`** — criado pelo `apply`, guarda os backups e seus
+  manifestos. Um `.gitignore` é escrito nele automaticamente, para que backups nunca
+  entrem no git.
+- **`$HOME/.handbook-studio/`** — o registro de repositórios do Studio e seus diretórios
+  de trabalho criados automaticamente. Mova-o com `--state-dir`.

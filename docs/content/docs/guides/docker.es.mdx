@@ -1,0 +1,145 @@
+---
+title: Docker
+description: 'Ejecuta toda la cadena de herramientas sin una instalación local de Node — incluido Studio, y una sola imagen para todos los entornos.'
+---
+
+La imagen es Node 22 (deliberadamente **no** 24 — mira el Dockerfile) más los paquetes
+compilados.
+
+```bash
+pnpm run docker:build      # docker build -t handbook:local .
+```
+
+## Ejecutar comandos
+
+`HANDBOOK_SOURCE=/src` y `HANDBOOK_WORK=/work` vienen horneados en la imagen, así que solo
+montas volúmenes — no hacen falta `--source` ni `--work`:
+
+```bash
+# free, no key
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+
+# with an endpoint
+docker run --rm --env-file .env \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate --detail deep
+
+# render, then get the output back out
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local render --html --agent-site --llms-txt
+docker run --rm -v handbook-work:/work -v "$PWD/out:/out" \
+  --entrypoint cp handbook:local -R /work/handbook /out/
+```
+
+Montar el código fuente en **solo lectura** (`:ro`) es un buen hábito para todo excepto
+`apply`.
+
+## Variables de entorno
+
+El `--env-file` propio de Docker se superpone **encima de** la carga de `.env` de la
+cadena de herramientas — ambos aplican, y una variable `OPENAI_*` pasada de ese modo es
+visible exactamente igual que lo sería un export del shell.
+
+```bash
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+### Una imagen, todos los entornos
+
+Los archivos `.env*` **nunca se hornean en la imagen** — mira `.dockerignore`. Selecciona
+un entorno en tiempo de ejecución:
+
+```bash
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+O monta un archivo de configuración:
+
+```bash
+docker run --rm \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  -v "$PWD/handbook.config.prod.yaml:/cfg.yaml:ro" \
+  handbook:local --config /cfg.yaml generate
+```
+
+## Studio
+
+```bash
+pnpm run docker:studio     # docker compose up --build studio
+```
+
+Luego abre **`http://localhost:4860`**.
+
+<Callout type="warn" title="Solo funciona localhost — ni una IP de la LAN, ni el nombre del contenedor">
+  La defensa CSRF de Studio comprueba la **cabecera de petición** `Host`, no el socket. Un
+  contenedor debe enlazar `0.0.0.0` para que el puerto publicado sea siquiera alcanzable
+  (`HANDBOOK_STUDIO_HOST=0.0.0.0` en el archivo de compose), **pero eso no amplía quién
+  puede hablarle.** Navegar desde el host sigue enviando `Host: localhost:4860` y pasa;
+  una petición que nombre una IP de la LAN o el hostname del contenedor `studio` se
+  rechaza con `403` por diseño.
+
+El acceso remoto es una funcionalidad aparte, deliberadamente no implementada — haría
+falta una lista de permitidos explícita —, no un fallo de esta defensa.
+
+</Callout>
+
+```yaml title="docker-compose.yml (excerpt)"
+services:
+  studio:
+    build: .
+    command: studio
+    environment:
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:4860:4860'
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+```
+
+Publicar el puerto como `127.0.0.1:4860:4860` en lugar de `4860:4860` también lo mantiene
+fuera de tu interfaz LAN, lo cual es una doble protección sobre la comprobación de la
+cabecera Host.
+
+## Volúmenes
+
+| Ruta    | Contenido                 | Sugerencia                                                  |
+| ------- | ------------------------- | ----------------------------------------------------------- |
+| `/src`  | Tu árbol de código fuente | Monta `:ro` para todo excepto `apply`                       |
+| `/work` | Artefactos del handbook   | Un volumen con nombre, para que sobreviva entre ejecuciones |
+
+## En CI
+
+```yaml title=".github/workflows/handbook.yml"
+jobs:
+  handbook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t handbook:ci .
+      - run: |
+          docker run --rm \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci generate --detail brief
+      - run: |
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci render --html --agent-site --llms-txt
+      - uses: actions/upload-artifact@v4
+        with: { name: handbook, path: work/handbook }
+```
+
+`analyze`, `render`, `skill` y `validate` no necesitan clave alguna, así que un workflow
+seguro para forks puede ejecutarlos en cada pull request y reservar `generate` para
+`main`.
+
+## Por qué Node 22 y no 24
+
+Una de las gramáticas tree-sitter incluidas (Swift) aborta el proceso en V8 ≥ 13. Node 22
+queda por debajo de ese límite, así que la imagen no necesita flags especiales. En Node 24
+el adaptador se niega en la fase de descubrimiento y te dice que pases `--liftoff-only`;
+fijar la imagen a 22 evita la cuestión por completo. Consulta
+[Soporte de lenguajes](/docs/reference/languages).

@@ -1,0 +1,110 @@
+---
+title: 'Рабочий каталог'
+description: 'Каждый артефакт, который производит конвейер: где он живёт, что его валидирует и что безопасно удалять.'
+---
+
+Рабочий каталог (`--work`) — это место, где живёт всё, что производит конвейер. Один на
+каждый документируемый репозиторий.
+
+```text
+<work>/
+  phase1/
+    graph.json          the call graph — everything downstream reads this
+    functions.csv       every function, flat, for grepping or a spreadsheet
+    graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
+    dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+  phase2/
+    cards/<rel>.json    one card per source file, mirroring the source tree
+    cards/_coverage.json  how many files got prose, and which did not
+    cards/_rejected/    replies that produced no usable card (capped at 20)
+    skeleton.yaml       the stage spine
+    assignment.json     file → stage
+    organization.yaml   intra-stage groups + reading order
+    strategy.json       which strategy produced the above
+  phase3/
+    narration.json      stage and system prose
+    registers.json      cross-stage state registers
+    cache/              content-hash caches for prose and registers
+  handbook/             the rendered output, once you run `render`
+  run-manifest.json     model, phases, timings and token usage of the last good run
+```
+
+## Три свойства, на которые стоит полагаться
+
+### Всё валидируется по схеме при чтении
+
+Каждый артефакт несёт поле `version` и валидируется zod при загрузке. Повреждённый или
+отредактированный вручную артефакт **падает громко и называет себя**:
+
+```text
+handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
+```
+
+Он никогда не распространяется в следующую фазу.
+
+Два намеренных исключения — оба про устойчивость, а не про попустительство:
+
+- **Карточки** — отдельный непарсящийся файл карточки _пропускается_, а не роняет всё.
+  Один чужой или полусинхронизированный JSON в каталоге карточек иначе обрушивал бы
+  возобновление, фазы 2b/2c/3 и каждую загрузку модели.
+- **Метаданные `languages` в `graph.json`** — опциональны, потому что механизма миграции
+  артефактов здесь нет, и каждый граф, записанный до появления деклараций достоверности,
+  должен продолжать проходить валидацию.
+
+### Каждая запись атомарна
+
+Запись во временный файл, затем переименование. Падение посреди записи никогда не
+оставляет полузаписанный артефакт, на котором подавится следующий запуск.
+
+### Один запуск на рабочий каталог
+
+`generate` и `resync` берут одну и ту же реентерабельную блокировку каталога.
+Параллельные запуск CLI и задача Studio на одних артефактах перемежали бы записи; вместо
+этого второй получает отказ с понятным сообщением.
+
+## Что безопасно делать
+
+| Действие                          | Безопасно? | Примечание                                                                    |
+| --------------------------------- | :--------: | ----------------------------------------------------------------------------- |
+| Удалить весь рабочий каталог      |     ✅     | Снаружи него ничего не менялось. Перегенерируйте с нуля.                      |
+| Закоммитить его в git             |     ✅     | Это сплошной текст. Удобно, чтобы ревьюить, что изменила перегенерация.       |
+| Удалить `phase3/cache/`           |     ✅     | Обойдётся в полное повторное повествование при следующем запуске.             |
+| Удалить `phase2/cards/_rejected/` |     ✅     | Только диагностика. Автоматически очищается в начале нового прохода карточек. |
+| Править `skeleton.yaml` вручную   |     ✅     | Он валидируется при чтении, а `--skeleton` существует ровно для этого.        |
+| Править `graph.json` вручную      |     ⚠️     | Он генерируется. Вместо этого перезапустите `analyze`.                        |
+| Удалить `phase2/strategy.json`    |     ⚠️     | Следующий запуск откатится к `file`, что может не соответствовать артефактам. |
+| Поделиться им публично            |     ⚠️     | Карточки цитируют и описывают ваши исходники. Обращайтесь как с исходниками.  |
+
+## Чтение вручную
+
+Самое интересное — граф:
+
+```bash
+# how big is this codebase, really
+jq '.metadata | {files: (.scannedFiles|length), nInternalFunctions, nEdges}' phase1/graph.json
+
+# the busiest functions — where a change is most likely to fan out
+jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
+       | sort_by(-.value.nCallers) | .[:15]
+       | .[] | "\(.value.nCallers)\t\(.value.qualname)\t\(.value.file)"' phase1/graph.json
+
+# what could not be resolved, by category
+jq '.metadata.byCategory' phase1/dropped-calls.json
+
+# which files never got prose
+jq '.missing' phase2/cards/_coverage.json
+```
+
+`functions.csv` существует по той же причине — иногда самый быстрый инструмент — это
+электронная таблица.
+
+## Куда ещё пишутся файлы
+
+Handbook пишет за пределами рабочего каталога ровно в двух местах, оба — по явному выбору
+запущенной вами команды:
+
+- **`<source>/.handbook-patches/`** — создаётся командой `apply`, хранит резервные копии
+  и их манифесты. В него автоматически записывается `.gitignore`, чтобы резервные копии
+  никогда не попадали в git.
+- **`$HOME/.handbook-studio/`** — реестр репозиториев Studio и его автоматически
+  создаваемые рабочие каталоги. Перемещается флагом `--state-dir`.

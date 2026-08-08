@@ -1,0 +1,231 @@
+---
+title: 'Tu primer handbook real'
+description: 'Ocho pasos desde un repositorio que nunca has leído hasta un plan de cambios que puedes aplicar — con los checkpoints baratos en el lugar correcto.'
+---
+
+Este es el ciclo completo sobre un repositorio real. Está escrito para seguirse en orden,
+y coloca a propósito las comprobaciones **gratuitas** antes que las caras.
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+export REPO=~/code/myrepo
+export WORK=work/myrepo
+```
+
+---
+
+## Paso 1 — Mira antes de saltar
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**Esto es gratis y es tu prueba de humo.** Sin LLM, sin clave, sin tokens.
+
+<Callout type="warn" title="Lee estos números antes de continuar">
+  - **¿`files` mucho más bajo de lo que esperas?** Se está saltando un lenguaje entero, o tu raíz de código
+  fuente está mal. Revisa el log de escaneo con `-v`. - **¿`files` mucho más alto?** Estás analizando
+  `node_modules`, `vendor` o un directorio de build. Los habituales se saltan automáticamente; apunta
+  `--source` a la raíz real del código fuente en lugar de a la raíz del repo si no es así. - **¿`edgesDropped`
+  enorme en relación con `edgesKept`?** Normal en lenguajes dinámicos. Mira `phase1/dropped-calls.json` — cada
+  llamada sin resolver está categorizada ahí, no oculta.
+</Callout>
+
+Corrige cualquiera de los puntos anteriores **ahora**. Cada problema aquí se convierte en
+un problema más caro después.
+
+## Paso 2 — Genera el handbook
+
+Este es el paso que cuesta tokens. En un repositorio mediano, espera minutos.
+
+Empieza barato:
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+Eso equivale a `--detail brief` y `--synth-mode oneshot`: una ficha corta por archivo y un
+esqueleto de una sola pasada. Es la forma más rápida de ver si la _forma_ del handbook es
+la correcta.
+
+Mira `$WORK/phase2/skeleton.yaml`. ¿La lista de etapas se parece a tu sistema? Si sí, sube
+de nivel:
+
+```bash
+handbook generate --source $REPO --work $WORK \
+    --phase 2a --detail deep --resume
+```
+
+`--phase 2a --resume` profundiza **solo las fichas**, saltándose los archivos que ya
+tienen una completa. Conservas el esqueleto que ya validaste.
+
+Si el esqueleto está _mal_, vuelve a ejecutar 2b con el bucle actor–crítico en su lugar:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+<Callout title="Es reanudable, cancelable y con caché">
+  Las fichas se escriben a medida que se completan. `Ctrl-C` es seguro. `--resume` retoma donde se detuvo,
+  `--llm-cache` hace que las re-ejecuciones sean casi gratis, y `run-manifest.json` registra cuánto costó en
+  tokens la última ejecución buena.
+</Callout>
+
+## Paso 3 — Renderízalo
+
+```bash
+handbook render --work $WORK --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt
+```
+
+**Sin LLM.** Ejecútalo tan a menudo como quieras — en CI, en cada commit.
+
+Añade `--source-base-url https://github.com/me/myrepo/blob/main` para convertir cada ruta
+de archivo del handbook en un enlace al archivo real. Sin él, la salida no contiene
+ninguna URL externa, lo que importa en una base de código privada.
+
+Abre `$WORK/handbook/html/overview.html` y léelo. Este es el momento de juzgar si el
+handbook vale algo.
+
+## Paso 4 — Empaquétalo para tu agente
+
+```bash
+handbook skill --handbook $WORK/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work $WORK --source $REPO \
+    --agent-dir $WORK/handbook/agent
+```
+
+`--work` + `--source` juntos producen `coverage.json`: un hash de contenido por archivo.
+**Eso es lo que hace que la deriva del handbook sea detectable** en lugar de
+silenciosamente errónea más adelante.
+
+`--agent-dir` incluye las páginas localizadoras y añade un paso de desambiguación al
+protocolo de enrutamiento de la SKILL.
+
+## Paso 5 — Valídalo
+
+```bash
+handbook validate --skill skills/myrepo --source $REPO
+```
+
+Comprueba la estructura, el contrato del frontmatter, la consistencia índice ↔ página de
+etapa, y vuelve a hashear tu código fuente para informar de las páginas que se han quedado
+atrás. **Sale con código `2` en caso de fallo**, así que este es el comando que debes
+poner en CI.
+
+## Paso 6 — Planifica un cambio real
+
+```bash
+handbook plan --source $REPO --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
+
+Un bucle de agente **de solo lectura**: lista, lee y hace grep — no tiene ninguna
+herramienta de escritura — enruta con el handbook, verifica contra el código fuente real y
+escribe `plan.md`.
+
+Lee el plan. Léelo de verdad. Termina con un bloque de declaraciones legible por máquina:
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+<Callout type="info" title="Un planner que se rinde sale con código distinto de cero">
+  Si no puede producir un plan usable — se puso a inventar contenidos de archivos, o se quedó sin turnos —
+  falla ruidosamente en lugar de escribir una disculpa en `plan.md` que un script luego pasaría alegremente a
+  `apply`.
+</Callout>
+
+## Paso 7 — Aplícalo, con un camino de vuelta
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run   # verify only, never writes
+handbook apply --source $REPO --plan plan.md             # for real
+```
+
+El dry run no es opcional en espíritu. Resuelve cada ancla contra el contenido actual de
+los archivos y te dice exactamente qué ediciones aterrizarían.
+
+Aplicar imprime el directorio de la copia de seguridad. **Cópialo a algún sitio antes de
+necesitarlo:**
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z
+```
+
+El rollback (la reversión) rechaza cualquier archivo que cambió _después_ del parche, a
+menos que pases `--force` — porque restaurarlo destruiría silenciosamente ese trabajo.
+Consulta [Aplicar cambios](/docs/guides/applying-changes) para las cuatro reglas de
+seguridad.
+
+## Paso 8 — Haz avanzar el handbook
+
+El código se movió. No regeneres — haz un resync.
+
+Un **caso** es un directorio que tú montas:
+
+```text
+cases/upload-retry/
+  edited/       copy of the repo after the change   (required)
+  plan.md       the plan from step 6                (optional — sharpens scope)
+  change.diff   unified diff of the change          (optional — widens scope)
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work $WORK
+```
+
+Resync vuelve a analizar el árbol editado, hace diff del grafo viejo contra el nuevo y
+regenera **solo lo que cambió**. Las salidas ya renderizadas bajo `$WORK/handbook` se
+refrescan automáticamente.
+
+¿No tienes un endpoint a mano? `--no-llm` refresca los hechos estructurales y marca la
+prosa como obsoleta, en lugar de fingir que está al día.
+
+---
+
+## Si tu repositorio es muy grande
+
+| Síntoma                       | Qué hacer                                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Miles de archivos             | Empieza con `--detail brief`. Profundiza fases concretas después con `--phase 2a --detail deep --resume`.  |
+| La ejecución es lenta         | Sube `--read-workers` / `--assign-workers` / `--narrate-workers`, todos por debajo de `--llm-concurrency`. |
+| Límites de tasa               | Baja `--llm-concurrency`. Sube `--llm-retries` y `--llm-retry-backoff`.                                    |
+| Archivos generados enormes    | `--max-chars-per-file 20000` trunca lo que se envía por archivo.                                           |
+| Solo te importa un subsistema | Apunta `--source` a ese subdirectorio. El grafo se construye a partir de lo que escaneas.                  |
+| Re-ejecutar mientras iteras   | `--llm-cache`, y `--refresh` cuando quieras ignorar las cachés deliberadamente.                            |
+
+Más en [Coste y rendimiento](/docs/guides/cost-and-performance).
+
+## A continuación
+
+<Cards>
+  <Card title="Generación a fondo" href="/docs/guides/generating" />
+  <Card title="Planificar cambios" href="/docs/guides/planning-changes" />
+  <Card title="Mantenerlo al día" href="/docs/guides/keeping-current" />
+  <Card title="Solución de problemas" href="/docs/guides/troubleshooting" />
+</Cards>

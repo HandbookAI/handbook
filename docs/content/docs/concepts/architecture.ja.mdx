@@ -1,0 +1,184 @@
+---
+title: アーキテクチャ
+description: 4 つのレイヤーに 11 のパッケージ、厳密に一方向の依存方向、そして決定的な半分を単体で再利用可能にする境界。
+---
+
+## レイヤリング
+
+<div className="not-prose">
+  <img
+    src="/diagrams/architecture.svg"
+    alt="Package layering: entry points, capabilities, engines, foundation"
+    className="rounded-xl border"
+  />
+</div>
+
+| レイヤー               | パッケージ                                                      | 役割                                         |
+| ---------------------- | --------------------------------------------------------------- | -------------------------------------------- |
+| **エントリポイント**   | `cli`, `studio`                                                 | 人間やコンテナが実行するもの                 |
+| **ケイパビリティ**     | `pipeline`, `renderer`, `skill`, `planner`, `patcher`, `resync` | それぞれ 1 つの役割、単体で利用可能          |
+| **エンジン**           | `analyzer`, `llm`                                               | 他のすべてがその上に築かれる 2 つ            |
+| **ファウンデーション** | `core`                                                          | データモデル、設定レジストリ、ユーティリティ |
+
+依存は**常に下向きのみ**です:
+
+```text
+cli → pipeline / renderer / skill / planner / patcher / resync → analyzer / llm → core
+```
+
+## 健全さを保つ 3 つのルール
+
+### 1. 一方向の依存、強制付き
+
+`core` は内部の何も import しません。何も `cli` を import しません。循環や上向きの import は
+`pnpm check:workspace` で失敗します。このチェックは、各パッケージの TypeScript プロジェクト
+参照が `package.json` の依存を正確に鏡写しにしていることも検証します — 参照が 1 つ欠けると
+`tsc -b` が間違った順序でビルドし、ルートからのビルドはそれを隠してしまいます。
+
+### 2. LLM の隔離は慣習ではなく、パッケージ境界
+
+モデルと対話できるのは `llm`、`pipeline`、`planner`、`resync` だけで、それも `ChatClient`
+インターフェイス経由に限られます:
+
+```ts
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
+```
+
+`analyzer`、`renderer`、`skill`、`patcher` は **`@handbook/llm` にまったく依存しません**。
+完全に決定的で、LLM の影も形もないまま再利用できます。だからこそ `render`、`skill`、
+`validate`、`apply`、`rollback` は CI で自由に実行できます。
+
+テストスイート全体がオフラインで動くのも同じ理由です: 継ぎ目は 1 つ、モックも 1 つ。
+
+### 3. レンダラの境界は型
+
+`HandbookModel`（`core` で定義）が、レンダラの知っている唯一のものです。パイプラインの
+内部を読むことは決してありません。
+
+```ts
+interface HandbookModel {
+  title: string;
+  lang: NarrateLang;
+  skeleton: Skeleton;
+  cards: Record<string, FileCard>;
+  assignment: Assignment;
+  organization: Organization;
+  narration: Narration;
+  registers: RegisterEntry[];
+}
+```
+
+**`HandbookModel` を埋められる生成者は誰でも、レンダリング、スキルパッケージング、
+プランニングを無料で手に入れます。** 別の方法でハンドブックを生成したいなら、満たすべき
+契約はこれで全部です。
+
+## データフロー
+
+```text
+source tree
+   │  analyzer — tree-sitter WASM, one adapter per language
+   ▼
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+   │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
+   ▼
+phase2/cards/<rel>.json + _coverage.json
+   │  pipeline 2b — skeleton synthesis (+ doctor loop) + file assignment
+   ▼
+phase2/skeleton.yaml + assignment.json
+   │  pipeline 2c — call-graph topological order + LLM grouping (flat fallback)
+   ▼
+phase2/organization.yaml
+   │  pipeline 3 — bottom-up narration + register extraction (content-hash cached)
+   ▼
+phase3/narration.json + registers.json
+   │  loadHandbookModel()
+   ▼
+HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.html · agent/ · llms.txt)
+                     │
+                     └──▶ skill ──▶ SKILL.md + references/ (+ coverage.json)
+```
+
+**作業ディレクトリの契約:** すべてのフェーズは上流の成果物だけを読み、自分の成果物だけを
+書きます。すべて読み込み時に `version` フィールド付きでスキーマ検証されます。どのフェーズも
+単独で再実行できます。クラッシュしても再開できます — カードはバッチごとに書き込まれ、
+ナレーションはコンテンツハッシュでキャッシュされます。
+
+## アナライザの内側
+
+各言語は 1 つの `LanguageAdapter` を実装します: `discover`、`analyze`、そして任意で
+`statementSpans`。すべての文法は WebAssembly なので、インストール時にネイティブコードが
+コンパイルされることはありません。
+
+アダプタはモジュールごとに**2 つのパス**を実行します:
+
+1. **スキャン** — 宣言、import、クラスとメソッド、そして関数ごとの事実: シグネチャ、行範囲、
+   非同期かどうか、デコレータ、`self`/`this` の属性の読み書き、型付きパラメータ、そして
+   コンストラクタでの代入から学んだ属性型。
+2. **解決** — すべての呼び出し箇所が型付きエッジになります: `self_method`,
+   `self_attr_method`, `param_method`, `internal_func`, `internal_constructor`,
+   `boundary`, `boundary_constructor` — あるいは `unresolved`。これはグラフビルダーが
+   カテゴリ付きで `dropped-calls.json` へ隔離します。
+
+**保持されるグラフには、解決済みで名前の付いた呼び出し先しか決して含まれません。** それこそ
+が、その中のエッジを信頼できるものにしています。
+
+**nav-pack** は、グラフから導出される決定的なオリエンテーション要約です — ディレクトリの
+集計、エントリポイント候補、ファンアウト、外部サブシステム。スケルトン合成器が目にする
+コードベースの「唯一の」ビューであり、それがあのプロンプトを小さく、根拠のあるものに
+保っています。
+
+## パイプラインの品質機構
+
+**3 段階のカードデグラデーション (2a)。** バッチ全体 → 単一ファイル → 大きすぎるファイルは
+関数ごとのチャンク。それでも失敗するファイルは正直な空カードを得て、`_coverage.json` に
+列挙されます。カバレッジは「構造上」完全です。取りこぼしは沈黙ではなく、可視化されます。
+
+**アクター–クリティックのスケルトンドクター (2b)。** アクターはグラウンドトゥルースの統計に
+対して最大 3 つの構造変更を提案します。ロールプレイする 3 人のクリティック（エンジニア、
+アーキテクト、読者）が並列にレビューし、生き残ったすべての変更は適用前に**機械的に**
+再検証され、影響を受けるファイルは再割り当てされます。ループは収束するか、進捗のない
+ラウンドが 2 回続くと停止します。壊れたクリティックは `REJECT` として数えられます — 落ちた
+レビュアーが変更を素通しさせては決してならないからです。
+
+**あらゆる場所の決定的フォールバック (2c、3)。** 編成はコールグラフ順にフォールバック
+します。ナレーションはステージ説明にフォールバックします。レジスタ抽出の失敗は空リストを
+生みます。生成のランは**デグレードします。ブロックはしません。**
+
+**コンテンツハッシュのキャッシュ (3)。** ステージとシステムの文章は `phase3/cache/` の下に、
+プロンプトバージョン、言語、完全なプロンプトハッシュをキーとしてキャッシュされます — 再実行
+や resync は、実際に変わったものにだけ支払います。
+
+## 並行性と安全性
+
+- **作業ディレクトリごとに 1 ラン。** `generateHandbook` と `resyncHandbook` は同じ再入可能
+  なディレクトリロックを取るため、CLI のランと Studio のジョブが同じ成果物への書き込みを
+  交錯させることはできません。
+- **アトミックな書き込み。** すべての成果物は一時ファイルに書かれ、リネームされます。
+  クラッシュが半分書かれたファイルを残し、次のランを詰まらせることは決してありません。
+- **協調的キャンセル。** `AbortSignal` はフェーズ間とすべてのバッチチェックポイントで確認
+  され、すべての LLM 呼び出しに通されるため、処理中のリクエストも中断されます。中断された
+  ランは保存済みのものを保持し、ランマニフェストを**書きません**。
+
+## 知っておく価値のある意思決定
+
+| #   | 意思決定                             | 理由                                                                                                                                                  |
+| --- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | WASM のみの tree-sitter              | ネイティブビルドはゼロ。すべての言語で 1 つのロードパス。バージョン固定された文法                                                                     |
+| 2   | 手書きの `fetch` LLM クライアント    | OpenAI 互換エンドポイントはまちまち。明示的なリトライを持つ薄いクライアントは SDK 依存に勝ります。トランスポートよりインターフェイスの継ぎ目が重要    |
+| 3   | 1 つのパイプライン、2 つの戦略       | 大規模用・小規模用に分かれたパイプラインはアダプタ、クリティック、クライアント、レンダラを重複させます。戦略フラグはその表面積の約 40% を取り除きます |
+| 4   | `version` 付き zod 検証の成果物      | 壊れた成果物や手編集された成果物は、後のフェーズを汚染する代わりに境界で大きな音を立てて失敗します                                                    |
+| 5   | カードにおける事実/文章の分離        | モデルは、グラフ由来の完全なインベントリに注釈を付けます。文章は空でも構いません。事実は間違えられません                                              |
+| 6   | シングルターンのプランナープロトコル | どのエンドポイントでも動き、モックが容易で、トランスクリプトを検査できます。コスト — トークンの再送 — はプランナーの規模では許容範囲です              |
+| 7   | ESM + `tsc -b`、バンドラなし         | ライブラリは型チェック済みの `dist/` と `.d.ts` を出荷します。コンポジット参照は追加のツールなしでインクリメンタルビルドを与えます                    |
+| 8   | 1 つの設定レジストリ                 | フラグ、環境変数名、YAML キー、3 つの生成ドキュメントのすべてが 1 つの表から導出されるため、ドリフトできません                                        |
+
+## 次へ
+
+<Cards>
+  <Card title="5 つのフェーズの詳細" href="/docs/concepts/pipeline" />
+  <Card title="作業ディレクトリ" href="/docs/concepts/work-directory" />
+  <Card title="パッケージ API 索引" href="/docs/reference/packages" />
+</Cards>

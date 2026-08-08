@@ -1,0 +1,192 @@
+---
+title: '生成手册'
+description: '如何选择详略程度、综合模式与策略；分阶段运行；断点续跑；以及结果不对时该怎么办。'
+---
+
+```bash
+handbook generate --source <repo> --work <workdir> [options]
+```
+
+这是唯一昂贵的命令。本页的全部内容，都是讲怎么在它上面花得更少、拿到更多。
+
+## 先省着来，再升级
+
+<Steps>
+
+<Step>
+### 确认扫描无误——免费
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+检查文件数。如果不对，先把它修好，再去花任何一个 token。
+
+</Step>
+
+<Step>
+### 用便宜的默认值生成
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+即 `--detail brief` 加 `--synth-mode oneshot`。读一读 `$WORK/phase2/skeleton.yaml`。
+
+</Step>
+
+<Step>
+### 哪一半不对就修哪一半
+
+**文字太单薄？** 只加深卡片，保留你已经验证过的骨架：
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+**结构不对？** 带上修复循环重跑 2b，保留卡片：
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+</Steps>
+
+按这个顺序做，你就永远不会在一个即将被丢弃的骨架上为深度卡片付费。
+
+## `--detail brief` 与 `deep`
+
+|          | `brief`（默认）      | `deep`                    |
+| -------- | -------------------- | ------------------------- |
+| 每个文件 | 用途、角色、生命周期 | 外加一段 120–300 词的走读 |
+| 每个函数 | —                    | 用途、数据流、关联关系    |
+| 批大小   | 每次请求 8 个文件    | 每次请求 1 个文件         |
+| 成本     | 约 1×                | 数倍于此                  |
+
+**当手册要给智能体用时，deep 是值得的**，因为正是逐函数的注记把一个阶段页面变成一本地址簿。brief 适合第一遍生成、超大仓库，或者你主要想要结构的场合。
+
+两者可以混用：先全量生成 brief，再把 `--source` 指向你最关心的子目录，重跑
+`--phase 2a --detail deep --resume`。
+
+## `--synth-mode oneshot` 与 `doctor`
+
+`oneshot` 一次性综合出骨架。快、便宜，通常够用。
+
+`doctor` 运行一个 actor–critic 修复循环：每轮最多提出三个结构改动，交给三位评审
+（工程师、架构师、读者）审阅，对幸存的改动**机械地**对照真实调用图进行校验，然后
+应用、重新分派，如此往复。
+
+<Callout title="doctor 什么时候值回票价">
+  当 `oneshot` 给出的阶段畸轻畸重（一个阶段 200 个文件，另外三个各只有两个）、阶段标题言之无物，
+  或者有大量文件未被分派时，就用它。`--max-doctor-rounds` 默认为 6；
+  收敛或连续两轮没有进展时，它也会提前停止。
+</Callout>
+
+## `--strategy file` 与 `member`
+
+**`file`（默认）** —— 由 LLM 综合骨架；源文件是叶子单元。能扩展到大型仓库。除非有
+明确的理由，否则就用它。
+
+**`member`** —— 由*你*来编写 `skeleton.yaml`；各个函数和方法被归类到你定义的阶段
+中，文件级工件再由此推导而来。
+
+```yaml title="skeleton.yaml"
+metadata:
+  version: 1
+  archetype: HTTP API server
+stages:
+  - id: stage-1
+    title: Request intake
+    description: Accepting connections, parsing requests, and routing them.
+    parent: null
+    children: []
+    crosscut: false
+  - id: stage-2
+    title: Business logic
+    description: What the service actually does with a validated request.
+    parent: null
+    children: []
+    crosscut: false
+  - id: crosscut-1
+    title: Configuration and logging
+    description: Cross-cutting infrastructure used by every stage.
+    parent: null
+    children: []
+    crosscut: true
+```
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy member --skeleton skeleton.yaml
+```
+
+member 成本更高——每个函数都要归类——但文字更贴合，而且 phase 2c 变成免费的，
+因为组织结构是确定性推导出来的。
+
+<Callout type="warn">
+  所用策略会记录在 `phase2/strategy.json` 中。带着不同的 `--strategy` 却不带 `--phase 2b` 的部分重跑
+  会被**拒绝**，因此 `file` 策略的默认值不可能悄悄覆盖掉由 member 推导出的组织结构。
+</Callout>
+
+## 分阶段运行
+
+```bash
+--phase 1        # just the graph (same as `handbook analyze`)
+--phase 2a       # just the cards
+--phase 2b       # just skeleton + assignment
+--phase 2c       # just the grouping
+--phase 3        # just narration + registers
+--phase 2        # 2a + 2b + 2c
+--phase 2c,3     # a comma list
+```
+
+每个阶段只读取自己上游的工件，所以这样做总是安全的。常见组合：
+
+| 场景                       | 命令                                    |
+| -------------------------- | --------------------------------------- |
+| 卡片没问题，骨架不对       | `--phase 2b,2c,3 --synth-mode doctor`   |
+| 一切都好，只是文字读起来差 | `--phase 3 --refresh`                   |
+| 只想要更深的卡片，其余不动 | `--phase 2a --detail deep --resume`     |
+| 你换了叙述语言             | `--phase 3 --narrate-lang zh --refresh` |
+
+## 续跑与缓存
+
+- **`--resume`** 会跳过在所要求深度上已经有完整卡片的文件。卡片是完成一张写一张
+  的，所以 `Ctrl-C` 永远安全。
+- **`--llm-cache`** 把原始回复缓存在 `<work>/phase3/cache` 下，以模型、提示词和选
+  项为键。迭代期间的重跑几乎免费。
+- **`--refresh`** 忽略 phase 3 的缓存。当你改了提示词的输入而缓存键没有察觉时用
+  它——例如手工编辑了 `skeleton.yaml` 之后。
+
+`--refresh` 会在那次运行中禁用 `--llm-cache`，这是有意设计。
+
+## 看它干活
+
+```bash
+handbook generate --source $REPO --work $WORK -v
+```
+
+```text
+[scan] auto root=/Users/me/code/api
+[scan] typescript: 284 files
+[2a] batch 12/36 · 96 cards
+[2b] 9 stages; 0 files unassigned
+[3] narrating stage-4 (2 children)
+```
+
+运行结束后，token 用量会写进 `run-manifest.json`。
+
+## 结果不对时
+
+| 症状                          | 可能原因                       | 处理                                                                |
+| ----------------------------- | ------------------------------ | ------------------------------------------------------------------- |
+| 阶段畸轻畸重或言之无物        | 在不寻常的布局上做了一次性综合 | `--phase 2b,2c,3 --synth-mode doctor`                               |
+| 大量文件未被分派              | 骨架没有覆盖到仓库的一部分     | doctor 模式，或自己编写骨架并传 `--skeleton`                        |
+| 卡片描述为空                  | 模型的回复没能解析             | 读 `phase2/cards/_rejected/`；换更强的模型，或改用 `--detail brief` |
+| 文字空泛无用                  | 模型对这个代码库来说太小       | 换 `--model`；这个阶段比任何其他阶段都更能从更好的模型中获益        |
+| 概览里提到 “generic analyzer” | 你有 generic 层级的语言        | 符合预期——见[分析保真度](/docs/concepts/analysis-fidelity)          |
+| 运行非常慢                    | worker 数太低，或端点本身慢    | 调高 `--read-workers` 和 `--llm-concurrency`                        |
+| 限流报错                      | 并发太高                       | 调低 `--llm-concurrency`；调高 `--llm-retries`                      |
+
+更多内容见[疑难解答](/docs/guides/troubleshooting)。

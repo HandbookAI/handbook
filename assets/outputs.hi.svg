@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="What one Handbook run produces: markdown pages, an HTML site, a single-file page, an agent locator index, llms.txt files, and a packaged agent SKILL">
+  <title>Handbook — what one run gives you</title>
+  <desc>From one work directory, render produces markdown pages, a multi-page HTML site, one self-contained HTML page, an agent locator index and llms.txt; skill repackages those as an agent SKILL with content hashes.</desc>
+
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/><stop offset="60%" stop-color="#101733"/><stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <linearGradient id="cardH" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2242"/><stop offset="100%" stop-color="#141B36"/>
+    </linearGradient>
+    <marker id="fan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5C6AA0"/>
+    </marker>
+    <style>
+      .t   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .m   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .h1  { fill:#F2F5FF; font-size:25px; font-weight:700; letter-spacing:-0.3px; }
+      .sub { fill:#8C9AC4; font-size:14px; }
+      .ttl { fill:#F2F5FF; font-size:15px; font-weight:700; }
+      .path{ fill:#7DD3C8; font-size:11.5px; }
+      .body{ fill:#9FB0DC; font-size:12.5px; }
+      .who { fill:#0B1020; font-size:10.5px; font-weight:800; letter-spacing:0.5px; }
+      .cap { fill:#68779F; font-size:11.5px; font-weight:800; letter-spacing:1.2px; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="600" rx="18" fill="url(#bg4)"/>
+  <rect x="0.5" y="0.5" width="1119" height="599" rx="18" fill="none" stroke="#232C4E"/>
+
+  <text class="t h1" x="40" y="48">एक work directory। छह shipping formats। किसी को भी दोबारा LLM नहीं चाहिए।</text>
+  <text class="t sub" x="40" y="72">Generation ही महँगा हिस्सा है और वह एक ही बार होता है। नीचे का सब कुछ deterministic re-render है, जो CI में चल सकता है।</text>
+
+  <!-- the work dir -->
+  <rect x="40" y="120" width="252" height="182" rx="13" fill="#1E2A52" stroke="#3D4E86"/>
+  <text class="t cap" x="60" y="148">सत्य का स्रोत</text>
+  <text class="m ttl" x="60" y="176" font-size="14">&lt;work&gt;/</text>
+  <text class="m body" x="60" y="200">phase1/graph.json</text>
+  <text class="m body" x="60" y="220">phase2/cards/ · skeleton</text>
+  <text class="m body" x="60" y="240">phase2/assignment · org</text>
+  <text class="m body" x="60" y="260">phase3/narration · registers</text>
+  <text class="m body" x="60" y="284" fill="#7386B4">run-manifest.json</text>
+
+  <path d="M 292 211 L 316 211" stroke="#5C6AA0" stroke-width="2"/>
+  <path d="M 316 211 L 316 151 L 348 151" fill="none" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#fan)"/>
+  <path d="M 316 211 L 316 293 L 348 293" fill="none" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#fan)"/>
+
+  <!-- row 1 -->
+  <rect x="356" y="86" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="356" y="86" width="232" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="374" y="112">Markdown handbook</text>
+  <text class="m path" x="374" y="131">overview · index · &lt;stage&gt;.md</text>
+  <text class="t body" x="374" y="152">Stage-दर-stage walkthrough,</text>
+  <text class="t body" x="374" y="169">एक mermaid stage map, और</text>
+  <text class="t body" x="374" y="186">हर source file का एक card।</text>
+  <rect x="374" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="407" y="208" text-anchor="middle" style="font-size:9px">इंसानों के लिए</text>
+
+  <rect x="604" y="86" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="604" y="86" width="232" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="622" y="112">कई pages वाली HTML site</text>
+  <text class="m path" x="622" y="131">handbook/html/ · --html</text>
+  <text class="t body" x="622" y="152">Sticky TOC, breadcrumbs,</text>
+  <text class="t body" x="622" y="169">theme toggle, expand-all।</text>
+  <text class="t body" x="622" y="186">Inline CSS — file:// पर खुलती है</text>
+  <rect x="622" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="655" y="208" text-anchor="middle" style="font-size:9px">इंसानों के लिए</text>
+
+  <rect x="852" y="86" width="228" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="852" y="86" width="228" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="870" y="112">एक self-contained page</text>
+  <text class="m path" x="870" y="131">handbook.html · --html-single</text>
+  <text class="t body" x="870" y="152">एक अकेली file — जिसे email करें,</text>
+  <text class="t body" x="870" y="169">ticket में attach करें, या बिना</text>
+  <text class="t body" x="870" y="186">किसी server के ही खोल लें।</text>
+  <rect x="870" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="903" y="208" text-anchor="middle" style="font-size:9px">इंसानों के लिए</text>
+
+  <!-- row 2 -->
+  <rect x="356" y="228" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="356" y="228" width="232" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="374" y="254">Agent locator index</text>
+  <text class="m path" x="374" y="273">handbook/agent/ · --agent-site</text>
+  <text class="t body" x="374" y="294">Duty · entry concepts · state</text>
+  <text class="t body" x="374" y="311">· exemplars · co-change hints।</text>
+  <text class="t body" x="374" y="328">ख़ाली = कोई signal नहीं, अटकल नहीं।</text>
+  <rect x="374" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="404" y="350" text-anchor="middle">AI के लिए</text>
+
+  <rect x="604" y="228" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="604" y="228" width="232" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="622" y="254">llms.txt + llms-full.txt</text>
+  <text class="m path" x="622" y="273">--llms-txt</text>
+  <text class="t body" x="622" y="294">llms.txt convention: एक</text>
+  <text class="t body" x="622" y="311">linked entry file, और साथ में</text>
+  <text class="t body" x="622" y="328">पूरी handbook flattened।</text>
+  <rect x="622" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="652" y="350" text-anchor="middle">AI के लिए</text>
+
+  <rect x="852" y="228" width="228" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="852" y="228" width="228" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="870" y="254">Agent SKILL package</text>
+  <text class="m path" x="870" y="273">SKILL.md + references/</text>
+  <text class="t body" x="870" y="294">हर file के content hash के साथ</text>
+  <text class="t body" x="870" y="311">coverage.json ship होता है, ताकि</text>
+  <text class="t body" x="870" y="328">code से drift पकड़ा जा सके।</text>
+  <rect x="870" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="900" y="350" text-anchor="middle">AI के लिए</text>
+
+  <!-- trust band -->
+  <rect x="40" y="380" width="1040" height="106" rx="13" fill="#141B36" stroke="#2A3357"/>
+  <text class="t cap" x="60" y="406">आप जो पढ़ते हैं उस पर भरोसा क्यों कर सकते हैं</text>
+  <circle cx="68" cy="432" r="4" fill="#2DD4BF"/>
+  <text class="t body" x="82" y="437" font-size="13">Structural facts — files, functions, call edges, line ranges — parser से आते हैं। इन्हें कोई model नहीं लिखता।</text>
+  <circle cx="68" cy="456" r="4" fill="#FBBF24"/>
+  <text class="t body" x="82" y="461" font-size="13">Prose model की लिखी होती है और उसी रूप में labelled है। जिस file का card fail हुआ वह भी दिखती है, ख़ाली description के साथ — कभी गढ़ी हुई नहीं।</text>
+  <circle cx="68" cy="480" r="4" fill="#A78BFA"/>
+  <text class="t body" x="82" y="485" font-size="13">Generic engine से पढ़ी गई भाषाएँ overview में disclose होती हैं, ताकि “best-effort call relations” कभी “exact” न पढ़ा जाए।</text>
+
+  <!-- footer -->
+  <rect x="40" y="504" width="508" height="66" rx="12" fill="#16233F" stroke="#2F6F68"/>
+  <text class="t ttl" x="60" y="530" font-size="14">हर artifact schema-validated JSON/YAML है</text>
+  <text class="t body" x="60" y="552">कोई भी phase अकेला दोबारा चलता है। Crash हुआ run वहीं से resume होता है।</text>
+
+  <rect x="572" y="504" width="508" height="66" rx="12" fill="#2A2440" stroke="#7A6535"/>
+  <text class="t ttl" x="592" y="530" font-size="14">यहाँ किसी चीज़ को दोबारा network नहीं चाहिए</text>
+  <text class="t body" x="592" y="552">Offline, CI में, हर commit पर re-render, re-package और re-validate करें।</text>
+</svg>

@@ -1,0 +1,152 @@
+---
+title: 'Worauf Verlass ist'
+description: 'Welche Teile eines Handbooks geparste Fakten sind, welche Modellausgabe, was Ihren Rechner verlässt und was das Werkzeug verweigert.'
+---
+
+## Die Kurzfassung
+
+| Aussage                                       | Quelle                      | Kann sie falsch sein?                              |
+| --------------------------------------------- | --------------------------- | -------------------------------------------------- |
+| Diese Datei existiert unter diesem Pfad       | Parser                      | **Nein**                                           |
+| Diese Funktion steht in den Zeilen 88–104     | Parser                      | **Nein**                                           |
+| Diese Signatur lautet `send(self, url, data)` | Parser                      | **Nein**                                           |
+| Diese Funktion ruft jene auf                  | Parser                      | **Nein** im Full-Tier; Best-Effort im Generic-Tier |
+| Diese Aufrufe ließen sich nicht auflösen      | Parser                      | **Nein** — sie werden aufgelistet, nicht geraten   |
+| Diese Datei gehört zu dieser Etappe           | LLM, mechanisch validiert   | Als Urteil: ja. Strukturell: nein                  |
+| Der Zweck dieser Datei ist „…"                | LLM                         | **Ja** — es ist Prosa                              |
+| Dieses Subsystem funktioniert so: „…"         | LLM                         | **Ja** — es ist Prosa                              |
+| Dieser Zustand fließt über diese Etappen      | LLM, über reale Etappen-Ids | **Ja**, die Etappen-Ids allerdings sind real       |
+
+**Die Regel, der das ganze Design folgt:** Ein Agent routet über die obere Hälfte dieser
+Tabelle und liest die echte Quelle, bevor er handelt. Das SKILL-Paket sagt das in seiner
+ersten Zeile, und sein Routing-Protokoll endet mit _"`read_file` the actual source at
+every cited path before proposing or making changes."_
+
+## Was Ihren Rechner verlässt
+
+**Phase 1 — nichts.** Die statische Analyse ist vollständig lokal. Es findet kein einziger
+Netzwerkaufruf statt.
+
+**Die Phasen 2 und 3** senden Quelldatei-Inhalte an den Endpunkt, den **Sie** konfiguriert
+haben. Das kann ein Modell auf der eigenen Maschine sein (vLLM, Ollama, LiteLLM). Handbook
+hat keine Telemetrie, keine Analytics und keinen Standard-Endpunkt außer dem von OpenAI,
+für den Sie selbst einen Schlüssel angeben müssen.
+
+**`--max-chars-per-file <n>`** begrenzt, wie viel von einer einzelnen Datei jemals
+gesendet wird.
+
+**Rendern, Paketieren und Validieren** berühren das Netzwerk nie. Ebenso wenig `apply`
+oder `rollback`.
+
+**Der Planner** liest die Quellen lokal und sendet Auszüge des Gelesenen an den Endpunkt,
+genau wie die Generierung.
+
+## Was bewusst verweigert wird
+
+Verweigerungen sind der tragende Teil dieses Werkzeugs. In Prioritätsreihenfolge:
+
+### Der Patcher
+
+- Ein Anker, der **null**-mal passt → verweigern. Der Code hat sich weiterbewegt.
+- Ein Anker, der **zwei- oder mehrmals** passt → verweigern. Er ist mehrdeutig.
+- **Niemals** „den ersten Treffer nehmen". Genau so landet ein Patch in der falschen
+  Funktion.
+- Ein einziger Fehlschlag bricht die **gesamte** Anwendung ab, bevor ein Byte geschrieben
+  wird.
+- Ein Pfad, der aus dem Quellwurzelverzeichnis ausbricht — auch über ein per Symlink
+  eingebundenes Elternverzeichnis, wenn die Datei noch nicht existiert — wird verweigert.
+- Rollback verweigert jede Datei, die sich _nach_ dem Patch geändert hat, außer mit
+  `--force`.
+
+### Der Planner
+
+- Ein Schreibwerkzeug existiert nicht. Nicht deaktiviert — **nicht implementiert**.
+- Eine Antwort, die `## Tool result`-Abschnitte erfindet, wird rundweg verworfen,
+  einschließlich eines etwaigen Plans an ihrem Ende, denn dieser Plan wurde aus Fiktion
+  abgeleitet.
+- Ein Lauf, der aufgegeben hat, endet mit einem Exit-Code ungleich null, statt eine
+  Entschuldigung in `plan.md` zu schreiben.
+- Katastrophische Regexes (`(a+)+`, `(.*)*`) werden verweigert, bevor sie den Lauf
+  aufhängen können.
+
+### Die Pipeline
+
+- Ein Aufruf, den der Analyzer nicht auflösen kann, wandert nach `dropped-calls.json`. Er
+  wird nie geraten.
+- Eine Datei, deren Kartengenerierung fehlschlug, bekommt eine **leere** Beschreibung,
+  nie eine erfundene, und wird in `_coverage.json` aufgeführt.
+- Eine von der Doctor-Schleife vorgeschlagene Strukturänderung, die eine nicht
+  existierende Etappe nennt oder Dateien verwaisen ließe, wird verworfen, bevor sie das
+  Skelett berührt.
+- Ein Critic, dessen Antwort sich nicht parsen lässt, zählt als `REJECT`.
+
+### Konfiguration
+
+- Ein Secret (`llmApiKey` / `OPENAI_API_KEY`) ist **niemals** ein Kommandozeilen-Flag und
+  wird **zurückgewiesen**, wenn es in einer Konfigurationsdatei auftaucht — denn
+  Konfigurationsdateien landen in Git.
+- Ein angegebener, aber ungültiger Wert fällt nie auf einen Standard zurück. Ein
+  Tippfehler ist ein Fehler.
+- Ein leerer Wert gilt als nicht gesetzt — `HANDBOOK_TITLE=` kann also kein Handbook ohne
+  Titel erzeugen.
+
+## Drift erkennen
+
+`coverage.json` in einem SKILL-Paket trägt einen **Inhalts-Hash pro Datei**, festgehalten
+beim Paketieren.
+
+```bash
+handbook validate --skill skills/myrepo --source ~/code/myrepo
+```
+
+hasht die lebendige Quelle erneut und meldet jede Datei, deren Inhalt sich seither bewegt
+hat. So erfährt ein Agent _„diese Seite könnte dem Code hinterherhinken"_, bevor er auf
+eine veraltete Aussage hin handelt — und deshalb lohnt es sich, `--work` und `--source`
+an `handbook skill` zu übergeben.
+
+## Der Korrekturkanal
+
+Widerspricht eine Handbook-Aussage der realen Quelle, hängt der konsumierende Agent eine
+Zeile JSON an `corrections.jsonl` im Skill-Wurzelverzeichnis an:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py"
+}
+```
+
+`handbook resync --corrections <file>` frischt dann **genau die darin genannten Dateien**
+auf — selbst wenn sich ihre Bytes nie geändert haben, denn eine Aussage, der die Quelle
+widerspricht, ist Grund genug, diese Datei neu zu beschreiben.
+
+Die Datei liegt im Skill-Wurzelverzeichnis, nie unter `references/`, weil Planner diesen
+Baum schreibgeschützt einbinden. Ein Rebuild erhält ausstehende Korrekturen über das
+Aufräumen hinweg.
+
+## Studios Sicherheitshaltung
+
+Studio ist ein **lokales Werkzeug** und gibt nichts anderes vor.
+
+- Bindet standardmäßig an `127.0.0.1`.
+- Der CSRF-Guard prüft den `Host`-**Request-Header**, nicht den Socket — es kommen also
+  nur Loopback-Hostnamen durch.
+- `POST` verlangt `application/json`, was den klassischen Cross-Origin-Formularangriff
+  blockiert.
+- Die Auslieferung von Quell- und Handbook-Dateien ist auf die registrierten
+  Wurzelverzeichnisse gesandboxt.
+
+In einem Container muss es an `0.0.0.0` binden, damit der veröffentlichte Port überhaupt
+erreichbar ist — aber das erweitert nicht, wer mit ihm sprechen darf: Eine Anfrage, die
+eine LAN-IP oder den Container-Hostnamen nennt, bekommt weiterhin `403`. Fernzugriff ist
+ein bewusst nicht implementiertes, separates Feature — es bräuchte eine explizite
+Allowlist.
+
+## Was Handbook nicht zu wissen behauptet
+
+Ein Aufrufgraph kann nicht sagen, _warum_ eine Entscheidung getroffen wurde, wofür das
+Produkt da ist oder welche Konventionen Ihr Team hat. Handbook leitet das nicht ab und
+gibt es auch nicht vor. Es dokumentiert Struktur und Verhalten; die Absicht
+aufzuschreiben bleibt Ihre Aufgabe.

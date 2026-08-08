@@ -1,0 +1,139 @@
+---
+title: 'O que é o Handbook?'
+description: 'O Handbook analisa seu repositório com um parser de verdade, transforma-o em um mapa navegável e entrega esse mapa ao seu agente de codificação como um índice de localização — e o mantém atualizado conforme o código muda.'
+icon: House
+---
+
+## O problema, dito com clareza
+
+Você tem um repositório. Ele é grande demais para caber na sua cabeça — e grande demais
+para caber em uma janela de contexto.
+
+Peça a um agente de codificação para _"tentar novamente três vezes os uploads que
+falharem"_ e ele vai, cheio de confiança, corrigir a única função de upload que encontrou
+— e deixar passar a constante da política de retry, a implementação espelhada no worker
+de lote, a métrica que conta as tentativas e o teste que assevera o comportamento antigo.
+
+Isso não é uma falha de raciocínio. É uma falha de **roteamento**. O agente nunca viu um
+mapa.
+
+<Callout title="A versão em uma frase">
+  O Handbook lê seu código com um parser de verdade, constrói um mapa dele, entrega esse mapa ao agente como
+  um **índice de localização** — não um resumo — e mantém o mapa atualizado conforme o código muda.
+</Callout>
+
+## Experimente antes de continuar lendo
+
+Nada do que vem abaixo importa se não rodar. Isto leva cerca de trinta segundos, gasta
+zero tokens e não precisa de chave de API:
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install && pnpm build
+pnpm demo
+```
+
+`pnpm demo` executa a cadeia de ferramentas inteira contra um projeto de exemplo
+embutido, usando um servidor de LLM simulado também embutido. Ao terminar, você terá em
+disco um handbook renderizado, um site HTML, um índice localizador para agentes e um
+pacote SKILL validado.
+
+<Cards>
+  <Card title="Instale do jeito certo" href="/docs/getting-started/installation" />
+  <Card title="Percorra o guia rápido" href="/docs/getting-started/quickstart" />
+  <Card title="Rode no seu próprio repositório" href="/docs/getting-started/first-handbook" />
+  <Card title="Veja todos os comandos" href="/docs/reference/cli" />
+</Cards>
+
+## As três ideias em que ele se apoia
+
+### 1. Fatos vêm de um parser, não de um modelo
+
+O Handbook analisa cada arquivo-fonte com [tree-sitter](https://tree-sitter.github.io/) e
+constrói um grafo de chamadas tipado: funções, métodos, arestas de chamada resolvidas via
+`self`/atributos/parâmetros/imports, chamadas que saem do seu código e chamadas que ele
+não conseguiu resolver — postas em quarentena em um arquivo próprio, nunca adivinhadas.
+
+**Essa camada nunca toca um LLM.** Rode duas vezes, obtenha o mesmo grafo duas vezes.
+
+### 2. A prosa é aplicada por cima dos fatos, e rotulada
+
+Um LLM escreve a parte legível por humanos: para que serve um arquivo, como um subsistema
+se encaixa, qual estado flui por quais etapas. Ela está sempre ancorada no grafo e, onde
+falha, a estrutura ainda é entregue — com uma descrição vazia.
+
+**Uma frase ausente é melhor do que uma frase inventada.**
+
+### 3. O mapa é feito para rotear, não para ler
+
+A saída não é um resumo do seu código. É um índice que responde _"quais arquivos, funções
+e estados esta mudança precisa tocar?"_ — inclusive os espalhados e nada óbvios. O
+planner então usa esse índice, lê o código-fonte real em cada endereço que encontrou e
+emite um plano de edição exato ao byte, aplicável mecanicamente.
+
+## O que uma execução produz
+
+<img
+  src="/diagrams/outputs.svg"
+  alt="Saídas: handbook em markdown, site HTML, página única, índice localizador para agentes, llms.txt, pacote SKILL"
+  className="rounded-xl border"
+/>
+
+| Saída                                                                                                             | Para quem |
+| ----------------------------------------------------------------------------------------------------------------- | --------- |
+| Handbook em markdown — visão geral, índice de etapas, uma página por etapa, tabela de registradores de estado     | humanos   |
+| Site HTML multipágina — sumário fixo, breadcrumbs, alternância de tema, funciona via `file://`                    | humanos   |
+| Uma página HTML autocontida que você pode mandar por e-mail                                                       | humanos   |
+| Índice localizador para agentes — responsabilidade, conceitos de entrada, estado, exemplares, dicas de co-mudança | agentes   |
+| `llms.txt` + `llms-full.txt`                                                                                      | agentes   |
+| Um pacote SKILL com um hash de conteúdo por arquivo, tornando a deriva detectável                                 | agentes   |
+
+## Para quem é isto
+
+| Você é…                                                          | Você ganha…                                                                                      |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Um engenheiro que acabou de herdar um serviço de 200 mil linhas  | Um passo a passo etapa por etapa que dá para ler de verdade, mais um site HTML para compartilhar |
+| Alguém rodando um agente de codificação em um repositório grande | Um pacote SKILL que impede o agente de adivinhar onde as coisas ficam                            |
+| Um líder de equipe integrando pessoas novas                      | Documentação que se regenera em vez de apodrecer                                                 |
+| Alguém mantendo um monorepo poliglota                            | Uma única passada sobre 18 linguagens, com a fidelidade da análise divulgada por linguagem       |
+
+## O que isso custa para você
+
+- **Node.js ≥ 20.11 e pnpm.** A instalação é só isso. Sem compilação nativa, sem
+  Python, sem `node-gyp` — os parsers são WebAssembly.
+- **Um endpoint compatível com OpenAI** para as fases que usam LLM. OpenAI hospedado,
+  Azure, vLLM, Ollama, LiteLLM, um proxy interno — qualquer coisa que fale
+  `/v1/chat/completions`. Pode ser um modelo rodando na sua própria máquina.
+- **Absolutamente nada** para `handbook analyze`, que é o comando que você deve rodar
+  primeiro.
+
+<Callout type="info" title="Meu código sai do prédio?">
+  A Phase 1 é inteiramente local. As Phases 2 e 3 enviam o conteúdo dos arquivos para o endpoint que *você*
+  configurou — que pode ser localhost. Nada mais sai, e `--max-chars-per-file` limita quanto de qualquer
+  arquivo individual chega a ser enviado. Veja o [modelo de confiança](/docs/concepts/trust-model).
+</Callout>
+
+## Para onde ir agora
+
+<Cards>
+  <Card
+    title="Por que isto existe"
+    description="O problema do roteamento, e por que resumir uma base de código não o resolve."
+    href="/docs/concepts/why"
+  />
+  <Card
+    title="Como a geração funciona"
+    description="Cinco fases, o que cada uma custa e o que degrada quando uma falha."
+    href="/docs/concepts/pipeline"
+  />
+  <Card
+    title="Configuração"
+    description="Flags, variáveis de ambiente, cascatas de .env e handbook.config.yaml — um único registro."
+    href="/docs/reference/configuration"
+  />
+  <Card
+    title="Solução de problemas"
+    description="As coisas que realmente dão errado, e o que fazer a respeito."
+    href="/docs/guides/troubleshooting"
+  />
+</Cards>

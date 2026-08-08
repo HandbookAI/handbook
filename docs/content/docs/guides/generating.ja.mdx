@@ -1,0 +1,197 @@
+---
+title: 'ハンドブックの生成'
+description: '詳細度・合成モード・戦略の選び方、フェーズの個別実行、再開、そして結果が間違っていたときの対処。'
+---
+
+```bash
+handbook generate --source <repo> --work <workdir> [options]
+```
+
+これはコストのかかる唯一のコマンドです。このページの内容はすべて、その支出を抑えつつ、
+より多くの成果を得るためのものです。
+
+## 安く始めて、あとからアップグレードする
+
+<Steps>
+
+<Step>
+### スキャンが正しいことを確認する — 無料
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+ファイル数を確認します。間違っていれば、トークンを 1 つでも消費する前に修正してください。
+
+</Step>
+
+<Step>
+### 安価なデフォルト設定で生成する
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+`--detail brief` と `--synth-mode oneshot` が使われます。`$WORK/phase2/skeleton.yaml` を読んでください。
+
+</Step>
+
+<Step>
+### 間違っている側だけを直す
+
+**文章が薄すぎる場合:** 検証済みのスケルトンを保ったまま、カードだけを深くします。
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+**構造が間違っている場合:** カードを保ったまま、修復ループ付きで 2b を再実行します。
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+</Steps>
+
+この順序で進めれば、これから捨てることになるスケルトンの上に深いカードの費用を払うことは
+決してありません。
+
+## `--detail brief` と `deep` の比較
+
+|              | `brief`(デフォルト)           | `deep`                        |
+| ------------ | ----------------------------- | ----------------------------- |
+| ファイルごと | 目的、役割、ライフサイクル    | + 120〜300 語のウォークスルー |
+| 関数ごと     | —                             | 目的、データフロー、関係      |
+| バッチサイズ | 1 リクエストあたり 8 ファイル | 1 リクエストあたり 1 ファイル |
+| コスト       | 約 1 倍                       | その数倍                      |
+
+**エージェントがハンドブックを使うなら deep の価値があります。** 関数ごとのノートこそが、
+ステージページを住所録に変えるものだからです。brief が適しているのは、最初の 1 回目、
+非常に大きなリポジトリ、あるいは主に構造だけが欲しい場合です。
+
+混在も可能です。まず全体を brief で生成し、その後 `--source` を最も重要なサブディレクトリに
+向けて `--phase 2a --detail deep --resume` を再実行します。
+
+## `--synth-mode oneshot` と `doctor` の比較
+
+`oneshot` は 1 パスでスケルトンを合成します。高速かつ安価で、たいていは妥当な結果になります。
+
+`doctor` はアクター・クリティック方式の修復ループを実行します。最大 3 件の構造変更を提案し、
+3 人の批評者(エンジニア、アーキテクト、読者)がレビューし、生き残った提案を実際のグラフに
+対して**機械的に**検証し、適用して再割り当てし、これを繰り返します。
+
+<Callout title="doctor がコストに見合うとき">
+  `oneshot` の結果が、偏ったステージ(1 つのステージに 200 ファイル、残り 3 つに 2 ファイルずつなど)、
+  タイトルが意味をなさないステージ、あるいは大量の未割り当てファイルだったときに使ってください。`--max-doctor-rounds`
+  のデフォルトは 6 で、 収束した場合や 2 ラウンド進展がなかった場合にも早期に停止します。
+</Callout>
+
+## `--strategy file` と `member` の比較
+
+**`file`(デフォルト)** — LLM がスケルトンを合成し、ソースファイルが葉の単位になります。
+大規模リポジトリにもスケールします。特に理由がなければこちらを使ってください。
+
+**`member`** — `skeleton.yaml` を書くのは _あなた_ です。個々の関数とメソッドがあなたの
+定義したステージに分類され、ファイルレベルの成果物はそこから導出されます。
+
+```yaml title="skeleton.yaml"
+metadata:
+  version: 1
+  archetype: HTTP API server
+stages:
+  - id: stage-1
+    title: Request intake
+    description: Accepting connections, parsing requests, and routing them.
+    parent: null
+    children: []
+    crosscut: false
+  - id: stage-2
+    title: Business logic
+    description: What the service actually does with a validated request.
+    parent: null
+    children: []
+    crosscut: false
+  - id: crosscut-1
+    title: Configuration and logging
+    description: Cross-cutting infrastructure used by every stage.
+    parent: null
+    children: []
+    crosscut: true
+```
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy member --skeleton skeleton.yaml
+```
+
+member はすべての関数を分類するためコストは高くなりますが、より締まった文章が得られ、
+組織化が決定的に導出されるため Phase 2c は無料になります。
+
+<Callout type="warn">
+  戦略は `phase2/strategy.json` に記録されます。異なる `--strategy` を指定しつつ `--phase 2b` を
+  含まない部分的な再実行は**拒否**されます。これにより、デフォルトの `file` 戦略が member 由来の
+  組織化を黙って上書きすることはできません。
+</Callout>
+
+## フェーズを個別に実行する
+
+```bash
+--phase 1        # just the graph (same as `handbook analyze`)
+--phase 2a       # just the cards
+--phase 2b       # just skeleton + assignment
+--phase 2c       # just the grouping
+--phase 3        # just narration + registers
+--phase 2        # 2a + 2b + 2c
+--phase 2c,3     # a comma list
+```
+
+各フェーズは自分の上流の成果物だけを読むため、これは常に安全です。よくあるパターンは次のとおりです。
+
+| 状況                                     | コマンド                                |
+| ---------------------------------------- | --------------------------------------- |
+| カードは良いが、スケルトンが間違っている | `--phase 2b,2c,3 --synth-mode doctor`   |
+| すべて良いが、文章の読み味が悪い         | `--phase 3 --refresh`                   |
+| カードだけを深くしたい                   | `--phase 2a --detail deep --resume`     |
+| ナレーション言語を切り替えた             | `--phase 3 --narrate-lang zh --refresh` |
+
+## 再開とキャッシュ
+
+- **`--resume`** は、要求された詳細度で完全なカードがすでに存在するファイルをスキップします。
+  カードは完成するたびに書き出されるため、`Ctrl-C` はいつでも安全です。
+- **`--llm-cache`** は生の応答を `<work>/phase3/cache` 以下に、モデル・プロンプト・オプションを
+  キーとしてキャッシュします。試行錯誤中の再実行はほぼ無料になります。
+- **`--refresh`** は Phase 3 のキャッシュを無視します。プロンプトの入力を変更したのにキャッシュキーが
+  それに気づかない場合 — たとえば `skeleton.yaml` を手で編集した後 — に使ってください。
+
+`--refresh` はその実行に限り `--llm-cache` を無効にします。これは意図的な仕様です。
+
+## 動作を観察する
+
+```bash
+handbook generate --source $REPO --work $WORK -v
+```
+
+```text
+[scan] auto root=/Users/me/code/api
+[scan] typescript: 284 files
+[2a] batch 12/36 · 96 cards
+[2b] 9 stages; 0 files unassigned
+[3] narrating stage-4 (2 children)
+```
+
+実行が完了すると、トークン使用量は `run-manifest.json` に記録されます。
+
+## 結果が間違っているとき
+
+| 症状                                       | 考えられる原因                                 | 対処                                                                         |
+| ------------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| ステージが偏っている、または意味をなさない | 特殊なレイアウトに対するワンショット合成       | `--phase 2b,2c,3 --synth-mode doctor`                                        |
+| 未割り当てのファイルが多い                 | スケルトンがリポジトリの一部をカバーしていない | doctor モードを使うか、スケルトンを自作して `--skeleton` で渡す              |
+| カードの説明が空になる                     | モデルの応答をパースできなかった               | `phase2/cards/_rejected/` を読み、より強力なモデルか `--detail brief` を試す |
+| 文章が一般論ばかりで役に立たない           | コードベースに対してモデルが小さすぎる         | `--model` を変更する。このフェーズは他のどこよりも良いモデルの効果が大きい   |
+| 概要に「generic analyzer」と書かれている   | generic 層の言語が含まれている                 | 想定どおりの動作 — [解析忠実度](/docs/concepts/analysis-fidelity) を参照     |
+| 実行が非常に遅い                           | ワーカー数が少なすぎるか、エンドポイントが遅い | `--read-workers` と `--llm-concurrency` を上げる                             |
+| レート制限エラー                           | 並行度が高すぎる                               | `--llm-concurrency` を下げ、`--llm-retries` を上げる                         |
+
+詳しくは[トラブルシューティング](/docs/guides/troubleshooting)を参照してください。

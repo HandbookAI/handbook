@@ -1,0 +1,126 @@
+---
+title: 'Por qué existe esto'
+description: 'Resumir una base de código no ayuda a un agente a encontrar cosas. Enrutar sí. Este es el argumento, y el diseño que se sigue de él.'
+---
+
+## El fallo que ya has visto
+
+Le pides a un agente de código un cambio que atraviesa todo el sistema. Hace grep de un
+símbolo, encuentra una ubicación plausible, la edita e informa de éxito.
+
+Se le escaparon:
+
+- la constante que de verdad controla el comportamiento, a tres directorios de distancia;
+- la implementación espejo en la ruta de lotes;
+- la métrica que cuenta justo lo que acaba de cambiar;
+- el test que asevera el comportamiento antiguo.
+
+El agente no estaba confundido sobre _cómo_ escribir el código. Estaba confundido sobre
+**dónde está el código**. Y no tenía forma de averiguarlo, porque sus únicas herramientas
+eran la búsqueda de texto y una ventana de contexto demasiado pequeña para contener el
+repositorio.
+
+## Por qué los resúmenes no lo arreglan
+
+La respuesta obvia es «resume la base de código y dale el resumen al agente». Esto falla
+por una razón concreta:
+
+> **Un resumen responde «¿qué es esto?». Un agente necesita «¿dónde está?»**
+
+Un párrafo bellamente escrito sobre el subsistema de subidas no le dice a un agente que el
+presupuesto de reintentos también vive en `worker/queue.py` y que lo lee
+`metrics/emit.py`. Peor aún: un resumen es _prosa plausible_ — un agente razonará
+encantado encima de él, y no puede distinguir qué frases son hechos estructurales y cuáles
+son la paráfrasis del modelo.
+
+De ahí se siguen tres modos de fallo:
+
+1. **No es direccionable.** La prosa nombra conceptos, no rutas ni rangos de líneas.
+2. **No es verificable.** Nada en él distingue un hecho parseado de una conjetura.
+3. **Se pudre.** En el momento en que el código cambia, el resumen queda silenciosamente
+   mal, y nada en él lo dice.
+
+## Qué hace Handbook en su lugar
+
+### Construye un índice, no un resumen
+
+La salida responde exactamente una pregunta: **¿qué archivos, funciones y piezas de estado
+tiene que tocar este cambio?**
+
+Cada entrada es una dirección — una ruta, un nombre cualificado, un rango de líneas —
+derivada de un parseo real. La prosa que rodea esas direcciones está ahí para ayudar a un
+humano a leerlo, y explícitamente _no_ es aquello sobre lo que un agente debe actuar. El
+paquete SKILL lo dice en su primera línea:
+
+> Este handbook es un **índice de ubicaciones** de la base de código, no una descripción
+> del código. Úsalo para decidir QUÉ archivos, funciones y estado debe tocar un cambio —
+> y después lee el código fuente real.
+
+### Separa los hechos de la prosa, por construcción
+
+|                                                           | Viene de                          | ¿Puede estar mal?                           |
+| --------------------------------------------------------- | --------------------------------- | ------------------------------------------- |
+| Archivos, funciones, rangos de líneas, aristas de llamada | tree-sitter                       | No — es un parseo                           |
+| Qué llamadas **no** pudieron resolverse                   | tree-sitter                       | No — se ponen en cuarentena, no se adivinan |
+| La estructura de etapas                                   | LLM, luego validada mecánicamente | Estructuralmente, no; en el juicio, sí      |
+| Propósitos, recorridos, visiones generales                | LLM                               | Sí — y va etiquetado como prosa             |
+
+La separación se impone por **frontera de paquetes**, no por convención: el analizador, el
+renderer, el empaquetador de skills y el patcher no dependen en absoluto del paquete de
+LLM.
+
+### Falla de forma visible
+
+Cada decisión de diseño de este proyecto sigue una regla: **cuando algo no funciona,
+dilo.**
+
+- Un archivo cuya generación de ficha falló sigue apareciendo, con una descripción vacía.
+  Se lista en `_coverage.json`. Nunca se descarta y nunca se inventa.
+- Una llamada que el analizador no pudo resolver va a `dropped-calls.json` con su
+  categoría y su texto en bruto. Nunca se adivina hasta convertirla en una arista
+  plausible.
+- Un lenguaje analizado por el motor guiado por configuración se **nombra en la visión
+  general**, para que «relaciones de llamada best-effort» no pueda leerse como «exactas».
+- Una ejecución del planner que se rindió sale con código distinto de cero, para que
+  ningún script confunda su disculpa con un plan.
+- Un ancla de parche que coincide cero veces, o dos, se rechaza. Nunca elige una.
+
+### Se mantiene al día a un coste proporcional
+
+La documentación se pudre porque actualizarla cuesta tanto como escribirla. `resync` hace
+diff del grafo de llamadas viejo contra el nuevo y regenera solo lo que cambió — fichas
+para los archivos tocados, asignación para los nuevos, prosa para las etapas afectadas.
+Toca tres archivos, paga por tres archivos.
+
+La caché por hash de contenido hace el resto: una etapa cuyas entradas no cambiaron no se
+vuelve a narrar en absoluto.
+
+## La economía
+
+La generación es el paso caro, y ocurre **una vez**. Todo lo que viene después —
+renderizar a markdown, a un sitio HTML, al índice para agentes, a `llms.txt`, empaquetar
+como SKILL, validar ese paquete — es determinista y gratis. Puedes ejecutarlo en cada
+commit.
+
+Esa separación es la razón por la que `render` y `skill` son comandos separados en lugar
+de flags de `generate`, y por la que viven en paquetes que no pueden alcanzar un LLM ni
+por accidente.
+
+## Lo que esto no es
+
+- **No es una herramienta de búsqueda de código.** No sustituye a `grep` ni a tu LSP. Le
+  dice a un agente _hacia dónde apuntarlos_.
+- **No es un agente de código autónomo.** El planner es de solo lectura por construcción;
+  no tiene herramienta de escritura. `apply` es un ejecutor mecánico sin ningún modelo en
+  el bucle. Un humano decide en medio.
+- **No es un sustituto de tu propia documentación.** Las decisiones de arquitectura, la
+  intención del producto y las convenciones del equipo no se derivan de un grafo de
+  llamadas, y Handbook no finge lo contrario.
+
+## A continuación
+
+<Cards>
+  <Card title="Cómo está montado" href="/docs/concepts/architecture" />
+  <Card title="Las cinco fases" href="/docs/concepts/pipeline" />
+  <Card title="En qué puedes confiar" href="/docs/concepts/trust-model" />
+</Cards>

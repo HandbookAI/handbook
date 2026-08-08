@@ -1,0 +1,233 @@
+---
+title: 'Las cinco fases'
+description: 'Qué hace cada fase de generación, qué cuesta, a qué se degrada cuando falla y cómo re-ejecutar solo una de ellas.'
+---
+
+`handbook generate` ejecuta cinco fases. Solo la primera es gratuita; el resto habla con
+tu endpoint de LLM.
+
+| Phase  | Produce                                       | ¿LLM? | ¿Re-ejecutable sola? |
+| :----: | --------------------------------------------- | :---: | :------------------: |
+| **1**  | el grafo de llamadas                          |  ❌   |          ✅          |
+| **2a** | una ficha por archivo fuente                  |  ✅   |          ✅          |
+| **2b** | esqueleto de etapas + asignación de archivos  |  ✅   |          ✅          |
+| **2c** | agrupación y ordenación dentro de cada etapa  |  ✅   |          ✅          |
+| **3**  | narración + registros de estado transversales |  ✅   |          ✅          |
+
+```bash
+--phase all        # everything (default)
+--phase 1          # just the call graph
+--phase 2          # 2a + 2b + 2c
+--phase 2a         # one phase
+--phase 2c,3       # a comma list
+```
+
+---
+
+## Phase 1 — el grafo de llamadas
+
+**Sin LLM. Determinista. Gratis.**
+
+Los adaptadores de lenguaje parsean cada archivo con tree-sitter y producen una
+representación intermedia agnóstica al lenguaje. El constructor del grafo particiona
+después las aristas en conservadas y descartadas, anota el grado de entrada/salida y
+sintetiza nodos para los constructores que se referencian pero nunca se definen
+explícitamente.
+
+También estampa un **hash de contenido por archivo escaneado**. Ese hash es lo que permite
+a `resync` detectar más adelante una edición del cuerpo hecha in situ que deja intactos
+los números de línea y las firmas — el caso que a un diff puramente estructural se le
+escapa por completo.
+
+**Salida:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+
+<Callout title="Ejecuta esto primero, siempre">
+  `handbook analyze` es exactamente esta fase. No cuesta nada y es la única manera de descubrir que estás
+  escaneando `node_modules`, o que te falta un lenguaje entero, *antes* de gastar tokens.
+</Callout>
+
+---
+
+## Phase 2a — fichas de archivo
+
+**LLM. Normalmente la fase más cara.**
+
+Cada archivo fuente recibe una ficha:
+
+- **purpose** — una o dos frases en lenguaje llano
+- **role** — de un vocabulario cerrado (`entrypoint`, `domain_logic`, `io_transport`, …)
+- **lifecycle** — `startup`, `main loop`, `cross-cutting`, `none`, …
+- y en `--detail deep`: un recorrido de 120–300 palabras, más el propósito, el flujo de
+  datos y las relaciones por función, fusionados sobre los hechos del grafo
+
+### Cómo se agrupa en lotes
+
+`--read-batch-size` archivos por petición, `--read-workers` lotes en vuelo. El modo deep
+usa por defecto **un archivo por lote**, porque una ficha profunda es mucha salida, y
+meter varias en una misma respuesta es la manera de que las respuestas acaben truncadas.
+
+### Degradación en tres niveles
+
+Si la respuesta de un lote no se puede parsear:
+
+1. se reintenta el lote **dividido en archivos individuales**;
+2. para un archivo individual sobredimensionado, se reintenta **por fragmentos de
+   función**;
+3. si aun así falla, se escribe una **ficha vacía honesta** — solo estructura, sin prosa.
+
+**Un archivo nunca desaparece del handbook porque su prosa haya fallado.** Cada fallo se
+lista en `phase2/cards/_coverage.json`, y las respuestas que no produjeron nada usable se
+conservan (con tope de 20, nombradas por hash) bajo `phase2/cards/_rejected/`, para que
+puedas _leer_ qué salió mal en lugar de adivinarlo.
+
+### Reanudar
+
+Las fichas se escriben a medida que se completan. `Ctrl-C` es seguro, y `--resume` se
+salta los archivos que ya tienen una ficha completa a la profundidad solicitada.
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+---
+
+## Phase 2b — esqueleto y asignación
+
+**LLM. La fase que decide qué _es_ el handbook.**
+
+Dos modos.
+
+### `--synth-mode oneshot` (por defecto)
+
+Sintetiza un esqueleto de etapas a partir del nav-pack (agregados por directorio + puntos
+de entrada) y después asigna cada archivo a exactamente una etapa, por lotes.
+
+Barato, y normalmente suficiente para juzgar si la forma es la correcta.
+
+### `--synth-mode doctor`
+
+Un bucle de reparación actor–crítico. En cada ronda:
+
+1. el **actor** propone como máximo tres cambios estructurales — dividir, fusionar,
+   mover, retitular, cambiar de padre — contra estadísticas de referencia del grafo real;
+2. tres **críticos** revisan en paralelo, cada uno buscando un fallo distinto:
+
+   | Crítico    | Busca                                                                                            |
+   | ---------- | ------------------------------------------------------------------------------------------------ |
+   | ingeniero  | ¿Esto coincide con lo que el código hace realmente? ¿Los elementos referenciados son reales?     |
+   | arquitecto | Fronteras poco claras, etapas hinchadas, etapas famélicas, asuntos transversales mal ubicados    |
+   | lector     | ¿El resultado es _más legible_? Páginas cohesionadas, títulos intuitivos, una narrativa seguible |
+
+3. los cambios supervivientes se **revalidan mecánicamente** contra el grafo — un cambio
+   que nombra una etapa inexistente, o que dejaría archivos huérfanos, se rechaza antes de
+   que toque el esqueleto;
+4. los archivos afectados se reasignan.
+
+Se detiene cuando no queda nada sin asignar y ningún cambio sobrevive a la revisión, o al
+llegar a `--max-doctor-rounds` (por defecto 6), o tras dos rondas sin progreso.
+
+<Callout type="info">
+  Un crítico cuya respuesta no se puede parsear cuenta como `REJECT`. Un revisor roto nunca debe dejar pasar
+  un cambio.
+</Callout>
+
+### Trae tu propio esqueleto
+
+```bash
+handbook generate --source $REPO --work $WORK --skeleton my-skeleton.yaml
+```
+
+Los archivos se asignan a _tus_ etapas. Con `--strategy member` se clasifican funciones
+individuales en su lugar, y los artefactos a nivel de archivo se derivan de eso.
+
+**Salida:** `phase2/skeleton.yaml`, `phase2/assignment.json`, `phase2/strategy.json`.
+
+---
+
+## Phase 2c — organización
+
+**LLM, pero barata. Se degrada a un orden determinista.**
+
+Dentro de cada etapa, los archivos se ordenan por la topología del grafo de llamadas y se
+agrupan en 2–8 subgrupos con título y un resumen de una línea cada uno.
+
+**Todo fallo se degrada a un orden plano determinista. Los archivos nunca se descartan.**
+Esa es la invariante alrededor de la cual está escrita toda la fase: una agrupación
+ilegible es un problema cosmético; un archivo que falta es un problema de corrección.
+
+Con `--strategy member` esta fase es un **no-op** — la organización ya se derivó de forma
+determinista en 2b, así que una ejecución de `--phase 2c` a secas no necesita LLM en
+absoluto.
+
+**Salida:** `phase2/organization.yaml`.
+
+---
+
+## Phase 3 — narración y registros
+
+**LLM. Con caché intensiva.**
+
+### Narración, de abajo hacia arriba
+
+Primero las etapas hoja, luego los padres — de modo que el resumen de un padre se escribe
+sabiendo qué dicen sus hijas — y después la visión general del sistema, escrita
+sabiéndolo todo.
+
+Cada llamada de prosa se cachea bajo `phase3/cache/`, con clave por versión del prompt,
+idioma y el hash completo del prompt. Volver a ejecutar la Phase 3 tras tocar una etapa
+re-narra **una etapa**.
+
+### Registros de estado
+
+Un «registro» es una pieza de estado que fluye a través de las etapas — un pool de
+conexiones, un feature flag, un presupuesto de reintentos, un token de autenticación. La
+extracción ejecuta una **pasada de huecos hasta agotar**: sigue preguntando hasta que una
+ronda no encuentra nada nuevo.
+
+Este es el artefacto más útil para los cambios dispersos, porque _«qué etapas tocan este
+estado»_ es exactamente la pregunta que plantea un cambio disperso.
+
+**Salida:** `phase3/narration.json`, `phase3/registers.json`.
+
+---
+
+## Las dos estrategias
+
+|             | `--strategy file` (por defecto) | `--strategy member`                                         |
+| ----------- | ------------------------------- | ----------------------------------------------------------- |
+| Esqueleto   | lo sintetiza el LLM             | **lo escribes tú** en `skeleton.yaml`                       |
+| Unidad hoja | un archivo fuente               | una función o método                                        |
+| Phase 2b    | asignar archivos a etapas       | clasificar cada miembro y derivar los artefactos de archivo |
+| Phase 2c    | agrupación con LLM              | ya hecha — determinista                                     |
+| Ideal para  | un repo que aún no conoces      | un repo cuya forma ya conoces                               |
+| Coste       | menor                           | mayor — se clasifica cada miembro                           |
+
+La estrategia elegida queda registrada en `phase2/strategy.json`. Una re-ejecución parcial
+con una `--strategy` distinta y sin `--phase 2b` se **rechaza**, porque que el valor por
+defecto de la estrategia de archivo sobrescriba silenciosamente una organización derivada
+por miembro es exactamente el tipo de corrupción difícil de notar después.
+
+## Qué registra una ejecución sobre sí misma
+
+```json title="<work>/run-manifest.json"
+{
+  "version": 1,
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 },
+  "stats": { "phasesRun": ["1", "2a", "2b", "2c", "3"], "nCards": 412, "nStages": 9, "nRegisters": 6 }
+}
+```
+
+Describe la **última ejecución exitosa**. Una ejecución fallida deja intacto el manifiesto
+anterior, y una abortada no escribe ninguno.
+
+## A continuación
+
+<Cards>
+  <Card title="El directorio de trabajo" href="/docs/concepts/work-directory" />
+  <Card title="La generación en la práctica" href="/docs/guides/generating" />
+  <Card title="Coste y rendimiento" href="/docs/guides/cost-and-performance" />
+</Cards>

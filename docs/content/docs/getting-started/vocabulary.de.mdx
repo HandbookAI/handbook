@@ -1,0 +1,170 @@
+---
+title: 'Das Vokabular'
+description: 'Etappe, Karte, Register, Arbeitsverzeichnis, Case, Skill, Plan — jedes Wort, das dieses Projekt in einem bestimmten Sinn verwendet, einmal definiert.'
+---
+
+Handbook verwendet eine Handvoll gewöhnlicher Wörter in bestimmten Bedeutungen. Sind sie
+einmal geklärt, wird jede andere Seite kürzer.
+
+## Die Artefakte
+
+### Aufrufgraph
+
+Die Ausgabe von Phase 1. Jede Funktion und Methode im Code, plus jede Aufrufkante
+dazwischen, typisiert danach, wie sie aufgelöst wurde. **Erzeugt von einem Parser, nie
+von einem Modell.**
+
+Liegt unter `<work>/phase1/graph.json`. Alles Nachgelagerte liest ihn, und nichts parst
+Quelltext erneut.
+
+### Karte
+
+Eine pro Quelldatei. Beantwortet _wozu ist diese Datei da?_ in drei Feldern —
+**purpose**, **role**, **lifecycle** — plus, mit `--detail deep`, einem Rundgang von
+120–300 Wörtern und einer Notiz pro Funktion.
+
+Die strukturelle Hälfte einer Karte stammt aus dem Graphen, die Prosahälfte vom LLM.
+Scheitert die Prosa, existiert die Karte trotzdem — mit leerer Beschreibung. Liegt unter
+`<work>/phase2/cards/<path>.json`.
+
+### Rolle
+
+Das `role`-Feld einer Karte stammt aus einem **geschlossenen Vokabular**: `entrypoint`,
+`orchestration`, `domain_logic`, `io_transport`, `data_model`, `config`, `util`, `test`,
+`generated`, `other`. Alles andere, was ein Modell erfindet, kollabiert zu `other` — die
+Menge lässt sich durch eine kreative Antwort nicht erweitern.
+
+### Etappe
+
+Ein Kapitel des Handbuchs. Eine Etappe hat eine Id, einen Titel, eine Beschreibung,
+optional einen Parent und ein `crosscut`-Flag für Infrastruktur, die zu keinem einzelnen
+Schritt des Lebenszyklus gehört.
+
+Etappen sind nach dem **Ausführungslebenszyklus** geordnet, nicht alphabetisch oder nach
+Verzeichnis — das Handbuch liest sich in der Reihenfolge, in der das System tatsächlich
+läuft.
+
+### Skelett
+
+Die geordnete Liste der Etappen: das erzählerische Rückgrat. Entweder vom LLM
+synthetisiert (`--strategy file`) oder **selbst geschrieben** (`--strategy member`).
+Liegt unter `<work>/phase2/skeleton.yaml`.
+
+### Zuordnung
+
+Zu welcher Etappe jede Datei gehört. Jede Datei bekommt genau eine **primäre** Etappe
+und kann zusätzliche Etappen auflisten, die sie ebenfalls berührt. Liegt unter
+`<work>/phase2/assignment.json`.
+
+### Organisation
+
+Innerhalb einer Etappe die Dateien, geordnet nach der Topologie des Aufrufgraphen und
+gruppiert in 2–8 betitelte Untergruppen. Liegt unter `<work>/phase2/organization.yaml`.
+
+### Erzähltext
+
+Die Prosa: eine Zusammenfassung pro Etappe plus ein Systemüberblick. Von unten nach oben
+geschrieben — Kinder vor Eltern —, damit die Zusammenfassung einer Eltern-Etappe im
+Wissen darüber entsteht, was ihre Kinder sagen. Liegt unter
+`<work>/phase3/narration.json`.
+
+### Register
+
+Ein Stück Zustand, das **über** Etappen hinweg fließt: ein Connection-Pool, ein
+Feature-Flag, ein Retry-Budget, ein Auth-Token. Jedes Register hat eine Id, eine Zeile
+klartextliche Semantik und die Liste der Etappen, die es anfassen.
+
+Register sind das nützlichste Artefakt überhaupt für Fan-out-Änderungen, denn „welche
+Etappen fassen diesen Zustand an“ ist genau die Frage, die eine verstreute Änderung
+stellt. Liegt unter `<work>/phase3/registers.json`.
+
+## Die Verzeichnisse
+
+### Arbeitsverzeichnis (`--work`)
+
+Hier liegt jedes Pipeline-Artefakt. Eines pro dokumentiertem Repository.
+
+```text
+<work>/
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
+  phase3/   narration.json · registers.json · cache/
+  handbook/ the rendered output, once you run `render`
+  run-manifest.json
+```
+
+Es kann **gefahrlos gelöscht und neu generiert** werden — und ebenso gefahrlos
+committet, wenn das Handbuch unter Versionskontrolle stehen soll. Außerhalb davon
+verändert die Generierung nichts.
+
+### Handbuch-Verzeichnis
+
+Die _gerenderte_ Ausgabe — Markdown, optional HTML, der Agentenindex und `llms.txt`.
+Standard ist `<work>/handbook`.
+
+### Skill-Verzeichnis (`--out` bei `skill`)
+
+Das paketierte Agenten-SKILL: `SKILL.md` plus `references/`. Eigenständig und teilbar;
+Quellcode bettet es nie ein.
+
+### Case-Verzeichnis (`--case` bei `resync`)
+
+Das, was `resync` bekommt, um eine Änderung zu beschreiben:
+
+```text
+<case>/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — sharpens scope
+  change.diff   unified diff vs the previous tree   optional — widens scope
+```
+
+## Die Befehle, in je einer Zeile
+
+| Befehl     | Eine Zeile                                                     | LLM? |
+| ---------- | -------------------------------------------------------------- | :--: |
+| `analyze`  | Quelle → Aufrufgraph                                           |  ❌  |
+| `generate` | Aufrufgraph → Karten, Etappen, Prosa, Register                 |  ✅  |
+| `render`   | Arbeitsverzeichnis → Markdown / HTML / Agentenindex / llms.txt |  ❌  |
+| `skill`    | Gerendertes Handbuch → Agenten-SKILL-Paket                     |  ❌  |
+| `validate` | Struktur und Frische eines SKILLs prüfen                       |  ❌  |
+| `plan`     | Änderungswunsch + Handbuch → byte-genauer Änderungsplan        |  ✅  |
+| `apply`    | Änderungsplan → echte Änderungen, mit Backups                  |  ❌  |
+| `rollback` | Backup → wiederhergestellter Quellbaum                         |  ❌  |
+| `resync`   | Geänderter Code → aktualisiertes Handbuch, inkrementell        |  ✅  |
+| `studio`   | Alles davon, im Browser                                        |  ✅  |
+| `config`   | Was gesetzt ist und woher es kam                               |  ❌  |
+
+## Die Phasen
+
+| Phase | Erzeugt               | LLM? |
+| ----- | --------------------- | :--: |
+| `1`   | den Aufrufgraphen     |  ❌  |
+| `2a`  | eine Karte pro Datei  |  ✅  |
+| `2b`  | Skelett + Zuordnung   |  ✅  |
+| `2c`  | Organisation          |  ✅  |
+| `3`   | Erzähltext + Register |  ✅  |
+
+`--phase` akzeptiert `all`, `1`, `2` (bedeutet 2a+2b+2c), jede einzelne Phase oder eine
+Kommaliste wie `2c,3`.
+
+## Die zwei Strategien
+
+|               | `file` (Standard)         | `member`                                  |
+| ------------- | ------------------------- | ----------------------------------------- |
+| Skelett       | vom LLM synthetisiert     | **selbst verfasst**: `skeleton.yaml`      |
+| Blatteinheit  | eine Quelldatei           | eine Funktion oder Methode                |
+| Am besten für | ein noch unbekanntes Repo | ein Repo, dessen Form bereits bekannt ist |
+| Kosten        | niedriger                 | höher — jedes Member wird klassifiziert   |
+
+## Zwei leicht zu verwechselnde Wörter
+
+**Treue-Stufe (fidelity tier)** — wie gut die _Analyse_ für eine Sprache ist. `full`
+(ein handgeschriebener Adapter) oder `generic` (eine konfigurationsgetriebene Engine).
+Pro Adapter deklariert, pro Sprache aufgezeichnet und im Handbuch-Überblick offengelegt.
+Siehe [Analysetreue](/docs/concepts/analysis-fidelity).
+
+**Detail** — wie tief die _Prosa_ geht. `brief` (purpose, role, lifecycle) oder `deep`
+(zusätzlich ein Rundgang und Notizen pro Funktion). Gesetzt mit `--detail`.
+
+Beides ist unabhängig: Eine Sprache der `generic`-Stufe kann trotzdem `deep`-Karten
+haben. Die Prosa wird tiefer; die Aufruffakten werden nicht härter.

@@ -1,0 +1,194 @@
+---
+title: 'Configurando o Handbook'
+description: 'Cinco camadas de precedência, um registro e um comando que diz exatamente qual camada venceu.'
+---
+
+<div className="not-prose">
+  <img
+    src="/diagrams/config-cascade.svg"
+    alt="Cascata de configuração: flag, ambiente, arquivos .env, handbook.config.yaml, padrão"
+    className="rounded-xl border"
+  />
+</div>
+
+Cada configuração é declarada **uma única vez**, em uma única tabela de registro. As flags
+da CLI, os nomes das variáveis de ambiente, as chaves do arquivo de configuração, o
+`.env.example`, o `handbook.config.example.yaml` e a
+[referência de configuração](/docs/reference/configuration) são todos _gerados_ a partir
+dela — assim não podem se descolar uns dos outros, e um teste de deriva falha o build se
+alguém tentar.
+
+## Precedência, da mais alta para a mais baixa
+
+1. **Flag da CLI** — `--read-workers 4`
+2. **Ambiente do shell** — `HANDBOOK_GENERATE_READ_WORKERS`, depois `HANDBOOK_READ_WORKERS`,
+   depois um alias de fornecedor como `OPENAI_MODEL`
+3. **A cascata de `.env`** — mesclada no ambiente antes de qualquer coisa lê-la
+4. **`handbook.config.yaml`** — descoberto subindo a partir do cwd, parando na raiz do git
+5. **Padrão do registro**
+
+A primeira camada que fornece um valor vence; todas as camadas abaixo são ignoradas _para
+aquela configuração_.
+
+## `handbook.config.yaml`
+
+Coloque-o na raiz do repositório e faça commit dele. A descoberta sobe a partir do
+diretório de trabalho e **para na fronteira do repositório** — assim um projeto sem
+arquivo de configuração não herda o do diretório pai.
+
+```yaml title="handbook.config.yaml"
+# Paths are resolved relative to THIS FILE, so the config stays portable.
+source: ./src
+work: ./.handbook
+
+llm:
+  model: gpt-4o-mini
+  baseUrl: https://api.openai.com/v1
+  maxTokens: 16000
+  concurrency: 16
+
+generate:
+  detail: deep
+  synthMode: doctor
+  narrateLang: en
+  readWorkers: 12
+
+render:
+  title: Payments API Handbook
+  html: true
+  agentSite: true
+  llmsTxt: true
+  sourceBaseUrl: https://github.com/me/api/blob/main
+
+studio:
+  port: 4860
+```
+
+Duas coisas que você precisa saber:
+
+- **Aninhar e achatar são a mesma coisa.** `generate: { detail: deep }` e um
+  `generateDetail: deep` plano significam exatamente o mesmo, porque o arquivo é achatado
+  por junção em camelCase antes de ser lido.
+- **Valores de `path` relativos são resolvidos em relação ao diretório do próprio arquivo
+  de configuração**, não ao cwd. É isso que mantém um arquivo de configuração commitado
+  funcionando não importa de onde você execute o comando.
+
+<Callout type="warn" title="Segredos são rejeitados aqui">
+  `llmApiKey` / `OPENAI_API_KEY` nunca devem aparecer em um arquivo de configuração — arquivos de configuração
+  acabam commitados. O carregador recusa o arquivo de imediato e diz por quê. Coloque o segredo no `.env` ou
+  no ambiente do shell.
+</Callout>
+
+Copie o `handbook.config.example.yaml` para começar; ele é gerado a partir do registro,
+então lista todas as chaves que realmente existem.
+
+## Escopo por comando
+
+Qualquer configuração pode ter o escopo restrito a um subcomando, nas **três**
+superfícies, com a mesma transformação:
+
+```bash
+export HANDBOOK_NARRATE_LANG=en            # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh   # …except generate
+```
+
+```yaml
+narrateLang: en
+generate:
+  narrateLang: zh
+```
+
+A forma com escopo sempre vence a forma plana.
+
+## Múltiplos ambientes
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+```
+
+`--env prod` (ou `HANDBOOK_ENV=prod`) faz duas coisas:
+
+1. Carrega `.env.prod.local` → `.env.prod` → `.env.local` → `.env`; o primeiro a escrever
+   vence.
+2. Prefere `handbook.config.prod.yaml` ao arquivo simples — em **todos** os diretórios
+   visitados no caminho para cima, então um arquivo nomeado vence um simples mesmo que o
+   simples esteja mais perto.
+
+Um layout típico:
+
+```text
+.env                     # team baseline, committed
+.env.local               # your machine, gitignored
+.env.prod                # team prod settings, committed (no secrets)
+.env.prod.local          # your prod credentials, gitignored
+handbook.config.yaml     # defaults
+handbook.config.prod.yaml
+```
+
+`--env-file <path>` ignora a cascata por completo e carrega exatamente aquele arquivo.
+**Um arquivo ausente ali é um erro explícito, não um fallback** — você pediu um arquivo
+específico.
+
+## Pergunte o que de fato foi resolvido
+
+```bash
+handbook config --command generate
+```
+
+```text
+environment   prod  (--env)
+env files     .env.prod, .env
+config file   /repo/handbook.config.prod.yaml
+
+SETTING            VALUE                     FROM
+source             /Users/me/code/api        flag --source
+llmModel           gpt-4o                    env HANDBOOK_LLM_MODEL
+llmApiKey          sk-••••••                 env OPENAI_API_KEY
+readWorkers        4                         handbook.config.prod.yaml (generate.readWorkers)
+detail             deep                      handbook.config.prod.yaml (generate.detail)
+narrateLang        en                        default
+```
+
+```bash
+handbook config --json                # machine-readable
+handbook config --check               # exit 2 on the first invalid or missing value
+```
+
+<Callout title="Coloque --check no CI">
+  Uma variável com erro de digitação antes significava "rodou silenciosamente com o padrão". `--check`
+  transforma isso em uma falha com a variável nomeada na mensagem — muito mais barato do que descobrir o
+  problema quarenta minutos dentro de uma execução de geração.
+</Callout>
+
+`config` usa deliberadamente o resolvedor que não lança exceções: **seu trabalho é
+mostrar a configuração, inclusive quando ela está quebrada.** Um `--source` ausente
+aparece como uma linha visível `— unset (required)` em vez de derrubar justamente a
+ferramenta que você usaria para depurar esse exato problema.
+
+## O que o resolvedor garante
+
+- **Um valor vazio é lido como não definido.** `HANDBOOK_TITLE=` não pode produzir um
+  handbook sem título.
+- **Um valor fornecido porém inválido nunca cai para um padrão.** Um número com erro de
+  digitação é um erro, não um 12 silencioso.
+- **Os tipos são verificados na fronteira**, com a origem nomeada na mensagem:
+
+  ```text
+  env HANDBOOK_READ_WORKERS: readWorkers must be an integer >= 1, got "twelve"
+  handbook.config.yaml (generate.detail): detail must be one of brief | deep, got "verbose"
+  ```
+
+- **A obrigatoriedade é verificada depois de cada camada**, e o erro lista todas as formas
+  de fornecer o valor:
+
+  ```text
+  source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+  or add it to handbook.config.yaml
+  ```
+
+## Referência completa
+
+<Cards>
+  <Card title="Todas as configurações, geradas a partir do registro" href="/docs/reference/configuration" />
+  <Card title="Variáveis de ambiente e a cascata de .env" href="/docs/reference/environment" />
+</Cards>

@@ -1,0 +1,168 @@
+---
+title: Renderizar las salidas
+description: 'Markdown, un sitio HTML, una página autocontenida, el índice localizador para agentes y llms.txt — todo determinista, todo gratis de re-ejecutar.'
+---
+
+```bash
+handbook render --work <workdir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+**Sin LLM. Sin red. Determinista.** Con el mismo modelo de entrada salen archivos
+idénticos byte a byte — así que esto pertenece a CI, en cada commit.
+
+## Las cinco salidas
+
+<Tabs items={['Markdown', 'Sitio HTML', 'Página única', 'Índice para agentes', 'llms.txt']}>
+
+<Tab value="Markdown">
+
+Siempre se escribe.
+
+```text
+<out>/
+  overview.md      system prose + a mermaid stage map + "see also" links
+  index.md         every stage, nested by depth, a paragraph each
+  <stage-id>.md    one page per content-bearing stage
+  register.md      the cross-stage state table (only when registers exist)
+```
+
+La página de una etapa lleva el resumen de la etapa, enlaces a las subetapas y luego sus
+archivos — agrupados y ordenados como decidió la phase 2c, cada uno renderizado como una
+**ficha de archivo**: propósito, rol, ciclo de vida, hechos de llamadas y notas por
+función en las fichas deep.
+
+Dos comportamientos que vale la pena conocer:
+
+- **Las páginas obsoletas se limpian.** Los ids de etapa cambian entre generaciones; cada
+  renderizado elimina primero las páginas del renderizado anterior, de modo que una etapa
+  renombrada no deja ninguna página fantasma que el empaquetador de skills pueda recoger.
+- **La sección de registro por etapa es idempotente** — se añade bajo un marcador, solo
+  cuando el marcador está ausente. Volver a renderizar nunca acumula duplicados.
+
+</Tab>
+
+<Tab value="Sitio HTML">
+
+`--html` → `<out>/html/`
+
+Un sitio multipágina que comparte un solo armazón: una barra lateral fija con el índice y
+la página actual resaltada, migas de pan, un conmutador de tema que recuerda tu elección,
+y expandir/colapsar todo para los detalles de funciones.
+
+**Todo el CSS y el JS van en línea; todos los enlaces son relativos.** Funciona
+directamente desde `file://` — sin servidor, sin CDN, sin fuentes descargadas de ningún
+sitio. `open <out>/html/overview.html`.
+
+</Tab>
+
+<Tab value="Página única">
+
+`--html-single` → `<out>/handbook.html`
+
+Todo el handbook en **un solo archivo**, con secciones numeradas y cada etapa como un
+`<details>` colapsado.
+
+Este es el que envías por correo, adjuntas a un ticket o dejas en una unidad compartida.
+No tiene dependencias de ningún tipo.
+
+</Tab>
+
+<Tab value="Índice para agentes">
+
+`--agent-site` → `<out>/agent/`
+
+```text
+how_to_use.md      the agent-side search protocol
+index.md           every stage, as locator blocks
+disambiguation.md  terms that legitimately point at several stages
+<stage-id>.md      one locator page per stage
+```
+
+Cada etapa recibe un bloque de esquema fijo: **responsabilidad**, **conceptos de
+entrada**, **estado**, **ejemplar**, **archivos centrales** y **co-cambio fuerte**.
+
+Medido sobre diecisiete repositorios reales, los primeros cinco se rellenan en la mayoría
+de las páginas; **el co-cambio fuerte es deliberadamente el más escaso** — solo se activa
+donde un archivo de test está _junto a_ su fuente (`engine.go` + `engine_test.go`), y la
+mayoría de los proyectos colocan los tests en un árbol separado. Un campo ausente ahí es
+la restricción funcionando, no una carencia.
+
+El invariante: **un campo se emite si y solo si existe su señal estructural.** Sin
+marcadores de posición, sin "N/A". Un campo vacío significa _"el grafo no tiene señal
+aquí"_ — información real — en lugar de _"el modelo no lo sabía"_, que es ruido sobre el
+que un agente razonará.
+
+Pasa este directorio a `handbook skill --agent-dir` para incluirlo dentro del paquete
+SKILL.
+
+</Tab>
+
+<Tab value="llms.txt">
+
+`--llms-txt` → `<out>/llms.txt` y `<out>/llms-full.txt`
+
+Sigue la [convención llms.txt](https://llmstxt.org/):
+
+- **`llms.txt`** — un título H1, una cita de resumen de una sola frase y luego una
+  sección `## Handbook` que enlaza cada página con una descripción breve.
+- **`llms-full.txt`** — todo el handbook aplanado en un solo documento markdown plano, en
+  orden de lectura.
+
+Sirve `llms.txt` en la raíz del lugar donde publiques el handbook.
+
+</Tab>
+
+</Tabs>
+
+## Enlazar a tu código fuente
+
+```bash
+handbook render --work $WORK --source-base-url https://github.com/me/repo/blob/main
+```
+
+Cada ruta de archivo del handbook se convierte en un enlace al archivo real. Apúntalo a un
+tag o a un SHA de commit en lugar de `main` si quieres que el handbook referencie el
+código a partir del cual se generó.
+
+**Sin esta bandera la salida no contiene ninguna URL externa**, que es el valor por
+defecto correcto para un código privado.
+
+## Títulos e idiomas
+
+```bash
+handbook render --work $WORK --title "Payments Service — Engineering Handbook"
+```
+
+El idioma de narración se fija en el momento de la generación (`--narrate-lang`) y se
+guarda en `phase3/narration.json`. El renderizador lo lee de ahí — cada etiqueta,
+encabezado y cabecera de tabla se localiza para coincidir. **La estructura es idéntica en
+ambos idiomas**, así que las herramientas que leen la salida no necesitan saber cuál de
+los dos es.
+
+## Re-renderizar como hábito
+
+Renderizar es gratis y determinista, así que intégralo en CI:
+
+```yaml title=".github/workflows/handbook.yml"
+- run: handbook render --work work/api --title "API Handbook" --html --agent-site --llms-txt
+- run: handbook skill --handbook work/api/handbook --out skills/api --name api \
+    --work work/api --source . --agent-dir work/api/handbook/agent
+- run: handbook validate --skill skills/api --source .
+```
+
+Consulta [Integración en CI](/docs/guides/ci).
+
+## Publicar el sitio HTML
+
+La salida es un directorio estático con enlaces relativos y sin recursos externos, así que
+cualquier alojamiento estático funciona:
+
+```bash
+# GitHub Pages
+cp -R work/api/handbook/html/* docs-site/ && git add docs-site
+
+# Netlify / Vercel / S3 / nginx
+npx serve work/api/handbook/html
+```
+
+Sirve `llms.txt` en la raíz del sitio para que los agentes puedan encontrarlo.

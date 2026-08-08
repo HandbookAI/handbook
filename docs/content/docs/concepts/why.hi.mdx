@@ -1,0 +1,119 @@
+---
+title: 'यह क्यों मौजूद है'
+description: 'Codebase की summary बनाने से agent को चीज़ें ढूँढने में मदद नहीं मिलती। Routing से मिलती है। यही दलील है, और उससे निकलने वाला design।'
+---
+
+## वह विफलता जो आप देख चुके हैं
+
+आप किसी coding agent से system-भर में फैला बदलाव करने को कहते हैं। वह किसी symbol को grep
+करता है, एक भरोसेमंद-सी जगह ढूँढता है, edit करता है, और सफलता की रिपोर्ट दे देता है।
+
+उससे छूट गए:
+
+- वह constant जो असल में behaviour को नियंत्रित करता है, तीन directories दूर;
+- batch path में उसकी mirrored implementation;
+- वह metric जो उसी चीज़ को गिनता है जो उसने अभी बदली;
+- वह test जो पुराने behaviour को assert करता है।
+
+Agent इस बात पर उलझा हुआ नहीं था कि code _कैसे_ लिखना है। वह इस बात पर उलझा था कि **code
+है कहाँ**। और उसके पास पता लगाने का कोई रास्ता नहीं था, क्योंकि औज़ार के नाम पर उसके पास सिर्फ़
+text search और एक ऐसी context window थी जिसमें repository समा नहीं सकती।
+
+## Summaries इसे क्यों ठीक नहीं करतीं
+
+सीधा-सा जवाब लगता है: "codebase की summary बनाकर agent को दे दो"। यह एक ख़ास वजह से विफल
+होता है:
+
+> **Summary "यह क्या है?" का जवाब देती है। Agent को चाहिए "यह कहाँ है?"**
+
+Upload subsystem के बारे में कितना भी सुंदर paragraph agent को यह नहीं बताता कि retry budget
+`worker/queue.py` में भी रहता है और उसे `metrics/emit.py` पढ़ता है। इससे भी बुरा — summary
+_plausible prose_ होती है: agent उसके ऊपर ख़ुशी-ख़ुशी reasoning करेगा, और यह नहीं बता पाएगा कि
+कौन-से वाक्य load-bearing facts हैं और कौन-से model की अपनी paraphrase।
+
+इससे तीन failure modes निकलते हैं:
+
+1. **यह addressable नहीं है।** Prose concepts के नाम लेती है, paths और line ranges के नहीं।
+2. **यह verify नहीं की जा सकती।** इसमें कुछ भी parsed fact को अंदाज़े से अलग नहीं करता।
+3. **यह सड़ती है।** Code बदलते ही summary चुपचाप ग़लत हो जाती है, और उसमें कुछ भी इसकी ख़बर
+   नहीं देता।
+
+## Handbook इसके बजाय क्या करता है
+
+### यह summary नहीं, index बनाता है
+
+Output ठीक एक सवाल का जवाब देता है: **इस बदलाव को किन files, functions और state के हिस्सों
+को छूना पड़ेगा?**
+
+हर entry एक address है — path, qualified name, line range — जो असली parse से निकला है। उन
+addresses के इर्द-गिर्द की prose इंसान के पढ़ने की सहूलियत के लिए है, और साफ़ तौर पर वह चीज़
+_नहीं_ है जिस पर agent को अमल करना चाहिए। SKILL package अपनी पहली ही line में यह कह देता है:
+
+> यह handbook codebase का एक **location index** है, code का description नहीं। इससे यह तय
+> कीजिए कि किसी बदलाव को कौन-सी files, functions और state छूने होंगे — फिर असली source पढ़िए।
+
+### यह facts और prose को construction से ही अलग रखता है
+
+|                                           | कहाँ से आता है               | क्या यह ग़लत हो सकता है?                  |
+| ----------------------------------------- | ---------------------------- | ----------------------------------------- |
+| Files, functions, line ranges, call edges | tree-sitter                  | नहीं — यह parse है                        |
+| कौन-सी calls resolve **नहीं** हो सकीं     | tree-sitter                  | नहीं — वे quarantine होती हैं, guess नहीं |
+| Stage structure                           | LLM, फिर यांत्रिक validation | संरचना में नहीं; judgment में हाँ         |
+| Purpose, walkthroughs, overviews          | LLM                          | हाँ — और उस पर prose का label है          |
+
+यह अलगाव **package boundary** से लागू होता है, convention से नहीं: analyzer, renderer,
+skill packager और patcher LLM package पर निर्भर ही नहीं करते।
+
+### यह दिखते हुए fail होता है
+
+यहाँ का हर design निर्णय एक नियम से चलता है: **जब कुछ काम न करे, तो कह दो।**
+
+- जिस file का card generation विफल हुआ, वह फिर भी दिखती है — खाली description के साथ। वह
+  `_coverage.json` में listed होती है। न कभी गिराई जाती है, न कभी गढ़ी जाती है।
+- जो call analyzer resolve नहीं कर सका, वह अपनी category और raw text के साथ
+  `dropped-calls.json` में जाती है। उसे कभी किसी plausible edge के रूप में guess नहीं किया
+  जाता।
+- Config-driven engine से analyze हुई language का **overview में नाम लिया जाता है**, ताकि
+  "best-effort call relations" को "exact" न पढ़ लिया जाए।
+- हार मान चुका planner run non-zero exit करता है, ताकि कोई script उसके माफ़ीनामे को plan न
+  समझ ले।
+- जो patch anchor शून्य बार match होता है, या दो बार, वह मना कर देता है। कभी एक चुन नहीं
+  लेता।
+
+### यह proportional लागत पर current रहता है
+
+Documentation इसलिए सड़ता है क्योंकि उसे update करने की लागत उसे लिखने जितनी होती है।
+`resync` पुराने call graph का नए से diff करता है और सिर्फ़ वही regenerate करता है जो बदला —
+छुई गई files के cards, नई files का assignment, प्रभावित stages की prose। तीन files छुइए, तीन
+files की क़ीमत चुकाइए।
+
+बाक़ी काम content-hash cache करता है: जिस stage के inputs नहीं बदले, उसका narration दोबारा
+होता ही नहीं।
+
+## अर्थशास्त्र
+
+Generation ही महँगा step है, और वह **एक बार** होता है। उसके बाद का सब कुछ — markdown में
+rendering, HTML site, agent index, `llms.txt`, SKILL के रूप में packaging, उस package का
+validation — deterministic और मुफ़्त है। इन्हें आप हर commit पर चला सकते हैं।
+
+यही विभाजन वजह है कि `render` और `skill`, `generate` के flags न होकर अलग commands हैं, और
+ऐसे packages में रहते हैं जो ग़लती से भी किसी LLM तक नहीं पहुँच सकते।
+
+## यह क्या नहीं है
+
+- **कोई code-search tool नहीं।** यह `grep` या आपके LSP की जगह नहीं लेता। यह agent को बताता
+  है कि _उन्हें कहाँ तानना है_।
+- **कोई autonomous coding agent नहीं।** Planner construction से ही read-only है; उसके पास
+  कोई write tool नहीं। `apply` एक यांत्रिक executor है जिसके loop में कोई model नहीं। बीच में
+  फ़ैसला इंसान करता है।
+- **आपके अपने docs का विकल्प नहीं।** Architecture के फ़ैसले, product की मंशा और team की
+  conventions किसी call graph से नहीं निकाली जा सकतीं, और Handbook ऐसा कर पाने का दिखावा
+  नहीं करता।
+
+## आगे
+
+<Cards>
+  <Card title="यह कैसे जुड़ा है" href="/docs/concepts/architecture" />
+  <Card title="पाँच phases" href="/docs/concepts/pipeline" />
+  <Card title="आप किस पर भरोसा कर सकते हैं" href="/docs/concepts/trust-model" />
+</Cards>

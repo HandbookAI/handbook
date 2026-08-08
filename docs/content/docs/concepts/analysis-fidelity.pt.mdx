@@ -1,0 +1,120 @@
+---
+title: 'Fidelidade da análise'
+description: 'Dois níveis de análise produzem saídas de aparência idêntica. Isso é uma armadilha, então cada adaptador declara o que consegue entregar e o handbook divulga isso.'
+---
+
+## O problema
+
+O Handbook analisa 18 linguagens com **dois** motores:
+
+- **Nível full** — um adaptador escrito à mão por linguagem, com resolução de chamadas
+  guiada por tipos, membros herdados, rastreamento de estado por atributo e spans de
+  instruções.
+- **Nível generic** — um único motor guiado por configuração, com uma especificação
+  declarativa por linguagem. O inventário de arquivos e funções é exato; as relações de
+  chamada são de melhor esforço.
+
+Ambos produzem a **mesma representação intermediária**. Nada a jusante consegue
+distingui-los olhando para nós e arestas.
+
+Essa é exatamente a armadilha. Um leitor — e especialmente um agente — tomaria uma aresta
+de chamada de nível generic por um fato com a qualidade do Python, e raciocinaria sobre
+ela de acordo.
+
+## A solução: declarar, registrar, divulgar
+
+### 1. Cada adaptador declara o que consegue entregar
+
+```ts
+interface AdapterCapabilities {
+  tier: 'full' | 'generic';
+  callTypes: readonly CallType[]; // which edge kinds it can actually produce
+  selfAttrs: boolean; // can it track self/this attribute reads and writes?
+  statementSpans: boolean; // can it report statement spans (resync precision)?
+}
+```
+
+Esse campo é **obrigatório**, não opcional. Adaptadores podem ser registrados por
+qualquer pessoa, e um adaptador caseiro que não declara nada simplesmente fica de fora
+dos metadados do grafo, em vez de ganhar uma alegação de fidelidade inventada para ele.
+
+### 2. A Phase 1 registra isso por linguagem
+
+```json title="phase1/graph.json (excerpt)"
+{
+  "metadata": {
+    "language": "multi",
+    "languages": {
+      "typescript": { "tier": "full", "selfAttrs": true, "statementSpans": true, "callTypes": ["..."] },
+      "kotlin": { "tier": "generic", "selfAttrs": false, "statementSpans": false, "callTypes": ["..."] }
+    }
+  }
+}
+```
+
+Por linguagem, não por grafo — uma execução multilinguagem mistura níveis, e um único
+rótulo `language: "multi"` esconderia isso por completo.
+
+### 3. O handbook diz isso onde a confiança se forma
+
+Quando qualquer linguagem de nível generic está presente, a visão geral ganha uma linha,
+imediatamente abaixo da prosa do sistema:
+
+> **Fidelidade da análise** — as relações de chamada de Kotlin e Scala vêm do analisador
+> genérico (guiado por configuração): são de melhor esforço e podem estar incompletas. O
+> inventário de arquivos e a estrutura dessas linguagens são exatos.
+
+E **em lugar nenhum** quando todas as linguagens são de nível full, para que o caso comum
+permaneça livre de ruído. A mesma divulgação aparece no site HTML, no índice localizador
+para agentes e em `llms-full.txt`.
+
+## Em qual nível está a minha linguagem?
+
+**Nível full:** Python, TypeScript (e JavaScript), Go, Rust, Java, C#, C/C++, Ruby, PHP,
+Swift, Dart, Solidity, Shell.
+
+**Nível generic:** Kotlin, Scala, Zig, Objective-C, OCaml.
+
+Veja [Suporte a linguagens](/docs/reference/languages) para extensões e ressalvas.
+
+## O que "melhor esforço" custa de verdade
+
+|                                          | Nível full | Nível generic  |
+| ---------------------------------------- | ---------- | -------------- |
+| Inventário de arquivos                   | exato      | **exato**      |
+| Inventário de funções e métodos          | exato      | **exato**      |
+| Intervalos de linhas e assinaturas       | exato      | **exato**      |
+| Chamadas diretas por nome                | exato      | na maior parte |
+| `self.method()` / `this.method()`        | resolvido  | com frequência |
+| `self.attr.method()` via tipo conhecido  | resolvido  | não            |
+| `param.method()` via anotação de tipo    | resolvido  | não            |
+| Membros herdados                         | resolvido  | não            |
+| Rastreamento de estado por atributo      | sim        | não            |
+| Spans de instruções (precisão do resync) | sim        | não            |
+
+**As coisas sobre as quais você roteia — onde um arquivo está, quais funções ele contém,
+quais linhas elas ocupam — são exatas em ambos os níveis.** O que degrada é o grafo de
+_relações_, o que afeta a qualidade do agrupamento e as dicas de co-mudança, não os
+endereços.
+
+## Duas ressalvas honestas
+
+**Swift.** A gramática embutida aborta o processo em V8 ≥ 13 — falha fatal medida 5 vezes
+em 5 no Node 24, funciona no Node 21, e é exclusiva dessa gramática entre dezenove. O
+adaptador **recusa na descoberta** em um runtime desses e nomeia o remédio
+(`node --liftoff-only`), em vez de derrubar a sua execução inteira junto.
+
+**Shell.** Um script que contém uma instrução `case` é pulado, porque essa gramática
+lança uma exceção — seu scanner externo importa um símbolo que o linker WASM travado não
+fornece. Como `case` é onipresente, isso atinge a maioria dos scripts não triviais
+(medido no `nvm`: todos os 6 arquivos, todas as 122 funções), então **trate a cobertura
+de shell como parcial**. O log de varredura nomeia a causa.
+
+Ambos são reportados pelo logger durante a varredura. Rode com `-v` para vê-los.
+
+## Subindo uma linguagem de nível
+
+Uma linguagem de nível generic é uma especificação declarativa, não um parser — veja
+[Adicionando uma linguagem](/docs/contributing/adding-a-language). Promovê-la ao nível
+full significa implementar `LanguageAdapter` diretamente e declarar capacidades honestas.
+O contrato do adaptador é pequeno de propósito.

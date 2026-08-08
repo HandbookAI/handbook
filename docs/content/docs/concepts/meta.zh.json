@@ -1,0 +1,5 @@
+{
+  "title": "核心概念",
+  "icon": "Lightbulb",
+  "pages": ["why", "architecture", "pipeline", "work-directory", "analysis-fidelity", "trust-model"]
+}

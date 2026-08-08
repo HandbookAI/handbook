@@ -1,0 +1,116 @@
+---
+title: 'Analysis fidelity'
+description: 'दो analysis tiers एक जैसा दिखने वाला output बनाते हैं। यह एक जाल है, इसलिए हर adapter घोषित करता है कि वह क्या दे सकता है, और handbook उसे disclose करता है।'
+---
+
+## समस्या
+
+Handbook 18 भाषाओं का analysis **दो** engines से करता है:
+
+- **Full tier** — हर language के लिए हाथ से लिखा adapter, जिसमें type-driven call
+  resolution, inherited members, per-attribute state tracking और statement spans हैं।
+- **Generic tier** — एक config-driven engine, हर language के लिए एक declarative spec के
+  साथ। File और function की inventory exact है; call relations best-effort हैं।
+
+दोनों **एक ही intermediate representation** बनाते हैं। Nodes और edges देखकर downstream की
+कोई भी चीज़ इन्हें अलग नहीं पहचान सकती।
+
+ठीक यही जाल है। एक पाठक — और ख़ास तौर पर एक agent — generic-tier के call edge को
+Python-दर्जे का fact मान लेता, और उसी के हिसाब से तर्क करता।
+
+## समाधान: घोषित करो, दर्ज करो, disclose करो
+
+### 1. हर adapter घोषित करता है कि वह क्या दे सकता है
+
+```ts
+interface AdapterCapabilities {
+  tier: 'full' | 'generic';
+  callTypes: readonly CallType[]; // which edge kinds it can actually produce
+  selfAttrs: boolean; // can it track self/this attribute reads and writes?
+  statementSpans: boolean; // can it report statement spans (resync precision)?
+}
+```
+
+यह field **required** है, optional नहीं। Adapters कोई भी register कर सकता है, और हाथ का
+बना ऐसा adapter जो कुछ घोषित नहीं करता, graph metadata से बस बाहर रह जाता है — उसके लिए
+कोई fidelity दावा गढ़ा नहीं जाता।
+
+### 2. Phase 1 इसे हर language के लिए दर्ज करता है
+
+```json title="phase1/graph.json (excerpt)"
+{
+  "metadata": {
+    "language": "multi",
+    "languages": {
+      "typescript": { "tier": "full", "selfAttrs": true, "statementSpans": true, "callTypes": ["..."] },
+      "kotlin": { "tier": "generic", "selfAttrs": false, "statementSpans": false, "callTypes": ["..."] }
+    }
+  }
+}
+```
+
+हर language के लिए, पूरे graph के लिए नहीं — multi-language run में tiers आपस में मिलते
+हैं, और एक अकेला `language: "multi"` label उसे पूरी तरह छिपा देता।
+
+### 3. Handbook यह वहीं कहता है, जहाँ भरोसा बनता है
+
+जब कोई भी generic-tier language मौजूद हो, तो overview में system prose के ठीक नीचे एक
+पंक्ति जुड़ जाती है:
+
+> **Analysis fidelity** — Kotlin, Scala के call relations generic (config-driven)
+> analyzer से आते हैं: वे best-effort हैं और अधूरे हो सकते हैं। इन भाषाओं की file
+> inventory और structure exact हैं।
+
+और जब हर language full-tier हो तो **कहीं भी नहीं**, ताकि आम मामला noise-free रहे। यही
+disclosure HTML site, agent locator index और `llms-full.txt` में भी दिखता है।
+
+## मेरी language किस tier में है?
+
+**Full tier:** Python, TypeScript (और JavaScript), Go, Rust, Java, C#, C/C++, Ruby, PHP,
+Swift, Dart, Solidity, Shell.
+
+**Generic tier:** Kotlin, Scala, Zig, Objective-C, OCaml.
+
+Extensions और caveats के लिए [Language support](/docs/reference/languages) देखें।
+
+## "best-effort" की असल क़ीमत आपके लिए क्या है
+
+|                                            | Full tier | Generic tier |
+| ------------------------------------------ | --------- | ------------ |
+| Files की inventory                         | exact     | **exact**    |
+| Functions और methods की inventory          | exact     | **exact**    |
+| Line ranges और signatures                  | exact     | **exact**    |
+| नाम से direct calls                        | exact     | अधिकतर       |
+| `self.method()` / `this.method()`          | resolved  | अक्सर        |
+| known type के ज़रिये `self.attr.method()`  | resolved  | नहीं         |
+| type annotation के ज़रिये `param.method()` | resolved  | नहीं         |
+| Inherited members                          | resolved  | नहीं         |
+| Per-attribute state tracking               | हाँ       | नहीं         |
+| Statement spans (resync precision)         | हाँ       | नहीं         |
+
+**जिन चीज़ों पर आप route करते हैं — file कहाँ है, उसमें कौन से functions हैं, वे किन
+lines पर हैं — वे दोनों tiers में exact हैं।** जो degrade होता है वह _relationship_ graph
+है, जो addresses पर नहीं, grouping की quality और co-change hints पर असर डालता है।
+
+## दो ईमानदार caveats
+
+**Swift।** Bundled grammar V8 ≥ 13 पर पूरे process को ही abort कर देती है — Node 24 पर 5
+में से 5 बार fatal मापा गया, Node 21 पर ठीक, और उन्नीस grammars में यह इकलौती ऐसी है।
+ऐसे runtime पर adapter **discovery पर ही refuse** करता है और उपाय
+(`node --liftoff-only`) का नाम लेता है — बजाय इसके कि आपका पूरा run अपने साथ ले डूबे।
+
+**Shell।** `case` statement वाली script skip कर दी जाती है, क्योंकि वह grammar throw
+करती है — उसका external scanner एक ऐसा symbol import करता है जो pinned WASM linker नहीं
+देता। चूँकि `case` हर जगह है, इसका मतलब है ज़्यादातर non-trivial scripts (`nvm` पर मापा:
+सभी 6 files, सभी 122 functions), इसलिए **shell coverage को partial मानें**। Scan log
+कारण का नाम लेता है।
+
+दोनों scan के दौरान logger के ज़रिये report होते हैं। इन्हें देखने के लिए `-v` के साथ
+चलाएँ।
+
+## किसी language को एक tier ऊपर ले जाना
+
+Generic-tier language एक declarative spec है, parser नहीं — देखें
+[Adding a language](/docs/contributing/adding-a-language)। उसे full tier पर promote करने
+का मतलब है `LanguageAdapter` को सीधे implement करना और ईमानदार capabilities घोषित करना।
+Adapter का contract जान-बूझकर छोटा रखा गया है।

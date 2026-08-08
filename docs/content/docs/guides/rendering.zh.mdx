@@ -1,0 +1,155 @@
+---
+title: '渲染输出'
+description: 'Markdown、HTML 站点、单个自包含页面、面向智能体的定位索引，以及 llms.txt——全部确定性，重跑零成本。'
+---
+
+```bash
+handbook render --work <workdir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+**不用 LLM。不联网。确定性。** 同样的模型进来，逐字节相同的文件出去——所以它属
+于 CI，每次提交都该跑。
+
+## 五种输出
+
+<Tabs items={['Markdown', 'HTML site', 'Single page', 'Agent index', 'llms.txt']}>
+
+<Tab value="Markdown">
+
+总是会写出。
+
+```text
+<out>/
+  overview.md      system prose + a mermaid stage map + "see also" links
+  index.md         every stage, nested by depth, a paragraph each
+  <stage-id>.md    one page per content-bearing stage
+  register.md      the cross-stage state table (only when registers exist)
+```
+
+阶段页面先给出该阶段的摘要和指向子阶段的链接，然后是它的文件——按 phase 2c 决定
+的方式分组排序，每个文件渲染成一张**文件卡片**：用途、角色、生命周期、调用事实，
+deep 卡片还带逐函数注记。
+
+两个值得了解的行为：
+
+- **过期页面会被清理。** 阶段 id 会在两次生成之间变化；每次渲染会先删除上一次渲染
+  的页面，因此改名后的阶段不会留下幽灵页面被 skill 打包器捡走。
+- **每个阶段的寄存器小节是幂等的**——只在标记不存在时才追加到标记之下。重复渲染
+  永远不会堆出重复内容。
+
+</Tab>
+
+<Tab value="HTML site">
+
+`--html` → `<out>/html/`
+
+一个共享同一外壳的多页站点：粘性侧边栏目录并高亮当前页、面包屑导航、能记住你选择
+的主题切换，以及函数详情的一键展开/折叠。
+
+**所有 CSS 和 JS 都已内联；所有链接都是相对的。** 直接从 `file://` 打开就能用——
+不需要服务器、没有 CDN，也不从任何地方拉取字体。`open <out>/html/overview.html`。
+
+</Tab>
+
+<Tab value="Single page">
+
+`--html-single` → `<out>/handbook.html`
+
+整本手册装进**一个文件**：章节带编号，每个阶段都是一个折叠起来的 `<details>`。
+
+要发邮件、附在工单上，或丢进共享盘，就用这个。它没有任何形式的依赖。
+
+</Tab>
+
+<Tab value="Agent index">
+
+`--agent-site` → `<out>/agent/`
+
+```text
+how_to_use.md      the agent-side search protocol
+index.md           every stage, as locator blocks
+disambiguation.md  terms that legitimately point at several stages
+<stage-id>.md      one locator page per stage
+```
+
+每个阶段得到一个模式固定的区块：**duty（职责）**、**entry concepts（入口概念）**、
+**state（状态）**、**exemplar（范例）**、**core files（核心文件）**，以及
+**strong co-change（强共同变更）**。
+
+在十七个真实仓库上的实测中，前五个字段在多数页面上都有内容；**strong co-change 刻
+意做成最稀疏的一个**——只有当测试文件与源文件*相邻*时（`engine.go` +
+`engine_test.go`）它才会出现，而大多数项目把测试放在单独的目录树里。这个字段的缺
+席说明门控在起作用，而不是缺漏。
+
+不变式是：**一个字段被输出，当且仅当它的结构信号存在。** 没有占位符，没有
+“N/A”。空字段的含义是*“图里没有这个信号”*——这是真实的信息——而不是*“模型不
+知道”*，后者只是智能体会在其上继续推理的噪声。
+
+把这个目录传给 `handbook skill --agent-dir`，就能把它装进 SKILL 包一起分发。
+
+</Tab>
+
+<Tab value="llms.txt">
+
+`--llms-txt` → `<out>/llms.txt` 与 `<out>/llms-full.txt`
+
+遵循 [llms.txt 约定](https://llmstxt.org/)：
+
+- **`llms.txt`** —— 一个 H1 标题、一句话摘要引用块，然后是一个 `## Handbook` 小
+  节，逐页给出链接和简短描述。
+- **`llms-full.txt`** —— 整本手册按阅读顺序摊平成一份纯 Markdown 文档。
+
+把 `llms.txt` 放到你发布手册的位置的根路径下提供。
+
+</Tab>
+
+</Tabs>
+
+## 链接到你的源码
+
+```bash
+handbook render --work $WORK --source-base-url https://github.com/me/repo/blob/main
+```
+
+手册里的每个文件路径都会变成指向真实文件的链接。如果你希望手册引用的是生成它时的
+那份代码，就把这个地址指向某个 tag 或 commit SHA，而不是 `main`。
+
+**不加这个标志，输出中完全不含任何外部 URL**——对私有代码库来说，这正是合适的默
+认值。
+
+## 标题与语言
+
+```bash
+handbook render --work $WORK --title "Payments Service — Engineering Handbook"
+```
+
+叙述语言在生成时就已固定（`--narrate-lang`），保存在 `phase3/narration.json`
+中。渲染器从那里读取——每个标签、标题和表头都会相应地本地化。**两种语言下的结构
+完全一致**，因此读取输出的工具不需要知道它是哪种语言。
+
+## 把重新渲染变成习惯
+
+渲染免费且确定性，所以把它接进 CI：
+
+```yaml title=".github/workflows/handbook.yml"
+- run: handbook render --work work/api --title "API Handbook" --html --agent-site --llms-txt
+- run: handbook skill --handbook work/api/handbook --out skills/api --name api \
+    --work work/api --source . --agent-dir work/api/handbook/agent
+- run: handbook validate --skill skills/api --source .
+```
+
+见 [CI 集成](/docs/guides/ci)。
+
+## 发布 HTML 站点
+
+输出是一个链接全为相对路径、不含外部资产的静态目录，所以任何静态托管都行：
+
+```bash
+# GitHub Pages
+cp -R work/api/handbook/html/* docs-site/ && git add docs-site
+
+# Netlify / Vercel / S3 / nginx
+npx serve work/api/handbook/html
+```
+
+把 `llms.txt` 放在站点根路径下，好让智能体能找到它。

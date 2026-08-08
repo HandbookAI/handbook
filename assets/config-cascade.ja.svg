@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="How Handbook resolves one setting: CLI flag beats shell environment beats dot-env cascade beats handbook.config.yaml beats the registry default">
+  <title>Handbook — configuration cascade</title>
+  <desc>Five precedence layers, highest first: CLI flag, shell environment, the .env cascade, handbook.config.yaml, and the registry default. `handbook config` prints which layer every value actually came from.</desc>
+
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/><stop offset="60%" stop-color="#101733"/><stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <marker id="down" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5C6AA0"/>
+    </marker>
+    <style>
+      .t   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .m   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .h1  { fill:#F2F5FF; font-size:25px; font-weight:700; letter-spacing:-0.3px; }
+      .sub { fill:#8C9AC4; font-size:14px; }
+      .rank{ fill:#0B1020; font-size:12px; font-weight:800; }
+      .name{ fill:#F2F5FF; font-size:15px; font-weight:700; }
+      .ex  { fill:#9FB0DC; font-size:12.5px; }
+      .cap { fill:#68779F; font-size:11.5px; font-weight:800; letter-spacing:1.2px; }
+      .code{ fill:#CBD5F5; font-size:12.5px; }
+      .dim { fill:#7386B4; font-size:12.5px; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="560" rx="18" fill="url(#bg3)"/>
+  <rect x="0.5" y="0.5" width="1119" height="559" rx="18" fill="none" stroke="#232C4E"/>
+
+  <text class="t h1" x="40" y="48">1 つの設定に 5 つの出所 — どれが勝ったかは、いつでも確認できます</text>
+  <text class="t sub" x="40" y="72">すべてのフラグ、環境変数、YAML キーは 1 つのレジストリ表から生成されます。手作業の配線はありません。</text>
+
+  <!-- left: ladder -->
+  <text class="t cap" x="40" y="104">優先度: 最高</text>
+
+  <rect x="40" y="116" width="600" height="60" rx="12" fill="#1B2C4E" stroke="#3E6AA8"/>
+  <circle cx="66" cy="146" r="12" fill="#60A5FA"/><text class="t rank" x="66" y="151" text-anchor="middle">1</text>
+  <text class="t name" x="88" y="141">CLI フラグ</text>
+  <text class="m ex" x="88" y="162">handbook generate --read-workers 4</text>
+  <text class="t dim" x="612" y="151" text-anchor="end">明示的、その 1 回限り</text>
+
+  <rect x="40" y="184" width="600" height="60" rx="12" fill="#16233F" stroke="#2F6F68"/>
+  <circle cx="66" cy="214" r="12" fill="#2DD4BF"/><text class="t rank" x="66" y="219" text-anchor="middle">2</text>
+  <text class="t name" x="88" y="209">シェル環境変数</text>
+  <text class="m ex" x="88" y="230">HANDBOOK_GENERATE_READ_WORKERS › HANDBOOK_READ_WORKERS › OPENAI_*</text>
+
+  <rect x="40" y="252" width="600" height="72" rx="12" fill="#16233F" stroke="#2F6F68"/>
+  <circle cx="66" cy="288" r="12" fill="#2DD4BF"/><text class="t rank" x="66" y="293" text-anchor="middle">3</text>
+  <text class="t name" x="88" y="277">.env カスケード — 先に書いた者が勝ち、シェルが常にファイルに優先</text>
+  <text class="m ex" x="88" y="298">.env.&lt;name&gt;.local › .env.&lt;name&gt; › .env.local › .env</text>
+  <text class="t dim" x="88" y="316">--env &lt;name&gt; か HANDBOOK_ENV で選択。--env-file &lt;path&gt; はカスケード全体を置換</text>
+
+  <rect x="40" y="332" width="600" height="60" rx="12" fill="#16233F" stroke="#2F6F68"/>
+  <circle cx="66" cy="362" r="12" fill="#2DD4BF"/><text class="t rank" x="66" y="367" text-anchor="middle">4</text>
+  <text class="t name" x="88" y="357">handbook.config.yaml — コミットされ、git ルートまで遡って探索</text>
+  <text class="m ex" x="88" y="378" font-size="11.5">generate: { readWorkers: 4 }  ·  --env 下では handbook.config.&lt;name&gt;.yaml が優先</text>
+
+  <rect x="40" y="400" width="600" height="52" rx="12" fill="#141B36" stroke="#2A3357"/>
+  <circle cx="66" cy="426" r="12" fill="#5C6AA0"/><text class="t rank" x="66" y="431" text-anchor="middle">5</text>
+  <text class="t name" x="88" y="421" fill="#B9C5E8">レジストリのデフォルト</text>
+  <text class="m ex" x="88" y="441" fill="#8494C0">readWorkers: 12</text>
+
+  <line x1="340" y1="176" x2="340" y2="180" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#down)"/>
+  <line x1="340" y1="244" x2="340" y2="248" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#down)"/>
+  <line x1="340" y1="324" x2="340" y2="328" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#down)"/>
+  <line x1="340" y1="392" x2="340" y2="396" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#down)"/>
+
+  <text class="t cap" x="40" y="478">フォールバック</text>
+
+  <!-- right: terminal -->
+  <rect x="672" y="116" width="408" height="336" rx="12" fill="#0A0F1E" stroke="#2A3357"/>
+  <rect x="672" y="116" width="408" height="30" rx="12" fill="#161E38"/>
+  <rect x="672" y="134" width="408" height="12" fill="#161E38"/>
+  <circle cx="692" cy="131" r="5" fill="#FF5F57"/><circle cx="710" cy="131" r="5" fill="#FEBC2E"/><circle cx="728" cy="131" r="5" fill="#28C840"/>
+  <text class="m code" x="746" y="136" fill="#8494C0" font-size="11.5">handbook config --command generate</text>
+
+  <text class="m code" x="692" y="172" fill="#2DD4BF">environment</text><text class="m code" x="800" y="172">prod  (--env)</text>
+  <text class="m code" x="692" y="192" fill="#2DD4BF">env files</text><text class="m code" x="800" y="192" fill="#9FB0DC">.env.prod, .env</text>
+  <text class="m code" x="692" y="212" fill="#2DD4BF">config file</text><text class="m code" x="800" y="212" fill="#9FB0DC">handbook.config.prod.yaml</text>
+
+  <line x1="692" y1="230" x2="1060" y2="230" stroke="#232C4E"/>
+
+  <text class="m code" x="692" y="252" fill="#68779F" font-size="11.5">SETTING</text>
+  <text class="m code" x="852" y="252" fill="#68779F" font-size="11.5">VALUE</text>
+  <text class="m code" x="960" y="252" fill="#68779F" font-size="11.5">FROM</text>
+
+  <text class="m code" x="692" y="276">source</text><text class="m code" x="852" y="276" fill="#9FB0DC">~/code/api</text><text class="m code" x="960" y="276" fill="#60A5FA">flag</text>
+  <text class="m code" x="692" y="298">llmModel</text><text class="m code" x="852" y="298" fill="#9FB0DC">gpt-4o</text><text class="m code" x="960" y="298" fill="#2DD4BF">env</text>
+  <text class="m code" x="692" y="320">llmApiKey</text><text class="m code" x="852" y="320" fill="#9FB0DC">sk-••••••</text><text class="m code" x="960" y="320" fill="#2DD4BF">env</text>
+  <text class="m code" x="692" y="342">readWorkers</text><text class="m code" x="852" y="342" fill="#9FB0DC">4</text><text class="m code" x="960" y="342" fill="#A78BFA">file</text>
+  <text class="m code" x="692" y="364">detail</text><text class="m code" x="852" y="364" fill="#9FB0DC">deep</text><text class="m code" x="960" y="364" fill="#A78BFA">file</text>
+  <text class="m code" x="692" y="386">narrateLang</text><text class="m code" x="852" y="386" fill="#9FB0DC">en</text><text class="m code" x="960" y="386" fill="#7386B4">default</text>
+
+  <line x1="692" y1="404" x2="1060" y2="404" stroke="#232C4E"/>
+  <text class="m code" x="692" y="428" fill="#8494C0" font-size="11.5">--json は機械向け · --check はタイポで CI を失敗させる</text>
+  <text class="m code" x="692" y="446" fill="#8494C0" font-size="11.5">シークレットはマスクされ、YAML には決して置けない</text>
+  <text class="t cap" x="672" y="478">推測ではなく、出所の明示</text>
+
+  <text class="t sub" x="40" y="524" font-size="13">タイポした変数は、かつて「黙ってデフォルトで実行」を意味しました。今はすべての層が型付き・検証済みで、エラーが出所を名指しします — そして</text>
+  <text class="m sub" x="40" y="544" font-size="13" fill="#9FB0DC">handbook config --check<tspan class="t" fill="#8C9AC4"> は最初の不正値・欠落値で非ゼロ終了するため、40 分のランが走る前に CI が捕まえます。</tspan></text>
+</svg>
