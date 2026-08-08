@@ -77,7 +77,12 @@ disambiguation.md  terms that legitimately point at several stages
 ```
 
 Each stage gets a fixed-schema block: **duty**, **entry concepts**, **state**,
-**exemplars**, **co-change hints**, **core files**.
+**exemplar**, **core files**, and **strong co-change**.
+
+Measured across seventeen real repositories, the first five populate on most pages;
+**strong co-change is deliberately the sparsest** — it fires only where a test file sits
+_beside_ its source (`engine.go` + `engine_test.go`), and most projects put tests in a
+separate tree instead. An absent field there is the gating working, not a gap.
 
 The invariant: **a field is emitted if and only if its structural signal exists.** No
 placeholders, no "N/A". An empty field means _"the graph has no signal here"_ — real

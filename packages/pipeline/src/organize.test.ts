@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CallEdge, CodeGraph, GraphNode } from '@handbook/core';
-import { fileCallAdjacency, suggestOrder } from './organize.js';
+import { fileCallAdjacency, functionCountsByFile, suggestOrder } from './organize.js';
 
 function adjacencyOf(pairs: Array<[string, string[]]>): Map<string, Set<string>> {
   return new Map(pairs.map(([from, tos]) => [from, new Set(tos)]));
@@ -173,5 +173,56 @@ describe('suggestOrder', () => {
 
   it('returns an empty order for an empty stage', () => {
     expect(suggestOrder([], new Map())).toEqual([]);
+  });
+});
+
+/**
+ * `nFunctions` used to be read off the card, and only a DEEP card carries a
+ * `functions` array — so in the default `--detail brief` it was 0 for every file
+ * in every handbook. Measured across seventeen real repositories before the fix:
+ * 0 for all 8,489 files, while the graph knew gson alone had 3,123 functions.
+ *
+ * It is not a decorative number. The agent locator index picks each group's
+ * exemplar as its highest-function-count file and emits the field only when one
+ * exists, so a permanent 0 deleted **Exemplar** from every page ever rendered
+ * (0 of 156 measured) and printed "(0 fns)" beside every core file.
+ */
+describe('organization nFunctions comes from the graph, not the card', () => {
+  const graph = makeGraph(
+    [
+      internalNode('engine.spin', 'engine.py'),
+      internalNode('engine.stop', 'engine.py'),
+      internalNode('engine.reset', 'engine.py'),
+      internalNode('util.helper', 'util.py'),
+      // Synthetic nodes exist in no source file; counting them would promise a
+      // reader functions they will not find when they open it.
+      { ...internalNode('engine.Implicit.__init__', 'engine.py'), synthetic: true },
+      {
+        id: 'boundary:os.path.join',
+        name: 'join',
+        qualname: 'os.path.join',
+        module: 'os.path',
+        className: '',
+        kind: 'boundary',
+        nCallers: 1,
+        nCallees: 0,
+      },
+    ] as GraphNode[],
+    [edge('engine.spin', 'util.helper')],
+  );
+
+  it('counts real internal functions per file and excludes synthetic ones', () => {
+    const counts = functionCountsByFile(graph);
+    expect(counts.get('engine.py')).toBe(3); // not 4 — the synthetic one does not count
+    expect(counts.get('util.py')).toBe(1);
+  });
+
+  it('ignores boundary nodes, which belong to no file of ours', () => {
+    const counts = functionCountsByFile(graph);
+    expect([...counts.keys()].sort()).toEqual(['engine.py', 'util.py']);
+  });
+
+  it('reports zero for a scanned file that genuinely declares nothing', () => {
+    expect(functionCountsByFile(graph).get('empty.py')).toBeUndefined();
   });
 });

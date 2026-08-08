@@ -119,14 +119,14 @@ a ticket and it just opens.
 This is the format built specifically for code agents, and it is deliberately _not_ prose.
 Each stage gets a fixed-schema locator block:
 
-| Field               | Meaning                                                                                                                           |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **duty**            | What this stage is responsible for                                                                                                |
-| **entry concepts**  | The vocabulary that routes here — derived from file stems, with generic tokens (`util`, `main`, `index`, `types`, …) filtered out |
-| **state**           | Registers this stage reads or writes                                                                                              |
-| **exemplars**       | The files that best represent the stage                                                                                           |
-| **co-change hints** | Files that tend to move together, from call-graph adjacency                                                                       |
-| **core files**      | Highest-degree files in the stage                                                                                                 |
+| Field                | Meaning                                                                                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **duty**             | What this stage is responsible for                                                                                                                                                                                      |
+| **entry concepts**   | The vocabulary that routes here — derived from file stems, with generic tokens (`util`, `main`, `index`, `types`, …) filtered out                                                                                       |
+| **state**            | Registers this stage reads or writes                                                                                                                                                                                    |
+| **exemplars**        | The files that best represent the stage                                                                                                                                                                                 |
+| **strong co-change** | A test file sitting _beside_ its source (`engine.go` + `engine_test.go`). Deliberately the sparsest field: most projects put tests in a separate tree, so it is usually absent — which is the gating working, not a gap |
+| **core files**       | Highest-degree files in the stage                                                                                                                                                                                       |
 
 ### The data-gating invariant
 
