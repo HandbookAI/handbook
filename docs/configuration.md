@@ -27,7 +27,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | required | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `work` | `--work <dir>` | `HANDBOOK_WORK` | path | required | work directory holding pipeline artifacts; optional for skill, where it adds coverage.json |
 | `lang` | `--lang <lang>` | `HANDBOOK_LANG` | enum (`auto`, plus any registered language) | `auto` | source language; auto detects and merges every registered language |
@@ -36,7 +36,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
@@ -71,7 +71,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `work` | `--work <dir>` | `HANDBOOK_WORK` | path | required | work directory holding pipeline artifacts; optional for skill, where it adds coverage.json |
 | `title` | `--title <title>` | `HANDBOOK_TITLE` | string | `System Handbook` | handbook title for rendered outputs |
 | `out` | `--out <dir>` | `HANDBOOK_RENDER_OUT` *(scoped)* | path | — | output location; render defaults to <work>/handbook, plan writes a file, skill writes a directory |
@@ -85,7 +85,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | — | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `work` | `--work <dir>` | `HANDBOOK_WORK` | path | — | work directory holding pipeline artifacts; optional for skill, where it adds coverage.json |
 | `out` | `--out <dir>` | `HANDBOOK_SKILL_OUT` *(scoped)* | path | required | output location; render defaults to <work>/handbook, plan writes a file, skill writes a directory |
@@ -99,7 +99,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | — | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `skill` | `--skill <dir>` | `HANDBOOK_SKILL` | path | required | skill directory to validate |
 
@@ -107,7 +107,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
@@ -127,7 +127,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | required | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `plan` | `--plan <file>` | `HANDBOOK_PLAN` | path | required | plan file produced by `handbook plan` |
 | `dryRun` | `--dry-run` | `HANDBOOK_DRY_RUN` | bool | `false` | verify only, never write |
@@ -137,7 +137,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | — | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `backup` | `--backup <dir>` | `HANDBOOK_BACKUP` | path | required | backup directory containing manifest.json |
 | `force` | `--force` | `HANDBOOK_FORCE` | bool | `false` | restore even files that changed after the patch |
@@ -146,7 +146,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
@@ -169,7 +169,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
@@ -187,7 +187,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 
 | key | flag | env | type | default | doc |
 | --- | --- | --- | --- | --- | --- |
-| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|error) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
+| `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `forCommand` | `--command <name>` | `HANDBOOK_FOR_COMMAND` | string | — | show only the settings that apply to this subcommand; its env/file/default layers are inspectable here, but that command's own flags are not (pass them to the command itself) |
 | `json` | `--json` | `HANDBOOK_JSON` | bool | `false` | machine-readable output |
 | `check` | `--check` | `HANDBOOK_CHECK` | bool | `false` | validate only; exit non-zero if anything is invalid or missing |

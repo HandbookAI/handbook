@@ -20,6 +20,7 @@
 import { Command } from 'commander';
 import { join, resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
 import { currentConfigFile, resolveOrThrow, setConfigFile } from './resolve-config.js';
@@ -46,7 +47,10 @@ import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
 import { graphFidelity, refreshRenderedHandbook } from './render-refresh.js';
 
-const program = new Command();
+// Exported so a test can drive it with a controlled argv and mocked seams
+// (`@handbook/studio`'s `startStudio`, `@handbook/pipeline`'s `generateHandbook`)
+// instead of the real `process.argv` — see main.test.ts.
+export const program = new Command();
 
 program
   .name('handbook')
@@ -66,16 +70,18 @@ program
 // below the environment in precedence, so HANDBOOK_* values from .env must
 // already be in process.env before anything reads them, and loading the
 // config file later cannot and must not override what .env supplied.
-program.hook('preAction', () => {
+program.hook('preAction', (_thisCommand, actionCommand) => {
+  let envNote: string | undefined;
   const explicit = program.opts<{ envFile?: string }>().envFile;
   if (explicit) {
     const applied = applyEnvFile(resolve(explicit)); // missing explicit file → loud error
-    logger().debug(`[env] loaded ${applied.length} vars from ${explicit}`);
+    envNote = `[env] loaded ${applied.length} vars from ${explicit}`;
   } else if (existsSync('.env')) {
     const applied = applyEnvFile(resolve('.env'));
-    if (applied.length > 0) logger().debug(`[env] loaded ${applied.length} vars from ./.env`);
+    if (applied.length > 0) envNote = `[env] loaded ${applied.length} vars from ./.env`;
   }
 
+  let configNote: string | undefined;
   const explicitConfig = program.opts<{ config?: string }>().config;
   if (explicitConfig) {
     // An explicitly named file that is missing is a mistake, not a fallback.
@@ -84,9 +90,25 @@ program.hook('preAction', () => {
     const found = discoverConfigFile(process.cwd());
     if (found) {
       setConfigFile(loadConfigFile(found));
-      logger().debug(`[config] loaded ${found}`);
+      configNote = `[config] loaded ${found}`;
     }
   }
+
+  // Resolve THIS command's log level now — env and the config file are both
+  // in place above, so HANDBOOK_LOG_LEVEL=debug shows the two lines below the
+  // same as -v does, instead of only -v/-q ever reaching them (the registry
+  // calls -v mere "shorthand", which this now actually is). Errors are
+  // ignored here on purpose: a broken --source is the action's problem to
+  // report loudly, not bootstrap logging's.
+  const { values } = resolveConfig({
+    command: actionCommand.name(),
+    flags: actionCommand.opts(),
+    env: process.env,
+    file: currentConfigFile(),
+  });
+  const log = logger(values);
+  if (envNote) log.debug(envNote);
+  if (configNote) log.debug(configNote);
 });
 
 /** Level comes from the resolved config; -v/-q are top-level shorthand that override it (quiet wins). */
@@ -410,7 +432,15 @@ addSettings(
   process.stdout.write(cfg.json ? renderConfigJson(result, target) : renderConfigTable(result, target));
 });
 
-program.parseAsync(process.argv).catch((error: unknown) => {
-  process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exit(1);
-});
+// Only when run as the actual entry point — not when a test imports this
+// module to drive `program` directly with its own argv (see main.test.ts).
+// `process.argv[1]` is the script path either way (`handbook ...` or
+// `node dist/main.js ...`), so comparing it to this module's own path is a
+// safe run-as-main check that needs no environment flag of its own.
+const isMainModule = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMainModule) {
+  program.parseAsync(process.argv).catch((error: unknown) => {
+    process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

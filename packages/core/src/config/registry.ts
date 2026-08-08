@@ -8,6 +8,8 @@
  * or fails the build.
  */
 import { PIPELINE_DEFAULTS } from './defaults.js';
+import { LOG_LEVELS } from '../logger.js';
+import { NARRATE_LANGS } from '../model.js';
 import type { Setting } from './types.js';
 
 /** Commands that talk to an LLM endpoint, and so take the whole llm* group. */
@@ -18,7 +20,7 @@ export const SETTINGS: readonly Setting[] = [
   {
     key: 'logLevel',
     type: 'enum',
-    choices: ['debug', 'info', 'error'],
+    choices: LOG_LEVELS,
     default: 'info',
     commands: [
       'analyze',
@@ -190,8 +192,8 @@ export const SETTINGS: readonly Setting[] = [
   {
     key: 'narrateLang',
     type: 'enum',
-    choices: ['en', 'zh'],
-    default: 'en',
+    choices: NARRATE_LANGS,
+    default: PIPELINE_DEFAULTS.narrateLang,
     flag: '--narrate-lang <l>',
     commands: ['generate'],
     doc: 'prose language',
@@ -200,7 +202,7 @@ export const SETTINGS: readonly Setting[] = [
     key: 'detail',
     type: 'enum',
     choices: ['brief', 'deep'],
-    default: 'brief',
+    default: PIPELINE_DEFAULTS.detail,
     flag: '--detail <d>',
     commands: ['generate'],
     doc: 'card depth',
@@ -209,7 +211,7 @@ export const SETTINGS: readonly Setting[] = [
     key: 'synthMode',
     type: 'enum',
     choices: ['oneshot', 'doctor'],
-    default: 'oneshot',
+    default: PIPELINE_DEFAULTS.synthMode,
     flag: '--synth-mode <m>',
     commands: ['generate'],
     doc: 'skeleton synthesis mode',
@@ -395,7 +397,7 @@ export const SETTINGS: readonly Setting[] = [
   {
     key: 'bodyLang',
     type: 'enum',
-    choices: ['en', 'zh'],
+    choices: NARRATE_LANGS,
     default: 'en',
     flag: '--lang <l>',
     scopedOnly: true,
@@ -519,7 +521,7 @@ export const SETTINGS: readonly Setting[] = [
   {
     key: 'proseLang',
     type: 'enum',
-    choices: ['en', 'zh'],
+    choices: NARRATE_LANGS,
     flag: '--narrate-lang <l>',
     scopedOnly: true,
     commands: ['resync'],
