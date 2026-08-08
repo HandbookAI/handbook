@@ -264,6 +264,9 @@ importers:
 
   packages/studio:
     dependencies:
+      '@handbook/analyzer':
+        specifier: workspace:*
+        version: link:../analyzer
       '@handbook/core':
         specifier: workspace:*
         version: link:../core

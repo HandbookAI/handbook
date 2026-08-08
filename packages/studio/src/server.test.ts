@@ -155,6 +155,15 @@ describe('studio server (integration, mock LLM)', () => {
     expect(await api('/api/jobs')).toEqual({ jobs: [] });
   });
 
+  it('serves the source-language choices from the adapter registry, not a hand-written list', async () => {
+    // Regression: the UI used to hard-code six languages against eighteen
+    // registered adapters (see ui-drift.test.ts for the UI side of this fix).
+    const out = await api('/api/languages');
+    expect(out.languages[0]).toBe('auto');
+    expect(out.languages).toContain('python');
+    expect(out.languages.length).toBeGreaterThan(6);
+  });
+
   it('rejects duplicate names and bad paths', async () => {
     await expect(
       api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'demo', sourceRoot }) }),
