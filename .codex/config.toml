@@ -1,0 +1,56 @@
+# Codex project configuration for the Handbook monorepo.
+#
+# Loaded from `.codex/config.toml` when this project is trusted. A project-scoped
+# config can never override machine-local provider, auth or telemetry settings,
+# so nothing in this file can change where your requests go.
+#
+# Schema: https://developers.openai.com/codex/config-schema.json
+#
+# NOTE ON ORDERING: every top-level key must come BEFORE the first [table]
+# header. In TOML a table header captures every key after it until the next
+# header, so a top-level key written lower down silently becomes a member of
+# whatever table precedes it — which is exactly how `project_doc_max_bytes`
+# ended up inside `[sandbox_workspace_write]` in the first draft of this file.
+
+# ── model ──────────────────────────────────────────────────────────────────────
+# `model` is deliberately not pinned. Work here ranges from a one-line registry
+# edit to writing a tree-sitter adapter, and the right model differs. Pick per
+# session with `codex --model`, or set one in your own ~/.codex/config.toml.
+model_reasoning_effort = "high"
+
+# ── sandbox and approvals ──────────────────────────────────────────────────────
+# workspace-write is the right level: everything this repo asks of an agent is
+# editing files, running `pnpm check`, and running the OFFLINE demo.
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+# ── project instructions ───────────────────────────────────────────────────────
+# AGENTS.md is long because this repo has a lot of load-bearing invariants; the
+# default cap would truncate it partway through the ones that matter.
+project_doc_max_bytes = 65536
+project_doc_fallback_filenames = ["CLAUDE.md", "CONTRIBUTING.md"]
+
+[sandbox_workspace_write]
+# Off on purpose. Every test in this repo runs offline against MockChatClient,
+# `pnpm demo` uses the bundled mock LLM server on 127.0.0.1, and the only thing
+# that genuinely needs the network is `pnpm install` — which you should run
+# yourself, deliberately, rather than have an agent do mid-task.
+network_access = false
+
+# ── hooks ──────────────────────────────────────────────────────────────────────
+# Three generated files here are compared BYTE FOR BYTE against their generator
+# by a drift test. Hand-editing one produces a change that looks right, passes
+# review, and then fails the build with a message about drift that does not say
+# "you edited the output". This hook turns that into one sentence at the moment
+# the mistake is made.
+[hooks.PreToolUse]
+[[hooks.PreToolUse.hooks]]
+command = ".codex/hooks/protect-generated.sh"
+additionalContextLimit = 2500
+
+# After a file is written, format just that file — so `pnpm check` stays about
+# real problems rather than whitespace.
+[hooks.PostToolUse]
+[[hooks.PostToolUse.hooks]]
+command = ".codex/hooks/format-touched.sh"
+additionalContextLimit = 1000

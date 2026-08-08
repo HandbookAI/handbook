@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "permissions": {
+    "allow": [
+      "Bash(pnpm build)",
+      "Bash(pnpm build:watch)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test:watch)",
+      "Bash(pnpm test:coverage)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint:fix)",
+      "Bash(pnpm format)",
+      "Bash(pnpm format:check)",
+      "Bash(pnpm check)",
+      "Bash(pnpm check:all)",
+      "Bash(pnpm check:workspace)",
+      "Bash(pnpm check:packaging)",
+      "Bash(pnpm check:install)",
+      "Bash(pnpm config:docs)",
+      "Bash(pnpm run config:docs)",
+      "Bash(pnpm demo)",
+      "Bash(pnpm demo:self)",
+      "Bash(pnpm exec vitest:*)",
+      "Bash(pnpm --filter:*)",
+      "Bash(node packages/cli/dist/main.js:*)",
+      "Bash(node scripts/:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git branch:*)",
+      "Bash(jq:*)",
+      "Bash(rg:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Bash(git push:*)",
+      "Bash(npm publish:*)",
+      "Bash(pnpm publish:*)",
+      "Bash(pnpm release:publish)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ],
+    "ask": ["Bash(git commit:*)", "Bash(pnpm changeset:*)", "Bash(docker:*)"]
+  },
+
+  "env": {
+    "HANDBOOK_LOG_LEVEL": "info"
+  },
+
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-brief.sh",
+            "timeout": 30,
+            "statusMessage": "Reading repo state"
+          }
+        ]
+      }
+    ],
+
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-generated.sh",
+            "timeout": 15,
+            "statusMessage": "Checking the target is not generated"
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format-touched.sh",
+            "timeout": 90,
+            "statusMessage": "Formatting the file that just changed"
+          }
+        ]
+      }
+    ],
+
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-reminder.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

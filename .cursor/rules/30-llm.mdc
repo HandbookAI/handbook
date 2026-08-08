@@ -1,0 +1,36 @@
+---
+description: How LLM-touching code is fenced in this repo, and what it must do when a reply is unusable.
+globs: packages/llm/**,packages/pipeline/**,packages/planner/**,packages/resync/**
+---
+
+# LLM-touching code
+
+**One seam:**
+
+```ts
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
+```
+
+Do not add a second way to reach a model. `analyzer`, `renderer`, `skill` and `patcher`
+**do not depend on `@handbook/llm` at all**, and that boundary is what makes `render`,
+`skill`, `validate`, `apply` and `rollback` free to run in CI.
+
+**Degrade, never block.** Organization falls back to call-graph order; narration to the
+stage description; register extraction to an empty list. A card that could not be written
+is **empty** and listed in `_coverage.json` — never dropped, never invented.
+
+**Keep the evidence.** A reply that produced nothing usable is written to
+`phase2/cards/_rejected/` (capped, hash-named), so a shape mismatch or a refusal can be
+read after the run instead of guessed at.
+
+**A run that gave up exits non-zero.** Returning an apology as a result reports an
+abandoned run as a success, and something downstream acts on it.
+
+**Cancellation is cooperative and real.** Thread the `AbortSignal` all the way into the
+LLM call. Cancel means the in-flight request aborts, not "stop showing me the log".
+
+**Cache keys cover model, prompt and options.** An empty reply is never cached — a blank
+response pinned under a stable key poisons every future run.

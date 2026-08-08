@@ -1,0 +1,30 @@
+---
+description: Testing rules — everything runs offline, no test ever needs an API key, and failure paths matter more than happy ones.
+globs: packages/**/*.test.ts,vitest.config.ts
+---
+
+# Tests
+
+**Everything runs offline. No test ever needs an API key.**
+
+- LLM flows → `MockChatClient` (a list of rules; first match wins).
+- The real client → a local HTTP server.
+- Analyzer tests build **real** mini-repos in temp dirs. A mocked parse tree proves
+  nothing about a grammar.
+
+**Test the failure paths.** This codebase's value is in what it refuses to do, so the
+tests that matter cover: unparseable replies, partial batches, each degradation tier,
+mid-run aborts, resume, sandbox escapes, ambiguous anchors, catastrophic regexes, and
+every parser rejection.
+
+**Coverage floors are per package** (`vitest.config.ts`) and sit just under measured, so
+they ratchet. Raise one when your change raises coverage. **Never lower one to make a red
+run green.**
+
+**Tests resolve `@handbook/*` to `src`, not `dist`**, so cross-package coverage is
+attributed. The real `dist` is verified by `tsc -b` and by `pnpm check:install`.
+
+```bash
+pnpm exec vitest run packages/analyzer     # one package
+pnpm exec vitest run -t "dropped calls"    # one test by name
+```

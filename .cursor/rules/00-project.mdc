@@ -1,0 +1,76 @@
+---
+description: Handbook monorepo — the gate, the generated files, the architecture, and the invariants this project is actually about. Read this before changing anything.
+alwaysApply: true
+---
+
+# Handbook
+
+Turn any codebase into a navigable handbook, and use it to plan precise code changes.
+A pnpm monorepo of eleven TypeScript packages plus a standalone docs site.
+
+## The one command that matters
+
+```bash
+pnpm check
+```
+
+Type-check → workspace invariants → eslint (zero warnings) → prettier → tests with
+**per-package** coverage floors. **Nothing is "done" until this passes.** A green
+`tsc -b` implies none of the other four.
+
+## Never hand-edit these
+
+Rendered from `packages/core/src/config/registry.ts`, compared **byte for byte** by
+`packages/cli/src/docs-drift.test.ts`:
+
+- `.env.example`
+- `handbook.config.example.yaml`
+- `docs/content/docs/reference/configuration.md`
+
+Change the registry, then `pnpm run config:docs`.
+
+Also generated: `packages/*/dist/**` (edit `src/`), `docs/public/diagrams/**` (edit
+`assets/`), `pnpm-lock.yaml`, `packages/*/CHANGELOG.md` (add a changeset).
+
+## Architecture
+
+```
+cli · studio                                             ← entry points
+pipeline · renderer · skill · planner · patcher · resync  ← capabilities
+analyzer · llm                                           ← engines
+core                                                     ← foundation
+```
+
+**Dependencies only ever point down.** A cycle or an upward import fails
+`pnpm check:workspace`.
+
+**LLM isolation is a package boundary, not a convention.** Only `llm`, `pipeline`,
+`planner` and `resync` may reach a model, and only through the `ChatClient` interface.
+`analyzer`, `renderer`, `skill` and `patcher` do not depend on `@handbook/llm` at all.
+
+## The invariants this project is about
+
+This codebase's value is in what it **refuses** to do.
+
+1. Facts come from the parser; prose comes from the model; the two are never mixed.
+   A file whose card failed still appears with an **empty** description.
+2. A call the analyzer cannot resolve goes to `dropped-calls.json`. **Never guessed.**
+3. Analysis fidelity is declared per adapter and disclosed in the output.
+4. A patch anchor must match byte-exactly and uniquely. Zero or two matches both refuse.
+5. A run that gave up exits non-zero.
+6. Degrade, never block.
+7. Secrets are never a flag and are rejected in a config file.
+
+## Conventions the tooling enforces
+
+- Third-party versions live **only** in `pnpm-workspace.yaml`'s catalog; packages depend
+  on `"catalog:"`.
+- TypeScript project references must mirror `package.json` dependencies exactly.
+- Coverage floors are per package and **ratchet**. Never lower one to go green.
+- Conventional Commits, enforced by `commitlint`. Published-package changes need
+  `pnpm changeset`.
+
+## `docs/` is a separate app
+
+It has its own `pnpm-workspace.yaml`, so a root `pnpm install` ignores it, and the root
+eslint config ignores it too. Work on it from inside `docs/`.
