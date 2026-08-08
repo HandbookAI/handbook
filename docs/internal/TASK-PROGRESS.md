@@ -96,7 +96,42 @@
       → 新增 `HANDBOOK_ENV_FILE`（环境变量拦不住），3 个回归测试，文档 5 处更新，changeset 已加
 - [x] 其余 3 个"失败"经查是我的测试写错（子串锚点 / 取了最旧的备份 / 零编辑计划本就该 exit 0），已修正断言
 
-### Step 6 — 9 语言真实仓库实测 + 修 bug ⏳
+### Step 6 — 真实仓库实测 + 修 bug ✅ (commit 2d2a183)
+
+拉了 **17 个真实 GitHub 仓库**到 `/Users/jack/Desktop/share/repos/`，覆盖全部 18 种语言：
+
+| 仓库 | 语言 | 文件 | 函数 |
+| --- | --- | ---: | ---: |
+| requests / express / zod | py / js / ts | 37 / 141 / 407 | 691 / 141 / 1025 |
+| cobra / ripgrep / gson | go / rust / java | 19 / 113 / 264 | 270 / 2937 / 2943 |
+| Newtonsoft.Json / spdlog / guzzle | c# / c++ / php | 943 / 154 / 132 | 7255 / 1096 / 2737 |
+| sinatra / okio / scopt | ruby / kotlin / scala | 150 / 359 / 29 | 802 / 3736 / 320 |
+| AFNetworking / Alamofire / openzeppelin | objc / swift / solidity | 80 / 6 / 712 | 717 / 6 / 3382 |
+| nvm / flutter-packages | shell / dart(多语言) | 6 / **4937** | 0 / **71039** |
+
+**发现并修复 4 个真 bug（全部有回归测试，且验证过"去掉修复就会挂"）**：
+
+1. **WASM 树泄漏 → 硬崩溃**（`spine.ts`）。flutter/packages 4937 文件跑到 90% 时挂：
+   `RuntimeError: table index is out of bounds at ts_parser_new_wasm`。
+   根因：解析树在共享 WASM 实例里占内存，GC 收不掉。
+   **专门做了对照实验**：只放 parser 不放 tree → 仍崩；放 tree → 好。注释里写的是实测结论。
+   树必须在 pass 2 之后才放（`extractCalls` 要走里面的 node），否则是"悄悄给错事实"。
+   修复后该仓库跑通：4937 文件 / 71039 函数 / 321803 边 / 32 秒。
+2. **JS 赋值式函数定义全部看不见**（`typescript.ts`）。`res.send = function(){}`、
+   `exports.f = `、`module.exports.f = `、`X.prototype.f = `、对象字面量方法——
+   Express 的整个公开 API 都是这么写的：lib/ 里 ~78 个函数只认出 11 个，
+   response.js 的 22 个方法只认出 2 个。修复后 express：55→141 函数，8→76 边。
+   **叫不出名字的坚决不猜**：`lookup[key] = fn`、`factory().f = fn` 仍然跳过。
+3. **Shell 的诚实度问题**。nvm 6 个文件 122 个函数**全部**被跳过（bash 语法遇 `case` 抛异常）。
+   原来文档只说"含 case 的脚本会被跳过"，实际等于"大多数真实脚本"。
+   运行时警告现在点名原因，文档改为"Shell 覆盖按部分覆盖看待"。
+4. **mock LLM 截断带空格的路径**（`examples/mock-llm-server.mjs`）。
+   `\S+` 在第一个空格处停下 → AFNetworking 报 62/80 覆盖率，
+   是 mock 在污蔑工具。改成按双空格分隔符捕获后 80/80。
+
+**全流程（generate→render→skill→validate）在 17 个仓库上跑通**，卡片覆盖率 100%，
+未归属文件 0，SKILL 校验全 OK。
+
 ### Step 7 — 5 轮对抗 ⏳
 
 ## 关键实现事实速查（写文档时直接引用，不要凭记忆）
