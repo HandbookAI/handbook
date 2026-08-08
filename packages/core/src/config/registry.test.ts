@@ -102,6 +102,18 @@ describe('registry agrees with the pipeline defaults', () => {
     expect(settingByKey('cardDetail')?.default).toBeUndefined();
     expect(settingByKey('narrateLang')?.commands).toEqual(['generate']);
   });
+
+  it("pins resync's scoped-only env names, which the design spec once stated differently", () => {
+    // The design doc originally promised HANDBOOK_RESYNC_DETAIL — but `detail`
+    // already belongs to generate with a different default semantics
+    // (registry default vs. "match the existing handbook"), so resync got its
+    // own keys instead (see the spec's amendment). Pinned here so neither can
+    // drift again without the spec and this test being updated together.
+    expect(settingByKey('cardDetail')?.scopedOnly).toBe(true);
+    expect(scopedEnvName('resync', settingByKey('cardDetail')!.key)).toBe('HANDBOOK_RESYNC_CARD_DETAIL');
+    expect(settingByKey('proseLang')?.scopedOnly).toBe(true);
+    expect(scopedEnvName('resync', settingByKey('proseLang')!.key)).toBe('HANDBOOK_RESYNC_PROSE_LANG');
+  });
 });
 
 describe('every command the CLI ships is represented', () => {

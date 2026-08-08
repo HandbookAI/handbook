@@ -63,8 +63,11 @@ scripts 侧：`tsc -b &&` 被复制 12 次；11 个 CLI 透传脚本里有 10 �
 | 登记表 key | env（扁平） | env（带命令前缀，优先） | 配置文件 |
 |---|---|---|---|
 | `readWorkers` | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS` | `readWorkers:` 或 `generate: { readWorkers: }` |
-| `detail` | `HANDBOOK_DETAIL` | `HANDBOOK_RESYNC_DETAIL` | `detail:` 或 `resync: { detail: }` |
+| `cardDetail`（resync 专用） | —— *(scoped)* | `HANDBOOK_RESYNC_CARD_DETAIL` | `resync: { cardDetail: }` |
 | `llmModel` | `HANDBOOK_LLM_MODEL` | —— | `llm: { model: }` 或 `llmModel:` |
+
+*(实施记录：本表最初写的是 `detail` / `HANDBOOK_RESYNC_DETAIL` / `resync: { detail: }`，
+已按实际实现改为上面的 `cardDetail`。原因见下一段。)*
 
 配置文件按 **camelCase 拼接**扁平化嵌套映射，于是"命令分节"（`generate:`）和"配置分组"
 （`llm:`）不需要各自的特例代码：`generate.detail` → `generateDetail`，与 env 的加前缀
@@ -78,6 +81,17 @@ scripts 侧：`tsc -b &&` 被复制 12 次；11 个 CLI 透传脚本里有 10 �
 - **唯一例外**是跨命令语义不同的项：`--out` 在 render/skill/plan 里指三样东西、`--lang` 在
   generate 里是源码语言而在 skill 里是行文语言。这类项登记表标 `scopedOnly: true`，
   **只有** `HANDBOOK_RENDER_OUT` / `HANDBOOK_SKILL_LANG` 这样的名字，没有扁平名。
+- **第二种也需要 `scopedOnly` 的情况**：resync 的卡片深度/行文语言不是"跨命令语义不同"，
+  而是 generate 已经用 `detail`/`narrateLang` 占了那两个概念，且两者的默认值语义不同——
+  resync 未指定时**匹配现有手册**（pass-through，无 default），generate 未指定时用
+  registry 默认值。若给 resync 也用键名 `detail`，扁平 env 名会与 generate 的
+  `HANDBOOK_DETAIL` 撞在一起；若改用 `resyncDetail` 这样的键名换取一个好看的扁平名，
+  `scopedEnvName('resync', 'resyncDetail')` 又会算出重复的
+  `HANDBOOK_RESYNC_RESYNC_DETAIL`。两条路都不干净，于是实现选了第三条：换一个不与
+  generate 撞名的键（`cardDetail`/`proseLang`），标 `scopedOnly: true`，只注册
+  `HANDBOOK_RESYNC_CARD_DETAIL` / `HANDBOOK_RESYNC_PROSE_LANG`，没有扁平名——与
+  `--out`/`--lang` 一样靠 `scopedOnly` 避免歧义，但触发原因是"同名不同默认值语义"，
+  不是"跨命令语义不同"。`registry.test.ts` 钉住了这两个 env 名，防止再漂移。
 
 ### 3. 分层与优先级
 

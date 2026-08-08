@@ -103,10 +103,13 @@ export function renderEnvExample(): string {
     const aliases = setting.envAliases ?? [];
 
     if (setting.secret && aliases.length > 0) {
-      // The one line a fresh checkout must uncomment for anything to work —
-      // the vendor alias, because that is what existing .env files already use.
+      // Every line here stays commented, vendor alias included: copying this
+      // file to `.env` must not silently supply a placeholder API key. An
+      // uncommented `OPENAI_API_KEY=sk-...` would satisfy the client's
+      // `if (!apiKey)` guard, trading a clear "no API key" error for a raw
+      // 401 from the provider.
       const [vendor, ...rest] = aliases as [string, ...string[]];
-      lines.push(`${vendor}=${value ?? ''}`);
+      lines.push(value === undefined ? `# ${vendor}${unsetNote}` : `#${vendor}=${value}`);
       lines.push(value === undefined ? `# ${primary}${unsetNote}` : `#${primary}=${value}`);
       for (const alias of rest) {
         lines.push(value === undefined ? `# ${alias}${unsetNote}` : `#${alias}=${value}`);
@@ -190,6 +193,17 @@ export function renderConfigDocs(): string {
       'whether written flat or nested one level under `<command>:`. A setting marked ' +
       '*(scoped)* below only accepts the prefixed env name, because its meaning changes per ' +
       'command (`--out`, `--lang` in the skill package).',
+    '',
+    '## Bootstrap',
+    '',
+    'Two top-level flags point at two of the layers above, and are themselves outside the ' +
+      'registry — flag-only, with no environment-variable form: `--env-file <path>` (default: ' +
+      '`./.env` if present) names the file the **`.env`** layer loads, and `--config <path>` ' +
+      '(default: the nearest `handbook.config.yaml` found by walking up from the working ' +
+      'directory, stopping at a repo boundary) names the file the **`handbook.config.yaml`** ' +
+      'layer loads. Both run once, before every other setting resolves — which is also why ' +
+      'neither can be set by the thing it loads: an `--env-file` line inside `.env`, or a ' +
+      '`--config` key inside `handbook.config.yaml`, would have nothing left to read it.',
     '',
   ];
 

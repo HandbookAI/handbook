@@ -163,8 +163,6 @@ boundary, so the analyzer, renderer and skill packages are reusable with no LLM 
 - [docs/prompts.md](docs/prompts.md) — the complete prompt catalogue
 - [examples/](examples/) — offline end-to-end demo (mock LLM server included)
 - Per-package READMEs under [packages/](packages/)
-- [CONTRIBUTING.md](CONTRIBUTING.md) — what a change is expected to look like before it merges
-- [SECURITY.md](SECURITY.md) — the threat model, and how to report a vulnerability
 
 ## Command cheatsheet (no global CLI install needed)
 
