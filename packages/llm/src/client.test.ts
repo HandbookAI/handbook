@@ -151,6 +151,19 @@ describe('resolveLlmEnv strictness', () => {
   it('keeps 0 retries meaningful (one attempt), not replaced by the default', () => {
     expect(resolveLlmEnv({ HANDBOOK_LLM_MAX_RETRIES: '0' }).maxRetries).toBe(1);
   });
+
+  it('ignores a broken setting outside the llm* group entirely', () => {
+    // Regression: resolveConfig resolved as command 'studio' pulls in EVERY
+    // studio setting, so a typo'd HANDBOOK_PORT or HANDBOOK_LOG_LEVEL used to
+    // abort every LLM call and every bare `new OpenAiChatClient()` — an error
+    // that belongs to whoever actually resolves studio's own settings.
+    const cfg = resolveLlmEnv({
+      HANDBOOK_PORT: 'abc',
+      HANDBOOK_LOG_LEVEL: 'loud',
+      OPENAI_API_KEY: 'k',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.apiKey).toBe('k');
+  });
 });
 
 describe('OpenAiChatClient', () => {
