@@ -1,0 +1,31 @@
+---
+description: TypeScript style and module conventions for the packages in this monorepo.
+globs: packages/**/*.ts
+---
+
+# TypeScript in packages/
+
+- **ESM only.** Every package is `"type": "module"`. Relative imports carry the `.js`
+  extension (`./workdir.js`), because that is what the emitted output resolves.
+- **`import type` for types.** `@typescript-eslint/consistent-type-imports` is an error,
+  not a warning.
+- **Unused variables are errors**, except ones prefixed `_`.
+- **Public API is the barrel.** Each package's `src/index.ts` is the only surface
+  consumers see. Adding an export is a deliberate act.
+- **Every persisted artifact is a zod schema plus an inferred type**, with a `version`
+  field, validated on read. A corrupted artifact must fail loudly and name itself; it must
+  never propagate into a later phase.
+- **Write files atomically** — `writeFileAtomic` / `writeJsonFile` from `@handbook/core`.
+  A crash mid-write must never leave a half-written artifact.
+- **Errors carry a code.** Extend `HandbookError`. `MissingArtifactError` names the
+  remedy, not just the problem: `phase1/graph.json — run phase 1 first`.
+- **`PermanentError` means "do not retry"** — the LLM client uses it to tell a bad request
+  from a flaky one.
+
+## Comments
+
+Explain **why**, especially when the code looks odd. This repo's comments carry the
+reasons behind refusals and workarounds, and several of them are the only record of a bug
+that cost a day. Match that density; do not strip it.
+
+Do not add comments that restate the code.

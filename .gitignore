@@ -15,12 +15,23 @@ runs/
 .DS_Store
 *.log
 
-# Local agent-harness state. Kept out of the repo on purpose: these files carry
-# personal choices (permission mode) and machine state (pids, session ids), and
-# committing a permission-bypass setting would silently disable another
-# contributor's prompts on clone. Share a team config only by un-ignoring a
-# deliberately written file — never by committing whatever happens to be here.
-.claude/
+# Agent-harness config. The SHARED, deliberately-written parts are committed —
+# settings.json, hooks, subagents, skills, rules — because they encode this
+# repo's invariants (do not hand-edit generated files; run the gate before
+# claiming done) and every contributor benefits from them.
+#
+# Everything else stays out. `settings.local.json` in particular carries
+# personal choices such as permission mode, and committing a permission-bypass
+# setting would silently disable another contributor's prompts on clone.
+.claude/*
+!.claude/README.md
+!.claude/settings.json
+!.claude/agents/
+!.claude/skills/
+!.claude/hooks/
+!.claude/rules/
+.claude/settings.local.json
+.claude/*.lock
 
 # Subagent-driven-development scratch: ledger, task briefs, review packages.
 # Session-local coordination state, never part of the product.

@@ -43,6 +43,7 @@ docs/content/docs/reference/configuration.md
 handbook.config.example.yaml
 
 # The documentation site's build output and its generated content index.
+docs/next-env.d.ts
 docs/.next/
 docs/.source/
 docs/out/
