@@ -310,10 +310,10 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     batchSize = PIPELINE_DEFAULTS.readBatchSize,
     maxWorkers = PIPELINE_DEFAULTS.readWorkers,
     maxCharsPerFile = PIPELINE_DEFAULTS.maxCharsPerFile,
-    detail = 'brief',
+    detail = PIPELINE_DEFAULTS.detail,
     chunkChars = 60_000,
     resume = false,
-    lang = 'en',
+    lang = PIPELINE_DEFAULTS.narrateLang,
     signal,
   } = options;
   const logger = options.logger ?? silentLogger;

@@ -18,4 +18,10 @@ export const PIPELINE_DEFAULTS = {
   organizeWorkers: 8,
   narrateWorkers: 8,
   maxDoctorRounds: 6,
+  /** Card depth, everywhere a caller does not pick one. */
+  detail: 'brief',
+  /** Prose language, everywhere a caller does not pick one. */
+  narrateLang: 'en',
+  /** Skeleton synthesis mode, everywhere a caller does not pick one. */
+  synthMode: 'oneshot',
 } as const;

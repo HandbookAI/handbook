@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
 import {
   MissingArtifactError,
+  PIPELINE_DEFAULTS,
   fileExists,
   isAbsoluteAnyPlatform,
   isInternalNode,
@@ -425,7 +426,7 @@ async function resyncHandbookInner(options: ResyncOptions): Promise<ResyncReport
         detail,
         batchSize: 1,
         signal,
-        lang: options.lang ?? 'en',
+        lang: options.lang ?? PIPELINE_DEFAULTS.narrateLang,
         logger,
       });
       report.cardsRegenerated = refreshTargets.filter((f) => !result.coverage.missing.includes(f)).length;

@@ -168,7 +168,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         're-run phase 2b to switch strategies',
     );
   }
-  const narrateLang = options.narrateLang ?? 'en';
+  const narrateLang = options.narrateLang ?? PIPELINE_DEFAULTS.narrateLang;
   const stats: GenerateStats = { phasesRun: [...phases].sort() as Phase[] };
 
   // Member strategy derives its organization deterministically at 2b — a bare
@@ -243,7 +243,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       work.saveAssignment(assignment);
       stats.nStages = skeleton.stages.length;
       stats.nUnassignedFiles = assignment.coverage.unassigned.length;
-    } else if ((options.synthMode ?? 'oneshot') === 'doctor') {
+    } else if ((options.synthMode ?? PIPELINE_DEFAULTS.synthMode) === 'doctor') {
       const { skeleton, assignment } = await synthesizeWithDoctor(client, graph, cards, {
         maxRounds: options.maxDoctorRounds,
         lang: narrateLang,

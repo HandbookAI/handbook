@@ -345,7 +345,11 @@ export async function synthesizeWithDoctor(
   cards: Record<string, FileCard>,
   options: SynthLoopOptions = {},
 ): Promise<{ skeleton: Skeleton; assignment: Assignment; rounds: number }> {
-  const { maxRounds = PIPELINE_DEFAULTS.maxDoctorRounds, lang = 'en', signal } = options;
+  const {
+    maxRounds = PIPELINE_DEFAULTS.maxDoctorRounds,
+    lang = PIPELINE_DEFAULTS.narrateLang,
+    signal,
+  } = options;
   const logger = options.logger ?? silentLogger;
   const assignOptions = {
     batchSize: options.assignBatchSize,
