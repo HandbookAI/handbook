@@ -44,6 +44,12 @@ describe('renderEnvExample', () => {
   it('says which values are secret and where they may live', () => {
     expect(text).toMatch(/never.*config file/i);
   });
+
+  it('explains the --env cascade and states that an unnamed run is unchanged', () => {
+    expect(text).toMatch(/--env.*HANDBOOK_ENV/);
+    expect(text).toMatch(/\.env\.<name>\.local.*\.env\.<name>.*\.env\.local.*\.env/);
+    expect(text).toMatch(/no change/i);
+  });
 });
 
 describe('renderConfigDocs', () => {
@@ -76,6 +82,17 @@ describe('renderConfigDocs', () => {
 
   it('states the precedence order once, unambiguously', () => {
     expect(text).toMatch(/flag.*shell env.*\.env.*handbook\.config\.yaml.*default/s);
+  });
+
+  it('documents the .env cascade table and that an unnamed run does not change behaviour', () => {
+    expect(text).toMatch(/\| 2 \| `\.env\.<name>\.local` \|/);
+    expect(text).toMatch(/\| 5 \| `\.env` \|/);
+    expect(text).toMatch(/exactly what loaded before this cascade/);
+  });
+
+  it('documents environment-aware config-file discovery as a per-directory preference', () => {
+    expect(text).toMatch(/handbook\.config\.<name>\.\{yaml,yml,json\}/);
+    expect(text).toMatch(/With no environment named, discovery is unchanged/);
   });
 });
 

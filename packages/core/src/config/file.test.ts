@@ -96,4 +96,37 @@ describe('discoverConfigFile', () => {
     }
     expect(discoverConfigFile(dir)).toBe(join(dir, 'handbook.config.yaml'));
   });
+
+  it('prefers the environment-named file over a plain one at the same directory level', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'handbook.config.yaml'), 'detail: deep\n');
+    writeFileSync(join(dir, 'handbook.config.prod.yaml'), 'detail: brief\n');
+    const sub = join(dir, 'a', 'b');
+    mkdirSync(sub, { recursive: true });
+    // Run from a subdirectory with neither file, so this also proves the
+    // named check happens at every level of the upward walk, not just the
+    // starting directory.
+    expect(discoverConfigFile(sub, 'prod')).toBe(join(dir, 'handbook.config.prod.yaml'));
+  });
+
+  it('falls back to the plain file when no environment is named', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'handbook.config.yaml'), 'detail: deep\n');
+    writeFileSync(join(dir, 'handbook.config.prod.yaml'), 'detail: brief\n');
+    expect(discoverConfigFile(dir)).toBe(join(dir, 'handbook.config.yaml'));
+  });
+
+  it('prefers .yaml over .yml over .json among environment-named files too', () => {
+    const dir = tmp();
+    for (const ext of ['yaml', 'yml', 'json']) {
+      writeFileSync(join(dir, `handbook.config.prod.${ext}`), ext === 'json' ? '{}' : 'detail: deep\n');
+    }
+    expect(discoverConfigFile(dir, 'prod')).toBe(join(dir, 'handbook.config.prod.yaml'));
+  });
+
+  it('does not match a named file for an unrelated environment', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'handbook.config.staging.yaml'), 'detail: deep\n');
+    expect(discoverConfigFile(dir, 'prod')).toBeUndefined();
+  });
 });

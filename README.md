@@ -61,8 +61,16 @@ Prefer a file over shell exports? The CLI auto-loads `./.env` from the directory
 it in (shell variables win; see [.env.example](.env.example)), or pass an explicit
 `--env-file <path>`.
 
+Multiple environments? `--env prod` (or `HANDBOOK_ENV=prod`) layers `.env.prod` ahead of
+`.env`, and prefers `handbook.config.prod.yaml` over the plain file:
+
+```bash
+handbook generate --env prod --source ~/code/proj --work work/proj
+```
+
 Every setting is also a flag and a config-file key — see [docs/configuration.md](docs/configuration.md)
-for the full reference, or run `handbook config` to see what is set and where it came from.
+for the full reference, or run `handbook config` to see what is set and where it came from
+(including the active environment and every file it loaded).
 
 ## Quick start
 
@@ -218,6 +226,12 @@ docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
 # --env-file layers on top of the toolchain's own .env loading (both apply;
 # an OPENAI_* var from --env-file is visible the same way a shell export is):
 docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
+
+# One image serves every environment (.env* files are never baked into it —
+# see .dockerignore). Select one at run time with docker's own --env-file
+# pointed at that environment's file, or HANDBOOK_ENV plus a mounted config:
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work handbook:local generate
 ```
 
 Studio, via `docker compose` (see `docker-compose.yml`):

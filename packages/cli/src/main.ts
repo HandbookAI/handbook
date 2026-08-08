@@ -18,13 +18,20 @@
  * neither commander defaults nor hand-written parsing live here anymore.
  */
 import { Command } from 'commander';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
-import { currentConfigFile, resolveOrThrow, setConfigFile } from './resolve-config.js';
 import {
+  currentConfigFile,
+  currentEnvironment,
+  resolveOrThrow,
+  setConfigFile,
+  setEnvironment,
+} from './resolve-config.js';
+import {
+  applyEnvFiles,
   createLogger,
   discoverConfigFile,
   loadConfigFile,
@@ -59,27 +66,44 @@ program
   .option('-v, --verbose', 'debug logging')
   .option('-q, --quiet', 'errors only')
   .option(
+    '--env <name>',
+    'select an environment (bootstrap only; same as HANDBOOK_ENV): loads ' +
+      '.env.<name>.local and .env.<name> ahead of .env.local and .env, and prefers ' +
+      'handbook.config.<name>.yaml over the plain file',
+  )
+  .option(
     '--env-file <path>',
-    'load KEY=VALUE pairs from a file (default: ./.env if present; shell env wins)',
+    'load KEY=VALUE pairs from exactly this file, bypassing the .env cascade above',
   )
   .option('--config <path>', 'project config file (default: nearest handbook.config.yaml)');
 
-// .env loading runs before every subcommand action, so OPENAI_* and
-// HANDBOOK_* can live in a project-local file instead of the shell. The
-// config file is discovered/loaded AFTER the env file on purpose: it sits
-// below the environment in precedence, so HANDBOOK_* values from .env must
-// already be in process.env before anything reads them, and loading the
-// config file later cannot and must not override what .env supplied.
+// The env cascade runs before every subcommand action, so OPENAI_* and
+// HANDBOOK_* can live in project-local files instead of the shell. --env is
+// read FIRST — the cascade and the config-file discovery below both depend
+// on it — and the config file is discovered/loaded AFTER the env files on
+// purpose: it sits below the environment in precedence, so HANDBOOK_* values
+// from a .env file must already be in process.env before anything reads
+// them, and loading the config file later cannot and must not override what
+// the env files supplied.
 program.hook('preAction', (_thisCommand, actionCommand) => {
+  const envFlag = program.opts<{ env?: string }>().env;
+  const envName = envFlag || process.env.HANDBOOK_ENV || undefined;
+  const envSource: 'flag' | 'env' | undefined = envFlag ? 'flag' : envName ? 'env' : undefined;
+
   let envNote: string | undefined;
+  let envFiles: string[];
   const explicit = program.opts<{ envFile?: string }>().envFile;
   if (explicit) {
     const applied = applyEnvFile(resolve(explicit)); // missing explicit file → loud error
+    envFiles = [resolve(explicit)];
     envNote = `[env] loaded ${applied.length} vars from ${explicit}`;
-  } else if (existsSync('.env')) {
-    const applied = applyEnvFile(resolve('.env'));
-    if (applied.length > 0) envNote = `[env] loaded ${applied.length} vars from ./.env`;
+  } else {
+    envFiles = applyEnvFiles(process.cwd(), envName);
+    if (envFiles.length > 0) {
+      envNote = `[env] loaded from ${envFiles.map((f) => basename(f)).join(', ')}`;
+    }
   }
+  setEnvironment({ name: envName, source: envSource, envFiles });
 
   let configNote: string | undefined;
   const explicitConfig = program.opts<{ config?: string }>().config;
@@ -87,7 +111,7 @@ program.hook('preAction', (_thisCommand, actionCommand) => {
     // An explicitly named file that is missing is a mistake, not a fallback.
     setConfigFile(loadConfigFile(resolve(explicitConfig)));
   } else {
-    const found = discoverConfigFile(process.cwd());
+    const found = discoverConfigFile(process.cwd(), envName);
     if (found) {
       setConfigFile(loadConfigFile(found));
       configNote = `[config] loaded ${found}`;
@@ -429,7 +453,14 @@ addSettings(
     process.exitCode = result.errors.length ? 2 : 0;
     return;
   }
-  process.stdout.write(cfg.json ? renderConfigJson(result, target) : renderConfigTable(result, target));
+  // The active environment, the files it cascaded from, and the config file
+  // resolved from it: without these, a cascade of up to eight possible
+  // sources is unauditable — see config-command.ts.
+  const environment = currentEnvironment();
+  const envDisplay = { ...environment, configFile: currentConfigFile()?.path };
+  process.stdout.write(
+    cfg.json ? renderConfigJson(result, target, envDisplay) : renderConfigTable(result, target, envDisplay),
+  );
 });
 
 // Only when run as the actual entry point — not when a test imports this

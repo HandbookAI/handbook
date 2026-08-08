@@ -30,5 +30,9 @@ RUN addgroup -S handbook && adduser -S -G handbook handbook \
  && mkdir -p /src /work && chown -R handbook:handbook /src /work
 USER handbook
 ENV HANDBOOK_SOURCE=/src HANDBOOK_WORK=/work
+# HANDBOOK_ENV is deliberately NOT set here: one image serves every
+# environment, and .env* files are excluded by .dockerignore, so nothing
+# environment-specific is ever baked into a layer. Select the environment at
+# run time instead — see docker-compose.yml and README.md's Docker section.
 ENTRYPOINT ["node", "/app/packages/cli/dist/main.js"]
 CMD ["--help"]
