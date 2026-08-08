@@ -5,6 +5,7 @@
  * derived). Prose cannot be derived, so it is pinned here instead: adding an
  * adapter and forgetting the docs fails the build.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -124,6 +125,33 @@ describe('documented pnpm scripts exist', () => {
         (name) => !scripts.includes(name) && !BUILTINS.has(name) && !bins.includes(name),
       );
       expect(missing, `${doc} references missing script(s): ${missing.join(', ')}`).toEqual([]);
+    });
+  }
+});
+
+describe('every relative markdown link in both READMEs points at a tracked file', () => {
+  // `git ls-files`, not `existsSync`: a file present only on disk (untracked,
+  // or belonging to another in-flight change) is exactly the bug this
+  // catches — README.md once linked CONTRIBUTING.md/SECURITY.md before either
+  // was committed, which `existsSync` on a real checkout would have missed
+  // entirely if the author's own working tree happened to have them staged.
+  const tracked = new Set(
+    execFileSync('git', ['ls-files'], { cwd: repoRoot, encoding: 'utf8' }).split('\n').filter(Boolean),
+  );
+  const isTracked = (relPath: string): boolean => {
+    if (tracked.has(relPath)) return true;
+    const prefix = relPath.endsWith('/') ? relPath : `${relPath}/`;
+    return [...tracked].some((f) => f.startsWith(prefix)); // a link to a directory
+  };
+
+  for (const doc of ['README.md', 'README.zh-CN.md']) {
+    it(`${doc} links no path missing from git`, () => {
+      const text = read(doc);
+      const targets = [...text.matchAll(/]\(([^)]+)\)/g)]
+        .map((m) => m[1] as string)
+        .filter((target) => !/^[a-z]+:/i.test(target) && !target.startsWith('#')); // skip URLs/anchors
+      const missing = targets.filter((target) => !isTracked(target));
+      expect(missing, `${doc} links path(s) not tracked in git: ${missing.join(', ')}`).toEqual([]);
     });
   }
 });

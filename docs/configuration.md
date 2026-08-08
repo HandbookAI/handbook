@@ -10,6 +10,10 @@ Every setting resolves through the same layers, highest priority first: **flag**
 
 One camelCase `key` in the registry drives all three surfaces at once: a flag, an environment variable, and a config-file key. Prefixing any of them with a command name scopes that surface to one subcommand, and it is the same transform on all three — `HANDBOOK_<KEY>` becomes `HANDBOOK_<COMMAND>_<KEY>`, and `key` becomes `<command>Key` whether written flat or nested one level under `<command>:`. A setting marked *(scoped)* below only accepts the prefixed env name, because its meaning changes per command (`--out`, `--lang` in the skill package).
 
+## Bootstrap
+
+Two top-level flags point at two of the layers above, and are themselves outside the registry — flag-only, with no environment-variable form: `--env-file <path>` (default: `./.env` if present) names the file the **`.env`** layer loads, and `--config <path>` (default: the nearest `handbook.config.yaml` found by walking up from the working directory, stopping at a repo boundary) names the file the **`handbook.config.yaml`** layer loads. Both run once, before every other setting resolves — which is also why neither can be set by the thing it loads: an `--env-file` line inside `.env`, or a `--config` key inside `handbook.config.yaml`, would have nothing left to read it.
+
 Worked example for `readWorkers` (flag `--read-workers <n>`, default `12`):
 
 | surface | flat | scoped to `generate` |

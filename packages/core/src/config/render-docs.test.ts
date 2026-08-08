@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { renderConfigDocs, renderConfigExampleYaml, renderEnvExample } from './render-docs.js';
-import { SETTINGS } from './registry.js';
+import { SETTINGS, settingsFor } from './registry.js';
 import { envName } from './names.js';
+
+/** `## \`command\`` sections, so a row can be checked against the ONE section it
+ *  must appear in — a global substring check would pass even if `renderConfigDocs`
+ *  dropped a setting's row from its command's table while the key still appeared
+ *  in prose elsewhere on the page. */
+function sectionsByCommand(text: string): Map<string, string> {
+  const sections = new Map<string, string>();
+  const matches = [...text.matchAll(/^## `([a-z]+)`$/gm)];
+  for (let i = 0; i < matches.length; i += 1) {
+    const command = matches[i]![1] as string;
+    const start = matches[i]!.index as number;
+    const end = i + 1 < matches.length ? (matches[i + 1]!.index as number) : text.length;
+    sections.set(command, text.slice(start, end));
+  }
+  return sections;
+}
 
 describe('renderEnvExample', () => {
   const text = renderEnvExample();
@@ -15,10 +31,14 @@ describe('renderEnvExample', () => {
     expect(text).toContain('OPENAI_API_KEY');
   });
 
-  it('leaves every line commented out except the api key, so copying it is safe', () => {
-    // An uncommented default would override a shell value the user already set.
+  it('leaves every line commented out, including the api key, so copying it is safe', () => {
+    // Regression: an uncommented `OPENAI_API_KEY=sk-...` placeholder used to
+    // ship here. Copied to `.env`, it satisfies the client's `if (!apiKey)`
+    // guard, trading a clear "no API key" error for a raw 401 from the
+    // provider — and an uncommented default would also override a shell
+    // value the user already set.
     const assignments = text.split('\n').filter((l) => /^[A-Z]/.test(l));
-    expect(assignments).toEqual(['OPENAI_API_KEY=sk-...']);
+    expect(assignments).toEqual([]);
   });
 
   it('says which values are secret and where they may live', () => {
@@ -33,6 +53,24 @@ describe('renderConfigDocs', () => {
     for (const s of SETTINGS) {
       expect(text, `missing ${s.key}`).toContain(s.key);
       if (s.flag) expect(text).toContain(s.flag.split(/[ ,]/)[0] as string);
+    }
+  });
+
+  it('has a real table row — not just a substring match — for every setting, in every command section it belongs to', () => {
+    // Regression: `toContain(s.key)` passes on ANY substring, including the key
+    // appearing only in another setting's `doc` prose. A dropped table row
+    // would sail through that check while this one catches it: the generator
+    // and the byte-for-byte drift test both derive from the same function, so
+    // a row genuinely missing from `renderConfigDocs` would go undetected by
+    // the whole suite without this.
+    const sections = sectionsByCommand(text);
+    const commands = [...new Set(SETTINGS.flatMap((s) => s.commands))];
+    expect([...sections.keys()].sort()).toEqual(commands.sort());
+    for (const command of commands) {
+      const section = sections.get(command) as string;
+      for (const setting of settingsFor(command)) {
+        expect(section, `${command}: missing row for ${setting.key}`).toContain(`| \`${setting.key}\` |`);
+      }
     }
   });
 

@@ -30,7 +30,14 @@ function helpText(command: string, setting: Setting): string {
       setting.dynamicChoices === 'languages' ? languageChoices() : (setting.choices ?? []).join('|');
     parts.push(`(${choices})`);
   }
-  parts.push(`[env: ${setting.scopedOnly ? scopedEnvName(command, setting.key) : envName(setting.key)}]`);
+  // The required-error (resolve.ts's `supplyRoutes`) always names the scoped
+  // form first — it is more specific and always valid — so --help must show
+  // it too, or a reader would never learn a per-command override exists.
+  parts.push(
+    setting.scopedOnly
+      ? `[env: ${scopedEnvName(command, setting.key)}]`
+      : `[env: ${envName(setting.key)}, or scoped: ${scopedEnvName(command, setting.key)}]`,
+  );
   if (setting.default !== undefined) parts.push(`(default: ${String(setting.default)})`);
   return parts.join(' ');
 }
