@@ -30,6 +30,14 @@ export interface ResolveInput {
   readonly file?: ConfigFileData;
   /** Base for relative `path` values from flags and env. */
   readonly cwd?: string;
+  /**
+   * Resolve only these keys, skipping every other setting `command` declares
+   * entirely — not even to its default. For a caller that owns just a slice
+   * of one command's settings (e.g. `resolveLlmEnv` wants the llm* group
+   * within `studio`'s full list, and must not abort on an unrelated
+   * `HANDBOOK_PORT` typo that is somebody else's to resolve and report).
+   */
+  readonly only?: readonly string[];
 }
 
 /** Env names to try, most specific first. */
@@ -65,12 +73,13 @@ function supplyRoutes(command: string, setting: Setting): string {
 }
 
 export function resolveConfig(input: ResolveInput): ResolveResult {
-  const { command, flags, env = {}, file, cwd = process.cwd() } = input;
+  const { command, flags, env = {}, file, cwd = process.cwd(), only } = input;
   const values: Record<string, unknown> = {};
   const sources: Record<string, Source> = {};
   const errors: string[] = [];
 
   for (const setting of settingsFor(command)) {
+    if (only && !only.includes(setting.key)) continue;
     const attempt = (raw: unknown, where: string, source: Source, pathBase: string): boolean => {
       try {
         values[setting.key] = coerceValue(setting, raw, where, pathBase);

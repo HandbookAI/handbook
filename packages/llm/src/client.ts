@@ -13,10 +13,17 @@ import {
   pLimit,
   resolveConfig,
   settingByKey,
+  settingsFor,
   type Logger,
   silentLogger,
   type LimitFn,
 } from '@handbook/core';
+
+/** Every registry key in the llm* group — derived, not restated, so this list
+ *  can never drift from registry.ts's own `LLM_COMMANDS` grouping. */
+const LLM_SETTING_KEYS = settingsFor('studio')
+  .filter((s) => s.key.startsWith('llm'))
+  .map((s) => s.key);
 
 export interface ChatOptions {
   /** Sampling temperature. Omitted automatically for reasoning-style models. */
@@ -101,9 +108,15 @@ const REQUIRED_CONFIG_FIELDS: readonly (keyof LlmEnvConfig)[] = [
  * business demanding, since all it resolves is the llm* group. `studio` is
  * also the one real caller of this path with no config object of its own (see
  * `OpenAiChatClient`'s constructor and studio's default `clientFactory`).
+ *
+ * Restricted to `LLM_SETTING_KEYS` via `resolveConfig`'s `only`: this
+ * function's job is the llm* group, nothing else, so a studio setting it has
+ * no business validating — `HANDBOOK_PORT=abc`, `HANDBOOK_LOG_LEVEL=loud` —
+ * must not abort every job and every bare `new OpenAiChatClient()` on a typo
+ * that whoever actually resolves `studio`'s own settings will report.
  */
 export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfig {
-  const { values, errors } = resolveConfig({ command: 'studio', flags: {}, env });
+  const { values, errors } = resolveConfig({ command: 'studio', flags: {}, env, only: LLM_SETTING_KEYS });
   if (errors.length > 0) throw new ConfigError(errors.join('; '));
   return llmConfigFromValues(values) as LlmEnvConfig;
 }
