@@ -1,0 +1,165 @@
+---
+title: 'शब्दावली'
+description: 'Stage, card, register, work dir, case, skill, plan — हर वह शब्द जिसे यह project एक ख़ास अर्थ में बरतता है, एक ही जगह परिभाषित।'
+---
+
+Handbook कुछ आम शब्दों को ख़ास अर्थों में इस्तेमाल करता है। इन्हें एक बार ठीक से समझ लेने पर
+बाक़ी हर page छोटा हो जाता है।
+
+## Artifacts
+
+### Call graph
+
+Phase 1 का output। आपके code का हर function और method, साथ में उनके बीच का हर call edge —
+इस आधार पर typed कि वह कैसे resolve हुआ। **इसे parser बनाता है, model कभी नहीं।**
+
+`<work>/phase1/graph.json` में रहता है। Downstream की हर चीज़ इसी को पढ़ती है और कोई भी
+source दोबारा parse नहीं करता।
+
+### Card
+
+हर source file का एक। _यह file किसलिए है?_ का जवाब तीन fields में देता है — **purpose**,
+**role**, **lifecycle** — और `--detail deep` में साथ ही 120–300 शब्दों का walkthrough और हर
+function पर एक note।
+
+Card का structural आधा हिस्सा graph से आता है; prose वाला आधा LLM से। अगर prose विफल हो
+जाए, तो भी card मौजूद रहता है — खाली description के साथ। `<work>/phase2/cards/<path>.json`
+में रहता है।
+
+### Role
+
+Card का `role` एक **closed vocabulary** से आता है: `entrypoint`, `orchestration`,
+`domain_logic`, `io_transport`, `data_model`, `config`, `util`, `test`, `generated`,
+`other`। Model इसके अलावा जो भी गढ़े, वह `other` में समेट दिया जाता है — कोई रचनात्मक जवाब इस
+set को चौड़ा नहीं कर सकता।
+
+### Stage
+
+Handbook का एक अध्याय। हर stage के पास एक id, एक title, एक description, एक optional
+parent, और ऐसे infrastructure के लिए एक `crosscut` flag होता है जो lifecycle के किसी एक step
+का नहीं होता।
+
+Stages **execution lifecycle** के क्रम में लगते हैं — alphabetically या directory के हिसाब से
+नहीं — यानी handbook उसी क्रम में पढ़ा जाता है जिस क्रम में system वास्तव में चलता है।
+
+### Skeleton
+
+Stages की क्रमबद्ध सूची: कथा की रीढ़। या तो LLM इसे synthesize करता है (`--strategy file`),
+या **आप ख़ुद लिखते हैं** (`--strategy member`)। `<work>/phase2/skeleton.yaml` में रहता है।
+
+### Assignment
+
+कौन-सी file किस stage की है। हर file को ठीक एक **primary** stage मिलता है, और वह जिन अन्य
+stages को छूती है उन्हें भी सूचीबद्ध कर सकती है। `<work>/phase2/assignment.json` में रहता है।
+
+### Organization
+
+किसी stage के भीतर, call-graph topology के क्रम में लगी और 2–8 शीर्षक वाले sub-groups में
+बँटी files। `<work>/phase2/organization.yaml` में रहता है।
+
+### Narration
+
+Prose: हर stage की एक summary, साथ में एक system overview। Bottom-up लिखा जाता है — पहले
+children, फिर parents — ताकि parent stage की summary यह जानते हुए लिखी जा सके कि उसके
+children क्या कहते हैं। `<work>/phase3/narration.json` में रहता है।
+
+### Register
+
+ऐसा state जो stages के **आर-पार** बहता है: कोई connection pool, feature flag, retry budget,
+auth token। हर register के पास एक id, सादी भाषा में एक पंक्ति की semantics, और उसे छूने वाले
+stages की सूची होती है।
+
+Fan-out वाले बदलावों के लिए registers अकेले सबसे उपयोगी artifact हैं, क्योंकि "इस state को
+कौन-कौन से stages छूते हैं" ठीक वही सवाल है जो एक बिखरा हुआ बदलाव पूछता है।
+`<work>/phase3/registers.json` में रहता है।
+
+## Directories
+
+### Work directory (`--work`)
+
+जहाँ pipeline का हर artifact रहता है। जिस repository का documentation बना रहे हैं, उसके लिए
+एक।
+
+```text
+<work>/
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
+  phase3/   narration.json · registers.json · cache/
+  handbook/ the rendered output, once you run `render`
+  run-manifest.json
+```
+
+इसे **मिटाकर दोबारा generate करना सुरक्षित है**, और अगर आप handbook को version control में
+रखना चाहें तो commit करना भी। Generation इसके बाहर कुछ भी modify नहीं करता।
+
+### Handbook directory
+
+_Rendered_ output — markdown, और वैकल्पिक रूप से HTML, agent index और `llms.txt`। Default
+है `<work>/handbook`।
+
+### Skill directory (`skill` पर `--out`)
+
+Packaged agent SKILL: `SKILL.md` और `references/`। Self-contained और share करने लायक़; इसमें
+source code कभी embed नहीं होता।
+
+### Case directory (`resync` पर `--case`)
+
+किसी बदलाव का ब्योरा देने के लिए आप `resync` को यह सौंपते हैं:
+
+```text
+<case>/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — sharpens scope
+  change.diff   unified diff vs the previous tree   optional — widens scope
+```
+
+## हर command, एक-एक पंक्ति में
+
+| Command    | एक पंक्ति                                           | LLM? |
+| ---------- | --------------------------------------------------- | :--: |
+| `analyze`  | Source → call graph                                 |  ❌  |
+| `generate` | Call graph → cards, stages, prose, registers        |  ✅  |
+| `render`   | Work dir → markdown / HTML / agent index / llms.txt |  ❌  |
+| `skill`    | Rendered handbook → agent SKILL package             |  ❌  |
+| `validate` | SKILL की structure और ताज़गी की जाँच                |  ❌  |
+| `plan`     | Change request + handbook → byte-exact edit plan    |  ✅  |
+| `apply`    | Edit plan → असली edits, backups के साथ              |  ❌  |
+| `rollback` | Backup → restore हुआ source tree                    |  ❌  |
+| `resync`   | बदला हुआ code → incrementally updated handbook      |  ✅  |
+| `studio`   | ऊपर का सब कुछ, browser में                          |  ✅  |
+| `config`   | क्या set है, और कहाँ से आया                         |  ❌  |
+
+## Phases
+
+| Phase | बनाता है              | LLM? |
+| ----- | --------------------- | :--: |
+| `1`   | call graph            |  ❌  |
+| `2a`  | हर file का एक card    |  ✅  |
+| `2b`  | skeleton + assignment |  ✅  |
+| `2c`  | organization          |  ✅  |
+| `3`   | narration + registers |  ✅  |
+
+`--phase` स्वीकार करता है: `all`, `1`, `2` (यानी 2a+2b+2c), कोई एक phase, या `2c,3` जैसी
+comma-separated सूची।
+
+## दो strategies
+
+|              | `file` (default)                | `member`                                  |
+| ------------ | ------------------------------- | ----------------------------------------- |
+| Skeleton     | LLM synthesize करता है          | **आप लिखते हैं** `skeleton.yaml`          |
+| Leaf unit    | एक source file                  | एक function या method                     |
+| सबसे उपयुक्त | ऐसी repo जिसे आप अभी नहीं जानते | ऐसी repo जिसकी बनावट आप पहले से जानते हैं |
+| लागत         | कम                              | ज़्यादा — हर member classify होता है      |
+
+## दो शब्द जो आसानी से गड्डमड्ड हो जाते हैं
+
+**Fidelity tier** — किसी language के लिए _analysis_ कितनी अच्छी है। `full` (हाथ से लिखा
+adapter) या `generic` (config-driven engine)। हर adapter इसे declare करता है, हर language के
+लिए दर्ज होती है, और handbook के overview में disclose की जाती है। देखें
+[Analysis fidelity](/docs/concepts/analysis-fidelity)।
+
+**Detail** — _prose_ कितनी गहरी है। `brief` (purpose, role, lifecycle) या `deep` (साथ में
+walkthrough और हर function पर notes)। `--detail` से set होती है।
+
+ये दोनों एक-दूसरे से स्वतंत्र हैं: `generic`-tier language के भी `deep` cards हो सकते हैं। Prose
+गहरी होती है; call facts और पक्के नहीं हो जाते।

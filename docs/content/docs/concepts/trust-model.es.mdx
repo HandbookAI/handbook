@@ -1,0 +1,150 @@
+---
+title: 'En qué puedes confiar'
+description: 'Qué partes de un handbook son hechos parseados, cuáles son salida del modelo, qué sale de tu máquina y qué se niega a hacer la herramienta.'
+---
+
+## La versión corta
+
+| Afirmación                             | Fuente                         | ¿Puede estar mal?                                        |
+| -------------------------------------- | ------------------------------ | -------------------------------------------------------- |
+| Este archivo existe en esta ruta       | parser                         | **No**                                                   |
+| Esta función está en las líneas 88–104 | parser                         | **No**                                                   |
+| Esta firma es `send(self, url, data)`  | parser                         | **No**                                                   |
+| Esta función llama a aquella           | parser                         | **No** en el nivel full; best-effort en el nivel generic |
+| Estas llamadas no pudieron resolverse  | parser                         | **No** — se listan, no se adivinan                       |
+| Este archivo pertenece a esta etapa    | LLM, validado mecánicamente    | Como juicio, sí. Estructuralmente, no                    |
+| El propósito de este archivo es "…"    | LLM                            | **Sí** — es prosa                                        |
+| Este subsistema funciona como "…"      | LLM                            | **Sí** — es prosa                                        |
+| Este estado fluye por estas etapas     | LLM, sobre ids de etapa reales | **Sí**, aunque los ids de etapa son reales               |
+
+**La regla que sigue todo el diseño:** un agente se orienta con la mitad superior de esa
+tabla y lee el código fuente real antes de actuar. El paquete SKILL lo dice en su primera
+línea, y su protocolo de enrutado termina con _"haz `read_file` del código fuente real en
+cada ruta citada antes de proponer o hacer cambios."_
+
+## Qué sale de tu máquina
+
+**Phase 1 — nada.** El análisis estático es completamente local. No se hace ninguna
+llamada de red.
+
+**Las Phases 2 y 3** envían el contenido de los archivos fuente al endpoint que **tú**
+configuraste. Puede ser un modelo corriendo en tu propia máquina (vLLM, Ollama, LiteLLM).
+Handbook no tiene telemetría, ni analítica, ni más endpoint por defecto que el de OpenAI,
+para el que tú mismo debes aportar una clave.
+
+**`--max-chars-per-file <n>`** limita cuánto de cualquier archivo individual llega a
+enviarse.
+
+**El renderizado, el empaquetado y la validación** nunca tocan la red. Tampoco `apply` ni
+`rollback`.
+
+**El planner** lee tu código fuente en local y envía al endpoint extractos de lo que
+leyó, igual que la generación.
+
+## Qué se rechaza deliberadamente
+
+Los rechazos son la parte estructural de esta herramienta. En orden de prioridad:
+
+### El patcher
+
+- Un ancla que coincide **cero** veces → rechazo. El código siguió adelante.
+- Un ancla que coincide **dos o más** veces → rechazo. Es ambigua.
+- **Nunca** "tomar la primera coincidencia". Así es como un parche aterriza en la función
+  equivocada.
+- Un solo fallo aborta la aplicación **completa**, antes de que se escriba un byte.
+- Una ruta que escapa de la raíz del código fuente — incluso a través de un directorio
+  padre con symlink cuando el archivo aún no existe — se rechaza.
+- El rollback rechaza cualquier archivo cambiado _después_ del parche, salvo que pases
+  `--force`.
+
+### El planner
+
+- No existe ninguna herramienta de escritura. No está deshabilitada — **no está
+  implementada**.
+- Una respuesta que inventa secciones `## Tool result` se rechaza de plano, incluido
+  cualquier plan al final de ella, porque ese plan se derivó de una ficción.
+- Una ejecución que se dio por vencida sale con código distinto de cero en lugar de
+  escribir una disculpa en `plan.md`.
+- Las regex catastróficas (`(a+)+`, `(.*)*`) se rechazan antes de que puedan colgar la
+  ejecución.
+
+### El pipeline
+
+- Una llamada que el analizador no puede resolver va a `dropped-calls.json`. Nunca se
+  adivina.
+- Un archivo cuya generación de ficha falló recibe una descripción **vacía**, nunca una
+  inventada, y queda listado en `_coverage.json`.
+- Un cambio estructural propuesto por el bucle doctor que nombra una etapa inexistente, o
+  que dejaría archivos huérfanos, se rechaza antes de que toque el esqueleto.
+- Un crítico cuya respuesta no se puede parsear cuenta como `REJECT`.
+
+### Configuración
+
+- Un secreto (`llmApiKey` / `OPENAI_API_KEY`) **nunca** es un flag de línea de comandos,
+  y se **rechaza** si aparece en un archivo de configuración — porque los archivos de
+  configuración acaban commiteados.
+- Un valor proporcionado pero inválido nunca cae a un valor por defecto. Un typo es un
+  error.
+- Un valor vacío se lee como no establecido, así que `HANDBOOK_TITLE=` no puede producir
+  un handbook sin título.
+
+## Detectar la deriva
+
+`coverage.json` en un paquete SKILL lleva un **hash de contenido por archivo**, capturado
+en el momento del empaquetado.
+
+```bash
+handbook validate --skill skills/myrepo --source ~/code/myrepo
+```
+
+vuelve a calcular el hash del código fuente vivo y reporta cada archivo cuyo contenido se
+movió desde entonces. Así es como un agente se entera de que _"esta página puede ir por
+detrás del código"_ antes de actuar sobre una afirmación obsoleta — y por eso vale la
+pena pasar `--work` y `--source` a `handbook skill`.
+
+## El canal de correcciones
+
+Cuando una afirmación del handbook contradice el código fuente real, el agente consumidor
+añade una línea de JSON a `corrections.jsonl` en la raíz del skill:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py"
+}
+```
+
+`handbook resync --corrections <file>` refresca entonces **exactamente los archivos
+nombrados en él** — incluso si sus bytes nunca cambiaron, porque una afirmación que el
+código fuente contradice es razón suficiente para volver a describir ese archivo.
+
+El archivo vive en la raíz del skill, nunca bajo `references/`, porque los planners
+montan ese árbol en solo lectura. Una reconstrucción preserva las correcciones pendientes
+a través de la limpieza.
+
+## La postura de seguridad de Studio
+
+Studio es una **herramienta local** y no finge otra cosa.
+
+- Se enlaza a `127.0.0.1` por defecto.
+- La guarda CSRF comprueba la **cabecera de petición** `Host`, no el socket, así que solo
+  pasan nombres de host de loopback.
+- `POST` exige `application/json`, lo que bloquea el clásico ataque de formulario
+  cross-origin.
+- El servido de archivos del código fuente y del handbook está confinado a las raíces
+  registradas.
+
+En un contenedor debe enlazarse a `0.0.0.0` para que el puerto publicado sea siquiera
+alcanzable, pero eso no amplía quién puede hablarle: una petición que nombra una IP de la
+LAN o el hostname del contenedor sigue recibiendo `403`. El acceso remoto es una
+funcionalidad aparte, deliberadamente sin implementar — necesitaría una lista de
+permitidos explícita.
+
+## Lo que Handbook no pretende saber
+
+Un grafo de llamadas no puede decirte _por qué_ se tomó una decisión, para qué sirve el
+producto ni cuáles son las convenciones de tu equipo. Handbook no las infiere y no finge
+hacerlo. Documenta estructura y comportamiento; la intención sigue siendo algo que te
+toca escribir a ti.

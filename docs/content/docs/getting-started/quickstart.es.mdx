@@ -1,0 +1,133 @@
+---
+title: 'Inicio rápido'
+description: 'Ejecuta la cadena de herramientas completa de principio a fin en unos treinta segundos — sin conexión, sin clave de API y sin gastar un solo token.'
+---
+
+La forma más rápida de entender lo que hace Handbook es verlo hacerlo. Esto ejecuta el
+pipeline **completo** — análisis, generación, renderizado, empaquetado, validación —
+contra un proyecto de ejemplo incluido, usando un servidor mock de LLM también incluido.
+
+**Sin clave de API. Sin red. Cero tokens.**
+
+## Paso 1 — Ejecútalo
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm demo
+```
+
+## Paso 2 — Lee lo que imprimió
+
+```text
+== build ==
+== start mock LLM (offline; prose will be placeholder text) ==
+== 1. analyze (no LLM) ==
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+== 2. generate (phases 2+3) ==
+{ "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
+== 3. render markdown + HTML site + agent index + llms.txt ==
+== 4. package as an agent SKILL (with the agent locator pages) ==
+== 5. validate the SKILL ==
+validate: OK
+```
+
+<Callout type="warn" title="La prosa será un sinsentido — es lo esperado">
+  El mock de LLM devuelve texto de relleno. **La estructura es completamente real** — etapas, asignación de
+  archivos, hechos de llamadas, rangos de líneas, la tabla de registros, cada enlace. Solo las frases son
+  falsas. Esa es exactamente la separación sobre la que está construido este proyecto: los hechos vienen del
+  parser, la prosa viene de un modelo.
+</Callout>
+
+## Paso 3 — Abre los resultados
+
+```bash
+open examples/work/demo/handbook/overview.md        # the markdown handbook
+open examples/work/demo/handbook/html/overview.html # the multi-page HTML site
+open examples/work/demo/handbook/handbook.html      # the whole thing in one file
+open examples/work/demo/skill/SKILL.md              # the agent SKILL package
+```
+
+Cosas que vale la pena mirar en concreto:
+
+| Abre esto                             | Y fíjate en                                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | Un **mapa de etapas** en mermaid generado a partir del grafo de llamadas                          |
+| `handbook/index.md`                   | Cada etapa, anidada, cada una con un párrafo                                                      |
+| `handbook/register.md`                | El estado transversal a las etapas, con las etapas que tocan cada pieza                           |
+| `handbook/agent/index.md`             | El formato localizador para agentes — sin prosa, solo direcciones                                 |
+| `handbook/agent/disambiguation.md`    | Términos que legítimamente apuntan a varias etapas                                                |
+| `skill/references/coverage.json`      | Un hash de contenido por archivo. Esta es la señal de deriva.                                     |
+| `work/demo/phase1/dropped-calls.json` | Llamadas que el analizador **no** pudo resolver, conservadas y categorizadas en vez de adivinadas |
+
+## Paso 4 — Mira bajo el capó
+
+Todo lo que produjo el pipeline es JSON y YAML plano dentro del directorio de trabajo:
+
+```bash
+ls examples/work/demo/
+# phase1/  phase2/  phase3/  handbook/  skill/  run-manifest.json
+
+cat examples/work/demo/phase1/graph.json | head -40
+cat examples/work/demo/phase2/skeleton.yaml
+cat examples/work/demo/run-manifest.json     # model, phases, timings, token usage
+```
+
+Cada uno de ellos se valida contra un esquema al leerse. Si editas uno a mano y lo dejas
+en un estado inválido, el siguiente comando te dice qué archivo y por qué — el error no se
+propaga.
+
+## Las otras demos
+
+```bash
+pnpm demo:self        # this repo as its own input, against the mock LLM
+pnpm demo:self:real   # same, but against the real endpoint from .env
+pnpm mock-llm         # just the mock server, on port 8099
+```
+
+`pnpm demo:self` es la más interesante de leer: analiza once paquetes TypeScript reales,
+así que la estructura de etapas que produce es un mapa genuino de una base de código
+genuina.
+
+## Qué acaba de pasar
+
+<div className="not-prose">
+  <img
+    src="/diagrams/pipeline.svg"
+    alt="El pipeline de Handbook: analyze, generate, render, skill, plan, apply, resync"
+    className="rounded-xl border"
+  />
+</div>
+
+1. **`analyze`** parseó cada archivo con tree-sitter y produjo un grafo de llamadas
+   tipado. Sin LLM.
+2. **`generate`** escribió una ficha por archivo, sintetizó un esqueleto de etapas, asignó
+   cada archivo a una etapa, los agrupó y ordenó, y después narró de abajo hacia arriba y
+   extrajo los registros de estado transversales a las etapas.
+3. **`render`** convirtió eso en markdown, un sitio HTML, una página autocontenida, el
+   índice localizador para agentes y `llms.txt`. Sin LLM.
+4. **`skill`** lo reempaquetó como una SKILL de agente con un hash de contenido por
+   archivo. Sin LLM.
+5. **`validate`** comprobó la estructura, el contrato del frontmatter, los enlaces
+   índice ↔ página de etapa y la frescura de los hashes. Sin LLM.
+
+La demo se detiene ahí. La otra mitad — **`plan` → `apply` → `rollback` → `resync`** — se
+cubre en [Tu primer handbook](/docs/getting-started/first-handbook) y en
+[Planificar cambios](/docs/guides/planning-changes).
+
+## A continuación
+
+<Cards>
+  <Card
+    title="Tu primer handbook real"
+    description="Los mismos pasos, tu repositorio, y qué hacer cuando es grande."
+    href="/docs/getting-started/first-handbook"
+  />
+  <Card
+    title="El vocabulario"
+    description="Etapa, ficha, registro, directorio de trabajo, caso — qué significa aquí cada palabra."
+    href="/docs/getting-started/vocabulary"
+  />
+  <Card title="Studio" description="El mismo pipeline, pero con clics." href="/docs/guides/studio" />
+</Cards>

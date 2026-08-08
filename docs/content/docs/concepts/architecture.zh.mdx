@@ -1,0 +1,141 @@
+---
+title: '架构'
+description: '四层十一个包、严格单向的依赖方向，以及让确定性的那一半可以单独复用的边界。'
+---
+
+## 分层
+
+<div className="not-prose">
+  <img src="/diagrams/architecture.svg" alt="包分层：入口、能力、引擎、地基" className="rounded-xl border" />
+</div>
+
+| 层       | 包                                                              | 职责                           |
+| -------- | --------------------------------------------------------------- | ------------------------------ |
+| **入口** | `cli`、`studio`                                                 | 人或容器直接运行的东西         |
+| **能力** | `pipeline`、`renderer`、`skill`、`planner`、`patcher`、`resync` | 各司一职，可独立使用           |
+| **引擎** | `analyzer`、`llm`                                               | 其他一切构建于其上的两样东西   |
+| **地基** | `core`                                                          | 数据模型、配置注册表、工具函数 |
+
+依赖**只会向下**：
+
+```text
+cli → pipeline / renderer / skill / planner / patcher / resync → analyzer / llm → core
+```
+
+## 三条让它保持健康的规则
+
+### 1. 单向依赖，强制执行
+
+`core` 不导入任何内部包。没有任何包导入 `cli`。出现依赖环或向上导入会让 `pnpm check:workspace` 失败；这项检查还会验证每个包的 TypeScript 项目引用与其 `package.json` 依赖完全一致——缺一个引用会让 `tsc -b` 以错误的顺序构建，而根目录构建会把这个问题掩盖掉。
+
+### 2. LLM 隔离是包边界，不是约定
+
+只有 `llm`、`pipeline`、`planner` 和 `resync` 可以与模型对话，且只能通过 `ChatClient` 接口：
+
+```ts
+interface ChatClient {
+  readonly model: string;
+  complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
+}
+```
+
+`analyzer`、`renderer`、`skill` 和 `patcher` **完全不依赖 `@handbook/llm`**。它们是完全确定性的，在任何见不到 LLM 的地方都能复用。这就是 `render`、`skill`、`validate`、`apply` 和 `rollback` 可以放心跑在 CI 里的原因。
+
+这也是整个测试套件可以离线运行的原因：一道接缝，一个 mock。
+
+### 3. 渲染器的边界是一个类型
+
+`HandbookModel`（定义在 `core` 中）是渲染器唯一知道的东西。它从不读取流水线内部。
+
+```ts
+interface HandbookModel {
+  title: string;
+  lang: NarrateLang;
+  skeleton: Skeleton;
+  cards: Record<string, FileCard>;
+  assignment: Assignment;
+  organization: Organization;
+  narration: Narration;
+  registers: RegisterEntry[];
+}
+```
+
+**任何能填出一个 `HandbookModel` 的生产者，都免费获得渲染、skill 打包和规划。** 如果你想用别的方式生成手册，需要满足的契约就这么多。
+
+## 数据流
+
+```text
+source tree
+   │  analyzer — tree-sitter WASM, one adapter per language
+   ▼
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+   │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
+   ▼
+phase2/cards/<rel>.json + _coverage.json
+   │  pipeline 2b — skeleton synthesis (+ doctor loop) + file assignment
+   ▼
+phase2/skeleton.yaml + assignment.json
+   │  pipeline 2c — call-graph topological order + LLM grouping (flat fallback)
+   ▼
+phase2/organization.yaml
+   │  pipeline 3 — bottom-up narration + register extraction (content-hash cached)
+   ▼
+phase3/narration.json + registers.json
+   │  loadHandbookModel()
+   ▼
+HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.html · agent/ · llms.txt)
+                     │
+                     └──▶ skill ──▶ SKILL.md + references/ (+ coverage.json)
+```
+
+**工作目录契约：**每个阶段只读上游产物、只写自己的产物，全部在读取时做带 `version` 字段的 schema 校验。任何阶段都可以单独重跑。崩溃后可恢复——卡片按批写入，叙述有内容哈希缓存。
+
+## 分析器内部
+
+每种语言实现一个 `LanguageAdapter`：`discover`、`analyze`，以及可选的 `statementSpans`。所有语法都是 WebAssembly，因此安装时从不编译原生代码。
+
+适配器对每个模块跑**两遍**：
+
+1. **扫描**——声明、导入、类和方法，以及每个函数的事实：签名、行号范围、是否 async、装饰器、`self`/`this` 属性的读写、带类型的参数，以及从构造函数赋值学到的属性类型。
+2. **解析**——每个调用点变成一条带类型的边：`self_method`、`self_attr_method`、`param_method`、`internal_func`、`internal_constructor`、`boundary`、`boundary_constructor`——或者 `unresolved`，由图构建器隔离进 `dropped-calls.json` 并标注类别。
+
+**保留下来的图里只有解析成功、有名有姓的被调方。** 这正是图中每条边值得信任的原因。
+
+**nav-pack** 是从图推导出来的确定性定位摘要——目录汇总、入口点候选、扇出、外部子系统。它是骨架合成器能看到的*唯一*代码库视图，这让那条提示词既小又有据可依。
+
+## 流水线的质量机制
+
+**三级卡片降级（2a）。** 整批 → 单文件 → 对超大文件按函数分块。仍然失败的文件得到一张诚实的空卡片，并被列入 `_coverage.json`。覆盖率*在构造上*就是完整的；缺失是可见的，而不是无声的。
+
+**actor–critic 骨架医生（2b）。** actor 依据真实调用图的统计数据提出至多三项结构改动；三个角色扮演的 critic（工程师、架构师、读者）并行评审；幸存下来的每项改动在应用前都要再经过一次**机械**校验；受影响的文件会被重新归属。循环在收敛或连续两轮无进展时停止。critic 出故障按 `REJECT` 计——失效的评审者绝不能放行改动。
+
+**处处有确定性兜底（2c、3）。** 组织退回调用图顺序。叙述退回阶段描述。寄存器提取失败得到空列表。生成运行**只降级，不阻塞**。
+
+**内容哈希缓存（3）。** 阶段和系统的文字缓存在 `phase3/cache/` 下，键由提示词版本、语言和完整提示词哈希组成——重跑和 resync 只为真正变化的部分付费。
+
+## 并发与安全
+
+- **每个工作目录同时只跑一个任务。** `generateHandbook` 和 `resyncHandbook` 拿的是同一把可重入目录锁，所以一次 CLI 运行和一个 Studio 任务不可能在同一批产物上交错写入。
+- **原子写入。** 每件产物都先写临时文件再重命名。崩溃永远不会留下半截文件让下一次运行噎住。
+- **协作式取消。** `AbortSignal` 在阶段之间和每个批次检查点被检查，并穿入每次 LLM 调用，让在途请求中止。被中止的运行保留已保存的内容，且**不**写运行清单。
+
+## 值得了解的决策
+
+| #   | 决策                         | 原因                                                                                           |
+| --- | ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1   | 只用 WASM 版 tree-sitter     | 零原生构建；所有语言共用一条加载路径；语法版本锁定                                             |
+| 2   | 手写的 `fetch` LLM 客户端    | OpenAI 兼容端点五花八门；一个带显式重试的薄客户端胜过一个 SDK 依赖。接口这道接缝比传输层更重要 |
+| 3   | 一条流水线，两种策略         | 大小两套流水线会重复适配器、critic、客户端和渲染器；一个策略标志砍掉了约 40% 的这类表面积      |
+| 4   | 带 `version` 的 zod 校验产物 | 损坏或手改的产物在边界处大声失败，而不是毒害后续阶段                                           |
+| 5   | 卡片中事实与文字分离         | 模型只是在一份完整的、由图推导的清单上做注解。文字可以为空；事实不能出错                       |
+| 6   | 单轮规划器协议               | 任何端点都能用、极易 mock、对话记录可以审查。代价——重复发送 token——在规划器的规模下可以接受    |
+| 7   | ESM + `tsc -b`，不用打包器   | 库交付经过类型检查的 `dist/` 和 `.d.ts`；composite 引用零额外工具就得到增量构建                |
+| 8   | 单一配置注册表               | 标志、环境变量名、YAML 键和三份生成文档都源自同一张表，因此不可能漂移                          |
+
+## 下一步
+
+<Cards>
+  <Card title="五个阶段详解" href="/docs/concepts/pipeline" />
+  <Card title="工作目录" href="/docs/concepts/work-directory" />
+  <Card title="包 API 索引" href="/docs/reference/packages" />
+</Cards>

@@ -1,0 +1,159 @@
+---
+title: 'Установка'
+description: 'Node 20.11 и pnpm — вот и весь список. Никакой нативной компиляции, никакого Python, никакого node-gyp — парсеры представляют собой WebAssembly.'
+---
+
+## Требования
+
+|                        |                                                         |
+| ---------------------- | ------------------------------------------------------- |
+| **Node.js**            | ≥ 20.11                                                 |
+| **pnpm**               | ≥ 9                                                     |
+| **Конечная точка LLM** | Только для Phase 2 и Phase 3. Любая OpenAI-совместимая. |
+
+Это действительно весь список. Здесь **нет шага нативной компиляции** — языковые парсеры
+поставляются как WebAssembly, поэтому никакого `node-gyp`, никакого компиляторного
+тулчейна, никакого Python.
+
+<Callout type="info">
+  Проверьте версию Node командой `node --version`. Если вы используете `nvm`, в репозитории есть `.nvmrc`, так
+  что `nvm use` выберет нужную версию.
+</Callout>
+
+## Вариант 1 — из клона репозитория (рекомендуется на этапе оценки)
+
+```bash
+git clone <this repo>
+cd handbook
+pnpm install
+pnpm build
+```
+
+Затем сделайте вызов CLI удобным:
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+handbook --help
+```
+
+Или вовсе пропустите алиас и используйте pnpm-шорткаты, которые сначала выполняют
+инкрементальную сборку (около 0,4 с на прогретом кеше) и пробрасывают флаги напрямую:
+
+```bash
+pnpm analyze --source ~/code/myrepo --work work/myrepo
+pnpm handbook --help
+```
+
+<Callout title="Почему шорткаты сначала собирают">
+  Каждый `pnpm <command>` запускает `tsc -b` перед CLI. Это разница между отладкой вашего
+  кода и отладкой устаревшего `dist/` — которая в первый раз стоит часа времени.
+</Callout>
+
+## Вариант 2 — как глобальный CLI
+
+```bash
+npm i -g @handbook/cli
+handbook --help
+```
+
+## Вариант 3 — Docker, совсем без локального Node
+
+```bash
+docker build -t handbook:local .
+
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked into the image,
+# so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+О Studio, окружениях и оговорке про доступ только с `localhost` см.
+[руководство по Docker](/docs/guides/docker).
+
+## Вариант 4 — как библиотеки
+
+Каждая возможность — это опубликованный пакет, который можно использовать отдельно.
+Анализатор, рендерер, упаковщик skill и патчер никогда не касаются LLM, поэтому работают
+автономно:
+
+```bash
+pnpm add @handbook/analyzer   # static call graphs, 18 languages
+pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+```
+
+См. [индекс пакетов](/docs/reference/packages).
+
+## Настройка конечной точки LLM
+
+Phase 1 — статический анализ — **никогда не требует ключа**. Всё остальное требует.
+
+```bash
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
+export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
+```
+
+<Callout title="Локальные конечные точки и точки без ключа">
+  Используйте `OPENAI_API_KEY=EMPTY` для конечных точек без аутентификации — vLLM, OpenAI-совместимая
+  прослойка Ollama, локальный LiteLLM. Клиенту нужно *что-то* в этом поле; `EMPTY` — согласованный способ
+  сказать «намеренно ничего», и он даёт понятную ошибку вместо сбивающего с толку 401, если вы по ошибке
+  направите его на реального провайдера.
+</Callout>
+
+### Предпочитайте файл экспортам в шелле
+
+CLI автоматически загружает `./.env` из каталога, в котором вы его запускаете. Переменные
+шелла всегда побеждают, так что `.env` — это значение по умолчанию, а не переопределение.
+
+```bash title=".env"
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+Скопируйте `.env.example` — он генерируется из реестра настроек, поэтому перечисляет
+каждую реально существующую переменную с её значением по умолчанию, и каждая строка
+изначально закомментирована, так что копировать его безопасно.
+
+О нескольких окружениях, переопределениях для отдельных команд и `handbook.config.yaml`
+см. [Конфигурацию](/docs/reference/configuration).
+
+## Проверка установки
+
+Две команды, именно в этом порядке.
+
+**1. Запускается ли тулчейн вообще?**
+
+```bash
+pnpm demo
+```
+
+Полный конвейер, офлайн, на встроенном образце проекта и встроенном mock-LLM. Если это
+проходит, с вашей установкой всё в порядке.
+
+**2. Доступна ли и настроена ли моя конечная точка?**
+
+```bash
+handbook config --command generate
+```
+
+Эта команда печатает каждую настройку, её итоговое значение и **из какого слоя оно
+пришло** — флаг, переменная окружения, файл конфигурации или значение по умолчанию.
+Секреты маскируются.
+
+```bash
+handbook config --check    # exit code 2 if anything is invalid or missing
+```
+
+<Callout type="warn" title="Сделайте это перед длинным запуском">
+  Опечатка в переменной окружения раньше означала «молча отработали на значении по умолчанию». `--check`
+  превращает её в ошибку с именем переменной в сообщении — обнаружить это сейчас куда дешевле, чем через сорок
+  минут генерации.
+</Callout>
+
+## Дальше
+
+<Cards>
+  <Card title="Быстрый старт — офлайн-демо" href="/docs/getting-started/quickstart" />
+  <Card title="Ваше первое настоящее руководство" href="/docs/getting-started/first-handbook" />
+</Cards>

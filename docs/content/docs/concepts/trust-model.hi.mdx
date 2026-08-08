@@ -1,0 +1,143 @@
+---
+title: 'आप किस पर भरोसा कर सकते हैं'
+description: 'Handbook के कौन से हिस्से parsed facts हैं, कौन से model का output, आपकी मशीन से क्या बाहर जाता है, और यह tool क्या करने से मना कर देता है।'
+---
+
+## संक्षेप में
+
+| दावा                                    | स्रोत                          | ग़लत हो सकता है?                                     |
+| --------------------------------------- | ------------------------------ | ---------------------------------------------------- |
+| यह file इस path पर मौजूद है             | parser                         | **नहीं**                                             |
+| यह function lines 88–104 पर है          | parser                         | **नहीं**                                             |
+| यह signature `send(self, url, data)` है | parser                         | **नहीं**                                             |
+| यह function उस function को call करता है | parser                         | full tier में **नहीं**; generic tier में best-effort |
+| ये calls resolve नहीं हो सकीं           | parser                         | **नहीं** — वे listed हैं, guessed नहीं               |
+| यह file इस stage की है                  | LLM, यांत्रिक रूप से validated | Judgment के नाते, हाँ। Structure के नाते, नहीं       |
+| इस file का purpose "…" है               | LLM                            | **हाँ** — यह prose है                                |
+| यह subsystem "…" की तरह काम करता है     | LLM                            | **हाँ** — यह prose है                                |
+| यह state इन stages के आर-पार बहता है    | LLM, असली stage ids के ऊपर     | **हाँ**, हालाँकि stage ids असली हैं                  |
+
+**पूरा design जिस नियम पर चलता है:** agent उस table के ऊपरी आधे हिस्से पर route करता है
+और act करने से पहले असली source पढ़ता है। SKILL package अपनी पहली ही line में यही कहता
+है, और उसका routing protocol इस पर ख़त्म होता है — _"बदलाव प्रस्तावित करने या करने से
+पहले हर cited path पर असली source को `read_file` करें।"_
+
+## आपकी मशीन से क्या बाहर जाता है
+
+**Phase 1 — कुछ भी नहीं।** Static analysis पूरी तरह local है। कोई network call नहीं
+होती।
+
+**Phases 2 और 3** source files की सामग्री उस endpoint को भेजते हैं जिसे **आपने**
+configure किया है। वह आपकी अपनी मशीन पर चलता model भी हो सकता है (vLLM, Ollama,
+LiteLLM)। Handbook में कोई telemetry नहीं, कोई analytics नहीं, और OpenAI के अलावा कोई
+default endpoint नहीं — जिसकी key भी आपको ही देनी होती है।
+
+**`--max-chars-per-file <n>`** तय करता है कि किसी एक file का अधिकतम कितना हिस्सा कभी भेजा
+जाएगा।
+
+**Rendering, packaging और validation** network को कभी नहीं छूते। न ही `apply` या
+`rollback`।
+
+**Planner** आपका source locally पढ़ता है और जो पढ़ा उसके अंश endpoint को भेजता है —
+बिल्कुल generation की तरह।
+
+## जान-बूझकर किससे मना किया जाता है
+
+Refusals ही इस tool का भार उठाने वाला हिस्सा हैं। प्राथमिकता के क्रम में:
+
+### Patcher
+
+- ऐसा anchor जो **शून्य** बार match हो → refuse। Code आगे बढ़ चुका है।
+- ऐसा anchor जो **दो या ज़्यादा** बार match हो → refuse। वह ambiguous है।
+- **कभी नहीं** "पहला match ले लो"। patch का ग़लत function में जा गिरना ऐसे ही होता है।
+- एक विफलता **पूरे** application को abort कर देती है, एक भी byte लिखे जाने से पहले।
+- ऐसा path जो source root से बाहर निकलता है — file के अभी मौजूद न होने पर symlinked
+  parent directory के रास्ते भी — refuse होता है।
+- Rollback हर उस file के लिए मना कर देता है जो patch के _बाद_ बदली हो, जब तक आप
+  `--force` न दें।
+
+### Planner
+
+- कोई write tool है ही नहीं। Disabled नहीं — **implement ही नहीं किया गया**।
+- ऐसी reply जो `## Tool result` sections गढ़ती है, सिरे से reject होती है — उसके अंत में
+  आया plan समेत, क्योंकि वह plan कल्पना से निकला था।
+- हार मान चुका run `plan.md` में माफ़ीनामा लिखने की बजाय non-zero exit करता है।
+- Catastrophic regexes (`(a+)+`, `(.*)*`) run को hang कर पाने से पहले ही refuse हो जाते
+  हैं।
+
+### Pipeline
+
+- जिस call को analyzer resolve नहीं कर पाता वह `dropped-calls.json` में जाती है। वह कभी
+  guess नहीं की जाती।
+- जिस file का card generation fail हुआ उसे **ख़ाली** description मिलता है, कभी गढ़ा हुआ
+  नहीं, और वह `_coverage.json` में listed होती है।
+- Doctor loop का प्रस्तावित ऐसा structural बदलाव जो किसी non-existent stage का नाम लेता
+  है, या files को orphan कर देता, skeleton को छूने से पहले reject हो जाता है।
+- जिस critic की reply parse नहीं होती वह `REJECT` गिना जाता है।
+
+### Configuration
+
+- Secret (`llmApiKey` / `OPENAI_API_KEY`) **कभी** command-line flag नहीं होता, और config
+  file में दिखे तो **reject** होता है — क्योंकि config files commit हो जाती हैं।
+- दिया गया पर invalid value कभी किसी default पर नहीं गिरता। Typo एक error है।
+- ख़ाली value unset पढ़ी जाती है, इसलिए `HANDBOOK_TITLE=` कभी बिना title की handbook
+  नहीं बना सकता।
+
+## Drift पकड़ना
+
+SKILL package का `coverage.json` **हर file का एक content hash** रखता है, जो packaging के
+समय capture होता है।
+
+```bash
+handbook validate --skill skills/myrepo --source ~/code/myrepo
+```
+
+live source को दोबारा hash करता है और हर उस file की report देता है जिसकी सामग्री तब से
+बदल चुकी है। इसी तरह agent किसी stale दावे पर act करने से पहले जान लेता है कि _"यह page
+code से पीछे हो सकता है"_ — और इसीलिए `handbook skill` को `--work` और `--source` देना
+फ़ायदे का सौदा है।
+
+## Corrections channel
+
+जब handbook का कोई दावा असली source से टकराता है, तो consume करने वाला agent skill root
+पर रखी `corrections.jsonl` में JSON की एक line जोड़ देता है:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py"
+}
+```
+
+फिर `handbook resync --corrections <file>` **ठीक उन्हीं files** को refresh करता है जिनके
+नाम उसमें हैं — भले ही उनके bytes कभी न बदले हों, क्योंकि जिस दावे का source खंडन करता
+है, वही उस file को दोबारा describe करने की काफ़ी वजह है।
+
+यह file skill root पर रहती है, कभी `references/` के नीचे नहीं, क्योंकि planners उस tree
+को read-only mount करते हैं। Rebuild pending corrections को clean के आर-पार सुरक्षित
+रखता है।
+
+## Studio का security posture
+
+Studio एक **local tool** है और इससे अलग कुछ होने का दिखावा नहीं करता।
+
+- Default में `127.0.0.1` पर bind होता है।
+- CSRF guard `Host` **request header** जाँचता है, socket नहीं — इसलिए सिर्फ़ loopback
+  host names पास होते हैं।
+- `POST` के लिए `application/json` अनिवार्य है, जो classic cross-origin form attack को
+  block करता है।
+- Source और handbook files की serving registered roots तक sandboxed है।
+
+Container में published port तक पहुँच के लिए उसे `0.0.0.0` bind करना ही पड़ता है, पर
+इससे यह दायरा नहीं बढ़ता कि उससे कौन बात कर सकता है: LAN IP या container hostname का नाम
+लेने वाली request को फिर भी `403` मिलता है। Remote access एक जान-बूझकर unimplemented,
+अलग feature है — उसके लिए explicit allowlist चाहिए होगी।
+
+## Handbook किसे जानने का दावा नहीं करता
+
+Call graph आपको यह नहीं बता सकता कि कोई फ़ैसला _क्यों_ लिया गया, product किस लिए है, या
+आपकी team की conventions क्या हैं। Handbook इनका अनुमान नहीं लगाता और लगाने का दिखावा भी
+नहीं करता। वह structure और behaviour का दस्तावेज़ बनाता है; intent लिखना अब भी आपका काम
+है।

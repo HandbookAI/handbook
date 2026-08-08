@@ -1,0 +1,137 @@
+---
+title: 'Handbook क्या है?'
+description: 'Handbook आपकी repository को एक असली parser से parse करता है, उसे एक navigable map में बदलता है, और वह map आपके coding agent को location index के रूप में सौंपता है — फिर code के बदलते रहने पर उसे current बनाए रखता है।'
+icon: House
+---
+
+## समस्या, साफ़ शब्दों में
+
+आपके पास एक repository है। वह इतनी बड़ी है कि न आपके दिमाग़ में समाती है, न किसी context
+window में।
+
+किसी coding agent से कहिए _"failed uploads को तीन बार retry करो"_ — और वह पूरे भरोसे के साथ
+उस एक upload function को patch कर देगा जो उसे मिल गया, और छोड़ देगा: retry-policy वाला
+constant, batch worker में मौजूद mirrored implementation, attempts गिनने वाला metric, और
+पुराने behaviour को assert करने वाला test।
+
+यह reasoning की विफलता नहीं है। यह **routing** की विफलता है। Agent ने कोई map देखा ही नहीं।
+
+<Callout title="एक वाक्य में पूरी बात">
+  Handbook आपका code एक असली parser से पढ़ता है, उसका एक map बनाता है, वह map agent को **location index** के
+  रूप में सौंपता है — summary के रूप में नहीं — और code के बदलते रहने पर map को current रखता है।
+</Callout>
+
+## आगे कुछ भी पढ़ने से पहले इसे चलाकर देखिए
+
+अगर यह चलता ही नहीं, तो नीचे लिखी किसी बात के कोई मायने नहीं। इसमें लगभग तीस सेकंड लगते हैं,
+शून्य tokens खर्च होते हैं, और किसी API key की ज़रूरत नहीं पड़ती:
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install && pnpm build
+pnpm demo
+```
+
+`pnpm demo` एक bundled sample project पर, bundled mock LLM server के सहारे, पूरी toolchain
+चलाता है। ख़त्म होने पर आपकी disk पर एक rendered handbook, एक HTML site, एक agent locator
+index और एक validated SKILL package मौजूद होगा।
+
+<Cards>
+  <Card title="ठीक से install करें" href="/docs/getting-started/installation" />
+  <Card title="Quick start पर चलें" href="/docs/getting-started/quickstart" />
+  <Card title="अपनी repo पर चलाएँ" href="/docs/getting-started/first-handbook" />
+  <Card title="हर command देखें" href="/docs/reference/cli" />
+</Cards>
+
+## जिन तीन विचारों पर यह टिका है
+
+### 1. Facts parser से आते हैं, model से नहीं
+
+Handbook हर source file को [tree-sitter](https://tree-sitter.github.io/) से parse करता है
+और एक typed call graph बनाता है: functions, methods, `self`/attributes/parameters/imports
+के ज़रिये resolve हुए call edges, आपके code से बाहर जाने वाली calls, और वे calls जो resolve
+नहीं हो सकीं — उन्हें अपनी अलग file में quarantine किया जाता है, उनके बारे में कभी अंदाज़ा नहीं
+लगाया जाता।
+
+**यह layer कभी किसी LLM को नहीं छूती।** दो बार चलाइए, दोनों बार वही graph मिलेगा।
+
+### 2. Prose facts के ऊपर की परत है, और labelled है
+
+Human-readable हिस्सा एक LLM लिखता है: कोई file किसलिए है, कोई subsystem आपस में कैसे जुड़ा
+है, कौन-सा state किन stages के आर-पार बहता है। यह हमेशा graph से बँधा रहता है, और जहाँ यह
+विफल होता है, वहाँ भी structure ship होता है — खाली description के साथ।
+
+**गढ़े हुए वाक्य से छूटा हुआ वाक्य बेहतर है।**
+
+### 3. Map routing के लिए बना है, पढ़ने के लिए नहीं
+
+Output आपके code की summary नहीं है। यह एक ऐसा index है जो इस सवाल का जवाब देता है — _"इस
+बदलाव को किन files, functions और state को छूना पड़ेगा?"_ — जिनमें बिखरे हुए, ग़ैर-ज़ाहिर हिस्से
+भी शामिल हैं। इसके बाद planner उसी index से route करता है, मिले हुए हर address पर असली source
+पढ़ता है, और इतना byte-exact edit plan निकालता है कि उसे यांत्रिक ढंग से apply किया जा सके।
+
+## एक run से आपको क्या मिलता है
+
+<img
+  src="/diagrams/outputs.svg"
+  alt="आउटपुट: markdown handbook, HTML site, single page, agent locator index, llms.txt, SKILL package"
+  className="rounded-xl border"
+/>
+
+| Output                                                                                | किसके लिए |
+| ------------------------------------------------------------------------------------- | --------- |
+| Markdown handbook — overview, stage index, हर stage का एक page, state-register table  | इंसान     |
+| Multi-page HTML site — sticky TOC, breadcrumbs, theme toggle, `file://` पर भी चलती है | इंसान     |
+| एक self-contained HTML page, जिसे आप email कर सकते हैं                                | इंसान     |
+| Agent locator index — duty, entry concepts, state, exemplars, co-change hints         | agents    |
+| `llms.txt` + `llms-full.txt`                                                          | agents    |
+| हर file के content hash वाला SKILL package, ताकि drift detect किया जा सके             | agents    |
+
+## यह किसके लिए है
+
+| आप हैं…                                                              | आपको मिलता है…                                                                          |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| ऐसे engineer जिन्हें अभी-अभी 200k-line की service विरासत में मिली है | Stage-दर-stage ऐसा walkthrough जो सचमुच पढ़ा जा सके, साथ में share करने लायक़ HTML site |
+| बड़ी repo पर coding agent चलाने वाले                                 | ऐसा SKILL package जो agent का "चीज़ें कहाँ हैं" का अंदाज़ा लगाना बंद कर देता है         |
+| लोगों को onboard कराने वाले team lead                                | ऐसा documentation जो सड़ने के बजाय regenerate होता है                                   |
+| Polyglot monorepo के maintainer                                      | 18 भाषाओं पर एक ही pass, हर भाषा के लिए disclosed analysis fidelity के साथ              |
+
+## इसकी क़ीमत क्या है
+
+- **Node.js ≥ 20.11 और pnpm।** पूरा install बस इतना है। कोई native compilation नहीं, कोई
+  Python नहीं, कोई `node-gyp` नहीं — parsers WebAssembly हैं।
+- **LLM phases के लिए एक OpenAI-compatible endpoint।** Hosted OpenAI, Azure, vLLM,
+  Ollama, LiteLLM, कोई internal proxy — जो भी `/v1/chat/completions` बोलता हो। यह आपकी
+  अपनी मशीन पर चलता हुआ model भी हो सकता है।
+- **`handbook analyze` के लिए बिल्कुल कुछ नहीं** — और सबसे पहले आपको यही command चलानी चाहिए।
+
+<Callout type="info" title="क्या मेरा code इमारत से बाहर जाता है?">
+  Phase 1 पूरी तरह local है। Phase 2 और 3 file contents उसी endpoint को भेजते हैं जिसे *आपने* configure किया
+  है — जो localhost भी हो सकता है। और कुछ बाहर नहीं जाता, और `--max-chars-per-file` तय करता है कि किसी एक file
+  का अधिकतम कितना हिस्सा कभी भेजा जाएगा। देखें [trust model](/docs/concepts/trust-model)।
+</Callout>
+
+## आगे कहाँ जाएँ
+
+<Cards>
+  <Card
+    title="यह क्यों मौजूद है"
+    description="Routing की समस्या, और codebase की summary बना देना उसे क्यों हल नहीं करता।"
+    href="/docs/concepts/why"
+  />
+  <Card
+    title="Generation कैसे काम करता है"
+    description="पाँच phases, हरेक की लागत, और किसी एक के विफल होने पर क्या degrade होता है।"
+    href="/docs/concepts/pipeline"
+  />
+  <Card
+    title="Configuration"
+    description="Flags, env vars, .env cascades और handbook.config.yaml — एक ही registry।"
+    href="/docs/reference/configuration"
+  />
+  <Card
+    title="Troubleshooting"
+    description="वे चीज़ें जो वाक़ई गड़बड़ होती हैं, और उनके बारे में क्या करना है।"
+    href="/docs/guides/troubleshooting"
+  />
+</Cards>

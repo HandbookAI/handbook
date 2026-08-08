@@ -1,0 +1,157 @@
+---
+title: 'インストール'
+description: '必要なのは Node 20.11 と pnpm、それだけです。ネイティブコンパイルも Python も node-gyp も不要 — パーサーは WebAssembly です。'
+---
+
+## 要件
+
+|                        |                                                  |
+| ---------------------- | ------------------------------------------------ |
+| **Node.js**            | ≥ 20.11                                          |
+| **pnpm**               | ≥ 9                                              |
+| **LLM エンドポイント** | Phase 2 と 3 でのみ必要。OpenAI 互換なら何でも。 |
+
+これで本当に全部です。**ネイティブコンパイルの工程はありません** — 言語パーサーは
+WebAssembly として同梱されるため、`node-gyp` も、コンパイラのツールチェーンも、
+Python も不要です。
+
+<Callout type="info">
+  Node のバージョンは `node --version` で確認してください。`nvm` を使っているなら、リポジトリに `.nvmrc` が
+  同梱されているので、`nvm use` で正しいバージョンが選ばれます。
+</Callout>
+
+## 方法 1 — クローンから（評価中はこれを推奨）
+
+```bash
+git clone <this repo>
+cd handbook
+pnpm install
+pnpm build
+```
+
+続いて、CLI を呼びやすくしておきます:
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+handbook --help
+```
+
+エイリアスを使わず、pnpm ショートカットで済ませることもできます。ショートカットは先に
+インクリメンタルビルド（ウォームアップ後は約 0.4 秒）を行い、フラグをそのまま転送します:
+
+```bash
+pnpm analyze --source ~/code/myrepo --work work/myrepo
+pnpm handbook --help
+```
+
+<Callout title="ショートカットが先にビルドする理由">
+  すべての `pnpm <command>` は、CLI の前に `tsc -b` を実行します。これは、自分のコードをデバッグするのと、
+  古くなった `dist/` をデバッグするのとの分かれ目です — 後者は初めて起きたときに 1 時間を奪っていきます。
+</Callout>
+
+## 方法 2 — グローバル CLI として
+
+```bash
+npm i -g @handbook/cli
+handbook --help
+```
+
+## 方法 3 — Docker で、ローカルに Node を一切入れずに
+
+```bash
+docker build -t handbook:local .
+
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked into the image,
+# so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Studio、環境ごとの設定、`localhost` 限定の注意点については
+[Docker ガイド](/docs/guides/docker)を参照してください。
+
+## 方法 4 — ライブラリとして
+
+すべての機能は、単体で使える公開パッケージです。アナライザー、レンダラー、スキル
+パッケージャー、パッチャーは LLM に一切触れないため、スタンドアロンで動作します:
+
+```bash
+pnpm add @handbook/analyzer   # static call graphs, 18 languages
+pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+```
+
+[パッケージ索引](/docs/reference/packages)を参照してください。
+
+## LLM エンドポイントの設定
+
+Phase 1 — 静的解析 — に**キーは一切不要**です。それ以外はすべて必要です。
+
+```bash
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
+export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
+```
+
+<Callout title="ローカルおよびキー不要のエンドポイント">
+  認証を行わないエンドポイント — vLLM、Ollama の OpenAI 互換シム、ローカルの LiteLLM — には
+  `OPENAI_API_KEY=EMPTY` を使ってください。クライアントはそこに*何か*を必要とします。`EMPTY` は
+  「意図的に無し」を伝える取り決めであり、誤って実在のプロバイダーに向けてしまったときも、紛らわしい 401
+  ではなく明確なエラーになります。
+</Callout>
+
+### シェルの export よりもファイルを
+
+CLI は、実行したディレクトリの `./.env` を自動で読み込みます。シェル変数が常に勝つため、
+`.env` はオーバーライドではなくデフォルトです。
+
+```bash title=".env"
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+`.env.example` をコピーしてください — 設定レジストリから生成されているため、実在する
+すべての変数がデフォルト値付きで列挙されており、すべての行が最初からコメントアウト
+されているので、コピーしても安全です。
+
+複数の環境、コマンドごとのオーバーライド、`handbook.config.yaml` については
+[設定](/docs/reference/configuration)を参照してください。
+
+## インストールの確認
+
+2 つのコマンドを、この順番で。
+
+**1. ツールチェーンはそもそも動くか？**
+
+```bash
+pnpm demo
+```
+
+同梱のサンプルプロジェクトと同梱のモック LLM に対して、フルパイプラインをオフラインで
+実行します。これが通れば、インストールに問題はありません。
+
+**2. エンドポイントに到達でき、正しく設定されているか？**
+
+```bash
+handbook config --command generate
+```
+
+すべての設定について、解決済みの値と、**どのレイヤーから来たか** — フラグ、環境変数、
+設定ファイル、デフォルト — を表示します。シークレットはマスクされます。
+
+```bash
+handbook config --check    # exit code 2 if anything is invalid or missing
+```
+
+<Callout type="warn" title="長い実行の前に必ずこれを">
+  かつて、環境変数のタイポは「黙ってデフォルトで実行される」ことを意味していました。`--check` はそれを、
+  メッセージに変数名を明記した失敗に変えます — 生成を始めて 40 分後に気づくより、いま気づくほうが
+  はるかに安上がりです。
+</Callout>
+
+## 次へ
+
+<Cards>
+  <Card title="クイックスタート — オフラインのデモ" href="/docs/getting-started/quickstart" />
+  <Card title="初めての本格的なハンドブック" href="/docs/getting-started/first-handbook" />
+</Cards>

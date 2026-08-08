@@ -1,0 +1,96 @@
+---
+title: 工作目录
+description: 流水线产出的每一个工件、它存放在哪里、由什么校验，以及删除哪些是安全的。
+---
+
+工作目录（`--work`）是流水线所有产出的存放地。你在为其生成文档的每个仓库各占一个。
+
+```text
+<work>/
+  phase1/
+    graph.json          the call graph — everything downstream reads this
+    functions.csv       every function, flat, for grepping or a spreadsheet
+    graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
+    dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+  phase2/
+    cards/<rel>.json    one card per source file, mirroring the source tree
+    cards/_coverage.json  how many files got prose, and which did not
+    cards/_rejected/    replies that produced no usable card (capped at 20)
+    skeleton.yaml       the stage spine
+    assignment.json     file → stage
+    organization.yaml   intra-stage groups + reading order
+    strategy.json       which strategy produced the above
+  phase3/
+    narration.json      stage and system prose
+    registers.json      cross-stage state registers
+    cache/              content-hash caches for prose and registers
+  handbook/             the rendered output, once you run `render`
+  run-manifest.json     model, phases, timings and token usage of the last good run
+```
+
+## 三个值得依赖的性质
+
+### 一切在读取时都经过模式校验
+
+每个工件都带有一个 `version` 字段，并在加载时用 zod 校验。损坏或被手工编辑过的工件会**响亮地失败并报出自己的名字**：
+
+```text
+handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
+```
+
+它绝不会传播进后续的 phase。
+
+有两个刻意保留的例外，都是出于韧性而非松懈：
+
+- **卡片** —— 单个无法解析的卡片文件会被*跳过*，而不是致命错误。否则，卡片目录里只要有一个外来的或半同步的 JSON，就会搞垮断点续跑、Phase 2b/2c/3 以及每一次模型加载。
+- **`graph.json` 中的 `languages` 元数据** —— 可选，因为这里没有工件迁移机制，而在分析保真度声明存在之前写出的每一份调用图都必须继续通过校验。
+
+### 每次写入都是原子的
+
+先写入临时文件，再重命名。写到一半时崩溃，绝不会留下半截工件让下一次运行噎住。
+
+### 一个工作目录同时只允许一次运行
+
+`generate` 与 `resync` 获取同一把可重入的目录锁。作用于同一批工件的并发 CLI 运行和 Studio 作业会交错写入；因此第二个会被拒绝，并给出清晰的提示。
+
+## 哪些操作是安全的
+
+| 操作                           | 安全？ | 说明                                                 |
+| ------------------------------ | :----: | ---------------------------------------------------- |
+| 删除整个工作目录               |   ✅   | 它之外没有任何东西被改过。可以从零重新生成。         |
+| 把它提交进 git                 |   ✅   | 全是文本。用来审查一次重新生成改了什么很方便。       |
+| 删除 `phase3/cache/`           |   ✅   | 代价是下次运行要完整地重新叙述一遍。                 |
+| 删除 `phase2/cards/_rejected/` |   ✅   | 仅用于诊断。新一轮卡片生成开始时会自动清空。         |
+| 手工编辑 `skeleton.yaml`       |   ✅   | 它在读取时会被校验，而 `--skeleton` 正是为此而存在。 |
+| 手工编辑 `graph.json`          |   ⚠️   | 它是生成出来的。请改为重新运行 `analyze`。           |
+| 删除 `phase2/strategy.json`    |   ⚠️   | 下次运行会回退到 `file`，可能与现有工件不匹配。      |
+| 公开分享它                     |   ⚠️   | 卡片会引用并描述你的源码。请像对待源码一样对待它。   |
+
+## 手工翻阅
+
+调用图是其中最有意思的一个：
+
+```bash
+# how big is this codebase, really
+jq '.metadata | {files: (.scannedFiles|length), nInternalFunctions, nEdges}' phase1/graph.json
+
+# the busiest functions — where a change is most likely to fan out
+jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
+       | sort_by(-.value.nCallers) | .[:15]
+       | .[] | "\(.value.nCallers)\t\(.value.qualname)\t\(.value.file)"' phase1/graph.json
+
+# what could not be resolved, by category
+jq '.metadata.byCategory' phase1/dropped-calls.json
+
+# which files never got prose
+jq '.missing' phase2/cards/_coverage.json
+```
+
+`functions.csv` 存在的理由相同——有时最快的工具就是电子表格。
+
+## 还有哪些地方会被写入
+
+Handbook 只会在工作目录之外的两个地方写入，且都由你运行的命令显式选择：
+
+- **`<source>/.handbook-patches/`** —— 由 `apply` 创建，存放备份及其清单。其中会自动写入一个 `.gitignore`，让备份永远不会进入 git。
+- **`$HOME/.handbook-studio/`** —— Studio 的仓库注册表及其自动创建的工作目录。可用 `--state-dir` 挪动位置。

@@ -1,0 +1,169 @@
+---
+title: 'Ausgaben rendern'
+description: 'Markdown, eine HTML-Site, eine einzelne in sich geschlossene Seite, der Agent-Locator-Index und llms.txt — alles deterministisch, alles kostenlos wiederholbar.'
+---
+
+```bash
+handbook render --work <workdir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+**Kein LLM. Kein Netzwerk. Deterministisch.** Gleiches Modell hinein, byte-identische
+Dateien heraus — deshalb gehört dieser Schritt in die CI, bei jedem Commit.
+
+## Die fünf Ausgaben
+
+<Tabs items={['Markdown', 'HTML site', 'Single page', 'Agent index', 'llms.txt']}>
+
+<Tab value="Markdown">
+
+Wird immer geschrieben.
+
+```text
+<out>/
+  overview.md      system prose + a mermaid stage map + "see also" links
+  index.md         every stage, nested by depth, a paragraph each
+  <stage-id>.md    one page per content-bearing stage
+  register.md      the cross-stage state table (only when registers exist)
+```
+
+Eine Etappenseite enthält die Etappenzusammenfassung, Links zu Unteretappen und dann ihre
+Dateien — gruppiert und geordnet, wie Phase 2c es entschieden hat, jede gerendert als
+**Dateikarte**: Zweck, Rolle, Lebenszyklus, Aufruf-Fakten und bei tiefen Karten Notizen
+pro Funktion.
+
+Zwei Verhaltensweisen, die man kennen sollte:
+
+- **Veraltete Seiten werden aufgeräumt.** Etappen-IDs ändern sich zwischen Generierungen;
+  jeder Render entfernt zuerst die Seiten des vorherigen Renders, sodass eine umbenannte
+  Etappe keine Geisterseite hinterlässt, die der Skill-Packager einsammeln könnte.
+- **Der Register-Abschnitt pro Etappe ist idempotent** — er wird unter einem Marker
+  angehängt, und nur, wenn der Marker fehlt. Erneutes Rendern stapelt nie Duplikate.
+
+</Tab>
+
+<Tab value="HTML site">
+
+`--html` → `<out>/html/`
+
+Eine mehrseitige Site mit gemeinsamer Hülle: ein fixiertes Inhaltsverzeichnis in der
+Seitenleiste, das die aktuelle Seite hervorhebt, Breadcrumbs, ein Theme-Umschalter, der
+Ihre Wahl speichert, und Alles-aufklappen/-zuklappen für Funktionsdetails.
+
+**Sämtliches CSS und JS ist inline; jeder Link ist relativ.** Die Site funktioniert direkt
+über `file://` — kein Server, kein CDN, keine von irgendwoher geladenen Schriften.
+`open <out>/html/overview.html`.
+
+</Tab>
+
+<Tab value="Single page">
+
+`--html-single` → `<out>/handbook.html`
+
+Das gesamte Handbook in **einer Datei**, mit nummerierten Abschnitten und jeder Etappe als
+eingeklapptem `<details>`.
+
+Das ist die Variante zum Mailen, zum Anhängen an ein Ticket oder zum Ablegen auf einem
+gemeinsamen Laufwerk. Sie hat keinerlei Abhängigkeiten.
+
+</Tab>
+
+<Tab value="Agent index">
+
+`--agent-site` → `<out>/agent/`
+
+```text
+how_to_use.md      the agent-side search protocol
+index.md           every stage, as locator blocks
+disambiguation.md  terms that legitimately point at several stages
+<stage-id>.md      one locator page per stage
+```
+
+Jede Etappe erhält einen Block mit festem Schema: **duty**, **entry concepts**, **state**,
+**exemplar**, **core files** und **strong co-change**.
+
+Gemessen über siebzehn echte Repositories füllen sich die ersten fünf Felder auf den
+meisten Seiten; **strong co-change ist absichtlich das spärlichste** — es greift nur dort,
+wo eine Testdatei _neben_ ihrer Quelle liegt (`engine.go` + `engine_test.go`), und die
+meisten Projekte legen Tests stattdessen in einem separaten Baum ab. Ein fehlendes Feld
+ist dort das Gating bei der Arbeit, keine Lücke.
+
+Die Invariante: **ein Feld wird genau dann ausgegeben, wenn sein strukturelles Signal
+existiert.** Keine Platzhalter, kein "N/A". Ein leeres Feld bedeutet _"der Graph hat hier
+kein Signal"_ — echte Information — und nicht _"das Modell wusste es nicht"_, also
+Rauschen, auf dem ein Agent weiter aufbauen würde.
+
+Übergeben Sie dieses Verzeichnis an `handbook skill --agent-dir`, um es im SKILL-Paket
+mitzuliefern.
+
+</Tab>
+
+<Tab value="llms.txt">
+
+`--llms-txt` → `<out>/llms.txt` und `<out>/llms-full.txt`
+
+Folgt der [llms.txt-Konvention](https://llmstxt.org/):
+
+- **`llms.txt`** — ein H1-Titel, ein Zusammenfassungs-Blockquote von einem Satz, dann ein
+  Abschnitt `## Handbook`, der jede Seite mit einer kurzen Beschreibung verlinkt.
+- **`llms-full.txt`** — das gesamte Handbook, in Lesereihenfolge zu einem einzigen reinen
+  Markdown-Dokument abgeflacht.
+
+Liefern Sie `llms.txt` im Wurzelverzeichnis des Ortes aus, an dem Sie das Handbook
+veröffentlichen.
+
+</Tab>
+
+</Tabs>
+
+## Links auf Ihren Quellcode
+
+```bash
+handbook render --work $WORK --source-base-url https://github.com/me/repo/blob/main
+```
+
+Jeder Dateipfad im Handbook wird zu einem Link auf die echte Datei. Richten Sie die URL
+statt auf `main` auf ein Tag oder einen Commit-SHA, wenn das Handbook auf genau den Code
+verweisen soll, aus dem es generiert wurde.
+
+**Ohne dieses Flag enthält die Ausgabe überhaupt keine externen URLs** — der richtige
+Standard für eine private Codebasis.
+
+## Titel und Sprachen
+
+```bash
+handbook render --work $WORK --title "Payments Service — Engineering Handbook"
+```
+
+Die Sprache des Erzähltexts wird zur Generierungszeit festgelegt (`--narrate-lang`) und in
+`phase3/narration.json` gespeichert. Der Renderer liest sie von dort — jedes Label, jede
+Überschrift und jeder Tabellenkopf wird passend lokalisiert. **Die Struktur ist in beiden
+Sprachen identisch**, sodass Tooling, das die Ausgabe liest, nicht wissen muss, welche
+Sprache vorliegt.
+
+## Erneutes Rendern als Gewohnheit
+
+Rendern ist kostenlos und deterministisch — verdrahten Sie es also mit der CI:
+
+```yaml title=".github/workflows/handbook.yml"
+- run: handbook render --work work/api --title "API Handbook" --html --agent-site --llms-txt
+- run: handbook skill --handbook work/api/handbook --out skills/api --name api \
+    --work work/api --source . --agent-dir work/api/handbook/agent
+- run: handbook validate --skill skills/api --source .
+```
+
+Siehe [CI-Integration](/docs/guides/ci).
+
+## Die HTML-Site veröffentlichen
+
+Die Ausgabe ist ein statisches Verzeichnis mit relativen Links und ohne externe Assets,
+daher funktioniert jeder statische Host:
+
+```bash
+# GitHub Pages
+cp -R work/api/handbook/html/* docs-site/ && git add docs-site
+
+# Netlify / Vercel / S3 / nginx
+npx serve work/api/handbook/html
+```
+
+Liefern Sie `llms.txt` im Site-Root aus, damit Agenten sie finden.

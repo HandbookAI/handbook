@@ -1,0 +1,157 @@
+---
+title: 'Instalação'
+description: 'Node 20.11 e pnpm são a lista inteira. Sem compilação nativa, sem Python, sem node-gyp — os parsers são WebAssembly.'
+---
+
+## Requisitos
+
+|                     |                                                                 |
+| ------------------- | --------------------------------------------------------------- |
+| **Node.js**         | ≥ 20.11                                                         |
+| **pnpm**            | ≥ 9                                                             |
+| **Um endpoint LLM** | Apenas para as Phases 2 e 3. Qualquer um compatível com OpenAI. |
+
+Essa é genuinamente a lista inteira. Não há **nenhum passo de compilação nativa** — os
+parsers de linguagem são distribuídos como WebAssembly, então nada de `node-gyp`, nada de
+toolchain de compilador, nada de Python.
+
+<Callout type="info">
+  Verifique sua versão do Node com `node --version`. Se você usa `nvm`, o repositório inclui um `.nvmrc`,
+  então `nvm use` escolhe a versão certa.
+</Callout>
+
+## Opção 1 — a partir de um clone (recomendado enquanto você avalia)
+
+```bash
+git clone <this repo>
+cd handbook
+pnpm install
+pnpm build
+```
+
+Depois, torne a CLI conveniente de chamar:
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+handbook --help
+```
+
+Ou dispense o alias por completo e use os atalhos do pnpm, que fazem antes um build
+incremental (cerca de 0,4 s depois de aquecido) e repassam as flags diretamente:
+
+```bash
+pnpm analyze --source ~/code/myrepo --work work/myrepo
+pnpm handbook --help
+```
+
+<Callout title="Por que os atalhos fazem build primeiro">
+  Todo `pnpm <command>` roda `tsc -b` antes da CLI. É a diferença entre depurar o seu código e
+  depurar um `dist/` desatualizado — o que custa uma hora na primeira vez que acontece.
+</Callout>
+
+## Opção 2 — como CLI global
+
+```bash
+npm i -g @handbook/cli
+handbook --help
+```
+
+## Opção 3 — Docker, sem nenhum Node local
+
+```bash
+docker build -t handbook:local .
+
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked into the image,
+# so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Veja o [guia de Docker](/docs/guides/docker) para o Studio, os ambientes e a ressalva de
+funcionar apenas em `localhost`.
+
+## Opção 4 — como bibliotecas
+
+Cada capacidade é um pacote publicado que você pode usar por conta própria. O analisador,
+o renderizador, o empacotador de skill e o patcher nunca tocam um LLM, então funcionam de
+forma autônoma:
+
+```bash
+pnpm add @handbook/analyzer   # static call graphs, 18 languages
+pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+```
+
+Veja o [índice de pacotes](/docs/reference/packages).
+
+## Configurando o endpoint de LLM
+
+A Phase 1 — análise estática — **nunca precisa de chave**. Todo o resto precisa.
+
+```bash
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
+export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
+```
+
+<Callout title="Endpoints locais e sem chave">
+  Use `OPENAI_API_KEY=EMPTY` para endpoints que não autenticam — vLLM, o shim compatível com OpenAI do Ollama,
+  um LiteLLM local. O cliente precisa de *algo* ali; `EMPTY` é a forma combinada de dizer "deliberadamente
+  nenhuma", e produz um erro claro em vez de um 401 confuso se você apontar para um provedor real por engano.
+</Callout>
+
+### Prefira um arquivo a exports no shell
+
+A CLI carrega automaticamente o `./.env` do diretório em que você a executa. Variáveis de
+shell sempre vencem, então um `.env` é um padrão, não uma sobrescrita.
+
+```bash title=".env"
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+Copie o `.env.example` — ele é gerado a partir do registro de configurações, então lista
+todas as variáveis que realmente existem, com seus padrões, e cada linha começa
+comentada, de modo que copiá-lo é seguro.
+
+Para vários ambientes, sobrescritas por comando e `handbook.config.yaml`, veja
+[Configuração](/docs/reference/configuration).
+
+## Verifique a instalação
+
+Dois comandos, nesta ordem.
+
+**1. A cadeia de ferramentas roda?**
+
+```bash
+pnpm demo
+```
+
+Pipeline completo, offline, contra um projeto de exemplo embutido e um LLM simulado
+embutido. Se isso passar, sua instalação está em ordem.
+
+**2. Meu endpoint está acessível e configurado?**
+
+```bash
+handbook config --command generate
+```
+
+Isso imprime cada configuração, seu valor resolvido e **de qual camada ele veio** — flag,
+variável de ambiente, arquivo de configuração ou padrão. Segredos são mascarados.
+
+```bash
+handbook config --check    # exit code 2 if anything is invalid or missing
+```
+
+<Callout type="warn" title="Faça isso antes de uma execução longa">
+  Uma variável de ambiente com erro de digitação antes significava "rodou silenciosamente com o padrão". O
+  `--check` transforma isso em uma falha com a variável nomeada na mensagem — o que é muito mais barato de
+  descobrir agora do que quarenta minutos dentro de uma geração.
+</Callout>
+
+## A seguir
+
+<Cards>
+  <Card title="Guia rápido — a demo offline" href="/docs/getting-started/quickstart" />
+  <Card title="Seu primeiro handbook de verdade" href="/docs/getting-started/first-handbook" />
+</Cards>

@@ -390,9 +390,26 @@ requests 阶段页、express mock 总览——排版、编号、芯片、目录�
   hi/de 缺 4 页（+analysis-fidelity、pipeline）；ja 缺 8 页。SVG：pipeline 7 语种全有；
   architecture 有 zh/de/hi；config-cascade、outputs 全缺。
 
+### 翻译精确断点（2026-08-09 05:xx，wave 2 被 session limit 杀掉后的落盘状态）
+
+- **A 批（index+入门+概念，14 文件/语种）：7 语种全部完成 ✅**
+- **SVG 4 图 × 7 语种 = 28 张全部完成 ✅**（assets/*.{loc}.svg）
+- **B 批 guides（12 mdx + meta.json/语种）已落盘：**
+  - zh 有 6：agent-skill、configuration、generating、meta、planning-changes、rendering
+    → 还缺：applying-changes、keeping-current、ci、docker、studio、cost-and-performance、troubleshooting
+  - es 有 11 → 还缺：applying-changes、troubleshooting
+  - pt 有 7：agent-skill、applying-changes、configuration、generating、meta、planning-changes、rendering
+    → 还缺：keeping-current、ci、docker、studio、cost-and-performance、troubleshooting
+  - de 有 5：agent-skill、configuration、generating、meta、rendering
+    → 还缺：planning-changes、applying-changes、keeping-current、ci、docker、studio、cost-and-performance、troubleshooting
+  - ru 有 1（generating）→ 还缺 11 + meta
+  - ja 有 1（generating）→ 还缺 11 + meta
+  - hi 有 0 → 全缺（12 + meta）
+- **C 批 reference（8）+ contributing（3）+ 2 个 meta：7 语种全部未开始**
+
 ### 待办（按序）
-1. 补翻 A 批缺口 + SVG 缺口（wave 1，7 agents）
-2. B 批 guides 12 页 × 7（wave 2）；C 批 reference 8 + contributing 3 × 7（wave 3）
+1. 补 B 批缺口（按上面精确清单发 agent，每语种一个）
+2. C 批 × 7（reference 里 cli.mdx 21KB、configuration.md 23KB 最大，必要时拆两个 agent）
 3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
    README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
 4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +

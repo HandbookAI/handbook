@@ -1,0 +1,143 @@
+---
+title: '安装'
+description: 'Node 20.11 和 pnpm，清单就这么长。没有原生编译、没有 Python、没有 node-gyp——解析器都是 WebAssembly。'
+---
+
+## 环境要求
+
+|                   |                                                          |
+| ----------------- | -------------------------------------------------------- |
+| **Node.js**       | ≥ 20.11                                                  |
+| **pnpm**          | ≥ 9                                                      |
+| **一个 LLM 端点** | 只有 Phase 2 和 Phase 3 需要。任何 OpenAI 兼容端点均可。 |
+
+这真的就是全部要求了。**没有原生编译步骤**——语言解析器以 WebAssembly 形式发布，所以没有 `node-gyp`、没有编译器工具链、没有 Python。
+
+<Callout type="info">
+  用 `node --version` 检查你的 Node 版本。如果你在用 `nvm`，仓库自带 `.nvmrc`，`nvm use` 会自动选对版本。
+</Callout>
+
+## 方式一——从克隆的仓库安装（评估阶段推荐）
+
+```bash
+git clone <this repo>
+cd handbook
+pnpm install
+pnpm build
+```
+
+然后让 CLI 用起来更顺手：
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+handbook --help
+```
+
+也可以完全跳过 alias，直接用 pnpm 快捷命令。它们会先做一次增量构建（热身后大约 0.4 秒），并把标志原样透传：
+
+```bash
+pnpm analyze --source ~/code/myrepo --work work/myrepo
+pnpm handbook --help
+```
+
+<Callout title="快捷命令为什么要先构建">
+  每个 `pnpm <command>` 都会在运行 CLI 前先跑一次 `tsc -b`。这就是“调试你的代码”和“调试一份过期的 `dist/`”的区别——后者第一次发生时就会白白折腾你一个小时。
+</Callout>
+
+## 方式二——作为全局 CLI
+
+```bash
+npm i -g @handbook/cli
+handbook --help
+```
+
+## 方式三——Docker，本机完全不需要 Node
+
+```bash
+docker build -t handbook:local .
+
+# HANDBOOK_SOURCE=/src and HANDBOOK_WORK=/work are baked into the image,
+# so you only mount volumes — no --source/--work needed:
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+关于 Studio、多环境以及仅限 `localhost` 的注意事项，参见 [Docker 指南](/docs/guides/docker)。
+
+## 方式四——作为库使用
+
+每项能力都是一个可以单独使用的已发布包。分析器、渲染器、skill 打包器和补丁器从不接触 LLM，因此可以完全独立工作：
+
+```bash
+pnpm add @handbook/analyzer   # static call graphs, 18 languages
+pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+```
+
+参见[包索引](/docs/reference/packages)。
+
+## 配置 LLM 端点
+
+Phase 1——静态分析——**从不需要 key**。其余阶段都需要。
+
+```bash
+export OPENAI_API_KEY=sk-...                        # required for phases 2 and 3
+export OPENAI_MODEL=gpt-4o-mini                     # default: gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1    # or your own endpoint
+```
+
+<Callout title="本地与无鉴权端点">
+  对不做鉴权的端点——vLLM、Ollama 的 OpenAI 兼容层、本地的 LiteLLM——请使用
+  `OPENAI_API_KEY=EMPTY`。客户端那里总得填*点什么*；`EMPTY`
+  是约定俗成的“故意留空”写法，而且万一你不小心把它指向了真实的服务商，它会给出清晰的报错，而不是让你对着 401
+  摸不着头脑。
+</Callout>
+
+### 用文件代替 shell 导出
+
+CLI 会自动加载你运行它的目录下的 `./.env`。shell 变量永远优先，所以 `.env` 是默认值，不是覆盖项。
+
+```bash title=".env"
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+直接复制 `.env.example` 即可——它由设置注册表生成，列出了每一个真实存在的变量及其默认值，而且每一行都以注释开头，复制过去也不会出问题。
+
+关于多环境、按命令覆盖以及 `handbook.config.yaml`，参见[配置](/docs/reference/configuration)。
+
+## 验证安装
+
+两条命令，按顺序来。
+
+**1. 工具链到底能不能跑？**
+
+```bash
+pnpm demo
+```
+
+完整的流水线，离线运行，使用内置示例项目和内置 mock LLM。这一步通过，你的安装就没问题。
+
+**2. 我的端点可达且配置正确吗？**
+
+```bash
+handbook config --command generate
+```
+
+它会打印每一项设置、解析后的值，以及**该值来自哪一层**——标志、环境变量、配置文件还是默认值。密钥会被打码。
+
+```bash
+handbook config --check    # exit code 2 if anything is invalid or missing
+```
+
+<Callout type="warn" title="长时间运行之前先做这一步">
+  以前，环境变量拼错意味着“悄悄按默认值跑了”。`--check`
+  把它变成一次失败，并在报错信息里点名那个变量——现在发现，可比生成跑了四十分钟之后才发现便宜得多。
+</Callout>
+
+## 下一步
+
+<Cards>
+  <Card title="快速上手——离线演示" href="/docs/getting-started/quickstart" />
+  <Card title="你的第一本真实手册" href="/docs/getting-started/first-handbook" />
+</Cards>

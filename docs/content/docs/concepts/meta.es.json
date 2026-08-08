@@ -1,0 +1,5 @@
+{
+  "title": "Conceptos",
+  "icon": "Lightbulb",
+  "pages": ["why", "architecture", "pipeline", "work-directory", "analysis-fidelity", "trust-model"]
+}

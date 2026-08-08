@@ -1,0 +1,207 @@
+---
+title: 'Coste y rendimiento'
+description: 'Adónde van realmente los tokens, qué controles mueven la aguja y cómo averiguarlo antes de gastar nada.'
+---
+
+## Averígualo antes de gastar
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**Gratis.** El número `files` es el que determina el coste, porque la Phase 2a —la fase
+más cara— es aproximadamente lineal respecto a él.
+
+## Adónde van los tokens
+
+| Fase                          | Parte de una ejecución típica | Escala con                                                |
+| ----------------------------- | ----------------------------- | --------------------------------------------------------- |
+| **1** analyze                 | 0%                            | —                                                         |
+| **2a** fichas                 | **60–80%**                    | número de archivos × `--detail`                           |
+| **2b** esqueleto + asignación | 10–20%                        | número de archivos, y mucho más con `--synth-mode doctor` |
+| **2c** organización           | 5%                            | número de etapas                                          |
+| **3** narración + registros   | 5–15%                         | número de etapas, con mucha caché                         |
+
+**Si quieres gastar menos, la Phase 2a es el único lugar que importa.**
+
+## Los controles, ordenados por efecto
+
+### 1. `--detail brief` en lugar de `deep`
+
+Varias veces más barato. Brief es propósito, rol y ciclo de vida; deep añade un recorrido
+de 120–300 palabras más una nota por función, y baja el tamaño de lote de 8 archivos a 1.
+
+```bash
+handbook generate --source $REPO --work $WORK                       # brief
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume  # upgrade later
+```
+
+### 2. Acota `--source` a lo que te importa
+
+El grafo se construye a partir de lo que escaneas. Documentar un servicio dentro de un
+monorepo cuesta una fracción de documentarlos todos:
+
+```bash
+handbook generate --source $REPO/services/payments --work work/payments
+```
+
+### 3. `--max-chars-per-file`
+
+```bash
+handbook generate --source $REPO --work $WORK --max-chars-per-file 20000
+```
+
+Limita cuánto de cada archivo individual se llega a enviar. Los archivos generados, los
+bundles vendorizados y los switch enormes son puro coste sin información dentro. `0` (el
+valor por defecto) significa sin límite.
+
+### 4. `--llm-cache` mientras iteras
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+Guarda en caché las respuestas crudas indexadas por modelo, prompt y opciones. Volver a
+ejecutar tras un ajuste sale casi gratis. Añade `--refresh` cuando quieras ignorar la
+caché deliberadamente.
+
+### 5. `--synth-mode oneshot` salvo que necesites `doctor`
+
+Doctor ejecuta varias rondas de propuesta más tres críticos cada una. Es la opción
+correcta cuando one-shot produjo etapas desequilibradas o sin sentido, y puro sobrecoste
+cuando no fue así.
+
+### 6. Un modelo más barato donde no importa
+
+Las fases difieren en cuánto premian un modelo potente:
+
+| Fase            | Sensibilidad al modelo                                        |
+| --------------- | ------------------------------------------------------------- |
+| 2a fichas       | Media: un modelo pequeño escribe propósitos aceptables        |
+| 2b esqueleto    | **Alta**: es el juicio sobre el que descansa todo el handbook |
+| 2c organización | Baja: de todos modos degrada a un orden determinista          |
+| 3 narración     | Media-alta: es la prosa que la gente lee                      |
+| `plan`          | **La más alta**: las anclas byte-exactas no perdonan          |
+
+Como las fases se ejecutan por separado, puedes mezclar:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --model cheap-model
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --model strong-model
+```
+
+## Velocidad
+
+Coste y velocidad son problemas distintos. Estos cambian el tiempo de reloj, no el gasto:
+
+| Flag                     | Por defecto      | Súbelo cuando                                          |
+| ------------------------ | ---------------- | ------------------------------------------------------ |
+| `--llm-concurrency <n>`  | `16`             | Tu endpoint lo tolera. **El tope global**              |
+| `--read-workers <n>`     | `12`             | La Phase 2a es el cuello de botella                    |
+| `--assign-workers <n>`   | `12`             | La Phase 2b es el cuello de botella                    |
+| `--organize-workers <n>` | `8`              | La Phase 2c es el cuello de botella                    |
+| `--narrate-workers <n>`  | `8`              | La Phase 3 es el cuello de botella                     |
+| `--read-batch-size <n>`  | 1 deep / 8 brief | Menos peticiones y más grandes. Vigila el truncamiento |
+
+`--llm-concurrency` limita todo lo demás. Subir `--read-workers` a 40 con
+`--llm-concurrency 16` te da 16.
+
+<Callout type="warn" title="Los límites de tasa parecen fallos">
+  Si ves reintentos en el log, **baja** `--llm-concurrency` antes de subir `--llm-retries`. Reintentar con más
+  fuerza contra un límite de tasa gasta los mismos tokens dos veces.
+</Callout>
+
+## Leer lo que costó una ejecución
+
+```json title="<work>/run-manifest.json"
+{
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```bash
+jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
+```
+
+Describe la **última ejecución exitosa**. Una ejecución fallida deja intacto el manifiesto
+anterior; una abortada no escribe ninguno.
+
+## Una escalera sensata
+
+<Steps>
+
+<Step>
+### Gratis
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+Comprueba el número de archivos y `dropped-calls.json`. Arregla el escaneo antes de gastar
+nada.
+
+</Step>
+
+<Step>
+### Barato: ¿la forma es correcta?
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+Lee `phase2/skeleton.yaml`. Si las etapas están mal, arregla eso antes de profundizar la
+prosa.
+
+</Step>
+
+<Step>
+### Arregla la estructura, si hace falta
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+<Step>
+### Profundiza, una vez que la estructura sea correcta
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+</Step>
+
+<Step>
+### No vuelvas a pagar por ello
+
+```bash
+handbook render ...      # free, deterministic, run in CI
+handbook skill ...       # free
+handbook validate ...    # free
+handbook resync ...      # proportional to the change
+```
+
+</Step>
+
+</Steps>
+
+## Repositorios muy grandes
+
+| Archivos    | Sugerencia                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| < 200       | `--detail deep --synth-mode doctor` directamente                                                 |
+| 200–1.000   | Brief primero, luego profundiza selectivamente                                                   |
+| 1.000–5.000 | Brief, `--max-chars-per-file 20000`, y considera un handbook por subsistema                      |
+| > 5.000     | **Un handbook por subsistema.** Un solo handbook sobre 5.000 archivos no es ni barato ni legible |
+
+Varios handbooks están bien: solo son varios directorios de trabajo, y varios paquetes
+SKILL, cada uno con una descripción más afilada de la que tendría uno gigante.

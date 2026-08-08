@@ -1,0 +1,237 @@
+---
+title: 'Die fünf Phasen'
+description: 'Was jede Generierungsphase erzeugt, was sie kostet, worauf sie bei einem Fehlschlag degradiert und wie sich eine einzelne Phase erneut ausführen lässt.'
+---
+
+`handbook generate` führt fünf Phasen aus. Nur die erste ist kostenlos; die übrigen
+sprechen mit Ihrem LLM-Endpunkt.
+
+| Phase  | Erzeugt                                            | LLM? | Einzeln wiederholbar? |
+| :----: | -------------------------------------------------- | :--: | :-------------------: |
+| **1**  | den Aufrufgraphen                                  |  ❌  |          ✅           |
+| **2a** | eine Karte pro Quelldatei                          |  ✅  |          ✅           |
+| **2b** | Etappenskelett + Dateizuordnung                    |  ✅  |          ✅           |
+| **2c** | Gruppierung und Reihenfolge innerhalb der Etappen  |  ✅  |          ✅           |
+| **3**  | Erzähltext + etappenübergreifende Zustandsregister |  ✅  |          ✅           |
+
+```bash
+--phase all        # everything (default)
+--phase 1          # just the call graph
+--phase 2          # 2a + 2b + 2c
+--phase 2a         # one phase
+--phase 2c,3       # a comma list
+```
+
+---
+
+## Phase 1 — der Aufrufgraph
+
+**Kein LLM. Deterministisch. Kostenlos.**
+
+Sprachadapter parsen jede Datei mit tree-sitter und erzeugen eine sprachunabhängige
+Zwischendarstellung. Der Graph-Builder partitioniert die Kanten anschließend in behaltene
+und verworfene, annotiert Ein- und Ausgangsgrad und synthetisiert Knoten für
+Konstruktoren, die referenziert, aber nie explizit definiert werden.
+
+Außerdem vermerkt die Phase einen **Inhalts-Hash pro gescannter Datei**. Dieser Hash
+erlaubt es `resync` später, eine In-Place-Änderung am Funktionsrumpf zu erkennen, die
+Zeilennummern und Signaturen unberührt lässt — genau der Fall, den ein rein struktureller
+Diff komplett übersieht.
+
+**Ausgabe:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+
+<Callout title="Das hier zuerst, immer">
+  `handbook analyze` ist genau diese Phase. Sie kostet nichts und ist der einzige Weg herauszufinden, dass
+  `node_modules` mitgescannt wird oder eine ganze Sprache fehlt, *bevor* Tokens ausgegeben werden.
+</Callout>
+
+---
+
+## Phase 2a — Dateikarten
+
+**LLM. Meist die teuerste Phase.**
+
+Jede Quelldatei bekommt eine Karte:
+
+- **purpose** — ein oder zwei allgemeinverständliche Sätze
+- **role** — aus einem geschlossenen Vokabular (`entrypoint`, `domain_logic`, `io_transport`, …)
+- **lifecycle** — `startup`, `main loop`, `cross-cutting`, `none`, …
+- und mit `--detail deep`: ein Rundgang von 120–300 Wörtern, plus Zweck, Datenfluss und
+  Beziehungen pro Funktion, zusammengeführt mit den Graphfakten
+
+### Wie gebatcht wird
+
+`--read-batch-size` Dateien pro Anfrage, `--read-workers` Batches gleichzeitig unterwegs.
+Der Deep-Modus verwendet standardmäßig **eine Datei pro Batch**, denn eine Deep-Karte ist
+viel Ausgabe, und mehrere in eine Antwort zu packen ist genau der Weg, auf dem Antworten
+abgeschnitten werden.
+
+### Dreistufige Degradierung
+
+Lässt sich eine Batch-Antwort nicht parsen:
+
+1. den Batch **in einzelne Dateien aufgeteilt** erneut versuchen;
+2. bei einer übergroßen Einzeldatei **pro Funktions-Chunk** erneut versuchen;
+3. schlägt auch das fehl, eine **ehrlich leere Karte** schreiben — nur Struktur, keine Prosa.
+
+**Eine Datei verschwindet nie aus dem Handbook, weil ihre Prosa gescheitert ist.** Jeder
+Ausfall wird in `phase2/cards/_coverage.json` aufgeführt, und die Antworten, die nichts
+Brauchbares ergaben, bleiben (begrenzt auf 20, nach Hash benannt) unter
+`phase2/cards/_rejected/` erhalten — damit sich _nachlesen_ lässt, was schiefging, statt
+raten zu müssen.
+
+### Fortsetzen
+
+Karten werden geschrieben, sobald sie fertig sind. `Ctrl-C` ist sicher, und `--resume`
+überspringt Dateien, die in der angeforderten Tiefe bereits eine vollständige Karte haben.
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+---
+
+## Phase 2b — Skelett und Zuordnung
+
+**LLM. Die Phase, die entscheidet, was das Handbook _ist_.**
+
+Zwei Modi.
+
+### `--synth-mode oneshot` (Standard)
+
+Aus dem Nav-Pack (Verzeichnis-Rollups + Einstiegspunkte) ein Etappenskelett
+synthetisieren, dann jede Datei in Batches genau einer Etappe zuordnen.
+
+Günstig, und meist gut genug, um zu beurteilen, ob die Grundform stimmt.
+
+### `--synth-mode doctor`
+
+Eine Actor-Critic-Reparaturschleife. Pro Runde:
+
+1. der **Actor** schlägt höchstens drei strukturelle Änderungen vor — aufteilen,
+   zusammenführen, verschieben, umbetiteln, umhängen — gegen Ground-Truth-Statistiken aus
+   dem realen Graphen;
+2. drei **Critics** prüfen parallel, jeder mit Blick auf ein anderes Versagen:
+
+   | Critic    | Achtet auf                                                                                         |
+   | --------- | -------------------------------------------------------------------------------------------------- |
+   | engineer  | Passt das zu dem, was der Code tatsächlich tut? Existieren die referenzierten Elemente wirklich?   |
+   | architect | Unklare Grenzen, aufgeblähte Etappen, ausgehungerte Etappen, falsch platzierte Querschnittsbelange |
+   | reader    | Ist das Ergebnis _lesbarer_? Kohärente Seiten, intuitive Titel, ein nachvollziehbarer Erzählfluss  |
+
+3. überlebende Änderungen werden **mechanisch am Graphen re-validiert** — eine Änderung,
+   die eine nicht existierende Etappe nennt oder Dateien verwaisen ließe, wird verworfen,
+   bevor sie das Skelett berührt;
+4. betroffene Dateien werden neu zugeordnet.
+
+Die Schleife stoppt, wenn nichts mehr unzugeordnet ist und keine Änderung die Prüfung
+übersteht, oder bei `--max-doctor-rounds` (Standard 6), oder nach zwei Runden ohne
+Fortschritt.
+
+<Callout type="info">
+  Ein Critic, dessen Antwort sich nicht parsen lässt, zählt als `REJECT`. Ein kaputter Prüfer darf niemals
+  eine Änderung durchwinken.
+</Callout>
+
+### Ein eigenes Skelett mitbringen
+
+```bash
+handbook generate --source $REPO --work $WORK --skeleton my-skeleton.yaml
+```
+
+Die Dateien werden _Ihren_ Etappen zugeordnet. Mit `--strategy member` werden stattdessen
+einzelne Funktionen klassifiziert, und die Artefakte auf Dateiebene werden daraus
+abgeleitet.
+
+**Ausgabe:** `phase2/skeleton.yaml`, `phase2/assignment.json`, `phase2/strategy.json`.
+
+---
+
+## Phase 2c — Organisation
+
+**LLM, aber günstig. Degradiert zu einer deterministischen Reihenfolge.**
+
+Innerhalb jeder Etappe werden die Dateien nach der Topologie des Aufrufgraphen geordnet
+und in 2–8 betitelte Untergruppen mit je einer einzeiligen Zusammenfassung gruppiert.
+
+**Jeder Fehlschlag degradiert zu einer deterministischen flachen Reihenfolge. Dateien
+werden nie verworfen.** Um diese Invariante herum ist die ganze Phase geschrieben: Eine
+unleserliche Gruppierung ist ein kosmetisches Problem, eine fehlende Datei ein
+Korrektheitsproblem.
+
+Mit `--strategy member` ist diese Phase ein **No-op** — die Organisation wurde bereits in
+2b deterministisch abgeleitet, ein bloßer `--phase 2c`-Lauf braucht also gar kein LLM.
+
+**Ausgabe:** `phase2/organization.yaml`.
+
+---
+
+## Phase 3 — Erzähltext und Register
+
+**LLM. Stark gecacht.**
+
+### Erzähltext, von unten nach oben
+
+Erst die Blatt-Etappen, dann die Eltern — die Zusammenfassung einer Eltern-Etappe
+entsteht also im Wissen darum, was ihre Kinder sagen — und zuletzt der Systemüberblick,
+geschrieben im Wissen um alles.
+
+Jeder Prosa-Aufruf wird unter `phase3/cache/` gecacht, geschlüsselt nach Prompt-Version,
+Sprache und dem vollständigen Prompt-Hash. Wer Phase 3 nach einer Änderung an einer
+Etappe erneut ausführt, lässt **eine Etappe** neu erzählen.
+
+### Zustandsregister
+
+Ein „Register" ist ein Stück Zustand, das über Etappen hinweg fließt — ein
+Connection-Pool, ein Feature-Flag, ein Retry-Budget, ein Auth-Token. Die Extraktion
+läuft als **Lückenpass nach dem Prinzip „so lange, bis nichts mehr kommt"**: Sie fragt
+weiter, bis eine Runde nichts Neues mehr findet.
+
+Das ist das nützlichste Artefakt für Änderungen mit großem Fan-out, denn _„welche
+Etappen berühren diesen Zustand"_ ist exakt die Frage, die eine verstreute Änderung
+stellt.
+
+**Ausgabe:** `phase3/narration.json`, `phase3/registers.json`.
+
+---
+
+## Die zwei Strategien
+
+|               | `--strategy file` (Standard) | `--strategy member`                                       |
+| ------------- | ---------------------------- | --------------------------------------------------------- |
+| Skelett       | vom LLM synthetisiert        | `skeleton.yaml` **schreiben Sie selbst**                  |
+| Blatteinheit  | eine Quelldatei              | eine Funktion oder Methode                                |
+| Phase 2b      | Dateien Etappen zuordnen     | jedes Member klassifizieren, dann Dateiartefakte ableiten |
+| Phase 2c      | LLM-Gruppierung              | bereits erledigt — deterministisch                        |
+| Am besten für | ein noch unbekanntes Repo    | ein Repo, dessen Form bereits bekannt ist                 |
+| Kosten        | niedriger                    | höher — jedes Member wird klassifiziert                   |
+
+Die gewählte Strategie wird in `phase2/strategy.json` festgehalten. Ein Teil-Lauf mit
+einer anderen `--strategy` und ohne `--phase 2b` wird **verweigert** — dass der Standard
+der file-Strategie eine member-abgeleitete Organisation stillschweigend überschreibt, ist
+genau die Art von Korruption, die hinterher schwer zu bemerken ist.
+
+## Was ein Lauf über sich selbst festhält
+
+```json title="<work>/run-manifest.json"
+{
+  "version": 1,
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 },
+  "stats": { "phasesRun": ["1", "2a", "2b", "2c", "3"], "nCards": 412, "nStages": 9, "nRegisters": 6 }
+}
+```
+
+Es beschreibt den **letzten erfolgreichen** Lauf. Ein fehlgeschlagener Lauf lässt das
+vorherige Manifest unangetastet, und ein abgebrochener Lauf schreibt gar keines.
+
+## Weiter
+
+<Cards>
+  <Card title="Das Arbeitsverzeichnis" href="/docs/concepts/work-directory" />
+  <Card title="Generieren in der Praxis" href="/docs/guides/generating" />
+  <Card title="Kosten und Performance" href="/docs/guides/cost-and-performance" />
+</Cards>

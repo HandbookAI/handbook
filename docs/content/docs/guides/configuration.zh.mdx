@@ -1,0 +1,179 @@
+---
+title: '配置 Handbook'
+description: '五个优先级层次、一张注册表，外加一条能确切告诉你哪一层生效了的命令。'
+---
+
+<div className="not-prose">
+  <img
+    src="/diagrams/config-cascade.svg"
+    alt="配置级联：命令行标志、环境变量、.env 文件、handbook.config.yaml、默认值"
+    className="rounded-xl border"
+  />
+</div>
+
+每个设置都只声明**一次**，写在同一张注册表里。CLI 标志、环境变量名、配置文件的
+键、`.env.example`、`handbook.config.example.yaml` 以及
+[配置参考](/docs/reference/configuration)全部由它*生成*——所以它们不可能彼此漂
+移，谁要是想试，漂移测试就会让构建失败。
+
+## 优先级，从高到低
+
+1. **CLI 标志** —— `--read-workers 4`
+2. **Shell 环境变量** —— `HANDBOOK_GENERATE_READ_WORKERS`，然后
+   `HANDBOOK_READ_WORKERS`，再然后是 `OPENAI_MODEL` 这样的供应商别名
+3. **`.env` 级联** —— 在任何代码读取环境之前先合并进环境
+4. **`handbook.config.yaml`** —— 从当前工作目录向上查找，到 git 根目录为止
+5. **注册表默认值**
+
+第一个给出值的层胜出；对*这一项设置*而言，它之下的所有层都被忽略。
+
+## `handbook.config.yaml`
+
+把它放在仓库根目录并提交。查找从工作目录向上走，**在仓库边界处停下**——所以一个
+没有配置文件的项目不会继承其父目录的配置。
+
+```yaml title="handbook.config.yaml"
+# Paths are resolved relative to THIS FILE, so the config stays portable.
+source: ./src
+work: ./.handbook
+
+llm:
+  model: gpt-4o-mini
+  baseUrl: https://api.openai.com/v1
+  maxTokens: 16000
+  concurrency: 16
+
+generate:
+  detail: deep
+  synthMode: doctor
+  narrateLang: en
+  readWorkers: 12
+
+render:
+  title: Payments API Handbook
+  html: true
+  agentSite: true
+  llmsTxt: true
+  sourceBaseUrl: https://github.com/me/api/blob/main
+
+studio:
+  port: 4860
+```
+
+两件要知道的事：
+
+- **嵌套和扁平写法是一回事。** `generate: { detail: deep }` 与扁平的
+  `generateDetail: deep` 含义完全相同，因为文件在被读取之前会按 camelCase 拼接扁
+  平化。
+- **相对的 `path` 值相对于配置文件自身所在的目录解析**，而不是 cwd。正因如此，
+  提交进仓库的配置文件无论你在哪里运行命令都能正常工作。
+
+<Callout type="warn" title="机密在这里会被拒收">
+  `llmApiKey` / `OPENAI_API_KEY` 绝不能出现在配置文件里——配置文件是要提交的。加载器会直接拒绝
+  整个文件并说明原因。把它放进 `.env` 或 shell 环境变量。
+</Callout>
+
+起步时复制一份 `handbook.config.example.yaml`；它由注册表生成，所以列出了真实存
+在的每一个键。
+
+## 按命令限定作用域
+
+任何设置都可以限定到某一个子命令，在**全部三个**配置面上都行，变换规则完全相同：
+
+```bash
+export HANDBOOK_NARRATE_LANG=en            # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh   # …except generate
+```
+
+```yaml
+narrateLang: en
+generate:
+  narrateLang: zh
+```
+
+限定了作用域的写法总是赢过扁平写法。
+
+## 多环境
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+```
+
+`--env prod`（或 `HANDBOOK_ENV=prod`）做两件事：
+
+1. 依次加载 `.env.prod.local` → `.env.prod` → `.env.local` → `.env`，先写入者胜。
+2. 在向上查找途经的**每一个**目录里，都优先选 `handbook.config.prod.yaml` 而不是
+   普通文件——所以即使普通文件离得更近，带环境名的文件也会胜出。
+
+典型布局：
+
+```text
+.env                     # team baseline, committed
+.env.local               # your machine, gitignored
+.env.prod                # team prod settings, committed (no secrets)
+.env.prod.local          # your prod credentials, gitignored
+handbook.config.yaml     # defaults
+handbook.config.prod.yaml
+```
+
+`--env-file <path>` 完全绕过级联，只加载你指定的那一个文件。**在这里文件缺失是响
+亮的报错，而不是回退**——因为你点名要的就是那个文件。
+
+## 问一问实际解析出了什么
+
+```bash
+handbook config --command generate
+```
+
+```text
+environment   prod  (--env)
+env files     .env.prod, .env
+config file   /repo/handbook.config.prod.yaml
+
+SETTING            VALUE                     FROM
+source             /Users/me/code/api        flag --source
+llmModel           gpt-4o                    env HANDBOOK_LLM_MODEL
+llmApiKey          sk-••••••                 env OPENAI_API_KEY
+readWorkers        4                         handbook.config.prod.yaml (generate.readWorkers)
+detail             deep                      handbook.config.prod.yaml (generate.detail)
+narrateLang        en                        default
+```
+
+```bash
+handbook config --json                # machine-readable
+handbook config --check               # exit 2 on the first invalid or missing value
+```
+
+<Callout title="把 --check 放进 CI">
+  过去，变量名打错意味着“默默按默认值跑了”。`--check` 把它变成一次失败，并在消息里点名那个变
+  量——这比在生成运行了四十分钟之后才发现要便宜得多。
+</Callout>
+
+`config` 刻意使用不抛错的解析器：**它的职责就是展示配置——包括配置坏掉的时候。**
+缺失的 `--source` 会显示为一行清晰可见的 `— unset (required)`，而不是把你用来调
+试这个问题的唯一工具一并搞垮。
+
+## 解析器强制执行什么
+
+- **空值视为未设置。** `HANDBOOK_TITLE=` 不可能产出一本没有标题的手册。
+- **给了值但值无效时，绝不落回默认值。** 打错的数字是一个错误，而不是静默的 12。
+- **类型在边界处检查**，错误消息里点名来源：
+
+  ```text
+  env HANDBOOK_READ_WORKERS: readWorkers must be an integer >= 1, got "twelve"
+  handbook.config.yaml (generate.detail): detail must be one of brief | deep, got "verbose"
+  ```
+
+- **必填性在每一层之后检查**，报错会列出所有可以提供它的途径：
+
+  ```text
+  source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+  or add it to handbook.config.yaml
+  ```
+
+## 完整参考
+
+<Cards>
+  <Card title="每一个设置，由注册表生成" href="/docs/reference/configuration" />
+  <Card title="环境变量与 .env 级联" href="/docs/reference/environment" />
+</Cards>

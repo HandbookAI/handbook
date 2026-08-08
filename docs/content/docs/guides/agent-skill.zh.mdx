@@ -1,0 +1,177 @@
+---
+title: '打包给你的智能体'
+description: '把渲染好的手册变成带漂移检测的 SKILL 包，并接入编码智能体。'
+---
+
+```bash
+handbook skill --handbook <rendered-dir> --out <skill-dir> --name <slug> [options]
+handbook validate --skill <skill-dir> --source <repo>
+```
+
+两条命令都是确定性的。**不用 LLM。**
+
+## 构建
+
+```bash
+handbook skill \
+  --handbook work/api/handbook \
+  --out skills/api \
+  --name api \
+  --project "Payments API" \
+  --work work/api \
+  --source ~/code/api \
+  --agent-dir work/api/handbook/agent
+```
+
+| 标志                  | 为什么需要它                                                       |
+| --------------------- | ------------------------------------------------------------------ |
+| `--work` + `--source` | 生成 `coverage.json`，其中**每个文件都有内容哈希**——这就是漂移信号 |
+| `--agent-dir`         | 随包附带定位页面，并在路由协议中加入一步消歧                       |
+| `--project`           | 行文中使用的人类可读名称。默认取 `--name`                          |
+| `--lang zh`           | 中文**正文**。frontmatter 保持英文——见下文                         |
+
+## 你会得到什么
+
+```text
+skills/api/
+  SKILL.md                    the routing guide
+  corrections.jsonl           agent-written feedback (created by the agent, never the build)
+  references/
+    overview.md               the system's shape
+    index.md                  every subsystem → its files
+    registers.md              cross-stage state
+    stages/<id>.md            one page per stage
+    agent/how_to_use.md
+    agent/disambiguation.md
+    coverage.json             file → stage + sha256
+```
+
+这个包**自包含、可分享**，并且从不内嵌源代码。它交付的是地图，不是疆域本身。
+
+## SKILL.md 契约
+
+```yaml
+---
+name: api-handbook
+description: Navigate the Payments API codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing Payments API work that is unfamiliar,
+  spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated
+  to Payments API or isolated edits where the exact file is already known and no
+  cross-cutting impact is plausible.
+---
+```
+
+<Callout type="warn" title="即使加了 --lang zh，frontmatter 也保持英文">
+  智能体运行时靠匹配 description 文本来选择技能，而经过验证的 “Use when … / Do not use …” 契约正
+  是这个路由面的一部分。翻译它会在无声中破坏技能选择。正文会被翻译；路由面不会。
+</Callout>
+
+正文是一份带编号的协议：
+
+1. 读 `references/overview.md`，了解系统的整体形状。
+2. 经由 `references/index.md` 路由——阶段索引把每个子系统映射到它的文件。
+3. 只打开相关的 `references/stages/<id>.md` 页面。
+4. 查看 `references/registers.md` 了解横切状态——对扇出式修改极有价值。
+5. _（带 `--agent-dir` 时）_ 术语有歧义时先消歧。
+6. **在提出或做出任何修改之前，对每个被引用的路径 `read_file` 真实源码。**
+
+而它的第一行就说出了最要紧的事：
+
+> 这本手册是代码库的**位置索引**，不是代码说明。
+
+## 漂移检测
+
+```json title="references/coverage.json"
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+```
+
+会重新哈希现存源码，并对每一个内容有变动的文件发出警告。失败时**退出码为 `2`**，
+因此可以直接放进 CI：
+
+```yaml
+- run: handbook validate --skill skills/api --source .
+  continue-on-error: true # a warning, not a build break — then schedule a resync
+```
+
+## 校正循环
+
+当手册的某个说法与真实源码矛盾时，智能体向**技能包根目录**的 `corrections.jsonl`
+追加一行：
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py",
+  "notedAt": "2026-08-08T12:00:00Z"
+}
+```
+
+只有 `file` 是必填的。它放在根目录，绝不放在 `references/` 之下，因为规划器会把
+那棵树挂载为只读。
+
+```bash
+handbook resync --case cases/x --work work/api --corrections skills/api/corrections.jsonl
+```
+
+被点名的文件会加入刷新集合，**哪怕它们的字节从未变过**——源码驳斥了手册的说法，
+这本身就足以成为重新描述该文件的理由。被消费掉的校正文件随后带时间戳归档，因此同
+一条校正不会被应用两次。
+
+重新构建会在清空输出的同时保留尚未处理的校正。
+
+## 接入智能体
+
+### Claude Code
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/api .claude/skills/api-handbook
+```
+
+智能体会凭 frontmatter 里的 description 自动识别它。
+
+### 任何有文件系统的智能体
+
+把目录指给它，并让它先读 `SKILL.md`。里面的协议是自描述的，不依赖任何特定的运行
+时。
+
+### 规划器
+
+```bash
+handbook plan --source ~/code/api --handbook skills/api/references \
+  --request "Retry failed uploads three times" --out plan.md
+```
+
+`--handbook` 接收的是 `references/` 目录，它会以只读方式挂载在规划器沙箱内的
+`__handbook__/` 处。
+
+## 构建强制执行的拒绝
+
+- **`--out` 不得是手册目录本身，也不得是它的祖先目录。** 构建的第一步就是清空
+  `--out`；否则会先删掉正要打包的东西，然后不声不响地产出一个空技能包。
+- **定位页面要么成对出现，要么完全不出现。** `SKILL.md` 绝不能路由到一个不存在的
+  文件。
+- **寄存器页面永远存在**，哪怕这本手册一个寄存器都没有，因为稳定的 references 布
+  局是契约的一部分。
+
+## 保持新鲜
+
+```bash
+handbook resync --case cases/latest --work work/api    # roll the handbook forward
+handbook skill  --handbook work/api/handbook --out skills/api --name api \
+                --work work/api --source ~/code/api --agent-dir work/api/handbook/agent
+handbook validate --skill skills/api --source ~/code/api
+```
+
+resync 是增量的，而 `skill` + `validate` 是免费的。整套流程便宜到可以按计划定期
+跑。

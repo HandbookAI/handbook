@@ -1,0 +1,167 @@
+---
+title: 'O vocabulário'
+description: 'Etapa, ficha, registrador, diretório de trabalho, caso, skill, plano — cada palavra que este projeto usa em um sentido específico, definida uma única vez.'
+---
+
+O Handbook usa um punhado de palavras comuns em sentidos específicos. Acertar esses
+termos deixa todas as outras páginas mais curtas.
+
+## Os artefatos
+
+### Grafo de chamadas
+
+A saída da Phase 1. Cada função e método do seu código, mais cada aresta de chamada entre
+eles, tipada pela forma como foi resolvida. **Produzido por um parser, nunca por um
+modelo.**
+
+Vive em `<work>/phase1/graph.json`. Tudo que vem depois o lê, e nada reanalisa o
+código-fonte.
+
+### Ficha
+
+Uma por arquivo-fonte. Responde _para que serve este arquivo?_ em três campos —
+**purpose**, **role**, **lifecycle** — e, em `--detail deep`, traz também um passo a
+passo de 120–300 palavras e uma nota por função.
+
+A metade estrutural de uma ficha vem do grafo; a metade em prosa vem do LLM. Se a prosa
+falha, a ficha ainda existe, com uma descrição vazia. Vive em
+`<work>/phase2/cards/<path>.json`.
+
+### Role
+
+O `role` de uma ficha vem de um **vocabulário fechado**: `entrypoint`, `orchestration`,
+`domain_logic`, `io_transport`, `data_model`, `config`, `util`, `test`, `generated`,
+`other`. Qualquer outra coisa que um modelo invente colapsa para `other` — o conjunto não
+pode ser ampliado por uma resposta criativa.
+
+### Etapa
+
+Um capítulo do handbook. Uma etapa tem um id, um título, uma descrição, um pai opcional e
+uma flag `crosscut` para infraestrutura que não pertence a nenhum passo específico do
+ciclo de vida.
+
+As etapas são ordenadas pelo **ciclo de vida de execução**, não alfabeticamente nem por
+diretório — o handbook se lê na ordem em que o sistema realmente executa.
+
+### Esqueleto
+
+A lista ordenada de etapas: a espinha narrativa. Ou é sintetizado pelo LLM
+(`--strategy file`) ou é **escrito por você** (`--strategy member`). Vive em
+`<work>/phase2/skeleton.yaml`.
+
+### Atribuição
+
+A qual etapa cada arquivo pertence. Cada arquivo recebe exatamente uma etapa
+**primária**, e pode listar etapas extras que também toca. Vive em
+`<work>/phase2/assignment.json`.
+
+### Organização
+
+Dentro de uma etapa, os arquivos ordenados pela topologia do grafo de chamadas e
+agrupados em 2–8 subgrupos com título. Vive em `<work>/phase2/organization.yaml`.
+
+### Narração
+
+A prosa: um resumo por etapa, mais uma visão geral do sistema. Escrita de baixo para cima
+— filhos antes dos pais —, para que o resumo de uma etapa-pai seja escrito já sabendo o
+que seus filhos dizem. Vive em `<work>/phase3/narration.json`.
+
+### Registrador
+
+Um item de estado que flui **através** das etapas: um pool de conexões, uma feature flag,
+um orçamento de retries, um token de autenticação. Cada registrador tem um id, uma linha
+de semântica em linguagem simples e a lista de etapas que o tocam.
+
+Registradores são, de longe, o artefato mais útil para mudanças com fan-out, porque
+"quais etapas tocam este estado" é precisamente a pergunta que uma mudança dispersa faz.
+Vive em `<work>/phase3/registers.json`.
+
+## Os diretórios
+
+### Diretório de trabalho (`--work`)
+
+Onde vive todo artefato do pipeline. Um por repositório que você está documentando.
+
+```text
+<work>/
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
+  phase3/   narration.json · registers.json · cache/
+  handbook/ the rendered output, once you run `render`
+  run-manifest.json
+```
+
+É **seguro apagar e regenerar**, e seguro de commitar se você quiser o handbook sob
+controle de versão. Nada fora dele é modificado pela geração.
+
+### Diretório do handbook
+
+A saída _renderizada_ — markdown e, opcionalmente, HTML, o índice para agentes e
+`llms.txt`. O padrão é `<work>/handbook`.
+
+### Diretório da skill (`--out` em `skill`)
+
+A SKILL de agente empacotada: `SKILL.md` mais `references/`. Autocontida e
+compartilhável; nunca embute código-fonte.
+
+### Diretório de caso (`--case` em `resync`)
+
+O que você entrega ao `resync` para descrever uma mudança:
+
+```text
+<case>/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — sharpens scope
+  change.diff   unified diff vs the previous tree   optional — widens scope
+```
+
+## Os comandos, em uma linha cada
+
+| Comando    | Uma linha                                                                | LLM? |
+| ---------- | ------------------------------------------------------------------------ | :--: |
+| `analyze`  | Código-fonte → grafo de chamadas                                         |  ❌  |
+| `generate` | Grafo de chamadas → fichas, etapas, prosa, registradores                 |  ✅  |
+| `render`   | Diretório de trabalho → markdown / HTML / índice para agentes / llms.txt |  ❌  |
+| `skill`    | Handbook renderizado → pacote SKILL de agente                            |  ❌  |
+| `validate` | Verifica a estrutura e o frescor de uma SKILL                            |  ❌  |
+| `plan`     | Pedido de mudança + handbook → plano de edição exato ao byte             |  ✅  |
+| `apply`    | Plano de edição → edições reais, com backups                             |  ❌  |
+| `rollback` | Backup → árvore de código-fonte restaurada                               |  ❌  |
+| `resync`   | Código alterado → handbook atualizado, incrementalmente                  |  ✅  |
+| `studio`   | Tudo o que está acima, em um navegador                                   |  ✅  |
+| `config`   | O que está definido, e de onde veio                                      |  ❌  |
+
+## As fases
+
+| Phase | Produz                   | LLM? |
+| ----- | ------------------------ | :--: |
+| `1`   | o grafo de chamadas      |  ❌  |
+| `2a`  | uma ficha por arquivo    |  ✅  |
+| `2b`  | esqueleto + atribuição   |  ✅  |
+| `2c`  | organização              |  ✅  |
+| `3`   | narração + registradores |  ✅  |
+
+`--phase` aceita `all`, `1`, `2` (significando 2a+2b+2c), qualquer fase individual, ou
+uma lista separada por vírgulas como `2c,3`.
+
+## As duas estratégias
+
+|               | `file` (padrão)                           | `member`                                  |
+| ------------- | ----------------------------------------- | ----------------------------------------- |
+| Esqueleto     | sintetizado pelo LLM                      | **você escreve** o `skeleton.yaml`        |
+| Unidade-folha | um arquivo-fonte                          | uma função ou método                      |
+| Melhor para   | um repositório que você ainda não conhece | um repositório cuja forma você já conhece |
+| Custo         | menor                                     | maior — cada membro é classificado        |
+
+## Duas palavras fáceis de confundir
+
+**Nível de fidelidade** — quão boa é a _análise_ para uma linguagem. `full` (um adaptador
+escrito à mão) ou `generic` (um motor guiado por configuração). Declarado por adaptador,
+registrado por linguagem e divulgado na visão geral do handbook. Veja
+[Fidelidade da análise](/docs/concepts/analysis-fidelity).
+
+**Detalhe** — quão profunda é a _prosa_. `brief` (purpose, role, lifecycle) ou `deep`
+(mais um passo a passo e notas por função). Definido com `--detail`.
+
+Eles são independentes: uma linguagem de nível `generic` ainda pode ter fichas `deep`. A
+prosa fica mais profunda; os fatos de chamada não ficam mais precisos.

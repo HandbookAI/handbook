@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbook end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
+  <title>Handbook — die End-to-End-Pipeline</title>
+  <desc>Quellcode wird zu einem Aufrufgraphen analysiert, in ein Handbook generiert, nach Markdown und HTML gerendert, als Agenten-SKILL paketiert, zum Planen einer Änderung genutzt, byte-exakt angewendet und per resync in das Handbook zurückgespielt.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="55%" stop-color="#101733"/>
+      <stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <linearGradient id="cardG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2242"/>
+      <stop offset="100%" stop-color="#141B36"/>
+    </linearGradient>
+    <linearGradient id="srcG" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1E2A52"/>
+      <stop offset="100%" stop-color="#182140"/>
+    </linearGradient>
+    <linearGradient id="syncG" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2A1F45"/>
+      <stop offset="100%" stop-color="#1D1836"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6C7BB5"/>
+    </marker>
+    <marker id="arrowV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#A78BFA"/>
+    </marker>
+    <style>
+      .t   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .m   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .h1  { fill:#F2F5FF; font-size:25px; font-weight:700; letter-spacing:-0.3px; }
+      .sub { fill:#8C9AC4; font-size:14px; }
+      .cmd { fill:#F2F5FF; font-size:19px; font-weight:700; }
+      .num { fill:#0B1020; font-size:13px; font-weight:800; }
+      .body{ fill:#AEBBDF; font-size:13.5px; }
+      .out { fill:#7F8DB8; font-size:12.5px; }
+      .tagT{ fill:#0B1020; font-size:11px; font-weight:800; letter-spacing:0.4px; }
+      .lbl { fill:#8C9AC4; font-size:12px; letter-spacing:0.6px; font-weight:700; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="660" rx="18" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="1119" height="659" rx="18" fill="none" stroke="#232C4E"/>
+
+  <!-- ── header ─────────────────────────────────────────────────────────── -->
+  <text class="t h1" x="40" y="48">Vom Quellcode zum Handbook, mit dem Ihr Agent wirklich navigieren kann</text>
+  <text class="t sub" x="40" y="72">Türkis = deterministisch, kein LLM, kein Netzwerk  ·  Gelb = LLM-gestützt, gecacht &amp; fortsetzbar</text>
+
+  <!-- ── source band ────────────────────────────────────────────────────── -->
+  <rect x="40" y="94" width="1040" height="46" rx="12" fill="url(#srcG)" stroke="#2E3A66"/>
+  <circle cx="66" cy="117" r="6" fill="#60A5FA"/>
+  <text class="t body" x="84" y="122" fill="#CBD5F5">Ihr Repository — jede Größe, beliebiger Sprachmix · 18 Sprachen unterstützt · hochgeladen wird nur, was ein LLM lesen soll</text>
+
+  <!-- ── row 1 ──────────────────────────────────────────────────────────── -->
+  <!-- card 1: analyze -->
+  <rect x="40" y="172" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="40" y="172" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="68" cy="203" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="68" y="208" text-anchor="middle">1</text>
+  <text class="m cmd" x="90" y="209">analyze</text>
+  <rect x="272" y="192" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="307" y="206" text-anchor="middle">KEIN LLM</text>
+  <text class="t body" x="40" y="238"><tspan x="68">tree-sitter (WASM) parst jede Datei</tspan><tspan x="68" dy="18">in einen Aufrufgraphen: Funktionen,</tspan><tspan x="68" dy="18">aufgelöste Kanten, Grenzaufrufe.</tspan></text>
+  <text class="m out" x="68" y="303">→ phase1/graph.json</text>
+
+  <!-- card 2: generate -->
+  <rect x="400" y="172" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#3A3560"/>
+  <rect x="400" y="172" width="320" height="3" rx="1.5" fill="#FBBF24"/>
+  <circle cx="428" cy="203" r="13" fill="#FBBF24"/>
+  <text class="t num" x="428" y="208" text-anchor="middle">2</text>
+  <text class="m cmd" x="450" y="209">generate</text>
+  <rect x="646" y="192" width="52" height="20" rx="10" fill="#FBBF24"/>
+  <text class="t tagT" x="672" y="206" text-anchor="middle">LLM</text>
+  <text class="t body" x="400" y="238"><tspan x="428">2a Karten → 2b Skelett + Zuordnung</tspan><tspan x="428" dy="18">→ 2c Gruppierung → 3 Erzähltext und</tspan><tspan x="428" dy="18">etappenübergreifende Zustandsregister.</tspan></text>
+  <text class="m out" x="428" y="303">→ phase2/ · phase3/</text>
+
+  <!-- card 3: render -->
+  <rect x="760" y="172" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="760" y="172" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="788" cy="203" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="788" y="208" text-anchor="middle">3</text>
+  <text class="m cmd" x="810" y="209">render</text>
+  <rect x="992" y="192" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="1027" y="206" text-anchor="middle">KEIN LLM</text>
+  <text class="t body" x="760" y="238"><tspan x="788">Markdown-Seiten, eine mehrseitige</tspan><tspan x="788" dy="18">HTML-Site, eine eigenständige Seite,</tspan><tspan x="788" dy="18">Agenten-Locator-Index, llms.txt.</tspan></text>
+  <text class="m out" x="788" y="303">→ &lt;work&gt;/handbook/</text>
+
+  <!-- arrows row 1 -->
+  <line x1="366" y1="245" x2="394" y2="245" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="726" y1="245" x2="754" y2="245" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- wrap connector: render → skill -->
+  <path d="M 1080 318 L 1080 348 Q 1080 360 1068 360 L 52 360 Q 40 360 40 372 L 40 392" fill="none" stroke="#6C7BB5" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+
+  <!-- ── row 2 ──────────────────────────────────────────────────────────── -->
+  <!-- card 4: skill -->
+  <rect x="40" y="402" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="40" y="402" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="68" cy="433" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="68" y="438" text-anchor="middle">4</text>
+  <text class="m cmd" x="90" y="439">skill</text>
+  <rect x="272" y="422" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="307" y="436" text-anchor="middle">KEIN LLM</text>
+  <text class="t body" x="40" y="468"><tspan x="68">Verpackt das Handbook als Agenten-</tspan><tspan x="68" dy="18">SKILL mit Inhalts-Hashes, damit Drift</tspan><tspan x="68" dy="18">gegenüber dem Code erkennbar ist.</tspan></text>
+  <text class="m out" x="68" y="533">→ SKILL.md + references/</text>
+
+  <!-- card 5: plan -->
+  <rect x="400" y="402" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#3A3560"/>
+  <rect x="400" y="402" width="320" height="3" rx="1.5" fill="#FBBF24"/>
+  <circle cx="428" cy="433" r="13" fill="#FBBF24"/>
+  <text class="t num" x="428" y="438" text-anchor="middle">5</text>
+  <text class="m cmd" x="450" y="439">plan</text>
+  <rect x="646" y="422" width="52" height="20" rx="10" fill="#FBBF24"/>
+  <text class="t tagT" x="672" y="436" text-anchor="middle">LLM</text>
+  <text class="t body" x="400" y="468"><tspan x="428">Ein Nur-Lese-Agent navigiert mit dem</tspan><tspan x="428" dy="18">Handbook, liest den echten Quellcode</tspan><tspan x="428" dy="18">und erzeugt byte-exakte EDIT-Blöcke.</tspan></text>
+  <text class="m out" x="428" y="533">→ plan.md</text>
+
+  <!-- card 6: apply -->
+  <rect x="760" y="402" width="320" height="146" rx="14" fill="url(#cardG)" stroke="#2E3A66"/>
+  <rect x="760" y="402" width="320" height="3" rx="1.5" fill="#2DD4BF"/>
+  <circle cx="788" cy="433" r="13" fill="#2DD4BF"/>
+  <text class="t num" x="788" y="438" text-anchor="middle">6</text>
+  <text class="m cmd" x="810" y="439">apply</text>
+  <rect x="992" y="422" width="70" height="20" rx="10" fill="#2DD4BF"/>
+  <text class="t tagT" x="1027" y="436" text-anchor="middle">KEIN LLM</text>
+  <text class="t body" x="760" y="468"><tspan x="788">Alles-oder-nichts-Patching:</tspan><tspan x="788" dy="18">eindeutiger Ankertreffer, Staging,</tspan><tspan x="788" dy="18">Backups, verifiziertes Rollback.</tspan></text>
+  <text class="m out" x="788" y="533">→ bearbeiteter Baum + Backup</text>
+
+  <!-- arrows row 2 -->
+  <line x1="366" y1="475" x2="394" y2="475" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="726" y1="475" x2="754" y2="475" stroke="#6C7BB5" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── resync band ────────────────────────────────────────────────────── -->
+  <rect x="40" y="580" width="1040" height="52" rx="13" fill="url(#syncG)" stroke="#4A3B7A"/>
+  <circle cx="68" cy="606" r="13" fill="#A78BFA"/>
+  <text class="t num" x="68" y="611" text-anchor="middle">7</text>
+  <text class="m cmd" x="90" y="612" font-size="17">resync</text>
+  <text class="t body" x="172" y="611">Der Code hat sich verändert? Graph diffen, nur Geändertes neu generieren, Prosa fortschreiben — kein kompletter Neuaufbau.</text>
+
+  <!-- feedback arc: apply → resync → back up into generate/render -->
+  <path d="M 1040 548 L 1040 566 Q 1040 580 1026 580" fill="none" stroke="#A78BFA" stroke-width="2" marker-end="url(#arrowV)"/>
+  <path d="M 40 606 L 34 606 Q 22 606 22 594 L 22 257 Q 22 245 34 245 L 34 245" fill="none" stroke="#A78BFA" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowV)"/>
+  <rect x="882" y="592" width="146" height="28" rx="14" fill="#3B2E63" stroke="#5B4A94"/>
+  <text class="t lbl" x="955" y="611" text-anchor="middle" fill="#C4B5FD" font-size="11.5">IMMER AKTUELL</text>
+</svg>

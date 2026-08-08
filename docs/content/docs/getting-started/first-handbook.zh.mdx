@@ -1,0 +1,203 @@
+---
+title: '你的第一本真实手册'
+description: '从一个你从没读过的仓库，到一份可以直接应用的改动计划，一共八步——并把便宜的检查点放在正确的位置上。'
+---
+
+这是在一个真实仓库上的完整闭环。请按顺序执行；它有意把**免费**的检查放在昂贵的步骤前面。
+
+```bash
+alias handbook="node $(pwd)/packages/cli/dist/main.js"
+export REPO=~/code/myrepo
+export WORK=work/myrepo
+```
+
+---
+
+## 第 1 步——先看清，再动手
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**这一步免费，而且是你的冒烟测试。** 不用 LLM、不用 key、不花 token。
+
+<Callout type="warn" title="继续之前先读懂这些数字">
+  - **`files` 比你预期的低很多？** 某种语言被整个跳过了，或者你的源码根目录不对。用 `-v` 查看扫描日志。 -
+  **`files` 高得离谱？** 你正在分析 `node_modules`、`vendor`
+  或某个构建目录。常见目录会被自动跳过；如果没有跳过，就把 `--source` 指向真正的源码根目录，而不是仓库根目录。
+  - **`edgesDropped` 相对 `edgesKept` 大得吓人？** 对动态语言来说这很正常。看看
+  `phase1/dropped-calls.json`——每一个未解析的调用都在那里被分了类，而不是被藏起来。
+</Callout>
+
+上面这些问题**现在**就修。这里的每个问题拖到后面都会变得更贵。
+
+## 第 2 步——生成手册
+
+这是要花 token 的一步。中等规模的仓库，预期是分钟级。
+
+先从便宜的开始：
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+这相当于 `--detail brief` 加 `--synth-mode oneshot`：每个文件一张短卡片，外加单遍生成的骨架。这是判断手册的*形状*对不对的最快方式。
+
+看看 `$WORK/phase2/skeleton.yaml`。阶段列表像不像你的系统？像，就升级：
+
+```bash
+handbook generate --source $REPO --work $WORK \
+    --phase 2a --detail deep --resume
+```
+
+`--phase 2a --resume` 只加深**卡片**，并跳过已经有完整卡片的文件。你已经验证过的骨架原样保留。
+
+如果骨架本身就*不对*，那就改用 actor–critic 循环重跑 2b：
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+<Callout title="可恢复、可取消、有缓存">
+  卡片完成一张写一张。`Ctrl-C` 是安全的。`--resume` 从停下的地方继续，`--llm-cache`
+  让重跑几乎免费，`run-manifest.json` 记录着上一次成功运行花了多少 token。
+</Callout>
+
+## 第 3 步——渲染
+
+```bash
+handbook render --work $WORK --title "MyRepo Handbook" \
+    --html --html-single --agent-site --llms-txt
+```
+
+**不用 LLM。** 想跑多少次就跑多少次——放在 CI 里、每次提交都跑也没问题。
+
+加上 `--source-base-url https://github.com/me/myrepo/blob/main` 可以把手册里的每个文件路径变成指向真实文件的链接。不加的话，产出中完全不含任何外部 URL——这对私有代码库很重要。
+
+打开 `$WORK/handbook/html/overview.html` 读一读。评判这本手册好不好，就在这一刻。
+
+## 第 4 步——为你的代理打包
+
+```bash
+handbook skill --handbook $WORK/handbook --out skills/myrepo \
+    --name myrepo --project "MyRepo" \
+    --work $WORK --source $REPO \
+    --agent-dir $WORK/handbook/agent
+```
+
+`--work` 加 `--source` 一起会产出 `coverage.json`：每个文件一个内容哈希。**正是它让手册的漂移日后可以被检测出来**，而不是悄悄出错。
+
+`--agent-dir` 会带上定位页面，并在 SKILL 的路由协议中加入一个消歧步骤。
+
+## 第 5 步——校验
+
+```bash
+handbook validate --skill skills/myrepo --source $REPO
+```
+
+检查结构、frontmatter 契约、索引 ↔ 阶段页的一致性，并对你的源码重新做哈希，报告已经落后的页面。**失败时以退出码 `2` 结束**，所以该放进 CI 的就是这条命令。
+
+## 第 6 步——规划一个真实改动
+
+```bash
+handbook plan --source $REPO --handbook skills/myrepo/references \
+    --request "Retry failed uploads three times before giving up" \
+    --out plan.md
+```
+
+一个**只读**的代理循环：它只会列目录、读文件、grep——它根本没有写工具——用手册做路由，对照真实源码验证，然后写出 `plan.md`。
+
+读一读这份计划。真的去读。它以一个机器可读的声明块结尾：
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+<Callout type="info" title="放弃的规划器会以非零码退出">
+  如果它拿不出一份可用的计划——比如它不断虚构文件内容，或者轮次用完了——它会大声失败，而不是往 `plan.md`
+  里写一段道歉，让脚本再高高兴兴地把这段道歉喂给 `apply`。
+</Callout>
+
+## 第 7 步——应用它，并留好退路
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run   # verify only, never writes
+handbook apply --source $REPO --plan plan.md             # for real
+```
+
+Dry run 在精神上不是可选项。它会针对当前文件内容解析每一个锚点，并明确告诉你哪些编辑会落地。
+
+应用时会打印备份目录。**在用得上它之前，先把它复制到别处：**
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z
+```
+
+回滚会拒绝任何在打补丁*之后*又发生变化的文件，除非你传 `--force`——因为直接恢复会悄悄毁掉那些后续工作。四条安全规则详见[应用改动](/docs/guides/applying-changes)。
+
+## 第 8 步——让手册跟上代码
+
+代码动了。不要重新生成——用 resync 同步。
+
+一个 **case** 就是你自己组装的一个目录：
+
+```text
+cases/upload-retry/
+  edited/       copy of the repo after the change   (required)
+  plan.md       the plan from step 6                (optional — sharpens scope)
+  change.diff   unified diff of the change          (optional — widens scope)
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+handbook resync --case cases/upload-retry --work $WORK
+```
+
+Resync 会重新分析编辑后的代码树，对比新旧调用图，然后**只重新生成变化的部分**。`$WORK/handbook` 下已渲染的产出会自动刷新。
+
+手头没有端点？`--no-llm` 会刷新结构性事实，并把叙述标记为过期，而不是假装它还是最新的。
+
+---
+
+## 如果你的仓库非常大
+
+| 症状               | 怎么办                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| 文件数以千计       | 先用 `--detail brief`。之后用 `--phase 2a --detail deep --resume` 有选择地加深。                      |
+| 跑得慢             | 调高 `--read-workers` / `--assign-workers` / `--narrate-workers`，它们都受 `--llm-concurrency` 约束。 |
+| 触发限流           | 调低 `--llm-concurrency`。调高 `--llm-retries` 和 `--llm-retry-backoff`。                             |
+| 生成文件巨大       | `--max-chars-per-file 20000` 截断每个文件发送的内容。                                                 |
+| 你只关心一个子系统 | 把 `--source` 指向那个子目录。调用图只由你扫描的部分构建。                                            |
+| 迭代过程中反复重跑 | 用 `--llm-cache`；想刻意忽略缓存时用 `--refresh`。                                                    |
+
+更多内容见[成本与性能](/docs/guides/cost-and-performance)。
+
+## 下一步
+
+<Cards>
+  <Card title="深入生成" href="/docs/guides/generating" />
+  <Card title="规划改动" href="/docs/guides/planning-changes" />
+  <Card title="保持最新" href="/docs/guides/keeping-current" />
+  <Card title="疑难排查" href="/docs/guides/troubleshooting" />
+</Cards>

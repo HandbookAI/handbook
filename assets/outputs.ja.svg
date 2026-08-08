@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="What one Handbook run produces: markdown pages, an HTML site, a single-file page, an agent locator index, llms.txt files, and a packaged agent SKILL">
+  <title>Handbook — what one run gives you</title>
+  <desc>From one work directory, render produces markdown pages, a multi-page HTML site, one self-contained HTML page, an agent locator index and llms.txt; skill repackages those as an agent SKILL with content hashes.</desc>
+
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/><stop offset="60%" stop-color="#101733"/><stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <linearGradient id="cardH" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2242"/><stop offset="100%" stop-color="#141B36"/>
+    </linearGradient>
+    <marker id="fan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5C6AA0"/>
+    </marker>
+    <style>
+      .t   { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .m   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .h1  { fill:#F2F5FF; font-size:25px; font-weight:700; letter-spacing:-0.3px; }
+      .sub { fill:#8C9AC4; font-size:14px; }
+      .ttl { fill:#F2F5FF; font-size:15px; font-weight:700; }
+      .path{ fill:#7DD3C8; font-size:11.5px; }
+      .body{ fill:#9FB0DC; font-size:12.5px; }
+      .who { fill:#0B1020; font-size:10.5px; font-weight:800; letter-spacing:0.5px; }
+      .cap { fill:#68779F; font-size:11.5px; font-weight:800; letter-spacing:1.2px; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="600" rx="18" fill="url(#bg4)"/>
+  <rect x="0.5" y="0.5" width="1119" height="599" rx="18" fill="none" stroke="#232C4E"/>
+
+  <text class="t h1" x="40" y="48">1 つの作業ディレクトリ。6 つの出力形式。どれも LLM を再び必要としません。</text>
+  <text class="t sub" x="40" y="72">高コストなのは生成で、それは一度きり。以下はすべて決定的な再レンダリングで、CI で実行できます。</text>
+
+  <!-- the work dir -->
+  <rect x="40" y="120" width="252" height="182" rx="13" fill="#1E2A52" stroke="#3D4E86"/>
+  <text class="t cap" x="60" y="148">信頼できる唯一の情報源</text>
+  <text class="m ttl" x="60" y="176" font-size="14">&lt;work&gt;/</text>
+  <text class="m body" x="60" y="200">phase1/graph.json</text>
+  <text class="m body" x="60" y="220">phase2/cards/ · skeleton</text>
+  <text class="m body" x="60" y="240">phase2/assignment · org</text>
+  <text class="m body" x="60" y="260">phase3/narration · registers</text>
+  <text class="m body" x="60" y="284" fill="#7386B4">run-manifest.json</text>
+
+  <path d="M 292 211 L 316 211" stroke="#5C6AA0" stroke-width="2"/>
+  <path d="M 316 211 L 316 151 L 348 151" fill="none" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#fan)"/>
+  <path d="M 316 211 L 316 293 L 348 293" fill="none" stroke="#5C6AA0" stroke-width="1.6" marker-end="url(#fan)"/>
+
+  <!-- row 1 -->
+  <rect x="356" y="86" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="356" y="86" width="232" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="374" y="112">Markdown ハンドブック</text>
+  <text class="m path" x="374" y="131">overview · index · &lt;stage&gt;.md</text>
+  <text class="t body" x="374" y="152">ステージごとの読み解き、</text>
+  <text class="t body" x="374" y="169">mermaid のステージマップ、</text>
+  <text class="t body" x="374" y="186">ソースファイルごとのカード。</text>
+  <rect x="374" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="407" y="208" text-anchor="middle">人間向け</text>
+
+  <rect x="604" y="86" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="604" y="86" width="232" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="622" y="112">複数ページの HTML サイト</text>
+  <text class="m path" x="622" y="131">handbook/html/ · --html</text>
+  <text class="t body" x="622" y="152">固定 TOC、パンくずリスト、</text>
+  <text class="t body" x="622" y="169">テーマ切替、全展開。</text>
+  <text class="t body" x="622" y="186">CSS は内蔵 — file:// で開ける</text>
+  <rect x="622" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="655" y="208" text-anchor="middle">人間向け</text>
+
+  <rect x="852" y="86" width="228" height="130" rx="12" fill="url(#cardH)" stroke="#2E3A66"/>
+  <rect x="852" y="86" width="228" height="3" rx="1.5" fill="#2DD4BF"/>
+  <text class="t ttl" x="870" y="112">自己完結の 1 ページ</text>
+  <text class="m path" x="870" y="131">handbook.html · --html-single</text>
+  <text class="t body" x="870" y="152">メールで送れて、チケットに</text>
+  <text class="t body" x="870" y="169">添付でき、サーバーなしで</text>
+  <text class="t body" x="870" y="186">開ける単一ファイル。</text>
+  <rect x="870" y="196" width="66" height="16" rx="8" fill="#2DD4BF"/><text class="t who" x="903" y="208" text-anchor="middle">人間向け</text>
+
+  <!-- row 2 -->
+  <rect x="356" y="228" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="356" y="228" width="232" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="374" y="254">AI向けロケータ索引</text>
+  <text class="m path" x="374" y="273">handbook/agent/ · --agent-site</text>
+  <text class="t body" x="374" y="294">役割 · 入口概念 · 状態</text>
+  <text class="t body" x="374" y="311">· 代表例 · 共変更ヒント。</text>
+  <text class="t body" x="374" y="328">空欄 = シグナルなし、推測なし。</text>
+  <rect x="374" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="404" y="350" text-anchor="middle">AI向け</text>
+
+  <rect x="604" y="228" width="232" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="604" y="228" width="232" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="622" y="254">llms.txt + llms-full.txt</text>
+  <text class="m path" x="622" y="273">--llms-txt</text>
+  <text class="t body" x="622" y="294">llms.txt 規約に準拠:</text>
+  <text class="t body" x="622" y="311">リンク付きエントリファイルと、</text>
+  <text class="t body" x="622" y="328">全体を平坦化した 1 ファイル。</text>
+  <rect x="622" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="652" y="350" text-anchor="middle">AI向け</text>
+
+  <rect x="852" y="228" width="228" height="130" rx="12" fill="url(#cardH)" stroke="#3A3560"/>
+  <rect x="852" y="228" width="228" height="3" rx="1.5" fill="#A78BFA"/>
+  <text class="t ttl" x="870" y="254">AI向け SKILL パッケージ</text>
+  <text class="m path" x="870" y="273">SKILL.md + references/</text>
+  <text class="t body" x="870" y="294">coverage.json を同梱:</text>
+  <text class="t body" x="870" y="311">ファイル単位のハッシュにより</text>
+  <text class="t body" x="870" y="328">コードとのドリフトを検出可能。</text>
+  <rect x="870" y="338" width="60" height="16" rx="8" fill="#A78BFA"/><text class="t who" x="900" y="350" text-anchor="middle">AI向け</text>
+
+  <!-- trust band -->
+  <rect x="40" y="380" width="1040" height="106" rx="13" fill="#141B36" stroke="#2A3357"/>
+  <text class="t cap" x="60" y="406">読んだ内容を信頼できる理由</text>
+  <circle cx="68" cy="432" r="4" fill="#2DD4BF"/>
+  <text class="t body" x="82" y="437" font-size="13">構造的な事実 — ファイル、関数、呼び出しエッジ、行範囲 — はパーサー由来。モデルが書いたものではありません。</text>
+  <circle cx="68" cy="456" r="4" fill="#FBBF24"/>
+  <text class="t body" x="82" y="461" font-size="13">文章はモデルが書き、そうとラベル付けされます。カードに失敗したファイルも空の説明のまま掲載 — 捏造は決してしません。</text>
+  <circle cx="68" cy="480" r="4" fill="#A78BFA"/>
+  <text class="t body" x="82" y="485" font-size="13">汎用エンジンで読まれた言語は概要で開示されるため、「ベストエフォートの呼び出し関係」が「正確」と読まれることはありません。</text>
+
+  <!-- footer -->
+  <rect x="40" y="504" width="508" height="66" rx="12" fill="#16233F" stroke="#2F6F68"/>
+  <text class="t ttl" x="60" y="530" font-size="14">すべての成果物はスキーマ検証済みの JSON/YAML</text>
+  <text class="t body" x="60" y="552">どのフェーズも単独で再実行可能。クラッシュしたランは中断地点から再開します。</text>
+
+  <rect x="572" y="504" width="508" height="66" rx="12" fill="#2A2440" stroke="#7A6535"/>
+  <text class="t ttl" x="592" y="530" font-size="14">ネットワークが二度必要なものはありません</text>
+  <text class="t body" x="592" y="552">再レンダリング・再パッケージ・再検証は、オフラインで、CI で、コミットごとに。</text>
+</svg>

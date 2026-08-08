@@ -1,0 +1,110 @@
+---
+title: 作業ディレクトリ
+description: パイプラインが生成するすべての成果物、その置き場所、何がそれを検証するか、そして何を消しても安全か。
+---
+
+作業ディレクトリ（`--work`）は、パイプラインの生成するすべてが置かれる場所です。
+ドキュメント化するリポジトリごとに 1 つです。
+
+```text
+<work>/
+  phase1/
+    graph.json          the call graph — everything downstream reads this
+    functions.csv       every function, flat, for grepping or a spreadsheet
+    graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
+    dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+  phase2/
+    cards/<rel>.json    one card per source file, mirroring the source tree
+    cards/_coverage.json  how many files got prose, and which did not
+    cards/_rejected/    replies that produced no usable card (capped at 20)
+    skeleton.yaml       the stage spine
+    assignment.json     file → stage
+    organization.yaml   intra-stage groups + reading order
+    strategy.json       which strategy produced the above
+  phase3/
+    narration.json      stage and system prose
+    registers.json      cross-stage state registers
+    cache/              content-hash caches for prose and registers
+  handbook/             the rendered output, once you run `render`
+  run-manifest.json     model, phases, timings and token usage of the last good run
+```
+
+## 頼りにできる 3 つの性質
+
+### すべては読み込み時にスキーマ検証される
+
+すべての成果物は `version` フィールドを持ち、読み込まれるときに zod で検証されます。壊れた
+成果物や手編集された成果物は、**大きな音を立てて失敗し、自らを名指しします**:
+
+```text
+handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
+```
+
+後のフェーズへ伝播することは決してありません。
+
+意図的な例外が 2 つあります。どちらも緩さではなく、レジリエンスのためです:
+
+- **カード** — パースできない単一のカードファイルは致命的にならず、「スキップ」されます。
+  そうしなければ、カードディレクトリにある 1 つの異物や同期途中の JSON が、レジューム、
+  フェーズ 2b/2c/3、そしてすべてのモデル読み込みをクラッシュさせてしまいます。
+- **`graph.json` の `languages` メタデータ** — 省略可能です。ここには成果物のマイグレー
+  ション機構が存在せず、忠実度宣言が生まれる前に書かれたすべてのグラフが検証を通り続け
+  なければならないからです。
+
+### すべての書き込みはアトミック
+
+一時ファイルに書き、それからリネームします。書き込み途中のクラッシュが、次のランを詰まら
+せる半端な成果物を残すことは決してありません。
+
+### 作業ディレクトリごとに 1 ラン
+
+`generate` と `resync` は同じ再入可能なディレクトリロックを取ります。同じ成果物に対する
+同時の CLI ランと Studio ジョブは書き込みを交錯させてしまうため、2 つ目は明確なメッセージ
+と共に拒否されます。
+
+## 何をしても安全か
+
+| 操作                             | 安全? | 補足                                                                     |
+| -------------------------------- | :---: | ------------------------------------------------------------------------ |
+| 作業ディレクトリ全体を削除       |  ✅   | 外側は何も変更されていません。ゼロから再生成できます。                   |
+| git にコミット                   |  ✅   | すべてテキストです。再生成が何を変えたかのレビューに便利です。           |
+| `phase3/cache/` を削除           |  ✅   | 次のランで、完全な再ナレーションのコストがかかります。                   |
+| `phase2/cards/_rejected/` を削除 |  ✅   | 診断専用です。新しいカードパスの開始時に自動でクリアされます。           |
+| `skeleton.yaml` を手編集         |  ✅   | 読み込み時に検証されますし、`--skeleton` はまさにこのために存在します。  |
+| `graph.json` を手編集            |  ⚠️   | 生成物です。代わりに `analyze` を再実行してください。                    |
+| `phase2/strategy.json` を削除    |  ⚠️   | 次のランは `file` にフォールバックし、成果物と合わない可能性があります。 |
+| 公開の場で共有                   |  ⚠️   | カードはソースを引用し、記述します。ソースと同じように扱ってください。   |
+
+## 手で読む
+
+面白いのはグラフです:
+
+```bash
+# how big is this codebase, really
+jq '.metadata | {files: (.scannedFiles|length), nInternalFunctions, nEdges}' phase1/graph.json
+
+# the busiest functions — where a change is most likely to fan out
+jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
+       | sort_by(-.value.nCallers) | .[:15]
+       | .[] | "\(.value.nCallers)\t\(.value.qualname)\t\(.value.file)"' phase1/graph.json
+
+# what could not be resolved, by category
+jq '.metadata.byCategory' phase1/dropped-calls.json
+
+# which files never got prose
+jq '.missing' phase2/cards/_coverage.json
+```
+
+`functions.csv` があるのも同じ理由です — 最速のツールがスプレッドシートであることも
+あるからです。
+
+## ほかに書き込まれる場所
+
+Handbook が作業ディレクトリの外に書き込むのはちょうど 2 か所で、どちらも実行したコマンドに
+よるオプトインです:
+
+- **`<source>/.handbook-patches/`** — `apply` が作成し、バックアップとそのマニフェストを
+  保持します。`.gitignore` が自動で書き込まれるため、バックアップが git に入ることは決して
+  ありません。
+- **`$HOME/.handbook-studio/`** — Studio のリポジトリレジストリと、自動作成される作業
+  ディレクトリ。`--state-dir` で移動できます。

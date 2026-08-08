@@ -1,0 +1,133 @@
+---
+title: '词汇表'
+description: '阶段、卡片、寄存器、工作目录、case、skill、plan——本项目里每一个有特定含义的词，一次讲清楚。'
+---
+
+Handbook 把一小撮日常词汇用在了特定含义上。把这些词弄明白，其余每一页都会变短。
+
+## 产物
+
+### 调用图
+
+Phase 1 的产出。你代码中的每个函数和方法，加上它们之间的每条调用边，并按解析方式标注类型。**由解析器产出，绝非模型。**
+
+位于 `<work>/phase1/graph.json`。下游的一切都读它，任何环节都不会重新解析源码。
+
+### 卡片
+
+每个源文件一张。用三个字段回答*这个文件是干什么的？*——**purpose**、**role**、**lifecycle**——在 `--detail deep` 下还有一段 120–300 词的讲解和每个函数一条说明。
+
+卡片的结构部分来自调用图；文字部分来自 LLM。文字生成失败时，卡片依然存在，只是描述为空。位于 `<work>/phase2/cards/<path>.json`。
+
+### 角色
+
+卡片的 `role` 取自一个**封闭词表**：`entrypoint`、`orchestration`、`domain_logic`、`io_transport`、`data_model`、`config`、`util`、`test`、`generated`、`other`。模型再有创意，发明的任何其他值都会归并为 `other`——这个集合不会被一个别出心裁的回答扩大。
+
+### 阶段
+
+手册的一章。一个阶段有 id、标题、描述、可选的父阶段，以及一个 `crosscut` 标志，专供那些不属于生命周期任何单一步骤的横切基础设施使用。
+
+阶段按**执行生命周期**排序，而不是按字母或目录——手册的阅读顺序就是系统实际运行的顺序。
+
+### 骨架
+
+有序的阶段列表：叙事的主干。要么由 LLM 合成（`--strategy file`），要么**由你亲自编写**（`--strategy member`）。位于 `<work>/phase2/skeleton.yaml`。
+
+### 归属
+
+每个文件属于哪个阶段。每个文件恰好有一个**主**阶段，也可以列出它同样涉及的其他阶段。位于 `<work>/phase2/assignment.json`。
+
+### 组织
+
+在一个阶段内部，文件按调用图拓扑排序，并分成 2–8 个带标题的小组。位于 `<work>/phase2/organization.yaml`。
+
+### 叙述
+
+文字部分：每个阶段一段总结，外加一份系统总览。自底向上写——先子后父——这样父阶段的总结在动笔时就已经知道子阶段说了什么。位于 `<work>/phase3/narration.json`。
+
+### 寄存器
+
+一段**跨**阶段流动的状态：连接池、功能开关、重试预算、认证令牌。每个寄存器有一个 id、一行大白话的语义说明，以及触碰它的阶段列表。
+
+对于扇出式的改动，寄存器是最有用的一件产物，因为“哪些阶段碰这份状态”正是一次分散式改动要问的问题。位于 `<work>/phase3/registers.json`。
+
+## 目录
+
+### 工作目录（`--work`）
+
+所有流水线产物的所在地。你文档化的每个仓库各有一个。
+
+```text
+<work>/
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
+  phase3/   narration.json · registers.json · cache/
+  handbook/ the rendered output, once you run `render`
+  run-manifest.json
+```
+
+它**可以放心删除并重新生成**；如果你想把手册纳入版本控制，提交它也没问题。生成过程不会修改它之外的任何东西。
+
+### 手册目录
+
+*渲染后*的产出——markdown，以及可选的 HTML、代理索引和 `llms.txt`。默认在 `<work>/handbook`。
+
+### Skill 目录（`skill` 命令的 `--out`）
+
+打包好的代理 SKILL：`SKILL.md` 加 `references/`。自包含、可分享；从不内嵌源码。
+
+### Case 目录（`resync` 命令的 `--case`）
+
+你交给 `resync`、用来描述一次改动的东西：
+
+```text
+<case>/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — sharpens scope
+  change.diff   unified diff vs the previous tree   optional — widens scope
+```
+
+## 全部命令，一行一个
+
+| 命令       | 一句话                                           | LLM？ |
+| ---------- | ------------------------------------------------ | :---: |
+| `analyze`  | 源码 → 调用图                                    |  ❌   |
+| `generate` | 调用图 → 卡片、阶段、叙述、寄存器                |  ✅   |
+| `render`   | 工作目录 → markdown / HTML / 代理索引 / llms.txt |  ❌   |
+| `skill`    | 渲染好的手册 → 代理 SKILL 包                     |  ❌   |
+| `validate` | 检查 SKILL 的结构与新鲜度                        |  ❌   |
+| `plan`     | 改动请求 + 手册 → 字节级精确的编辑计划           |  ✅   |
+| `apply`    | 编辑计划 → 真实编辑，带备份                      |  ❌   |
+| `rollback` | 备份 → 还原后的源码树                            |  ❌   |
+| `resync`   | 变动的代码 → 增量更新的手册                      |  ✅   |
+| `studio`   | 以上全部，在浏览器里                             |  ✅   |
+| `config`   | 设置了什么，以及来自哪里                         |  ❌   |
+
+## 阶段
+
+| Phase | 产出             | LLM？ |
+| ----- | ---------------- | :---: |
+| `1`   | 调用图           |  ❌   |
+| `2a`  | 每个文件一张卡片 |  ✅   |
+| `2b`  | 骨架 + 归属      |  ✅   |
+| `2c`  | 组织             |  ✅   |
+| `3`   | 叙述 + 寄存器    |  ✅   |
+
+`--phase` 接受 `all`、`1`、`2`（即 2a+2b+2c）、任意单个阶段，或像 `2c,3` 这样的逗号列表。
+
+## 两种策略
+
+|          | `file`（默认）   | `member`                     |
+| -------- | ---------------- | ---------------------------- |
+| 骨架     | 由 LLM 合成      | **你来编写** `skeleton.yaml` |
+| 叶子单元 | 一个源文件       | 一个函数或方法               |
+| 适合     | 你还不了解的仓库 | 你已经心中有数的仓库         |
+| 成本     | 较低             | 较高——每个成员都要分类       |
+
+## 两个容易混淆的词
+
+**保真度层级（fidelity tier）**——某种语言的*分析*有多好。`full`（手写适配器）或 `generic`（配置驱动引擎）。按适配器声明、按语言记录，并在手册总览中披露。参见[分析保真度](/docs/concepts/analysis-fidelity)。
+
+**详细程度（detail）**——*文字*有多深。`brief`（purpose、role、lifecycle）或 `deep`（外加一段讲解和每函数说明）。用 `--detail` 设置。
+
+两者相互独立：`generic` 层级的语言照样可以有 `deep` 卡片。文字会更深入；调用事实并不会因此变得更扎实。

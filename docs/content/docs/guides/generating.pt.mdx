@@ -1,0 +1,203 @@
+---
+title: 'Gerando um handbook'
+description: 'Escolhendo detalhe, modo de síntese e estratégia; executando fases separadamente; retomando; e o que fazer quando o resultado está errado.'
+---
+
+```bash
+handbook generate --source <repo> --work <workdir> [options]
+```
+
+Este é o único comando caro. Tudo nesta página trata de gastar menos com ele e obter
+mais dele.
+
+## Comece barato, depois faça upgrade
+
+<Steps>
+
+<Step>
+### Confirme que a varredura está certa — gratuito
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+Verifique a contagem de arquivos. Se estiver errada, corrija isso antes de gastar um
+único token.
+
+</Step>
+
+<Step>
+### Gere com os padrões baratos
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+`--detail brief` e `--synth-mode oneshot`. Leia `$WORK/phase2/skeleton.yaml`.
+
+</Step>
+
+<Step>
+### Corrija a metade que estiver errada
+
+**Prosa rasa demais?** Aprofunde apenas as fichas, mantendo o esqueleto que você já validou:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+**Estrutura errada?** Reexecute a 2b com o loop de reparo, mantendo as fichas:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+</Steps>
+
+Seguir essa ordem significa que você nunca paga por fichas profundas em cima de um
+esqueleto que está prestes a descartar.
+
+## `--detail brief` vs `deep`
+
+|                 | `brief` (padrão)                | `deep`                                 |
+| --------------- | ------------------------------- | -------------------------------------- |
+| Por arquivo     | propósito, papel, ciclo de vida | + um passo a passo de 120–300 palavras |
+| Por função      | —                               | propósito, fluxo de dados, relações    |
+| Tamanho do lote | 8 arquivos por requisição       | 1 arquivo por requisição               |
+| Custo           | aproximadamente 1×              | várias vezes isso                      |
+
+**`deep` vale a pena quando um agente vai usar o handbook**, porque as notas por função
+são o que transforma a página de uma etapa em um catálogo de endereços. `brief` é a
+escolha certa para uma primeira passada, para um repositório muito grande, ou quando você
+quer principalmente a estrutura.
+
+Você pode misturar: gere com `brief` em tudo e depois reexecute
+`--phase 2a --detail deep --resume` apontando `--source` para o subdiretório que mais lhe
+interessa.
+
+## `--synth-mode oneshot` vs `doctor`
+
+`oneshot` sintetiza um esqueleto em uma única passada. Rápido, barato, geralmente
+razoável.
+
+`doctor` executa um loop de reparo ator–crítico: propõe no máximo três mudanças
+estruturais, revisa-as com três críticos (engenheiro, arquiteto, leitor), valida as
+sobreviventes **mecanicamente** contra o grafo real, aplica, reatribui, repete.
+
+<Callout title="Quando o doctor justifica seu custo">
+  Use-o quando o `oneshot` tiver produzido etapas desequilibradas (uma etapa com 200 arquivos, três com dois
+  cada), etapas cujos títulos não significam nada, ou muitos arquivos não atribuídos. `--max-doctor-rounds`
+  tem padrão 6; ele também para mais cedo ao convergir ou após duas rodadas sem progresso.
+</Callout>
+
+## `--strategy file` vs `member`
+
+**`file` (padrão)** — o LLM sintetiza o esqueleto; um arquivo-fonte é a unidade folha.
+Escala para repositórios grandes. Use esta a menos que tenha um motivo para não usar.
+
+**`member`** — _você_ escreve o `skeleton.yaml`; funções e métodos individuais são
+classificados nas suas etapas, e os artefatos em nível de arquivo são derivados disso.
+
+```yaml title="skeleton.yaml"
+metadata:
+  version: 1
+  archetype: HTTP API server
+stages:
+  - id: stage-1
+    title: Request intake
+    description: Accepting connections, parsing requests, and routing them.
+    parent: null
+    children: []
+    crosscut: false
+  - id: stage-2
+    title: Business logic
+    description: What the service actually does with a validated request.
+    parent: null
+    children: []
+    crosscut: false
+  - id: crosscut-1
+    title: Configuration and logging
+    description: Cross-cutting infrastructure used by every stage.
+    parent: null
+    children: []
+    crosscut: true
+```
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy member --skeleton skeleton.yaml
+```
+
+`member` custa mais — cada função é classificada — mas produz uma prosa mais precisa, e a
+phase 2c se torna gratuita porque a organização é derivada de forma determinística.
+
+<Callout type="warn">
+  A estratégia fica registrada em `phase2/strategy.json`. Uma reexecução parcial com um `--strategy` diferente
+  e sem `--phase 2b` é **recusada**, de modo que um padrão de estratégia `file` não pode sobrescrever
+  silenciosamente uma organização derivada de `member`.
+</Callout>
+
+## Executando fases separadamente
+
+```bash
+--phase 1        # just the graph (same as `handbook analyze`)
+--phase 2a       # just the cards
+--phase 2b       # just skeleton + assignment
+--phase 2c       # just the grouping
+--phase 3        # just narration + registers
+--phase 2        # 2a + 2b + 2c
+--phase 2c,3     # a comma list
+```
+
+Cada fase lê apenas seus artefatos upstream, portanto isso é sempre seguro. Os casos
+comuns:
+
+| Situação                                      | Comando                                 |
+| --------------------------------------------- | --------------------------------------- |
+| As fichas estão boas, o esqueleto está errado | `--phase 2b,2c,3 --synth-mode doctor`   |
+| Está tudo bem, mas a prosa está ruim de ler   | `--phase 3 --refresh`                   |
+| Você quer fichas mais profundas, nada mais    | `--phase 2a --detail deep --resume`     |
+| Você trocou o idioma da narração              | `--phase 3 --narrate-lang zh --refresh` |
+
+## Retomando e cache
+
+- **`--resume`** pula arquivos que já têm uma ficha completa na profundidade solicitada.
+  As fichas são gravadas à medida que ficam prontas, então `Ctrl-C` é sempre seguro.
+- **`--llm-cache`** guarda as respostas brutas em `<work>/phase3/cache`, com chave por
+  modelo, prompt e opções. Reexecuções enquanto você itera se tornam quase gratuitas.
+- **`--refresh`** ignora os caches da phase 3. Use-o quando você mudou as entradas do
+  prompt mas a chave do cache não percebeu — por exemplo, depois de editar o
+  `skeleton.yaml` à mão.
+
+`--refresh` desativa `--llm-cache` naquela execução, por design.
+
+## Observando o trabalho
+
+```bash
+handbook generate --source $REPO --work $WORK -v
+```
+
+```text
+[scan] auto root=/Users/me/code/api
+[scan] typescript: 284 files
+[2a] batch 12/36 · 96 cards
+[2b] 9 stages; 0 files unassigned
+[3] narrating stage-4 (2 children)
+```
+
+O uso de tokens é registrado em `run-manifest.json` quando a execução termina.
+
+## Quando o resultado está errado
+
+| Sintoma                                | Causa provável                                       | Correção                                                                           |
+| -------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Etapas desequilibradas ou sem sentido  | síntese one-shot em um layout incomum                | `--phase 2b,2c,3 --synth-mode doctor`                                              |
+| Muitos arquivos não atribuídos         | o esqueleto não cobre parte do repositório           | modo doctor, ou escreva um esqueleto e passe `--skeleton`                          |
+| Fichas com descrições vazias           | as respostas do modelo não puderam ser interpretadas | leia `phase2/cards/_rejected/`; tente um modelo mais forte ou `--detail brief`     |
+| Prosa genérica e inútil                | modelo pequeno demais para a base de código          | mude o `--model`; esta fase recompensa um modelo melhor mais do que qualquer outra |
+| O overview menciona "generic analyzer" | você tem linguagens de nível genérico                | esperado — veja [Fidelidade da análise](/docs/concepts/analysis-fidelity)          |
+| Execução muito lenta                   | contagem de workers baixa demais, ou endpoint lento  | aumente `--read-workers` e `--llm-concurrency`                                     |
+| Erros de rate limit                    | concorrência alta demais                             | reduza `--llm-concurrency`; aumente `--llm-retries`                                |
+
+Mais em [Solução de problemas](/docs/guides/troubleshooting).

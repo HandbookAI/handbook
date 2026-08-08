@@ -1,0 +1,167 @@
+---
+title: Mantenerlo al día
+description: 'Resync compara el grafo de llamadas antiguo con el nuevo y regenera solo lo que realmente cambió. Tocas tres archivos, pagas por tres archivos.'
+---
+
+```bash
+handbook resync --case <case-dir> --work <workdir>
+```
+
+La documentación se pudre porque actualizarla cuesta tanto como escribirla. Resync hace
+que la actualización sea **proporcional al cambio**.
+
+## El contrato del case
+
+Un **case** es un directorio que tú ensamblas. Responde dos preguntas: _cómo se ve el
+código ahora_ y _cuál se suponía que era el cambio_.
+
+```text
+cases/upload-retry/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — SHARPENS the scope
+  change.diff   unified diff vs the previous tree   optional — WIDENS the scope
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+git -C $REPO diff HEAD~1 > cases/upload-retry/change.diff
+
+handbook resync --case cases/upload-retry --work work/api
+```
+
+<Callout title="Las declaraciones y los diffs solo pueden ampliar el conjunto">
+  El diff del grafo es el piso: si los bytes de un archivo cambiaron, se refresca lo mencione o no el plan.
+  **Un plan que declara de menos su propio radio de impacto no puede causar una página obsoleta.**
+</Callout>
+
+Un `change.diff` **vacío** significa "nada que hacer", y la ejecución se omite limpiamente
+en lugar de tratarse como "todo cambió".
+
+## Qué hace realmente
+
+1. Reanaliza el árbol editado — un grafo de phase 1 nuevo.
+2. Compara el antiguo con el nuevo → archivos cambiados / añadidos / eliminados.
+3. Regenera las fichas de los archivos cambiados y añadidos.
+4. Asigna los archivos añadidos, descarta los eliminados y reconcilia los buckets.
+5. Reconstruye la organización de las etapas afectadas — determinista, sin LLM.
+6. Vuelve a narrar las etapas afectadas y la visión general del sistema. Gracias a la
+   caché de hash de contenido, una etapa no afectada no se vuelve a narrar en absoluto.
+7. Refresca los registros.
+8. Refresca las salidas ya renderizadas bajo `<work>/handbook` (`--no-render` para omitirlo).
+
+```json title="stdout"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["work/api/handbook/overview.md", "work/api/handbook/stage-3.md"]
+}
+```
+
+## Cómo el diff detecta los cambios
+
+| Señal                     | Detecta                                                                                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hash de contenido**     | Una edición del cuerpo in situ que deja intactos los números de línea y las firmas — el caso que un diff estructural pasa por alto por completo |
+| Conjunto de funciones     | Funciones añadidas, eliminadas o renombradas                                                                                                    |
+| Firmas y rangos de líneas | Funciones remodeladas                                                                                                                           |
+| Aristas de llamada        | Relaciones nuevas o eliminadas, incluidas las que entran y salen de archivos no tocados                                                         |
+| Conjunto de archivos      | Archivos añadidos y eliminados                                                                                                                  |
+
+Los hashes por archivo los estampó phase 1 exactamente para este propósito. Un grafo
+anterior a ellos recurre a la estructura — degradado, pero nunca equivocado.
+
+## Trabajar sin un endpoint
+
+```bash
+handbook resync --case cases/x --work work/api --no-llm
+```
+
+Los hechos estructurales se refrescan — grafo de llamadas, inventario de funciones,
+asignación, orden — y al propósito de cada ficha afectada se le añade
+` (stale: code changed since narration)`.
+
+**Esa es la degradación honesta.** La alternativa — dejar la prosa intacta y sin marcar —
+es un handbook que miente en silencio.
+
+## Reincorporar correcciones
+
+```bash
+handbook resync --case cases/x --work work/api \
+  --corrections skills/api/corrections.jsonl
+```
+
+Los archivos nombrados en `corrections.jsonl` se suman al conjunto a refrescar **aunque
+sus bytes nunca hayan cambiado**, porque una afirmación que el código fuente contradice es
+razón suficiente para volver a describir ese archivo. Después, el archivo consumido se
+archiva con una marca de tiempo, de modo que la misma corrección no pueda aplicarse dos
+veces.
+
+Las líneas malformadas se reportan en `report.corrections.problems` y nunca son fatales —
+una línea defectuosa escrita por un agente no debe bloquear el refresco.
+
+## El detalle y el idioma no se tocan
+
+`--detail` y `--narrate-lang` están **sin definir por defecto**, y sin definir significa
+_"coincidir con lo que este handbook ya es"_. Un resync nunca degrada en silencio un
+handbook deep a brief, ni convierte un handbook en chino a inglés.
+
+Pásalos explícitamente solo cuando de verdad quieras cambiar la profundidad o el idioma —
+y espera un handbook mixto hasta que todas las fichas se hayan regenerado.
+
+## Cuándo regenerar en su lugar
+
+Resync hace avanzar la capa **derivada**. Regenera cuando la _estructura_ deba cambiar:
+
+| Situación                                            | Haz esto                                                    |
+| ---------------------------------------------------- | ----------------------------------------------------------- |
+| Cambiaron unos pocos archivos                        | `resync`                                                    |
+| Un refactor movió código entre módulos               | `resync` — el diff del grafo lo maneja                      |
+| Añadiste un subsistema entero nuevo                  | `resync`, y luego comprueba si el esqueleto sigue encajando |
+| El esqueleto ya no describe el sistema               | `generate --phase 2b,2c,3 --synth-mode doctor`              |
+| Cambiaste el idioma o la profundidad de la narración | `generate --phase 2a` / `--phase 3 --refresh`               |
+| Se reescribió la mitad del repo                      | `generate` desde cero — más barato que un resync enorme     |
+
+## Automatizarlo
+
+```yaml title=".github/workflows/handbook-resync.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - run: |
+          mkdir -p case
+          cp -R . case/edited
+          git diff HEAD~1 > case/change.diff
+      - run: handbook resync --case case --work work/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - run: handbook validate --skill skills/api --source .
+```
+
+`edited/` también puede omitirse por completo cuando ejecutas resync de forma
+programática: la opción `editedRoot` apunta en su lugar a un árbol vivo, que es como
+Studio lo ejecuta in situ sin copiar el repositorio.
+
+## Seguridad
+
+- **El mismo bloqueo de directorio que `generate`**, de modo que un resync nunca puede
+  intercalarse con una generación concurrente sobre los mismos artefactos.
+- **El área de preparación de phase 1 siempre se limpia** — `<case>/.resync-phase1` nunca
+  sobrevive a la llamada, con éxito o con fallo.
+- **Las fichas de los archivos eliminados se quitan**, de modo que un archivo eliminado no
+  puede quedar rezagado en el handbook.
+- **Cancelable** — un `AbortSignal` se comprueba entre pasos y se propaga a cada pasada
+  del LLM.

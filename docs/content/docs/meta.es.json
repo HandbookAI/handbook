@@ -1,0 +1,17 @@
+{
+  "title": "Documentación",
+  "root": true,
+  "pages": [
+    "index",
+    "---Getting started---",
+    "getting-started",
+    "---Understanding it---",
+    "concepts",
+    "---Doing things---",
+    "guides",
+    "---Reference---",
+    "reference",
+    "---Contributing---",
+    "contributing"
+  ]
+}

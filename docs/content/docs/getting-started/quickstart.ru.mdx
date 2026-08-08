@@ -1,0 +1,132 @@
+---
+title: 'Быстрый старт'
+description: 'Прогоните весь тулчейн от начала до конца примерно за тридцать секунд — офлайн, без API-ключа и не потратив ни одного токена.'
+---
+
+Самый быстрый способ понять, что делает Handbook, — посмотреть, как он это делает. Здесь
+запускается **весь** конвейер — анализ, генерация, рендеринг, упаковка, валидация — на
+встроенном образце проекта с использованием встроенного mock-сервера LLM.
+
+**Без API-ключа. Без сети. Ноль токенов.**
+
+## Шаг 1 — Запустите
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm demo
+```
+
+## Шаг 2 — Прочитайте, что он напечатал
+
+```text
+== build ==
+== start mock LLM (offline; prose will be placeholder text) ==
+== 1. analyze (no LLM) ==
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+== 2. generate (phases 2+3) ==
+{ "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
+== 3. render markdown + HTML site + agent index + llms.txt ==
+== 4. package as an agent SKILL (with the agent locator pages) ==
+== 5. validate the SKILL ==
+validate: OK
+```
+
+<Callout type="warn" title="Проза будет бессмыслицей — так и задумано">
+  Mock-LLM возвращает текст-заглушку. **Структура при этом полностью настоящая** — этапы, распределение
+  файлов, факты о вызовах, диапазоны строк, таблица регистров, каждая ссылка. Фальшивы только предложения. Это
+  ровно то разделение, на котором построен весь проект: факты берутся из парсера, проза — из модели.
+</Callout>
+
+## Шаг 3 — Откройте результаты
+
+```bash
+open examples/work/demo/handbook/overview.md        # the markdown handbook
+open examples/work/demo/handbook/html/overview.html # the multi-page HTML site
+open examples/work/demo/handbook/handbook.html      # the whole thing in one file
+open examples/work/demo/skill/SKILL.md              # the agent SKILL package
+```
+
+На что стоит обратить внимание особо:
+
+| Откройте это                          | И заметьте                                                                                   |
+| ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | **Карта этапов** в формате mermaid, сгенерированная из графа вызовов                         |
+| `handbook/index.md`                   | Каждый этап, с вложенностью, у каждого — свой абзац                                          |
+| `handbook/register.md`                | Межэтапное состояние, с этапами, которые касаются каждого его элемента                       |
+| `handbook/agent/index.md`             | Формат локатора для агента — никакой прозы, только адреса                                    |
+| `handbook/agent/disambiguation.md`    | Термины, которые правомерно указывают на несколько этапов                                    |
+| `skill/references/coverage.json`      | Хеш содержимого для каждого файла. Это сигнал дрейфа.                                        |
+| `work/demo/phase1/dropped-calls.json` | Вызовы, которые анализатор **не смог** разрешить: сохранены и категоризированы, а не угаданы |
+
+## Шаг 4 — Загляните под капот
+
+Всё, что произвёл конвейер, — это обычный JSON и YAML в рабочем каталоге:
+
+```bash
+ls examples/work/demo/
+# phase1/  phase2/  phase3/  handbook/  skill/  run-manifest.json
+
+cat examples/work/demo/phase1/graph.json | head -40
+cat examples/work/demo/phase2/skeleton.yaml
+cat examples/work/demo/run-manifest.json     # model, phases, timings, token usage
+```
+
+Каждый из этих файлов проходит валидацию по схеме при чтении. Если вы вручную приведёте
+один из них в невалидное состояние, следующая команда скажет, какой файл и почему —
+ошибка не распространяется дальше.
+
+## Остальные демо
+
+```bash
+pnpm demo:self        # this repo as its own input, against the mock LLM
+pnpm demo:self:real   # same, but against the real endpoint from .env
+pnpm mock-llm         # just the mock server, on port 8099
+```
+
+`pnpm demo:self` интереснее для чтения: он анализирует одиннадцать настоящих
+TypeScript-пакетов, поэтому получаемая структура этапов — это подлинная карта подлинной
+кодовой базы.
+
+## Что только что произошло
+
+<div className="not-prose">
+  <img
+    src="/diagrams/pipeline.svg"
+    alt="Конвейер Handbook: analyze, generate, render, skill, plan, apply, resync"
+    className="rounded-xl border"
+  />
+</div>
+
+1. **`analyze`** разобрал каждый файл с помощью tree-sitter в типизированный граф
+   вызовов. Без LLM.
+2. **`generate`** написал карточку на каждый файл, синтезировал скелет этапов, назначил
+   каждый файл на этап, сгруппировал и упорядочил их, затем построил повествование снизу
+   вверх и извлёк межэтапные регистры состояния.
+3. **`render`** превратил это в markdown, HTML-сайт, одну самодостаточную страницу,
+   индекс-локатор для агентов и `llms.txt`. Без LLM.
+4. **`skill`** переупаковал это в агентский SKILL с хешем содержимого для каждого файла.
+   Без LLM.
+5. **`validate`** проверил структуру, контракт frontmatter, ссылки «индекс ↔ страница
+   этапа» и свежесть хешей. Без LLM.
+
+Демо на этом останавливается. Вторая половина — **`plan` → `apply` → `rollback` →
+`resync`** — разбирается в [Вашем первом руководстве](/docs/getting-started/first-handbook)
+и в [Планировании изменений](/docs/guides/planning-changes).
+
+## Дальше
+
+<Cards>
+  <Card
+    title="Ваше первое настоящее руководство"
+    description="Те же шаги, ваш репозиторий, и что делать, когда он большой."
+    href="/docs/getting-started/first-handbook"
+  />
+  <Card
+    title="Словарь терминов"
+    description="Этап, карточка, регистр, рабочий каталог, кейс — что каждое слово значит здесь."
+    href="/docs/getting-started/vocabulary"
+  />
+  <Card title="Studio" description="Тот же конвейер, но по клику." href="/docs/guides/studio" />
+</Cards>

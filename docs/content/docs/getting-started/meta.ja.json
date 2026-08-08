@@ -1,0 +1,5 @@
+{
+  "title": "はじめに",
+  "icon": "Rocket",
+  "pages": ["installation", "quickstart", "first-handbook", "vocabulary"]
+}

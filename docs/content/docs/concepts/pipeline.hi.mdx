@@ -1,0 +1,227 @@
+---
+title: 'पाँच phases'
+description: 'हर generation phase क्या बनाता है, उसकी क्या लागत है, fail होने पर वह किसमें degrade होता है, और उनमें से सिर्फ़ एक को दोबारा कैसे चलाएँ।'
+---
+
+`handbook generate` पाँच phases चलाता है। सिर्फ़ पहला मुफ़्त है; बाक़ी आपके LLM endpoint से
+बात करते हैं।
+
+| Phase  | क्या बनाता है                           | LLM? | अकेले दोबारा चलने योग्य? |
+| :----: | --------------------------------------- | :--: | :----------------------: |
+| **1**  | call graph                              |  ❌  |            ✅            |
+| **2a** | हर source file के लिए एक card           |  ✅  |            ✅            |
+| **2b** | stage skeleton + file assignment        |  ✅  |            ✅            |
+| **2c** | stage के भीतर grouping और क्रम          |  ✅  |            ✅            |
+| **3**  | narration + cross-stage state registers |  ✅  |            ✅            |
+
+```bash
+--phase all        # everything (default)
+--phase 1          # just the call graph
+--phase 2          # 2a + 2b + 2c
+--phase 2a         # one phase
+--phase 2c,3       # a comma list
+```
+
+---
+
+## Phase 1 — call graph
+
+**कोई LLM नहीं। Deterministic। मुफ़्त।**
+
+Language adapters हर file को tree-sitter से parse करते हैं और एक language-agnostic
+intermediate representation बनाते हैं। फिर graph builder edges को kept और dropped में
+बाँटता है, in/out degree annotate करता है, और उन constructors के लिए nodes synthesize
+करता है जो referenced तो हैं पर कभी explicit रूप से defined नहीं।
+
+यह **हर scanned file का एक content hash** भी दर्ज करता है। वही hash बाद में `resync` को वह
+in-place body edit पकड़ने देता है जो line numbers और signatures को छुए बिना होता है — ठीक
+वही case जो एक विशुद्ध structural diff से पूरी तरह छूट जाता है।
+
+**Output:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+
+<Callout title="इसे हमेशा सबसे पहले चलाएँ">
+  `handbook analyze` ठीक यही phase है। इसकी कोई लागत नहीं, और tokens ख़र्च करने से *पहले* यह पता लगाने का यही
+  एकमात्र तरीक़ा है कि आप `node_modules` scan कर रहे हैं, या कोई पूरी language ही छूट रही है।
+</Callout>
+
+---
+
+## Phase 2a — file cards
+
+**LLM। आम तौर पर सबसे महँगा phase।**
+
+हर source file को एक card मिलता है:
+
+- **purpose** — सादी भाषा में एक-दो वाक्य
+- **role** — एक closed vocabulary से (`entrypoint`, `domain_logic`, `io_transport`, …)
+- **lifecycle** — `startup`, `main loop`, `cross-cutting`, `none`, …
+- और `--detail deep` में: 120–300 शब्दों का walkthrough, साथ में per-function purpose,
+  data flow और relations, जो graph facts पर merge होते हैं
+
+### Batching कैसे होती है
+
+`--read-batch-size` files प्रति request, `--read-workers` batches एक साथ उड़ान में। Deep
+mode का default **एक file प्रति batch** है, क्योंकि एक deep card काफ़ी लंबा output है और
+कई cards को एक ही reply में ठूँसना ही वह तरीक़ा है जिससे replies truncate होती हैं।
+
+### तीन-tier degradation
+
+अगर किसी batch की reply parse नहीं होती:
+
+1. batch को **अलग-अलग files में तोड़कर** retry करें;
+2. oversized अकेली file के लिए **per-function chunk** पर retry करें;
+3. फिर भी fail हो, तो एक **ईमानदार ख़ाली card** लिखें — सिर्फ़ structure, कोई prose नहीं।
+
+**कोई file सिर्फ़ इसलिए handbook से ग़ायब नहीं होती कि उसकी prose fail हो गई।** हर चूक
+`phase2/cards/_coverage.json` में listed होती है, और जिन replies से कुछ भी काम का नहीं
+निकला वे (20 तक, hash-नाम से) `phase2/cards/_rejected/` के नीचे रखी जाती हैं, ताकि आप
+अटकल लगाने की बजाय _पढ़_ सकें कि क्या ग़लत हुआ।
+
+### Resume करना
+
+Cards पूरे होते ही लिखे जाते हैं। `Ctrl-C` सुरक्षित है, और `--resume` उन files को छोड़
+देता है जिनके पास requested depth का पूरा card पहले से है।
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+---
+
+## Phase 2b — skeleton और assignment
+
+**LLM। वह phase जो तय करता है कि handbook _है क्या_।**
+
+दो modes।
+
+### `--synth-mode oneshot` (default)
+
+Nav-pack (directory rollups + entry points) से एक stage skeleton synthesize करो, फिर हर
+file को batches में ठीक एक stage assign करो।
+
+सस्ता, और यह आँकने के लिए आम तौर पर काफ़ी कि आकार सही है या नहीं।
+
+### `--synth-mode doctor`
+
+एक actor–critic repair loop। हर round में:
+
+1. **actor** असली graph से आए ground-truth statistics के विरुद्ध अधिकतम तीन structural
+   बदलाव प्रस्तावित करता है — split, merge, move, retitle, reparent;
+2. तीन **critics** समानांतर में review करते हैं, हर एक अलग विफलता खोजता है:
+
+   | Critic    | क्या खोजता है                                                                        |
+   | --------- | ------------------------------------------------------------------------------------ |
+   | engineer  | क्या यह उससे मेल खाता है जो code सचमुच करता है? क्या referenced items असली हैं?      |
+   | architect | धुँधली boundaries, फूले हुए stages, भूखे stages, ग़लत जगह रखे cross-cutting concerns |
+   | reader    | क्या नतीजा _ज़्यादा पठनीय_ है? Cohesive pages, सहज titles, एक followable narrative   |
+
+3. बचे हुए बदलाव graph के विरुद्ध **यांत्रिक रूप से re-validate** होते हैं — ऐसा बदलाव जो
+   किसी non-existent stage का नाम लेता है, या जो files को orphan कर देता, skeleton को छूने
+   से पहले ही reject हो जाता है;
+4. प्रभावित files दोबारा assign होती हैं।
+
+यह तब रुकता है जब कुछ भी unassigned न बचे और कोई बदलाव review से न बच पाए, या
+`--max-doctor-rounds` (default 6) पर, या बिना प्रगति के दो rounds के बाद।
+
+<Callout type="info">
+  जिस critic की reply parse नहीं होती वह `REJECT` गिना जाता है। टूटा हुआ reviewer किसी बदलाव को कभी पास न कर
+  दे।
+</Callout>
+
+### अपना skeleton ख़ुद लाना
+
+```bash
+handbook generate --source $REPO --work $WORK --skeleton my-skeleton.yaml
+```
+
+Files _आपके_ stages में assign होती हैं। `--strategy member` के साथ इसकी जगह अलग-अलग
+functions classify होते हैं, और file-स्तर के artifacts उसी से derive किए जाते हैं।
+
+**Output:** `phase2/skeleton.yaml`, `phase2/assignment.json`, `phase2/strategy.json`.
+
+---
+
+## Phase 2c — organization
+
+**LLM, पर सस्ता। एक deterministic क्रम में degrade होता है।**
+
+हर stage के भीतर files call-graph topology के हिसाब से क्रमबद्ध होती हैं और 2–8 titled
+sub-groups में बाँटी जाती हैं, हर group के साथ एक-पंक्ति की summary।
+
+**हर विफलता एक deterministic flat क्रम में degrade होती है। Files कभी नहीं गिराई
+जातीं।** पूरा phase इसी invariant के इर्द-गिर्द लिखा गया है: न पढ़ी जा सकने वाली grouping
+एक cosmetic समस्या है, ग़ायब file एक correctness समस्या।
+
+`--strategy member` के साथ यह phase एक **no-op** है — organization 2b पर ही deterministic
+ढंग से derive हो चुका था, इसलिए अकेले `--phase 2c` run को किसी LLM की ज़रूरत ही नहीं।
+
+**Output:** `phase2/organization.yaml`.
+
+---
+
+## Phase 3 — narration और registers
+
+**LLM। भारी मात्रा में cached।**
+
+### Narration, नीचे से ऊपर
+
+पहले leaf stages, फिर parents — ताकि parent की summary यह जानते हुए लिखी जाए कि उसके
+children क्या कहते हैं — फिर system overview, सब कुछ जानते हुए।
+
+हर prose call `phase3/cache/` के नीचे cache होती है, जिसकी key है prompt version,
+language और पूरे prompt का hash। एक stage छूने के बाद phase 3 दोबारा चलाना **एक stage**
+की re-narration करता है।
+
+### State registers
+
+"register" state का वह टुकड़ा है जो stages के आर-पार बहता है — एक connection pool, एक
+feature flag, एक retry budget, एक auth token। Extraction एक **loop-until-dry gap pass**
+चलाता है: यह तब तक पूछता रहता है जब तक कोई round कुछ नया न पाना बंद कर दे।
+
+Fan-out बदलावों के लिए यही अकेला सबसे उपयोगी artifact है, क्योंकि _"कौन-कौन से stages इस
+state को छूते हैं"_ ठीक वही सवाल है जो एक बिखरा हुआ बदलाव पूछता है।
+
+**Output:** `phase3/narration.json`, `phase3/registers.json`.
+
+---
+
+## दो strategies
+
+|              | `--strategy file` (default)     | `--strategy member`                           |
+| ------------ | ------------------------------- | --------------------------------------------- |
+| Skeleton     | LLM synthesize करता है          | `skeleton.yaml` **आप ख़ुद लिखते हैं**         |
+| Leaf unit    | एक source file                  | एक function या method                         |
+| Phase 2b     | files को stages में assign      | हर member classify, फिर file artifacts derive |
+| Phase 2c     | LLM grouping                    | पहले ही हो चुका — deterministic               |
+| सबसे उपयुक्त | ऐसा repo जिसे आप अभी नहीं जानते | ऐसा repo जिसका आकार आप पहले से जानते हैं      |
+| लागत         | कम                              | ज़्यादा — हर member classify होता है          |
+
+चुनी हुई strategy `phase2/strategy.json` में दर्ज होती है। किसी दूसरी `--strategy` के साथ
+बिना `--phase 2b` का partial re-run **refuse** कर दिया जाता है, क्योंकि file-strategy
+default का किसी member-derived organization को चुपचाप overwrite कर देना ठीक उसी क़िस्म का
+corruption है जिसे बाद में पकड़ना मुश्किल होता है।
+
+## एक run अपने बारे में क्या दर्ज करता है
+
+```json title="<work>/run-manifest.json"
+{
+  "version": 1,
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 },
+  "stats": { "phasesRun": ["1", "2a", "2b", "2c", "3"], "nCards": 412, "nStages": 9, "nRegisters": 6 }
+}
+```
+
+यह **आख़िरी सफल** run का वर्णन करता है। Fail हुआ run पिछले manifest को अछूता छोड़ता है,
+और abort हुआ run कोई manifest लिखता ही नहीं।
+
+## आगे
+
+<Cards>
+  <Card title="Work directory" href="/docs/concepts/work-directory" />
+  <Card title="व्यवहार में generation" href="/docs/guides/generating" />
+  <Card title="लागत और performance" href="/docs/guides/cost-and-performance" />
+</Cards>

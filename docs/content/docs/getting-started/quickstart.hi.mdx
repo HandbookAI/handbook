@@ -1,0 +1,130 @@
+---
+title: 'Quick start'
+description: 'पूरी toolchain को शुरू से आख़िर तक लगभग तीस सेकंड में चलाइए — offline, बिना API key और शून्य tokens खर्च करके।'
+---
+
+Handbook क्या करता है, यह समझने का सबसे तेज़ तरीक़ा है उसे करते हुए देखना। यह **पूरी**
+pipeline — analysis, generation, rendering, packaging, validation — एक bundled sample
+project पर, bundled mock LLM server के साथ चलाता है।
+
+**कोई API key नहीं। कोई network नहीं। शून्य tokens।**
+
+## Step 1 — चलाइए
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm demo
+```
+
+## Step 2 — जो छपा, उसे पढ़िए
+
+```text
+== build ==
+== start mock LLM (offline; prose will be placeholder text) ==
+== 1. analyze (no LLM) ==
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+== 2. generate (phases 2+3) ==
+{ "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
+== 3. render markdown + HTML site + agent index + llms.txt ==
+== 4. package as an agent SKILL (with the agent locator pages) ==
+== 5. validate the SKILL ==
+validate: OK
+```
+
+<Callout type="warn" title="Prose बेतुकी होगी — यही अपेक्षित है">
+  Mock LLM placeholder text लौटाता है। **Structure पूरी तरह असली है** — stages, file assignment, call facts,
+  line ranges, register table, हर link। सिर्फ़ वाक्य नक़ली हैं। यही ठीक वह विभाजन है जिस पर यह project बना है:
+  facts parser से आते हैं, prose model से।
+</Callout>
+
+## Step 3 — नतीजे खोलिए
+
+```bash
+open examples/work/demo/handbook/overview.md        # the markdown handbook
+open examples/work/demo/handbook/html/overview.html # the multi-page HTML site
+open examples/work/demo/handbook/handbook.html      # the whole thing in one file
+open examples/work/demo/skill/SKILL.md              # the agent SKILL package
+```
+
+ख़ास तौर पर देखने लायक़ चीज़ें:
+
+| इसे खोलिए                             | और इस पर ग़ौर कीजिए                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | Call graph से generate किया गया mermaid **stage map**                                       |
+| `handbook/index.md`                   | हर stage, nested, हरेक के साथ एक paragraph                                                  |
+| `handbook/register.md`                | Cross-stage state, हर हिस्से को छूने वाले stages के साथ                                     |
+| `handbook/agent/index.md`             | Agent locator format — कोई prose नहीं, सिर्फ़ addresses                                     |
+| `handbook/agent/disambiguation.md`    | ऐसे terms जो वाजिब तौर पर कई stages की ओर इशारा करते हैं                                    |
+| `skill/references/coverage.json`      | हर file का एक content hash। यही drift का signal है।                                         |
+| `work/demo/phase1/dropped-calls.json` | वे calls जिन्हें analyzer resolve **नहीं** कर सका — guess करने के बजाय सहेजी और categorized |
+
+## Step 4 — hood के नीचे झाँकिए
+
+Pipeline ने जो कुछ बनाया, वह सब work directory में सादा JSON और YAML है:
+
+```bash
+ls examples/work/demo/
+# phase1/  phase2/  phase3/  handbook/  skill/  run-manifest.json
+
+cat examples/work/demo/phase1/graph.json | head -40
+cat examples/work/demo/phase2/skeleton.yaml
+cat examples/work/demo/run-manifest.json     # model, phases, timings, token usage
+```
+
+इनमें से हर एक पढ़े जाते समय schema-validated है। अगर आप किसी को hand-edit करके invalid बना
+दें, तो अगला command बताता है कौन-सी file और क्यों — गड़बड़ी आगे नहीं फैलती।
+
+## बाक़ी demos
+
+```bash
+pnpm demo:self        # this repo as its own input, against the mock LLM
+pnpm demo:self:real   # same, but against the real endpoint from .env
+pnpm mock-llm         # just the mock server, on port 8099
+```
+
+पढ़ने के लिहाज़ से `pnpm demo:self` ज़्यादा दिलचस्प है: यह ग्यारह असली TypeScript packages का
+विश्लेषण करता है, इसलिए उससे बनने वाली stage structure एक असली codebase का असली नक़्शा है।
+
+## अभी हुआ क्या
+
+<div className="not-prose">
+  <img
+    src="/diagrams/pipeline.svg"
+    alt="Handbook pipeline: analyze, generate, render, skill, plan, apply, resync"
+    className="rounded-xl border"
+  />
+</div>
+
+1. **`analyze`** ने हर file को tree-sitter से parse करके एक typed call graph बनाया। कोई LLM
+   नहीं।
+2. **`generate`** ने हर file का एक card लिखा, एक stage skeleton synthesize किया, हर file को
+   किसी stage में assign किया, उन्हें group और order किया, फिर bottom-up narration लिखा और
+   cross-stage state registers निकाले।
+3. **`render`** ने उसे markdown, एक HTML site, एक self-contained page, agent locator index
+   और `llms.txt` में बदला। कोई LLM नहीं।
+4. **`skill`** ने उसे हर file के content hash के साथ एक agent SKILL में दोबारा package किया।
+   कोई LLM नहीं।
+5. **`validate`** ने structure, frontmatter contract, index ↔ stage-page links और hash की
+   ताज़गी जाँची। कोई LLM नहीं।
+
+Demo यहीं रुक जाता है। दूसरा आधा हिस्सा — **`plan` → `apply` → `rollback` → `resync`** —
+[आपका पहला handbook](/docs/getting-started/first-handbook) और
+[बदलावों की planning](/docs/guides/planning-changes) में शामिल है।
+
+## आगे
+
+<Cards>
+  <Card
+    title="आपका पहला असली handbook"
+    description="वही steps, आपकी repository — और वह बड़ी हो तो क्या करना है।"
+    href="/docs/getting-started/first-handbook"
+  />
+  <Card
+    title="शब्दावली"
+    description="Stage, card, register, work dir, case — यहाँ हर शब्द का क्या मतलब है।"
+    href="/docs/getting-started/vocabulary"
+  />
+  <Card title="Studio" description="वही pipeline, पर click करके।" href="/docs/guides/studio" />
+</Cards>
