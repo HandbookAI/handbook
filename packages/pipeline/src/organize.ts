@@ -227,7 +227,11 @@ export async function organizeStages(
   cards: Record<string, FileCard>,
   options: OrganizeOptions = {},
 ): Promise<Organization> {
-  const { workers = PIPELINE_DEFAULTS.organizeWorkers, lang = 'en', signal } = options;
+  const {
+    workers = PIPELINE_DEFAULTS.organizeWorkers,
+    lang = PIPELINE_DEFAULTS.narrateLang,
+    signal,
+  } = options;
   const logger = options.logger ?? silentLogger;
   const adjacency = fileCallAdjacency(graph);
 

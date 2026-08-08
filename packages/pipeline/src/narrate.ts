@@ -118,7 +118,12 @@ export async function narrate(
   inputs: NarrateInputs,
   options: NarrateOptions = {},
 ): Promise<Narration> {
-  const { workers = PIPELINE_DEFAULTS.narrateWorkers, refresh = false, lang = 'en', signal } = options;
+  const {
+    workers = PIPELINE_DEFAULTS.narrateWorkers,
+    refresh = false,
+    lang = PIPELINE_DEFAULTS.narrateLang,
+    signal,
+  } = options;
   const logger = options.logger ?? silentLogger;
   const tree = new StageTree(inputs.skeleton);
   const rules = lang === 'zh' ? STAGE_RULES_ZH : STAGE_RULES_EN;
@@ -297,7 +302,14 @@ export async function extractRegisters(
   cards: Record<string, FileCard>,
   options: RegistersOptions = {},
 ): Promise<RegisterEntry[]> {
-  const { maxRounds = 5, dryStreak = 2, refresh = false, lang = 'en', dataModelCap = 120, signal } = options;
+  const {
+    maxRounds = 5,
+    dryStreak = 2,
+    refresh = false,
+    lang = PIPELINE_DEFAULTS.narrateLang,
+    dataModelCap = 120,
+    signal,
+  } = options;
   const logger = options.logger ?? silentLogger;
   const tree = new StageTree(skeleton);
   const validIds = new Set(skeleton.stages.map((s) => s.id));

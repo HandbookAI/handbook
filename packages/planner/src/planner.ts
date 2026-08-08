@@ -9,7 +9,7 @@
  */
 import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
-import { silentLogger, truncate, type Logger } from '@handbook/core';
+import { silentLogger, settingByKey, truncate, type Logger } from '@handbook/core';
 import { ReadOnlyTools } from './tools.js';
 import {
   DEFAULT_PROMPT_VARS,
@@ -27,7 +27,7 @@ export interface PlannerOptions {
   /** The natural-language change request. */
   request: string;
   promptVars?: Partial<PlannerPromptVars>;
-  /** Maximum agent turns before forced finish. Default 30. */
+  /** Maximum agent turns before forced finish. Default: the registry default for `maxTurns`. */
   maxTurns?: number;
   logger?: Logger;
 }
@@ -123,7 +123,7 @@ const MAX_FABRICATIONS = 3;
 
 export async function runPlanner(options: PlannerOptions): Promise<PlannerResult> {
   const logger = options.logger ?? silentLogger;
-  const maxTurns = options.maxTurns ?? 30;
+  const maxTurns = options.maxTurns ?? (settingByKey('maxTurns')?.default as number);
   const vars = { ...DEFAULT_PROMPT_VARS, ...options.promptVars };
   const sourceTools = new ReadOnlyTools(options.sourceRoot);
   const handbookTools = options.handbookDir ? new ReadOnlyTools(options.handbookDir) : undefined;

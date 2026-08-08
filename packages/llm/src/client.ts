@@ -165,7 +165,7 @@ function stripReservedBodyFields(raw: unknown): Record<string, unknown> {
 
 export interface OpenAiChatClientOptions {
   config?: Partial<LlmEnvConfig>;
-  /** Global cap on concurrent requests through this client. Default 16. */
+  /** Global cap on concurrent requests through this client. Default: the registry default for `llmConcurrency`. */
   concurrency?: number;
   logger?: Logger;
   /** Request timeout in ms. Overrides `OPENAI_TIMEOUT`. */
@@ -241,7 +241,7 @@ export class OpenAiChatClient implements ChatClient {
       );
     }
     this.model = this.config.model;
-    this.limit = pLimit(options.concurrency ?? 16);
+    this.limit = pLimit(options.concurrency ?? (settingByKey('llmConcurrency')?.default as number));
     this.logger = options.logger ?? silentLogger;
     this.timeoutMs = options.timeoutMs ?? this.config.timeoutMs;
     this.fetchImpl = options.fetchImpl ?? fetch;

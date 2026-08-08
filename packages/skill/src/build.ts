@@ -16,6 +16,7 @@
 import { copyFileSync, readFileSync, rmSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import {
+  PIPELINE_DEFAULTS,
   ensureDir,
   fileExists,
   listFilesRecursive,
@@ -196,7 +197,7 @@ const AGENT_LOCATOR_PAGES = ['how_to_use.md', 'disambiguation.md'] as const;
 export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
   const { handbookDir, outDir } = options;
   const project = options.project ?? options.name;
-  const lang = options.lang ?? 'en';
+  const lang = options.lang ?? PIPELINE_DEFAULTS.narrateLang;
   if (!fileExists(join(handbookDir, 'index.md'))) {
     throw new Error(`${handbookDir} is not a rendered handbook (missing index.md)`);
   }
