@@ -103,6 +103,7 @@ describe('studio server (integration, mock LLM)', () => {
   let server: Server;
   let sourceRoot: string;
   const factoryLoggers: unknown[] = [];
+  const factoryOverrides: Array<Record<string, unknown> | undefined> = [];
 
   beforeAll(async () => {
     const stateDir = mkdtempSync(join(tmpdir(), 'hb-studio-'));
@@ -111,10 +112,11 @@ describe('studio server (integration, mock LLM)', () => {
     server = await startStudio({
       stateDir,
       port: PORT,
-      clientFactory: (logger) => {
+      clientFactory: (logger, llmOverrides) => {
         // The client MUST receive the job logger: without it, retries, timeouts
         // and gateway blocks never reach the job log a user is watching.
         factoryLoggers.push(logger);
+        factoryOverrides.push(llmOverrides);
         logger.warn('[llm] client attached');
         const inner = new MockChatClient(mockRules());
         return {
@@ -334,14 +336,139 @@ describe('studio server (integration, mock LLM)', () => {
     expect(evo.description).toContain('.py');
   });
 
-  it('labels a resync that found nothing to do', async () => {
+  it("labels a resync that found nothing to do — in the handbook's own language", async () => {
+    // Regression: this label used to be hard-coded Chinese via a body key the UI
+    // never sent (`narrateLang`, a generate-only setting). The fixture handbook's
+    // prose is English, so the label must be too.
     const job = await api('/api/repos/demo/resync', {
       method: 'POST',
       body: JSON.stringify({ description: '', noLlm: true }),
     });
     const done = await waitJob(job.id);
-    expect(done.result.description).toBe('无文件变更');
+    expect(done.result.description).toBe('no file changes');
     expect(done.result.descriptionSource).toBe('files');
+  });
+
+  it('honours the registry `proseLang` for the same label', async () => {
+    const job = await api('/api/repos/demo/resync', {
+      method: 'POST',
+      body: JSON.stringify({ description: '', noLlm: true, proseLang: 'zh' }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status).toBe('succeeded');
+    expect(done.result.description).toBe('无文件变更');
+  });
+
+  it('rejects an API key in any job body — secrets are environment-only', async () => {
+    for (const path of ['/api/repos/demo/generate', '/api/repos/demo/resync', '/api/repos/demo/render']) {
+      const res = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ llmApiKey: 'sk-nope' }),
+      });
+      expect(res.status, path).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('environment-only');
+    }
+  });
+
+  it('passes per-job LLM overrides to the client factory — validated, without the defaults', async () => {
+    factoryOverrides.length = 0;
+    const job = await api('/api/repos/demo/resync', {
+      method: 'POST',
+      body: JSON.stringify({ description: '', noLlm: false, llmMaxTokens: 4321 }),
+    });
+    await waitJob(job.id);
+    expect(factoryOverrides).toHaveLength(1);
+    // Only what the body carried — resending env/config values would let a
+    // registry default overwrite the factory's launch configuration.
+    expect(factoryOverrides[0]).toEqual({ llmMaxTokens: 4321 });
+
+    // And a garbage override is a 400 on the request, not a failed job.
+    const bad = await fetch(`${base}/api/repos/demo/resync`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: '', llmMaxTokens: 'lots' }),
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it('serves the registry settings for every studio-runnable command', async () => {
+    const out = await api('/api/settings');
+    const commands = Object.keys(out.commands);
+    for (const cmd of [
+      'analyze',
+      'generate',
+      'render',
+      'skill',
+      'validate',
+      'plan',
+      'apply',
+      'rollback',
+      'resync',
+    ]) {
+      expect(commands).toContain(cmd);
+    }
+    const generate = out.commands.generate as Array<Record<string, unknown>>;
+    const keys = generate.map((s) => s.key);
+    // The six that used to be validated and then silently dropped.
+    for (const key of [
+      'readBatchSize',
+      'maxCharsPerFile',
+      'assignBatchSize',
+      'assignWorkers',
+      'organizeWorkers',
+      'narrateWorkers',
+    ]) {
+      expect(keys).toContain(key);
+    }
+    // The secret is DESCRIBED (the UI shows an env hint) but marked as such.
+    const apiKey = generate.find((s) => s.key === 'llmApiKey');
+    expect(apiKey?.secret).toBe(true);
+    // Dynamic language choices are resolved, not the placeholder.
+    const lang = generate.find((s) => s.key === 'lang');
+    expect(lang?.choices).toContain('python');
+    // Studio-managed settings are flagged so the UI never renders a dead knob.
+    const source = generate.find((s) => s.key === 'source');
+    expect(source?.managed).toBe(true);
+  });
+
+  it('re-renders on demand with the registry render settings, llms.txt included', async () => {
+    const job = await api('/api/repos/demo/render', {
+      method: 'POST',
+      body: JSON.stringify({ html: true, htmlSingle: true, agentSite: true, llmsTxt: true }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status).toBe('succeeded');
+    expect(done.result.html.nPages).toBeGreaterThan(0);
+    expect(done.result.llms).toBeDefined();
+    // The artifact is actually served, not just reported.
+    const llms = await fetch(`${base}/api/repos/demo/handbook/llms.txt`);
+    expect(llms.status).toBe(200);
+    expect(await llms.text()).toContain('#');
+  });
+
+  it('packages a SKILL and validates it', async () => {
+    const job = await api('/api/repos/demo/skill', {
+      method: 'POST',
+      body: JSON.stringify({ project: 'Demo' }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status).toBe('succeeded');
+    expect(done.result.outDir).toContain('skill');
+    expect(done.result.references.length).toBeGreaterThan(0);
+
+    const verdict = await api('/api/repos/demo/validate', { method: 'POST', body: '{}' });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.errors).toEqual([]);
+  });
+
+  it('remembers the last-used params per job kind, so the UI can pre-fill', async () => {
+    const repo = await api('/api/repos/demo');
+    expect(repo.lastParams?.render).toMatchObject({ html: true, llmsTxt: true });
+    expect(repo.lastParams?.resync).toBeDefined();
+    // Never a secret, even though the request that carried one was rejected anyway.
+    expect(JSON.stringify(repo.lastParams)).not.toContain('sk-nope');
   });
 
   it("keeps the author's own description untouched and marks it as theirs", async () => {

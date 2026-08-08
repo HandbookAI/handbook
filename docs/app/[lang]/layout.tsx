@@ -3,7 +3,7 @@ import { defineI18nUI } from 'fumadocs-ui/i18n';
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import '../global.css';
-import { PlatformMeta, siteMetadata } from '@/lib/seo';
+import { PlatformMeta, StructuredData, siteMetadata } from '@/lib/seo';
 import { brand } from '@/lib/shared';
 import { BCP47, i18n, LOCALES, type Locale } from '@/lib/i18n';
 import { UI } from '@/lib/ui-strings';
@@ -70,6 +70,7 @@ export default async function Layout({ children, params }: LayoutProps<'/[lang]'
       </head>
       <body className="flex min-h-screen flex-col">
         <RootProvider i18n={provider(lang)}>{children}</RootProvider>
+        <StructuredData />
       </body>
     </html>
   );
