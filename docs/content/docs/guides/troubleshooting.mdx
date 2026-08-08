@@ -38,6 +38,19 @@ The `FROM` column tells you which layer actually won. Usual causes:
 
 Move it to `.env` or the shell environment. This refusal is deliberate.
 
+### `node: /some/path.env: not found`, and exit code 9
+
+Not a Handbook error at all. Node >= 20.6 has its own `--env-file` flag and pre-scans the
+whole command line for it, so it dies on a missing path **before** Handbook starts. Use
+the variable instead, which nothing can intercept:
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+The flag is fine whenever the file actually exists.
+
 ### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
 
 The file parsed as YAML but is not an object at the top level. Check the indentation of

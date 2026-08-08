@@ -20,7 +20,8 @@ pnpm build:watch
 pnpm test              # build + vitest
 pnpm test:watch
 pnpm check             # the everyday gate — run this before committing
-pnpm check:all         # check + packaging + install smoke — what CI runs
+pnpm check:all         # check + packaging + install + CLI smoke — what CI runs
+pnpm check:cli         # every subcommand and config layer, end to end, offline
 ```
 
 `pnpm check` runs, in order:
@@ -31,10 +32,41 @@ pnpm check:all         # check + packaging + install smoke — what CI runs
 4. `format:check` — prettier
 5. `test:coverage` — vitest with **per-package** coverage floors
 
-It is deliberately the fast one. `pnpm check:all` adds the two publish-facing gates —
-`check:packaging` (publint + are-the-types-wrong) and `check:install` (pack eleven
-tarballs, install them with plain npm, drive the CLI) — which belong in CI and before a
-release rather than in every local loop.
+It is deliberately the fast one. `pnpm check:all` adds three heavier gates —
+`check:packaging` (publint + are-the-types-wrong), `check:install` (pack eleven tarballs,
+install them with plain npm, drive the CLI) and `check:cli` (below) — which belong in CI
+and before a release rather than in every local loop.
+
+### What `check:cli` covers
+
+`scripts/smoke-cli.sh` drives the **real** binary end to end against the bundled mock
+LLM: 75 assertions over every subcommand, every configuration layer and, most
+importantly, the refusals.
+
+- Every `--help` surface, and an unknown subcommand exiting `1`
+- `config` provenance, `--json`, and `--check` exiting `2` on a missing required value
+- Invalid enum / integer / phase values exiting `1` rather than falling through to a default
+- The generation matrix: phase subsets, `--resume`, `--detail deep`, `--synth-mode doctor`,
+  `--llm-cache`, `--narrate-lang zh`
+- Every render format, and `render` on an empty work dir failing
+- `skill` refusing an `--out` that would eat its own input; `validate` exiting `2`
+- `apply` refusing an **ambiguous** anchor and a **path escape**; a real `rollback`
+  restoring byte for byte
+- `resync` with and without an LLM, and an empty diff skipping cleanly
+- Precedence: shell env over config file, `.env.<name>` over `handbook.config.<name>.yaml`,
+  scoped over flat, empty-as-unset, and the API key **masked** in `config` output
+- Artifact sanity: every expected file present, card coverage complete, no unassigned
+  files, token usage recorded
+
+The unit tests mock `generateHandbook` and its neighbours, so they cannot catch a flag
+that resolves correctly and is then never passed on, a wrong exit code, or an artifact
+contract that broke at the seam. This can — and it is entirely offline, so it is safe in
+CI.
+
+```bash
+pnpm check:cli
+SMOKE_PORT=9123 pnpm check:cli    # if port 8123 is taken
+```
 
 A pre-commit hook runs the formatter and linter over **staged files only**, and
 `commit-msg` enforces Conventional Commits.

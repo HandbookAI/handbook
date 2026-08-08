@@ -279,6 +279,65 @@ describe('--env cascade (Task 13)', () => {
     expect(parsed.settings.llmModel?.value).toBe('from-prod');
   });
 
+  it('HANDBOOK_ENV_FILE loads exactly that file and bypasses the cascade, like --env-file', async () => {
+    // Not a convenience alias. On Node >= 20.6 `--env-file` is also a node flag,
+    // and node pre-scans the whole command line for it — so
+    // `handbook --env-file /gone.env` dies with `node: /gone.env: not found`
+    // (exit 9) before main.ts ever runs, which is exactly the case the flag is
+    // documented to report loudly. An environment variable cannot be
+    // intercepted, so this is the reliable route and must keep working.
+    writeFileSync(join(cwd, '.env'), 'HANDBOOK_LLM_MODEL=from-cascade\n');
+    const explicit = join(cwd, 'somewhere-else.env');
+    writeFileSync(explicit, 'HANDBOOK_LLM_MODEL=from-explicit-file\n');
+    process.env.HANDBOOK_ENV_FILE = explicit;
+    try {
+      await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+        from: 'node',
+      });
+    } finally {
+      delete process.env.HANDBOOK_ENV_FILE;
+    }
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      envFiles: string[];
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.envFiles).toEqual([explicit]); // the cascade was bypassed, not merged
+    expect(parsed.settings.llmModel?.value).toBe('from-explicit-file');
+  });
+
+  it('--env-file wins over HANDBOOK_ENV_FILE, the same way every other flag beats its env form', async () => {
+    const fromFlag = join(cwd, 'flag.env');
+    const fromEnv = join(cwd, 'env.env');
+    writeFileSync(fromFlag, 'HANDBOOK_LLM_MODEL=from-flag\n');
+    writeFileSync(fromEnv, 'HANDBOOK_LLM_MODEL=from-env-var\n');
+    process.env.HANDBOOK_ENV_FILE = fromEnv;
+    try {
+      await program.parseAsync(
+        ['node', 'handbook', '--env-file', fromFlag, 'config', '--command', 'generate', '--json'],
+        { from: 'node' },
+      );
+    } finally {
+      delete process.env.HANDBOOK_ENV_FILE;
+    }
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      envFiles: string[];
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.envFiles).toEqual([fromFlag]);
+    expect(parsed.settings.llmModel?.value).toBe('from-flag');
+  });
+
+  it('a HANDBOOK_ENV_FILE naming a missing file fails loudly, exactly as --env-file promises to', async () => {
+    process.env.HANDBOOK_ENV_FILE = join(cwd, 'does-not-exist.env');
+    try {
+      await expect(
+        program.parseAsync(['node', 'handbook', 'config', '--command', 'generate'], { from: 'node' }),
+      ).rejects.toThrow(/does-not-exist\.env/);
+    } finally {
+      delete process.env.HANDBOOK_ENV_FILE;
+    }
+  });
+
   it('prefers handbook.config.prod.yaml over the plain handbook.config.yaml when --env prod is set', async () => {
     writeFileSync(join(cwd, 'handbook.config.yaml'), 'llm:\n  model: from-plain-file\n');
     writeFileSync(join(cwd, 'handbook.config.prod.yaml'), 'llm:\n  model: from-prod-file\n');

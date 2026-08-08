@@ -29,7 +29,7 @@ handbook analyze --source ~/code/api --work work/api | jq .functions
 | `-v, --verbose`     | Debug logging                                                                                                                                                          |
 | `-q, --quiet`       | Errors only — **wins over `-v`**                                                                                                                                       |
 | `--env <name>`      | Select an environment: loads `.env.<name>.local` and `.env.<name>` ahead of `.env.local` and `.env`, and prefers `handbook.config.<name>.yaml`. Same as `HANDBOOK_ENV` |
-| `--env-file <path>` | Load exactly this file, bypassing the `.env` cascade. **A missing file is a loud error, not a fallback**                                                               |
+| `--env-file <path>` | Load exactly this file, bypassing the `.env` cascade. **A missing file is a loud error, not a fallback.** Prefer `HANDBOOK_ENV_FILE` — see the warning below           |
 | `--config <path>`   | Use this config file instead of discovering the nearest `handbook.config.yaml`                                                                                         |
 
 Global options go **before** the subcommand:
@@ -37,6 +37,30 @@ Global options go **before** the subcommand:
 ```bash
 handbook --env prod -v generate --source ~/code/api --work work/api
 ```
+
+<Callout type="warn" title="`--env-file` collides with a Node flag">
+  Node >= 20.6 has its own `--env-file`, and it **pre-scans the whole command line** for
+  it — including the part after the script path, where it does not actually apply the
+  file. A path that exists passes through to Handbook untouched, but a path that does
+  **not** exist kills the process first:
+
+```bash
+$ handbook --env-file /gone.env config
+node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+```
+
+So the one case the flag promises to report loudly is the one case it cannot report.
+`HANDBOOK_ENV_FILE` does exactly the same thing and cannot be intercepted:
+
+```bash
+$ HANDBOOK_ENV_FILE=/gone.env handbook config
+handbook: error: ENOENT: no such file or directory, open '/gone.env'
+```
+
+The flag still works whenever the file is actually there, and it beats the environment
+variable when both are set.
+
+</Callout>
 
 ---
 
