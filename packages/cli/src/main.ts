@@ -19,7 +19,7 @@
  */
 import { Command } from 'commander';
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
@@ -436,9 +436,24 @@ addSettings(
 // module to drive `program` directly with its own argv (see main.test.ts).
 // `process.argv[1]` is the script path either way (`handbook ...` or
 // `node dist/main.js ...`), so comparing it to this module's own path is a
-// safe run-as-main check that needs no environment flag of its own.
-const isMainModule = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
-if (isMainModule) {
+// safe run-as-main check that needs no environment flag of its own. Both
+// sides go through `realpathSync` before comparing: Node's loader resolves
+// symlinks when computing `import.meta.url` for the main entry (this is
+// exactly what `--preserve-symlinks-main` opts out of), but leaves
+// `process.argv[1]` exactly as typed — so on a symlinked path (a real bin
+// install, or macOS's `/var` → `/private/var`) the two strings differ even
+// though they name the same file. Missing either path (`argv[1]` unset, or
+// a path that no longer exists) means "not the main module", not a crash.
+function runningAsMain(): boolean {
+  if (process.argv[1] === undefined) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (runningAsMain()) {
   program.parseAsync(process.argv).catch((error: unknown) => {
     process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
