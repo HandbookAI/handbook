@@ -116,13 +116,45 @@ interface StageOrganization {
   orderedFiles: string[];
 }
 
-function toOrganizedFile(file: string, cards: Record<string, FileCard>): OrganizedFile {
+/**
+ * Functions per file, from the GRAPH.
+ *
+ * `nFunctions` used to be read off the card — but only a DEEP card carries a
+ * `functions` array, so in the default `--detail brief` it was 0 for every file
+ * in the handbook. Measured across seventeen real repositories: 0 for all 8,489
+ * files, while the graph knew gson alone had 3,123 functions.
+ *
+ * That number is not decoration. The agent locator index picks each group's
+ * exemplar as its highest-function-count file and emits the field only when one
+ * exists, so a permanent 0 removed **Exemplar** from every page it ever
+ * rendered — and printed "(0 fns)" beside every core file. The graph has been in
+ * scope here the whole time; the card was simply the wrong place to ask.
+ *
+ * Synthetic nodes are excluded: they are implicit constructors that appear in no
+ * source file, and counting them would inflate what a reader sees against what
+ * they would find when they opened the file.
+ */
+export function functionCountsByFile(graph: CodeGraph): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const node of Object.values(graph.nodes)) {
+    if (!isInternalNode(node) || node.synthetic) continue;
+    counts.set(node.file, (counts.get(node.file) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function toOrganizedFile(
+  file: string,
+  cards: Record<string, FileCard>,
+  counts: Map<string, number>,
+): OrganizedFile {
   const card = cards[file];
   return {
     file,
     purpose: card?.purpose ?? '',
     role: card?.role ?? 'other',
-    nFunctions: card?.functions?.length ?? 0,
+    // Graph first; the card is the fallback for a file the graph never saw.
+    nFunctions: counts.get(file) ?? card?.functions?.length ?? 0,
   };
 }
 
@@ -134,19 +166,22 @@ async function organizeOneStage(
   orderedInput: string[],
   adjacency: Map<string, Set<string>>,
   cards: Record<string, FileCard>,
+  counts: Map<string, number>,
   lang: NarrateLang,
   logger: Logger,
   signal?: AbortSignal,
 ): Promise<StageOrganization> {
   const flat = (summary: string): StageOrganization => ({
     title,
-    groups: [{ title: '(ungrouped)', summary, files: orderedInput.map((f) => toOrganizedFile(f, cards)) }],
+    groups: [
+      { title: '(ungrouped)', summary, files: orderedInput.map((f) => toOrganizedFile(f, cards, counts)) },
+    ],
     orderedFiles: [...orderedInput],
   });
   if (orderedInput.length <= 1) {
     return {
       title,
-      groups: [{ title, summary: '', files: orderedInput.map((f) => toOrganizedFile(f, cards)) }],
+      groups: [{ title, summary: '', files: orderedInput.map((f) => toOrganizedFile(f, cards, counts)) }],
       orderedFiles: [...orderedInput],
     };
   }
@@ -155,7 +190,7 @@ async function organizeOneStage(
   const rows = orderedInput.map((file) => {
     const card = cards[file];
     const callees = [...(adjacency.get(file) ?? [])].filter((c) => inStage.has(c)).slice(0, 4);
-    const meta = card ? `  [${card.role}, ${card.functions?.length ?? 0} fn]` : '';
+    const meta = card ? `  [${card.role}, ${counts.get(file) ?? card.functions?.length ?? 0} fn]` : '';
     const calls = callees.length ? `  calls→ [${callees.join(', ')}]` : '';
     return `- ${file}${meta}\n    ${card?.purpose ?? ''}${calls}`;
   });
@@ -198,7 +233,7 @@ async function organizeOneStage(
     for (const f of Array.isArray(g.files) ? g.files : []) {
       if (typeof f !== 'string' || !inStage.has(f) || seen.has(f)) continue;
       seen.add(f);
-      files.push(toOrganizedFile(f, cards));
+      files.push(toOrganizedFile(f, cards, counts));
     }
     if (files.length === 0) continue;
     groups.push({
@@ -212,7 +247,7 @@ async function organizeOneStage(
     groups.push({
       title: 'Other',
       summary: '(not placed by the model)',
-      files: unplaced.map((f) => toOrganizedFile(f, cards)),
+      files: unplaced.map((f) => toOrganizedFile(f, cards, counts)),
     });
   }
   if (groups.length === 0) return flat('(organize produced nothing usable; flat call-graph order)');
@@ -234,6 +269,7 @@ export async function organizeStages(
   } = options;
   const logger = options.logger ?? silentLogger;
   const adjacency = fileCallAdjacency(graph);
+  const counts = functionCountsByFile(graph);
 
   const work = skeleton.stages.filter((s) => (assignment.buckets[s.id]?.length ?? 0) > 0);
   const progress = new Progress(logger, 'organize', work.length);
@@ -253,6 +289,7 @@ export async function organizeStages(
           ordered,
           adjacency,
           cards,
+          counts,
           lang,
           logger,
           signal,
@@ -267,7 +304,7 @@ export async function organizeStages(
           {
             title: '(ungrouped)',
             summary: '(organize failed; flat call-graph order)',
-            files: ordered.map((f) => toOrganizedFile(f, cards)),
+            files: ordered.map((f) => toOrganizedFile(f, cards, counts)),
           },
         ],
         orderedFiles: ordered,

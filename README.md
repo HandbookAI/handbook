@@ -119,9 +119,10 @@ Concretely, one `generate` + `render` produces:
   straight off `file://`, no server, no CDN.
 - **One self-contained HTML page** — the whole handbook in a single file you can email.
 - **An agent locator index** — a deterministic, fact-gated routing layer: duty, entry
-  concepts, state touched, exemplar files, co-change hints, core files. A field is
+  concepts, state touched, exemplar files, core files, and co-change hints. A field is
   emitted _only_ if the structural signal for it exists, so an empty field means
-  "no signal", never "unknown".
+  "no signal", never "unknown". (Co-change is the sparsest by design: it fires only where
+  a test file sits _beside_ its source, which most projects do not do.)
 - **`llms.txt` and `llms-full.txt`** — the [llms.txt](https://llmstxt.org/) convention,
   plus the whole handbook flattened into one document.
 - **A SKILL package** — `SKILL.md` + `references/`, with `coverage.json` carrying a
