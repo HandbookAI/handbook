@@ -2667,6 +2667,378 @@ git commit -m "chore(repo): record the config registry work and its breaking cha
 
 ---
 
+### Task 12: Docker 支持（用户 2026-08-07 追加要求）
+
+**Files:**
+- Modify: `packages/core/src/config/registry.ts`（新增 `host` 一项）+ `registry.test.ts`
+- Modify: `packages/studio/src/server.ts:39,1016-1023`（`StudioOptions.host` + `listen`）+ `server.test.ts`
+- Modify: `packages/cli/src/main.ts`（studio action 传 `cfg.host`）
+- Create: `Dockerfile`、`.dockerignore`、`docker-compose.yml`
+- Modify: `package.json`（两个 docker 脚本）、`README.md`、`README.zh-CN.md`
+
+**Interfaces:**
+- Consumes: 登记表与解析器（Task 2–9）
+- Produces: `host` 设置；`StudioOptions.host`；`pnpm run docker:build` / `docker:studio`
+
+**为什么这不只是打包。** `startStudio` 把 `'127.0.0.1'` 写死在 `server.ts:1022`。容器里绑
+loopback 意味着 `-p 4860:4860` **完全不通** —— 宿主机永远连不上。所以 Docker 支持的前提
+是一个真正的绑定地址配置项，而它现在只是登记表里的一行。
+
+**必须理解、绝不可放松的一点。** `server.ts:977-983` 的 `isLoopbackRequest` 是针对本地工具的
+CSRF / DNS-rebinding 防线：它校验的是 **`Host` 请求头**，不是 socket 地址。因此绑 `0.0.0.0`
+之后，宿主机浏览 `http://localhost:4860` 发出的 `Host: localhost:4860` **仍然通过**，防线完好。
+用 LAN IP 或容器名访问会 **403**，这是**正确行为**，要写进文档，**不许**为了"方便"去放宽
+`LOOPBACK_HOST_RE`。真要远程访问是另一个需要单独决策的功能（显式 allowlist），本任务**非目标**。
+
+- [ ] **Step 1: 写失败测试 —— host 设置存在且默认 loopback**
+
+追加到 `packages/core/src/config/registry.test.ts`：
+
+```ts
+  it('defaults studio to loopback, and keeps it configurable', () => {
+    // Containers need 0.0.0.0; everyone else must stay on loopback by default.
+    const host = settingByKey('host');
+    expect(host?.default).toBe('127.0.0.1');
+    expect(host?.commands).toEqual(['studio']);
+    expect(host?.flag).toBe('--host <addr>');
+  });
+```
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `npx vitest run packages/core/src/config/registry.test.ts`
+Expected: FAIL —— `settingByKey('host')` 是 undefined
+
+- [ ] **Step 3: 加登记表条目**
+
+```ts
+  { key: 'host', type: 'string', flag: '--host <addr>', default: '127.0.0.1', commands: ['studio'],
+    doc: 'bind address; stays on loopback unless you set it (containers need 0.0.0.0). The CSRF guard still requires a loopback Host header' },
+```
+
+- [ ] **Step 4: 写 studio 侧的失败测试**
+
+追加到 `packages/studio/src/server.test.ts`：
+
+```ts
+  it('binds the requested address, defaulting to loopback', async () => {
+    const server = await startStudio({ stateDir: tmpStateDir(), port: 0, host: '0.0.0.0' });
+    const address = server.address();
+    expect(typeof address === 'object' && address?.address).toBe('0.0.0.0');
+    server.close();
+  });
+
+  it('still refuses a non-loopback Host header when bound to 0.0.0.0', async () => {
+    // The CSRF defence is about the Host HEADER, not the socket. Binding wide
+    // for a container must not widen who may talk to it.
+    const server = await startStudio({ stateDir: tmpStateDir(), port: 0, host: '0.0.0.0' });
+    const port = (server.address() as { port: number }).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`, {
+      headers: { host: 'evil.example.com' },
+    });
+    expect(res.status).toBe(403);
+    server.close();
+  });
+```
+
+（`tmpStateDir()` 用该文件已有的临时目录辅助函数；照抄它现有的写法，不要新造。若 `fetch` 无法
+覆盖 `host` 头，改用 `node:http` 的 `request` 显式设置，并在报告里说明。）
+
+- [ ] **Step 5: 让 studio 接受 host**
+
+`server.ts` 的 `StudioOptions` 加：
+
+```ts
+  /** Bind address. Default 127.0.0.1 — a container passes 0.0.0.0. The Host-header
+   *  guard in createStudioServer is unaffected and must stay as it is. */
+  host?: string;
+```
+
+`startStudio` 改为 `server.listen(port, options.host ?? '127.0.0.1', …)`，并把该函数上方
+"Start the server on 127.0.0.1" 的注释改成说明默认值与 Host 头防线的关系。
+`main.ts` 的 studio action 传 `host: cfg.host as string`，启动提示行也用实际地址而不是写死的
+`127.0.0.1`。
+
+- [ ] **Step 6: 运行确认通过**
+
+Run: `pnpm run build && npx vitest run packages/studio packages/core packages/cli`
+Expected: PASS
+
+- [ ] **Step 7: `.dockerignore`**
+
+```
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+coverage
+work
+runs
+examples/work
+.git
+.superpowers
+.claude
+.env
+```
+
+- [ ] **Step 8: `Dockerfile`**
+
+**Node 22，不是 24** —— `tree-sitter-swift` 在 V8 >= 13 上会**直接终止进程**（exit 133，这就是
+`vitest.config.ts` 要用 `--liftoff-only` 的原因）。Node 22 是 V8 12.4，Node 24 是 13.6：用 22
+就不必在生产镜像里带那个 flag，用 24 会让容器里的 Swift 分析静默崩掉。
+依赖全是纯 JS + wasm（`web-tree-sitter`、`tree-sitter-wasms`），所以 alpine 可用、不需要编译工具链。
+
+```dockerfile
+# syntax=docker/dockerfile:1
+# Node 22, deliberately not 24: tree-sitter-swift aborts the process on V8 >= 13
+# (exit 133). Node 22 ships V8 12.4, so Swift analysis works without the
+# --liftoff-only flag the test runner needs elsewhere.
+FROM node:22-alpine AS build
+WORKDIR /app
+RUN corepack enable
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig*.json ./
+COPY packages ./packages
+RUN pnpm install --frozen-lockfile
+RUN pnpm run build
+# Drop dev dependencies from the tree we copy forward.
+RUN pnpm prune --prod
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+RUN corepack enable
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+COPY --from=build /app/package.json /app/pnpm-workspace.yaml ./
+# A handbook run only ever needs to read /src and write /work.
+RUN addgroup -S handbook && adduser -S -G handbook handbook \
+ && mkdir -p /src /work && chown -R handbook:handbook /src /work
+USER handbook
+ENV HANDBOOK_SOURCE=/src HANDBOOK_WORK=/work
+ENTRYPOINT ["node", "/app/packages/cli/dist/main.js"]
+CMD ["--help"]
+```
+
+注意 `ENV HANDBOOK_SOURCE/HANDBOOK_WORK` 正是这次配置工作的红利：容器里不必在每条命令后面
+重复 `--source /src --work /work`，而宿主机上的 flag 依然能覆盖它们。
+
+- [ ] **Step 9: `docker-compose.yml`（studio）**
+
+```yaml
+services:
+  studio:
+    build: .
+    command: ["studio"]
+    ports: ["4860:4860"]
+    environment:
+      # A container must listen wide or the published port is unreachable. The
+      # Host-header guard still applies, so browse http://localhost:4860 from the
+      # host — a LAN IP or the container name is refused by design.
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+      HANDBOOK_STUDIO_STATE_DIR: /work/.handbook-studio
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+volumes:
+  handbook-work:
+```
+
+- [ ] **Step 10: 脚本与文档**
+
+`package.json` 加两行（放在 `demo` 之前，保持家族分组）：
+
+```json
+    "docker:build": "docker build -t handbook:local .",
+    "docker:studio": "docker compose up --build studio",
+```
+
+两个 README 各加一小节：镜像怎么建、`docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze`
+怎么跑、studio 怎么起、以及**为什么只能用 `http://localhost:4860` 访问**（Host 头防线）。
+`docker run --env-file .env` 与既有的 `.env` 加载是叠加关系，也写一句。
+
+- [ ] **Step 11: 真的把镜像跑起来**
+
+```bash
+pnpm run docker:build
+docker run --rm -v "$PWD/examples/demo-project:/src:ro" -v hb-work:/work handbook:local analyze
+docker run --rm handbook:local --help | head -20
+docker compose up -d --build studio && sleep 3
+curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:4860/api/state          # 期望 200
+curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: evil.example.com' http://localhost:4860/api/state  # 期望 403
+docker compose down -v
+```
+Expected: `analyze` 在容器里写出 graph 并打印统计；两条 curl 分别 200 与 403 —— 后者证明绑宽了
+但防线没松。**Docker 不可用就如实报告并停下**，不要伪造这一步的输出。
+
+- [ ] **Step 12: 提交**
+
+```bash
+git add Dockerfile .dockerignore docker-compose.yml package.json README.md README.zh-CN.md packages/core/src/config packages/studio/src packages/cli/src/main.ts
+git commit -m "feat(repo): ship a container image, and make studio's bind address configurable
+
+Studio hardcoded 127.0.0.1, so a published container port was unreachable —
+Docker support needed a real bind-address setting, which the registry made a
+one-line addition. The default stays loopback.
+
+The Host-header CSRF guard is deliberately untouched: it inspects the header,
+not the socket, so browsing localhost:4860 from the host still passes while a
+LAN IP or container name is refused. Binding wide does not widen who may talk
+to it. Node 22, not 24, because tree-sitter-swift aborts the process on V8 >= 13."
+```
+
+### Task 13: 多环境支持（用户 2026-08-08 追加要求）
+
+**Files:**
+- Modify: `packages/core/src/util/env-file.ts`（级联加载）+ `env-file.test.ts`
+- Modify: `packages/core/src/config/file.ts`（按环境发现配置文件）+ `file.test.ts`
+- Modify: `packages/cli/src/main.ts`（`--env` 引导选项 + preAction 级联）
+- Modify: `packages/cli/src/config-command.ts`（显示激活环境与已加载文件）+ 测试
+- Modify: `packages/core/src/config/render-docs.ts`（Bootstrap 一节写清级联）
+- Modify: `Dockerfile`、`docker-compose.yml`、`README.md`、`README.zh-CN.md`
+
+**前置条件（已在 fix wave 的 P2-18 处理）：** `.gitignore` 与 `.dockerignore` 必须先改成
+`.env*` + `!.env.example`。**在那之前不许合入本任务** —— 否则 `.env.production` 一旦存在就会
+被提交进 git、并烘进镜像层。这是本功能的安全前置，不是收尾工作。
+
+**设计。** `--env <name>` / `HANDBOOK_ENV` 是**引导层**设置，与 `--config` / `--env-file`
+同级：它不能被自己加载的东西设置，因此不进登记表的常规解析，在 `preAction` 里最先读取。
+
+加载顺序（**优先级从高到低**；`applyEnvFile` 既有语义是"绝不覆盖已存在的值"，所以按此顺序
+依次调用即可，先到先得）：
+
+```
+1. shell 环境          （永远最高）
+2. .env.<name>.local   个人 · 该环境专属   （gitignored）
+3. .env.<name>         团队 · 该环境专属   （提交）
+4. .env.local          个人 · 全环境       （gitignored）
+5. .env                团队 · 基线         （提交）
+```
+
+未指定 `--env` 时，只加载 4 与 5 —— **既有行为完全不变**，这是本任务的兼容性底线。
+
+配置文件同理：`handbook.config.<name>.yaml` 先于 `handbook.config.yaml` 被发现（向上查找的
+每一层目录里都先试带环境名的那个），`--config` 显式指定时不参与环境推导。
+
+- [ ] **Step 1: 写失败测试 —— 级联顺序与"先到先得"**
+
+`packages/core/src/util/env-file.test.ts` 追加：
+
+```ts
+describe('applyEnvFiles cascade', () => {
+  it('lets a more specific file win, and never overrides the shell', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, '.env'), 'A=base\nB=base\nC=base\n');
+    writeFileSync(join(dir, '.env.local'), 'B=local\nC=local\n');
+    writeFileSync(join(dir, '.env.prod'), 'C=prod\nD=prod\n');
+    const env: NodeJS.ProcessEnv = { A: 'shell' };
+    const loaded = applyEnvFiles(dir, 'prod', env);
+    expect(env.A).toBe('shell');   // shell always wins
+    expect(env.B).toBe('local');   // .env.local beats .env
+    expect(env.C).toBe('prod');    // .env.prod beats both
+    expect(env.D).toBe('prod');
+    expect(loaded).toEqual([join(dir, '.env.prod'), join(dir, '.env.local'), join(dir, '.env')]);
+  });
+
+  it('loads only .env.local and .env when no environment is named', () => {
+    const dir = tmp();
+    writeFileSync(join(dir, '.env'), 'A=base\n');
+    writeFileSync(join(dir, '.env.prod'), 'A=prod\n');
+    const env: NodeJS.ProcessEnv = {};
+    expect(applyEnvFiles(dir, undefined, env)).toEqual([join(dir, '.env')]);
+    expect(env.A).toBe('base');   // an unnamed run must not pick up .env.prod
+  });
+
+  it('is silent about files that do not exist', () => {
+    expect(applyEnvFiles(tmp(), 'nope', {})).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `npx vitest run packages/core/src/util/env-file.test.ts`
+Expected: FAIL —— `applyEnvFiles` 不存在
+
+- [ ] **Step 3: 实现 `applyEnvFiles`**
+
+保留 `applyEnvFile`（单文件，`--env-file` 仍然用它）。新增 `applyEnvFiles(dir, name, env)`：
+按上表顺序对存在的文件依次调用 `applyEnvFile`，返回**实际加载的文件路径数组**（顺序即优先级）。
+"绝不覆盖"由 `applyEnvFile` 本身保证，因此级联只是"按优先级从高到低依次调用"。
+
+- [ ] **Step 4: 配置文件按环境发现**
+
+`discoverConfigFile(from, name?)`：向上走的每一层目录，先试
+`handbook.config.<name>.{yaml,yml,json}`，再试无环境名的三个；找到即返回。git 根边界与
+既有行为不变。补测试：子目录里执行、`--env prod` 时命中上层的 `handbook.config.prod.yaml`
+而不是同层的 `handbook.config.yaml`。
+
+- [ ] **Step 5: CLI 接线**
+
+`main.ts` 顶层加 `--env <name>`（帮助文本要说明它是引导选项，且 `HANDBOOK_ENV` 等价）。
+preAction 里：先取 `--env` 或 `process.env.HANDBOOK_ENV` → 调 `applyEnvFiles(process.cwd(), name)`
+→ 再按环境发现配置文件。**顺序不可调换**（env 文件必须在配置文件之前进入 `process.env`）。
+把"激活环境 + 已加载文件列表"存起来供 `handbook config` 使用。
+
+- [ ] **Step 6: `handbook config` 必须显示环境**
+
+四层已经难追，级联之后是八个可能的来源。`handbook config` 顶部输出：
+
+```
+environment: prod  (--env)
+env files:   .env.prod, .env.local, .env       (highest precedence first)
+config file: handbook.config.prod.yaml
+```
+
+`--json` 里同样带上这三项。**没有这个，级联就是不可审计的** —— 与 studio 那个 bug 是同一个
+教训：检查工具看不到的东西，等于不存在。补测试钉住 JSON 里这三个字段。
+
+- [ ] **Step 7: 生成文档**
+
+`render-docs.ts` 的 Bootstrap 一节（fix wave 的 P1-12 新建）补上级联表与
+"未指定 `--env` 时行为不变"这句。`.env.example` 头部同样说明。跑 `pnpm run config:docs`
+重新生成三个文件并提交。
+
+- [ ] **Step 8: Docker**
+
+- 确认 `.dockerignore` 已是 `.env*`（P2-18），**镜像里不烘任何 `.env*`** —— 一个镜像服务所有环境。
+- `Dockerfile` 不写死 `HANDBOOK_ENV`；由 compose / `docker run -e` 传入。
+- `docker-compose.yml` 加 `HANDBOOK_ENV: ${HANDBOOK_ENV:-}`，并在注释里写明用
+  `docker run --env-file .env.prod` 或 `-e HANDBOOK_ENV=prod` + 挂载。
+- README 两份各加一个 `--env` 例子。
+
+- [ ] **Step 9: 验证**
+
+```bash
+pnpm run build
+printf 'HANDBOOK_LLM_MODEL=from-base\n' > /tmp/hbenv/.env
+printf 'HANDBOOK_LLM_MODEL=from-prod\n' > /tmp/hbenv/.env.prod
+cd /tmp/hbenv && handbook config --command generate | grep -E 'environment|env files|llmModel'
+cd /tmp/hbenv && handbook config --command generate --env prod | grep -E 'environment|llmModel'
+```
+Expected: 不带 `--env` 时 `from-base`、环境行显示未指定；带 `--env prod` 时 `from-prod`，
+且 env files 行按优先级列出两个文件。再跑 `pnpm run check:all`。
+
+- [ ] **Step 10: 提交**
+
+```bash
+git add packages/core/src/util/env-file.ts packages/core/src/util/env-file.test.ts \
+  packages/core/src/config/file.ts packages/core/src/config/file.test.ts \
+  packages/core/src/config/render-docs.ts packages/cli/src/main.ts \
+  packages/cli/src/config-command.ts packages/cli/src/config-command.test.ts \
+  .env.example docs/configuration.md handbook.config.example.yaml \
+  Dockerfile docker-compose.yml README.md README.zh-CN.md
+git commit -m "feat(core): load env files and config as a per-environment cascade
+
+--env <name> (or HANDBOOK_ENV) selects .env.<name>.local > .env.<name> >
+.env.local > .env, and handbook.config.<name>.yaml ahead of the plain one.
+Shell values still win over every file, and a run with no --env loads exactly
+what it loaded before, so existing setups are untouched.
+
+handbook config now prints the active environment and every file it loaded, in
+precedence order. Eight possible sources is too many to audit by guessing, and
+an inspection tool that cannot see a layer is the same failure as a layer that
+does not work."
+```
+
 ## Self-Review
 
 **规格覆盖核对**（规格每节 → 承担它的 Task）：

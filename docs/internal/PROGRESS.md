@@ -597,3 +597,36 @@ Solidity（跨文件 import + 状态变量类型驱动的调用）均正确。
 - 生成物（`.env.example`、`docs/configuration.md`、`handbook.config.example.yaml`）在
   `.prettierignore` 里——格式化器改写它们会让逐字节比对永远无法满足。改登记表后跑
   `pnpm run config:docs`，不要手改。
+
+### 2026-08-08 收尾：全量 review 的两个拦截项、D2 清理、多环境级联
+
+上面那条记录写在全量 review 之前。review **拦下了合入**，findings 全部修完并复审通过
+（`deb75af..31f1c87` 九个提交，1314 测试绿），之后追加了多环境支持（`3f18ac8`）。
+
+**两个拦截项，都值得记住：**
+
+- **`handbook studio` 把解析出来的八个 LLM 设置原样丢弃**。它调 `resolveOrThrow('studio', opts)`
+  拿到值，然后 `startStudio` 不接收它们，studio 默认工厂又只读环境变量。于是 `--model`、
+  配置文件的 `llm:` 段**全部静默失效**，而 `--help` 列着 `--model`、`handbook config` 还
+  报告它的值——**为验证而生的检查工具在说谎**，这是这套设计最坏的失败形态。它躲过了十二次
+  逐任务 review，唯一原因是 `main.ts` 覆盖率是 0%。现在 43.79%，且把接线断掉会有三个测试变红。
+- **studio 的作业参数从不经过解析器**（规格里明写要求），并且会把非法枚举静默改成默认值。
+  修的时候发现字面照做会**打断 `--lang` 对所有真实语言的支持**——真正的 bug 在 `coerceValue`
+  对 `dynamicChoices` 的处理，改的是那里。
+
+**D2（不得提及参考项目）曾在受版本控制的文件里被违反**：本文件标题带过它的名字，
+`docs/internal/research/` 下三份文件是它的规格原文（约 3888 行），还含原作者机器上的绝对路径。
+三份文件**已删除**（那是别人的规格全文，脱敏也不该以那种形式留存），指向它们的两处引用已改写。
+
+**多环境级联（`3f18ac8`）**：`--env <name>` / `HANDBOOK_ENV` 是**引导层**设置，选择
+`.env.<name>.local` > `.env.<name>` > `.env.local` > `.env`，配置文件同理先试
+`handbook.config.<name>.yaml`。**不带 `--env` 时只加载 `.env.local` 与 `.env`，与之前完全一致**
+——这是兼容性底线，有测试钉住。优先级没有新概念：`applyEnvFile` 本来就"绝不覆盖已有值"，
+级联只是按优先级从高到低依次调用，shell 依然赢过所有文件。
+
+`handbook config` 现在顶部打印**激活环境 + 按优先级列出的已加载文件 + 配置文件**，`--json`
+同样带这三项。四层已经难追，级联之后最多八个来源——**检查工具看不到的层，等于不存在**，
+这正是 studio 那个 bug 的教训。
+
+**前置安全项**：`.gitignore` 与 `.dockerignore` 原本只忽略光秃秃的 `.env`。多环境一旦落地，
+`.env.production` 会**被提交进 git 并烘进镜像层**。两处都已改成 `.env*` + `!.env.example`。
