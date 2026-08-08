@@ -86,7 +86,11 @@ function mockClient(): MockChatClient {
     },
     {
       match: 'STATE REGISTERS',
-      respond: { registers: [{ id: 'reg-rpm', semantics: 'Current engine rpm.', stages: ['stage-2'] }] },
+      respond: {
+        // Two stages, because a register is cross-stage state by definition and a
+        // single-stage one is now discarded — see extractRegisters.
+        registers: [{ id: 'reg-rpm', semantics: 'Current engine rpm.', stages: ['stage-1', 'stage-2'] }],
+      },
     },
     { match: 'COMPLETING a list of state registers', respond: { registers: [] } },
     {

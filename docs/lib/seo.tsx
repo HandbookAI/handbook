@@ -17,6 +17,7 @@
  * right and the rest wrong means the link looks broken exactly where it travels.
  */
 import type { Metadata } from 'next';
+import { BCP47, i18n, LOCALES, type Locale } from './i18n';
 import {
   appName,
   brand,
@@ -47,7 +48,16 @@ const squareImage = {
   type: 'image/png',
 };
 
-export function siteMetadata(): Metadata {
+/**
+ * `locale` drives more than the `lang` attribute: the canonical URL, the
+ * `hreflang` set and `og:locale` all change with it. Getting those wrong is how
+ * eight translations of one page end up competing with each other in search
+ * instead of each serving its own audience.
+ */
+export function siteMetadata(locale: string = i18n.defaultLanguage): Metadata {
+  const home = (code: string): string => (code === i18n.defaultLanguage ? siteUrl : `${siteUrl}/${code}`);
+  const bcp47 = BCP47[locale as Locale] ?? locale;
+
   return {
     metadataBase: new URL(siteUrl),
     title: {
@@ -65,7 +75,11 @@ export function siteMetadata(): Metadata {
     referrer: 'origin-when-cross-origin',
 
     alternates: {
-      canonical: '/',
+      canonical: home(locale),
+      languages: {
+        ...Object.fromEntries(LOCALES.map((l) => [BCP47[l.code as Locale], home(l.code)])),
+        'x-default': home(i18n.defaultLanguage),
+      },
       types: {
         'application/rss+xml': [{ url: '/rss.xml', title: `${appName} — documentation updates` }],
         // Plain-markdown twins of every docs page, for agents that ask for them.
@@ -81,9 +95,11 @@ export function siteMetadata(): Metadata {
       siteName: appName,
       title: `${appName} — ${tagline}`,
       description,
-      url: siteUrl,
-      locale: 'en_US',
-      alternateLocale: ['zh_CN'],
+      url: home(locale),
+      locale: bcp47.replace('-', '_'),
+      alternateLocale: LOCALES.filter((l) => l.code !== locale).map((l) =>
+        (BCP47[l.code as Locale] ?? l.code).replace('-', '_'),
+      ),
       images: [ogImage, squareImage],
     },
 
@@ -149,7 +165,7 @@ export function siteMetadata(): Metadata {
  * Grouped by who reads them so the next person can tell at a glance whether a
  * tag is load-bearing for a platform they care about, or safe to drop.
  */
-export function PlatformMeta() {
+export function PlatformMeta({ locale = i18n.defaultLanguage }: { locale?: string }) {
   return (
     <>
       {/* ── Chinese platforms ─────────────────────────────────────────────
@@ -187,9 +203,12 @@ export function PlatformMeta() {
       {/* ── Feed readers ─────────────────────────────────────────────────── */}
       <link rel="alternate" type="application/rss+xml" title={`${appName} updates`} href="/rss.xml" />
 
-      {/* ── Language alternates ──────────────────────────────────────────── */}
-      <link rel="alternate" hrefLang="en" href={siteUrl} />
-      <link rel="alternate" hrefLang="x-default" href={siteUrl} />
+      {/* ── Language alternates ──────────────────────────────────────────────
+          Deliberately NOT here. `siteMetadata()` already emits the full
+          hreflang set through `alternates.languages`, and a second copy is not
+          redundant-but-harmless: duplicate hreflang annotations for the same
+          URL are a conflicting signal, and Google's own guidance is to drop the
+          whole cluster when it finds them contradicting. One producer only. */}
 
       {/* ── Structured data: Google, Bing, DuckDuckGo rich results ───────── */}
       <script

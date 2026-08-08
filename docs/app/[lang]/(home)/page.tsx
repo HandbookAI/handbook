@@ -2,12 +2,13 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { ArrowRight, Boxes, GitCompareArrows, ScanSearch, ShieldCheck, Sparkles } from 'lucide-react';
 import { appName, description, tagline } from '@/lib/shared';
+import { siteMetadata } from '@/lib/seo';
+import { i18n } from '@/lib/i18n';
 
-export const metadata: Metadata = {
-  title: `${appName} — ${tagline}`,
-  description,
-  alternates: { canonical: '/' },
-};
+export async function generateMetadata(props: PageProps<'/[lang]'>): Promise<Metadata> {
+  const { lang } = await props.params;
+  return { ...siteMetadata(lang), title: `${appName} — ${tagline}`, description };
+}
 
 const STEPS = [
   { n: '1', cmd: 'analyze', llm: false, what: 'Parse every file into a typed call graph.' },
@@ -56,7 +57,11 @@ const FORMATS = [
   ['Agent SKILL package', 'SKILL.md + references/ + a content hash per file'],
 ];
 
-export default function HomePage() {
+export default async function HomePage(props: PageProps<'/[lang]'>) {
+  const { lang } = await props.params;
+  // Every in-page link has to carry the locale, or clicking "Read the docs" in
+  // Japanese silently drops you back into English.
+  const p = lang === i18n.defaultLanguage ? '' : `/${lang}`;
   return (
     <main className="flex flex-1 flex-col">
       {/* ── hero ───────────────────────────────────────────────────────── */}
@@ -86,13 +91,13 @@ export default function HomePage() {
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <Link
-              href="/docs/getting-started/quickstart"
+              href={`${p}/docs/getting-started/quickstart`}
               className="inline-flex items-center gap-2 rounded-lg bg-fd-primary px-5 py-3 text-sm font-semibold text-fd-primary-foreground transition-opacity hover:opacity-90"
             >
               Run the offline demo <ArrowRight className="size-4" />
             </Link>
             <Link
-              href="/docs"
+              href={`${p}/docs`}
               className="inline-flex items-center gap-2 rounded-lg border border-fd-border px-5 py-3 text-sm font-semibold transition-colors hover:bg-fd-accent"
             >
               Read the docs
@@ -153,7 +158,7 @@ export default function HomePage() {
               </li>
             ))}
             <li className="grid place-items-center rounded-xl border border-dashed border-fd-border p-5 text-center">
-              <Link href="/docs/concepts/pipeline" className="text-sm font-semibold hover:underline">
+              <Link href={`${p}/docs/concepts/pipeline`} className="text-sm font-semibold hover:underline">
                 How each phase works →
               </Link>
             </li>
@@ -193,7 +198,7 @@ export default function HomePage() {
                 call relations&rdquo; can never be read as &ldquo;exact&rdquo;.
               </p>
               <Link
-                href="/docs/concepts/analysis-fidelity"
+                href={`${p}/docs/concepts/analysis-fidelity`}
                 className="mt-4 inline-block text-sm font-semibold hover:underline"
               >
                 Analysis fidelity →
@@ -235,13 +240,13 @@ export default function HomePage() {
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
-              href="/docs/getting-started/installation"
+              href={`${p}/docs/getting-started/installation`}
               className="inline-flex items-center gap-2 rounded-lg bg-fd-primary px-5 py-3 text-sm font-semibold text-fd-primary-foreground transition-opacity hover:opacity-90"
             >
               Install <ArrowRight className="size-4" />
             </Link>
             <Link
-              href="/docs/reference/cli"
+              href={`${p}/docs/reference/cli`}
               className="inline-flex items-center gap-2 rounded-lg border border-fd-border px-5 py-3 text-sm font-semibold transition-colors hover:bg-fd-accent"
             >
               CLI reference

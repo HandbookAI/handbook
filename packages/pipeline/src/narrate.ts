@@ -219,10 +219,13 @@ Requirements:
 - stable id "reg-xxx" (lowercase words joined by hyphens);
 - one-line plain-language "semantics";
 - "stages": ONLY stage ids from the given list that genuinely touch this state;
-- only genuinely cross-stage state; the count should reflect the system's real scale.
+- only genuinely cross-stage state: EVERY register must list at least TWO stages.
+  State touched by one stage alone is that stage's own business, not a register,
+  and is discarded — so listing it wastes the slot;
+- the count should reflect the system's real scale.
 Output ONLY one JSON block:
 \`\`\`json
-{"registers": [{"id": "reg-xxx", "semantics": "one-line semantics", "stages": ["stage-5"]}]}
+{"registers": [{"id": "reg-xxx", "semantics": "one-line semantics", "stages": ["stage-2", "stage-5"]}]}
 \`\`\``;
 
 const REGISTER_GAP_RULES_EN = `You are COMPLETING a list of state registers. Given the already-identified registers, find ONLY the
@@ -233,21 +236,23 @@ Output the same JSON schema as before, containing NEW registers only.`;
 
 const REGISTER_RULES_ZH = `找出这个系统的"状态寄存器"——在多个阶段之间流动、被反复读写的全局/共享状态。
 要求：稳定 id "reg-xxx"（小写连字符，保持英文）；一句话中文语义；"stages" 只能用给定的阶段 id 且确实触及；
-只收真正跨阶段的状态；数量反映系统真实规模。只输出一个 JSON 块（schema 同英文版）。`;
+只收真正跨阶段的状态：每个寄存器**至少列出两个阶段**；只被一个阶段触及的状态属于该阶段自己，不是寄存器，会被丢弃；数量反映系统真实规模。只输出一个 JSON 块（schema 同英文版）。`;
 
 const REGISTER_GAP_RULES_ZH = `你在补全状态寄存器清单。给定已识别的寄存器，只找"缺失"的——不要重复或改名。
 关注易被忽略的状态：后台任务/队列、缓存、连接池、限流、token 预算、记忆/目标状态、遥测缓冲、更新检查。
 没有缺失就返回空数组。只输出新增项，schema 同前。`;
 
 const REGISTER_FILL_RULES_EN = `For each state register below, list WHICH of the given stages read or write it.
-"stages" MUST contain only IDs from the stage menu — never invent one; pick 1-5 per register.
+"stages" MUST contain only IDs from the stage menu — never invent one; pick 2-5 per register.
+A register is cross-stage state by definition, so a single stage is never a valid answer.
 Output ONLY one JSON block:
 \`\`\`json
 {"assignments": [{"id": "reg-xxx", "stages": ["<stage-id>"]}]}
 \`\`\``;
 
 const REGISTER_FILL_RULES_ZH = `为下面每个状态寄存器标注：给定阶段中哪些会读/写它。
-"stages" 只能使用阶段菜单里的 ID（不得编造），每个寄存器选 1-5 个。
+"stages" 只能使用阶段菜单里的 ID（不得编造），每个寄存器选 2-5 个。
+寄存器按定义就是跨阶段状态，只填一个阶段永远不是有效答案。
 只输出一个 JSON 块（schema 同英文版）。`;
 
 export interface RegistersOptions {
@@ -478,7 +483,26 @@ export async function extractRegisters(
     }
   }
 
-  const registers = [...found.values()];
+  // A register is DEFINED as state that flows across stages, and every surface
+  // that consumes this file says so: register.md is "cross-stage state", the
+  // agent index lists it under "state changes?", and its whole use is answering
+  // "which stages does this change fan out to". One that touches a single stage
+  // answers nothing and dilutes the ones that do.
+  //
+  // Measured on real repositories before this filter: 47% of ripgrep's 73
+  // registers, 27% of cobra's, 25% of requests'. The prompt asked for
+  // cross-stage state and its own worked example showed `["stage-5"]` — a
+  // single stage — so the model was being shown the opposite of the rule. Both
+  // are fixed, but the prompt is a request and this is the guarantee.
+  const crossStage = [...found.values()].filter((r) => r.stages.length >= 2);
+  const singleStage = found.size - crossStage.length;
+  if (singleStage > 0) {
+    logger.info(
+      `[registers] dropped ${singleStage} register(s) that touched fewer than 2 stages — not cross-stage state`,
+    );
+  }
+
+  const registers = crossStage;
   if (registers.length === 0) {
     // Say it out loud. Silence here reads as "this codebase has no state".
     logger.warn('[registers] no registers were extracted — the rounds returned nothing usable');
