@@ -48,13 +48,26 @@
 - [x] 第 3 遍：工程化（tsc -b composite、vitest alias→src、coverage 下限、check-workspace 7 条不变量、changesets、husky、Docker）
 - [x] 发现待修：仓库根有个误产生的垃圾文件 `ritten`（`server.ts` 片段，疑似 shell 重定向事故）
 
-### Step 2 — README 重写 ⏳
+### Step 2 — README 重写 ✅ (commit 998f6b8)
 
-- [ ] 造图（SVG 手写 + Chrome headless 截 PNG 做社交卡）
-- [ ] 根 README.md / README.zh-CN.md
-- [ ] 11 个包 README（en + zh）
+- [x] 4 张手写 SVG 图：`assets/pipeline|architecture|config-cascade|outputs.svg`
+      （用 headless Chrome 逐张截图目视校对过，无溢出）
+- [x] 根 README.md / README.zh-CN.md 全部按实现重写
+- [x] 11 个包 README × 2 语言 = 22 份全部重写
+- [x] 顺手删掉误产生的垃圾文件 `ritten`，并把 CONTRIBUTING/SECURITY/CODE_OF_CONDUCT/.github 纳入 git
 
-### Step 3 — docs/ fumadocs 站点 ⏳
+### Step 3 — docs/ fumadocs 站点 ✅ (commit 90b3fe5)
+
+- [x] 删除旧的 `handbook-deck.html`(666KB) / `handbook-deck-script.md` / `index.html`
+- [x] Next.js 16 + Fumadocs 16 站点，**34 页**，构建通过，本地起服务逐页验证
+- [x] 生成物 `configuration.md` 迁到 `docs/content/docs/reference/configuration.md`
+      （改了 render-docs.ts 加 frontmatter + gen 脚本 + drift 测试 + .prettierignore + 两个 README）
+- [x] `architecture.md`/`formats.md`/`prompts.md` 转成 MDX 进内容树
+- [x] SEO：OG / Twitter card / JSON-LD ×3 / 微信·百度·搜狗·360·Naver·Pinterest /
+      Apple·Microsoft / oEmbed / RSS / llms.txt + 每页 markdown 孪生 / sitemap / robots / manifest
+- [x] `docs/` 独立 pnpm workspace（自带 pnpm-workspace.yaml），root install 不会拉 React/Next
+- [x] `pnpm check` 全绿（1334 测试 + 覆盖率）
+
 ### Step 4 — .claude / .codex / .cursor ⏳
 ### Step 5 — 全命令全配置测试 ⏳
 ### Step 6 — 9 语言真实仓库实测 + 修 bug ⏳
