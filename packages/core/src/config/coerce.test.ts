@@ -76,6 +76,26 @@ describe('coerceValue: enum', () => {
   });
 });
 
+describe('coerceValue: enum with dynamicChoices', () => {
+  // `lang`'s real choices come from the adapter registry, which this package
+  // cannot see (see registry.ts) — its `choices` here is only a fallback for
+  // the "every enum has choices" integrity check, not something to validate
+  // against. Before this fix, ANY resolver caller — the CLI's own `--lang
+  // python` included — was rejected with "lang must be one of auto".
+  const lang = s({ key: 'lang', type: 'enum', choices: ['auto'], dynamicChoices: 'languages' });
+
+  it('accepts a value outside the fallback choices list', () => {
+    expect(coerceValue(lang, 'python', 'flag --lang')).toBe('python');
+    expect(coerceValue(lang, 'auto', 'flag --lang')).toBe('auto');
+  });
+
+  it('still rejects an empty value', () => {
+    expect(() => coerceValue(lang, '', 'env HANDBOOK_LANG')).toThrow(
+      /env HANDBOOK_LANG: lang must not be empty/,
+    );
+  });
+});
+
 describe('coerceValue: json', () => {
   const j = s({ key: 'llmExtraBody', type: 'json' });
 
