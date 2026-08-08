@@ -20,15 +20,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatClient } from '@handbook/llm';
 import type { Logger } from '@handbook/core';
 import type * as Pipeline from '@handbook/pipeline';
+import type { GenerateOptions, GenerateStats } from '@handbook/pipeline';
+import type { StudioOptions } from '@handbook/studio';
+import type { Server } from 'node:http';
 
-const startStudioMock = vi.fn(async () => ({}) as unknown);
-const generateHandbookMock = vi.fn(async () => ({ phasesRun: [] }));
+const startStudioMock = vi.fn((_options: StudioOptions) => Promise.resolve({} as Server));
+const generateHandbookMock = vi.fn((_options: GenerateOptions) =>
+  Promise.resolve({ phasesRun: [] } as GenerateStats),
+);
 
 vi.mock('@handbook/studio', () => ({ startStudio: startStudioMock }));
 vi.mock('@handbook/pipeline', async () => {
   const actual = await vi.importActual<typeof Pipeline>('@handbook/pipeline');
   return { ...actual, generateHandbook: generateHandbookMock };
 });
+
+/** Matches `Logger`'s interface without a real `createLogger` instance. */
+function noopLogger(): Logger {
+  const self: Logger = {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    child: () => self,
+  };
+  return self;
+}
 
 // Imported AFTER the mocks (vitest hoists `vi.mock` regardless, but keeping
 // the order matches the module's own resolution).
@@ -84,12 +101,9 @@ describe('studio action', () => {
     // so this test races the mocked startStudio call instead of the action.
     await vi.waitFor(() => expect(startStudioMock).toHaveBeenCalledTimes(1));
 
-    const options = startStudioMock.mock.calls[0]?.[0] as {
-      clientFactory: (logger: Logger) => ChatClient;
-    };
-    expect(options.clientFactory).toBeTypeOf('function');
-    const silentLogger: Logger = { debug() {}, info() {}, warn() {}, error() {} };
-    const client = options.clientFactory(silentLogger);
+    const options = startStudioMock.mock.calls[0]?.[0];
+    expect(options?.clientFactory).toBeTypeOf('function');
+    const client = options?.clientFactory?.(noopLogger()) as ChatClient;
     // The actual proof: the flag reached the client, not just the config
     // object main.ts built and then could still have discarded.
     expect(client.model).toBe('gpt-9000-test');
@@ -105,11 +119,8 @@ describe('studio action', () => {
     const parse = program.parseAsync(['node', 'handbook', 'studio', '--port', '48699'], { from: 'node' });
     await vi.waitFor(() => expect(startStudioMock).toHaveBeenCalledTimes(1));
 
-    const options = startStudioMock.mock.calls[0]?.[0] as {
-      clientFactory: (logger: Logger) => ChatClient;
-    };
-    const silentLogger: Logger = { debug() {}, info() {}, warn() {}, error() {} };
-    const client = options.clientFactory(silentLogger);
+    const options = startStudioMock.mock.calls[0]?.[0];
+    const client = options?.clientFactory?.(noopLogger()) as ChatClient;
     expect(client.model).toBe('gpt-config-file-test');
     // baseUrl is private on OpenAiChatClient; reached through the same object
     // main.ts built the client from, which is exactly what P0-1 broke.
@@ -125,8 +136,8 @@ describe('studio action', () => {
     const parse = program.parseAsync(['node', 'handbook', 'studio', '--port', '48699'], { from: 'node' });
     await vi.waitFor(() => expect(startStudioMock).toHaveBeenCalledTimes(1));
 
-    const options = startStudioMock.mock.calls[0]?.[0] as { configFile?: { path: string } };
-    expect(options.configFile?.path).toBe(join(cwd, 'handbook.config.yaml'));
+    const options = startStudioMock.mock.calls[0]?.[0];
+    expect(options?.configFile?.path).toBe(join(cwd, 'handbook.config.yaml'));
 
     void parse;
   });
@@ -153,10 +164,10 @@ describe('generate action', () => {
       { from: 'node' },
     );
     expect(generateHandbookMock).toHaveBeenCalledTimes(1);
-    const options = generateHandbookMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(options.detail).toBe('deep');
-    expect(options.readWorkers).toBe(3);
-    expect(options.phase).toBe('1');
+    const options = generateHandbookMock.mock.calls[0]?.[0];
+    expect(options?.detail).toBe('deep');
+    expect(options?.readWorkers).toBe(3);
+    expect(options?.phase).toBe('1');
   });
 
   it('forwards a value from handbook.config.yaml, not just flags/env', async () => {
@@ -166,8 +177,8 @@ describe('generate action', () => {
       { from: 'node' },
     );
     expect(generateHandbookMock).toHaveBeenCalledTimes(1);
-    const options = generateHandbookMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(options.readWorkers).toBe(7);
+    const options = generateHandbookMock.mock.calls[0]?.[0];
+    expect(options?.readWorkers).toBe(7);
   });
 
   it('rejects an invalid enum before generateHandbook is ever called', async () => {
@@ -192,8 +203,8 @@ describe('preAction hook (P2-16)', () => {
     } finally {
       delete process.env.HANDBOOK_LOG_LEVEL;
     }
-    const debugLines = stderrSpy.mock.calls.map((call) => String(call[0]));
-    expect(debugLines.some((line) => line.includes('[config] loaded'))).toBe(true);
+    const debugLines = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0]));
+    expect(debugLines.some((line: string) => line.includes('[config] loaded'))).toBe(true);
   });
 
   it('stays quiet at the default level, with no -v and no HANDBOOK_LOG_LEVEL', async () => {
@@ -201,7 +212,7 @@ describe('preAction hook (P2-16)', () => {
     await program.parseAsync(['node', 'handbook', 'config', '--command', 'studio', '--check'], {
       from: 'node',
     });
-    const debugLines = stderrSpy.mock.calls.map((call) => String(call[0]));
-    expect(debugLines.some((line) => line.includes('[config] loaded'))).toBe(false);
+    const debugLines = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0]));
+    expect(debugLines.some((line: string) => line.includes('[config] loaded'))).toBe(false);
   });
 });
