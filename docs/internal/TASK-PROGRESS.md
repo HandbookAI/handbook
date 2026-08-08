@@ -249,6 +249,39 @@ Português / Русский / 日本語 / Deutsch。**358 个页面构建通过�
 
 **仍待做**：35 个内容页 × 7 个语言的正文翻译（基础设施已就绪，页面会诚实地显示"尚未翻译"）。
 
+## 真浏览器测试 docs 站点
+
+用 CDP（Chrome DevTools Protocol over WebSocket）直连真实 Chrome，不是 jsdom。
+
+### Bug #7（真 bug，已修）：英文页每一页都 hydration mismatch，且 SSR 内容是错的
+
+**现象**：真 Chrome 打开生产构建，`/docs/*` 每一页都抛 `Minified React error #418`
+（hydration mismatch）。`/`、`/zh`、`/zh/docs`、`/ja|hi|es|pt|ru|de/docs` 全部干净。
+`next dev` 下完全复现不了——只有生产预渲染才有。
+
+**定位过程**（字符级 diff 没用，被 DOCTYPE 和 next-themes 加的 `class="dark"` 淹没）：
+改成抽**文本节点**做 diff，立刻看出 SSR 的侧边栏比 DOM 少一截——
+SSR `data-state="open"` = **0** 个、侧边栏只有 6 个链接；中文页 3 个 / 12+ 个。
+
+**根因**：`hideLocale: 'default-locale'` 让 fumadocs 的 middleware 把 `/docs/x`
+**rewrite** 成 `/en/docs/x`。rewrite 对浏览器不可见，但对渲染器可见：预渲染时路由
+真的是 `/en/docs/x`，所以 `usePathname()` 返回 `/en/docs/x`；浏览器里返回 `/docs/x`。
+而 fumadocs 内部**所有**消费者（`contexts/tree.tsx` 的 `searchPath`、侧边栏
+`isLinkItemActive`、页脚 prev/next）都拿这个 pathname 去比 page-tree 里的
+**公开 url**（`/docs/x`）。于是服务端一个都匹配不上：
+**英文页预渲染出来就是没有高亮项、所有目录折叠、没有上/下一页** —— 这不只是警告，
+是实打实的内容错误；浏览器接手后重算才对，React 就报 #418。
+
+**修法**：`docs/components/provider.tsx` —— 在 fumadocs 唯一提供的接缝
+（`FrameworkProvider`）上把 pathname 规范化成公开路径，两侧读到同一个值。
+对带前缀的 locale 是 no-op，`hideLocale` 一旦不是 `default-locale` 整体 no-op。
+不能用嵌套 `FrameworkProvider` 复用外层的 `Link`（framework 导出的 `Link` 读的是
+最近一层 context，会自己套自己无限递归），所以给 `next/link`、`next/image` 写了
+两个薄适配器（fumadocs 的 `href`/`src` 可选，Next 的必填）。
+
+**验证**：英文页 SSR 现在和中文页逐项一致（3 个 open / 12+ 链接）；
+21 个页面（8 语言 + 404）真 Chrome 加载，**0 console error、0 失败请求**。
+
 ## 最终验收
 
 - `pnpm check` 全绿（typecheck / workspace 不变量 / eslint 0 告警 / prettier / 覆盖率下限）
