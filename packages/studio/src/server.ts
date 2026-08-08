@@ -24,6 +24,7 @@ import {
   type Logger,
 } from '@handbook/core';
 import { OpenAiChatClient, type ChatClient } from '@handbook/llm';
+import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
 import { isInternalNode } from '@handbook/core';
 import {
@@ -748,6 +749,15 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       200,
       ctx.store.list().map((r) => repoStatus(r, ctx.jobs)),
     );
+    return;
+  }
+
+  // Served, not hand-maintained: the UI's source-language picker used to hard-code
+  // six languages against eighteen registered adapters — exactly the drift this
+  // registry-driven work exists to remove (see options.ts's own `languageChoices`).
+  if (path === '/api/languages' && method === 'GET') {
+    registerBuiltinAdapters();
+    json(res, 200, { languages: ['auto', ...availableLanguages()] });
     return;
   }
 

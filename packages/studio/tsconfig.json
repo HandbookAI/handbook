@@ -8,6 +8,9 @@
   "exclude": ["src/**/*.test.ts", "src/**/*.test-helper.ts"],
   "references": [
     {
+      "path": "../analyzer"
+    },
+    {
       "path": "../core"
     },
     {

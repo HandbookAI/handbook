@@ -837,6 +837,7 @@ const state = {
   patch: null,             // { dryRun, ok, outcomes, changedFiles, backupDir, fromLog }
   backups: null,
   job: null,               // newest RUNNING job for this view {id, repo, kind, status, startedAt}
+  languages: ['auto'],     // source-language choices; replaced by /api/languages at boot
 };
 
 function t(key) {
@@ -1001,6 +1002,16 @@ async function loadRepos() {
     state.repos = [];
     state.reposError = errMsg(e);
   }
+}
+
+/** Source-language choices, served instead of hand-maintained: a fixed list here
+ *  drifted to six languages against eighteen registered adapters. A fetch failure
+ *  keeps the 'auto'-only fallback rather than breaking the generate dialog. */
+async function loadLanguages() {
+  try {
+    const out = await api('/api/languages');
+    if (Array.isArray(out && out.languages) && out.languages.length) state.languages = out.languages;
+  } catch { /* keep the fallback */ }
 }
 
 /** A reloaded page has no memory of the job it started — /api/jobs is how it
@@ -2281,15 +2292,15 @@ function syncDialogs() {
   keep('gDetail', [['brief', t('dlg.detailBrief')], ['deep', t('dlg.detailDeep')]]);
   keep('gSynth', [['oneshot', t('dlg.synthOne')], ['doctor', t('dlg.synthDoc')]]);
   keep('gStrategy', [['', t('dlg.strategyAuto')], ['file', t('dlg.strategyFile')], ['member', t('dlg.strategyMember')]]);
-  keep('gSrcLang', [['auto', 'auto'], ['python', 'python'], ['typescript', 'typescript'],
-                    ['go', 'go'], ['rust', 'rust'], ['shell', 'shell']]);
+  keep('gSrcLang', state.languages.map((l) => [l, l]));
 }
 
 /* ----------------------------------------------------------------- boot */
 (async function boot() {
   document.documentElement.dataset.theme = state.theme;
   syncDialogs();
-  await loadRepos();
+  await Promise.all([loadRepos(), loadLanguages()]);
+  syncDialogs(); // re-run once /api/languages has replaced the 'auto'-only fallback
   await render();
   if (state.reposError) showError('GET /api/repos', state.reposError);
 })();

@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@handbook/analyzer": "workspace:*",
     "@handbook/core": "workspace:*",
     "@handbook/llm": "workspace:*",
     "@handbook/patcher": "workspace:*",
