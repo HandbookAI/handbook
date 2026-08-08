@@ -73,7 +73,8 @@ program
   )
   .option(
     '--env-file <path>',
-    'load KEY=VALUE pairs from exactly this file, bypassing the .env cascade above',
+    'load KEY=VALUE pairs from exactly this file, bypassing the .env cascade above ' +
+      '(same as HANDBOOK_ENV_FILE, which is the safer form — see below)',
   )
   .option('--config <path>', 'project config file (default: nearest handbook.config.yaml)');
 
@@ -92,7 +93,23 @@ program.hook('preAction', (_thisCommand, actionCommand) => {
 
   let envNote: string | undefined;
   let envFiles: string[];
-  const explicit = program.opts<{ envFile?: string }>().envFile;
+  // `HANDBOOK_ENV_FILE` is not a convenience: on Node >= 20.6 `--env-file` is
+  // ALSO a node flag, and node pre-scans the whole command line for it — even
+  // in the position after the script path, where it does not apply the file.
+  // A path that exists therefore passes through to us untouched, but a path
+  // that does NOT exist kills the process first:
+  //
+  //     $ handbook --env-file /gone.env config
+  //     node: /gone.env: not found          ← node, exit 9, before main.ts runs
+  //
+  // So the one case the flag is documented to handle loudly — a named file that
+  // is missing — is precisely the case we never get to report. The environment
+  // variable cannot be intercepted, which makes it the reliable form; the flag
+  // stays because it is the conventional spelling and works whenever the file
+  // is actually there. Read from the shell only: this is bootstrap, running
+  // before any .env is loaded, so a value in one of those files could not have
+  // been read in time to select itself.
+  const explicit = program.opts<{ envFile?: string }>().envFile ?? process.env.HANDBOOK_ENV_FILE;
   if (explicit) {
     const applied = applyEnvFile(resolve(explicit)); // missing explicit file → loud error
     envFiles = [resolve(explicit)];

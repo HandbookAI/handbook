@@ -563,6 +563,7 @@ pnpm test:coverage     # vitest + 每包覆盖率下限
 pnpm check:workspace   # monorepo 的结构不变量
 pnpm check:packaging   # 逐包 publint + are-the-types-wrong
 pnpm check:install     # 打包、用原生 npm 安装、再驱动 CLI
+pnpm check:cli         # 每个子命令与每层配置，端到端，全离线
 ```
 
 `pnpm check` 按顺序跑：类型检查 → 工作区不变量 → eslint → prettier → 带每包覆盖率下限的测试。

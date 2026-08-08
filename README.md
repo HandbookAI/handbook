@@ -587,6 +587,7 @@ pnpm test:coverage     # vitest with per-package coverage floors
 pnpm check:workspace   # the monorepo's structural invariants
 pnpm check:packaging   # publint + are-the-types-wrong, per package
 pnpm check:install     # pack, install with plain npm, drive the CLI
+pnpm check:cli         # every subcommand and config layer, end to end, offline
 ```
 
 `pnpm check` runs, in order: type-check → workspace invariants → eslint → prettier →

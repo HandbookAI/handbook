@@ -62,13 +62,13 @@ per-command variable, and its default:
 
 ## Global flags
 
-| Flag                | Effect                                                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-v, --verbose`     | Debug logging (shorthand for `--log-level debug`)                                                                                               |
-| `-q, --quiet`       | Errors only (wins over `-v`)                                                                                                                    |
-| `--env <name>`      | Select an environment — loads `.env.<name>.local` and `.env.<name>` ahead of `.env.local` and `.env`, and prefers `handbook.config.<name>.yaml` |
-| `--env-file <path>` | Load exactly this file, bypassing the `.env` cascade. A missing file is a loud error, not a fallback                                            |
-| `--config <path>`   | Use this config file instead of discovering the nearest `handbook.config.yaml`                                                                  |
+| Flag                | Effect                                                                                                                                                                                                                                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-v, --verbose`     | Debug logging (shorthand for `--log-level debug`)                                                                                                                                                                                                                                                                 |
+| `-q, --quiet`       | Errors only (wins over `-v`)                                                                                                                                                                                                                                                                                      |
+| `--env <name>`      | Select an environment — loads `.env.<name>.local` and `.env.<name>` ahead of `.env.local` and `.env`, and prefers `handbook.config.<name>.yaml`                                                                                                                                                                   |
+| `--env-file <path>` | Load exactly this file, bypassing the `.env` cascade. A missing file is a loud error, not a fallback. **Prefer `HANDBOOK_ENV_FILE`**: Node >= 20.6 owns `--env-file` too and pre-scans for it, so a missing path dies as `node: <path>: not found` (exit 9) before this CLI runs. The flag wins when both are set |
+| `--config <path>`   | Use this config file instead of discovering the nearest `handbook.config.yaml`                                                                                                                                                                                                                                    |
 
 ---
 
