@@ -280,6 +280,10 @@ jobs:
             sleep 1
           done
           node scripts/browser/studio-ui.mjs http://127.0.0.1:4860
+          # A generate is minutes of silence unless something reports. Three of
+          # the four passes had their progress sinks declared and never wired;
+          # only driving a real run through the stream caught it.
+          node scripts/browser/studio-progress.mjs http://127.0.0.1:4860 packages/core/src
 
       - name: Upload the generated handbook
         if: ${{ failure() }}

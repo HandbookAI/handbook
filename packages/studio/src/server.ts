@@ -24,6 +24,7 @@ import {
   writeJsonFile,
   type ConfigFileData,
   type Logger,
+  type ProgressEvent,
   type Setting,
 } from '@handbook/core';
 import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
@@ -526,6 +527,7 @@ async function runGenerate(
   params: GenerateParams,
   logger: Logger,
   signal: AbortSignal,
+  onProgress?: (event: ProgressEvent) => void,
 ): Promise<unknown> {
   const needsLlm = params.phase !== '1';
   let client = needsLlm ? ctx.clientFactory(logger, params.llmOverrides) : undefined;
@@ -557,6 +559,7 @@ async function runGenerate(
     refresh: params.refresh,
     logger,
     signal,
+    onProgress,
   });
   // Cooperative checkpoint: a cancel that arrived while the pipeline was busy
   // stops the run here rather than spending a render on a result nobody wants.
@@ -1328,12 +1331,12 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       const job = ctx.jobs.start(
         repo.name,
         jobKind,
-        (logger, signal) => {
+        (logger, signal, onProgress) => {
           switch (kind) {
             case 'analyze':
               return runAnalyzeOnly(repo, body, ctx.configFile, logger);
             case 'generate':
-              return runGenerate(ctx, repo, genParams as GenerateParams, logger, signal);
+              return runGenerate(ctx, repo, genParams as GenerateParams, logger, signal, onProgress);
             case 'render':
               return runRender(ctx, repo, body, logger);
             case 'skill':
@@ -1494,7 +1497,14 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
         res.end();
         return;
       }
-      const unsubscribe = ctx.jobs.subscribe(job.id, (line, done) => {
+      // Progress is its own SSE event type: a bar is not a log line, and
+      // interleaving them would make the drawer scroll on every tick.
+      if (job.progress) res.write(`event: progress\ndata: ${JSON.stringify(job.progress)}\n\n`);
+      const unsubscribe = ctx.jobs.subscribe(job.id, (line, done, progress) => {
+        if (progress) {
+          res.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`);
+          return;
+        }
         res.write(`data: ${JSON.stringify(line)}\n\n`);
         if (done) {
           res.write('event: done\ndata: {}\n\n');

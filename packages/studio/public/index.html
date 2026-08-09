@@ -390,6 +390,10 @@
   .warnbox ul{margin:0 0 10px 18px;color:var(--dim)}
   .warnbox li{padding:2px 0}
   .warnbox code{font-family:var(--mono);font-size:11.5px;color:var(--ice)}
+.prog{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.prog .bar{flex:1;min-width:60px;max-width:260px;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.prog .bar i{display:block;height:100%;width:0;border-radius:99px;background:var(--acc);transition:width .3s ease}
+.prog .pt{font-size:11px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -418,6 +422,7 @@
 <div class="drawer" id="drawer" role="log" aria-live="polite">
   <div class="head">
     <b id="jobTitle"></b><span class="st" id="jobStatus"></span>
+    <span class="prog" id="jobProg" hidden><span class="bar"><i id="jobBar"></i></span><span class="pt" id="jobProgText"></span></span>
     <span class="sp"></span>
     <button class="sm danger" data-act="job-cancel" id="jobCancel" hidden></button>
     <button class="sm ghost" data-act="drawer-hide" id="drawerHide"></button>
@@ -1693,12 +1698,42 @@ function runJob(job, title, onDone) {
     try { line = JSON.parse(e.data); } catch { /* raw line */ }
     appendLog(line);
   };
-  evtSource.addEventListener('done', () => { void finish(); });
+  // Progress arrives as its own event type, so a tick never scrolls the log.
+  evtSource.addEventListener('progress', (e) => {
+    try { showProgress(JSON.parse(e.data)); } catch { /* a malformed tick is not worth a failure */ }
+  });
+  evtSource.addEventListener('done', () => { hideProgress(); void finish(); });
   evtSource.onerror = () => {
     if (finished) return;
     appendLog(t('job.streamDropped'));
     void finish();
   };
+}
+
+/** Draw the run bar. Leads with the phase — coarse but always right — and uses
+ *  the unit count as the fine bar. The unit denominator GROWS as later passes
+ *  announce their totals, so the percentage can dip; that is the truth, and it
+ *  beats a fixed number invented before the work was known. */
+function showProgress(ev) {
+  const wrap = $('jobProg'); if (!wrap) return;
+  const o = ev && ev.overall;
+  const pct = o && o.total > 0 ? o.pct : (ev && typeof ev.pct === 'number' ? ev.pct : 0);
+  $('jobBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+  const bits = [];
+  if (o && o.phase && o.phase.count) bits.push(t('job.phase').replace('{0}', o.phase.index).replace('{1}', o.phase.count));
+  if (ev && ev.scope) bits.push(ev.scope + ' ' + ev.done + '/' + ev.total);
+  bits.push(pct + '%');
+  const eta = o && typeof o.etaSec === 'number' ? o.etaSec : (ev && ev.etaSec);
+  if (typeof eta === 'number' && eta > 0) bits.push(t('job.eta').replace('{0}', fmtSecs(eta)));
+  $('jobProgText').textContent = bits.join(' · ');
+  wrap.hidden = false;
+}
+function hideProgress() { const w = $('jobProg'); if (w) w.hidden = true; }
+function fmtSecs(s) {
+  s = Math.round(s);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  return m < 60 ? m + 'm' + String(s % 60).padStart(2, '0') + 's' : Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
 }
 
 function appendLog(line) {

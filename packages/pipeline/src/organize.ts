@@ -6,6 +6,7 @@
  */
 import type { ChatClient } from '@handbook/llm';
 import { rulesFor as rulesForLang } from './prompt-lang.js';
+import type { ProgressSink } from '@handbook/core';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -109,6 +110,8 @@ export interface OrganizeOptions {
   /** Cooperative cancellation: checked per stage and passed into every LLM call. */
   signal?: AbortSignal;
   logger?: Logger;
+  /** Machine-readable progress, for a UI drawing a bar. */
+  onProgress?: ProgressSink;
 }
 
 interface StageOrganization {
@@ -273,7 +276,7 @@ export async function organizeStages(
   const counts = functionCountsByFile(graph);
 
   const work = skeleton.stages.filter((s) => (assignment.buckets[s.id]?.length ?? 0) > 0);
-  const progress = new Progress(logger, 'organize', work.length);
+  const progress = new Progress(logger, 'organize', work.length, options.onProgress);
   const results = new Map<string, StageOrganization>();
   await mapLimit(work, workers, async (stage) => {
     signal?.throwIfAborted(); // cooperative checkpoint: no new stage after abort

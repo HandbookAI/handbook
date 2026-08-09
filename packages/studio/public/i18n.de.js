@@ -318,6 +318,8 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       unreadable: 'Dieser Eintrag konnte nicht gelesen werden',
     },
     job: {
+      phase: 'Phase {0}/{1}',
+      eta: 'noch {0}',
       title: 'Job',
       running: 'LÄUFT',
       succeeded: 'ERFOLGREICH',
