@@ -180,7 +180,7 @@ describe('studio server (integration, mock LLM)', () => {
     expect(repo.name).toBe('demo');
     expect(repo.hasGraph).toBe(false);
     // No render has happened, so none of the three outputs can exist yet.
-    expect(repo.outputs).toEqual({ html: false, single: false, agent: false });
+    expect(repo.outputs).toEqual({ html: false, single: false, agent: false, skill: false });
     const list = await api('/api/repos');
     expect(list).toHaveLength(1);
   });
@@ -231,7 +231,10 @@ describe('studio server (integration, mock LLM)', () => {
     expect(status.chapters).toBe(2);
     // Every generate renders all three outputs; the status must say so, or the
     // UI has no way to offer the single-page and agent views.
-    expect(status.outputs).toEqual({ html: true, single: true, agent: true });
+    // `skill` is false here: a generate renders the three handbook outputs and
+    // does NOT package a SKILL. The UI needs that distinction — gating Validate
+    // on the handbook offered a button whose only answer could be a 409.
+    expect(status.outputs).toEqual({ html: true, single: true, agent: true, skill: false });
 
     // The client was built with the job's logger, and what it logs is in the
     // job log — a silent client is how a failing run reads as a quiet one.
@@ -527,6 +530,10 @@ describe('studio server (integration, mock LLM)', () => {
     expect(done.status).toBe('succeeded');
     expect(done.result.outDir).toContain('skill');
     expect(done.result.references.length).toBeGreaterThan(0);
+
+    // The status now says a SKILL exists, which is what lets the UI enable
+    // Validate instead of offering it and then failing.
+    expect((await api('/api/repos/demo')).outputs.skill).toBe(true);
 
     const verdict = await api('/api/repos/demo/validate', { method: 'POST', body: '{}' });
     expect(verdict.ok).toBe(true);

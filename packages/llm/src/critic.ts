@@ -63,13 +63,31 @@ export function parseVerdict(json: unknown, text?: string): Verdict | undefined 
   );
   const decision = typeof rawDecision === 'string' ? rawDecision.trim().toUpperCase() : '';
   if (decision !== 'APPROVE' && decision !== 'REVISE' && decision !== 'REJECT') return parseVerdictText(text);
-  const suggested = v.suggested_revision ?? v.suggestedRevision ?? null;
-  if (suggested !== null && typeof suggested !== 'object') return undefined;
+  const rawSuggested = v.suggested_revision ?? v.suggestedRevision ?? null;
+  // A `suggested_revision` that is not a usable object is not a reason to throw
+  // the WHOLE review away. Models routinely answer it in prose ("move the barrel
+  // files out of test_suites") — a perfectly good REVISE with real concerns —
+  // and discarding the verdict made every critic on the panel count as REJECT,
+  // which is how a doctor run reported `applied=0 rejected=0` for round after
+  // round and then gave up with every file still unassigned.
+  //
+  // So: keep the verdict, drop the unusable revision, and fold the prose into
+  // the concerns rather than losing what the critic actually said. An ARRAY is
+  // not a revision either — `typeof [] === 'object'` let it through before, and
+  // the actor cannot apply it.
+  const usableSuggestion =
+    rawSuggested !== null && typeof rawSuggested === 'object' && !Array.isArray(rawSuggested)
+      ? (rawSuggested as Record<string, unknown>)
+      : null;
   const concerns = Array.isArray(v.concerns) ? v.concerns.map(String) : [];
+  if (usableSuggestion === null && rawSuggested !== null) {
+    const asProse = typeof rawSuggested === 'string' ? rawSuggested.trim() : '';
+    if (asProse.length > 0) concerns.push(asProse);
+  }
   let verdict: Verdict = {
     decision,
     concerns,
-    suggestedRevision: suggested,
+    suggestedRevision: usableSuggestion,
     rationale: typeof v.rationale === 'string' ? v.rationale : '',
   };
   // A REVISE with no concerns gives the actor nothing to act on — treat as APPROVE.
