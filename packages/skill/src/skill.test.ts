@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { fileExists, sha256Hex } from '@handbook/core';
+import { NARRATE_LANGS, checkLanguage, fileExists, sha256Hex } from '@handbook/core';
+import type { NarrateLang } from '@handbook/core';
 import type { Assignment } from '@handbook/core';
 import { buildSkill } from './build.js';
 import { validateSkill } from './validate.js';
@@ -495,5 +496,47 @@ describe('deep adversarial pass 2', () => {
     const result = validateSkill({ skillDir: out });
     expect(result.ok).toBe(false);
     expect(result.errors.join('\n')).toMatch(/duplicate "name" key/);
+  });
+});
+
+describe('SKILL.md builds in every supported language', () => {
+  /**
+   * `bodyLang` offered English and Chinese while the registry grew to eight.
+   * The copy table is now `Record<NarrateLang, SkillCopy>`, so a missing
+   * language is a compile error — but a table can compile and still carry the
+   * English entry pasted into the eighth slot. Building each one and comparing
+   * is what proves otherwise.
+   */
+  const built = new Map<NarrateLang, string>();
+
+  beforeAll(() => {
+    for (const lang of NARRATE_LANGS) {
+      const dir = mkdtempSync(join(tmpdir(), `hb-skill-${lang}-`));
+      writeRenderedHandbook(dir);
+      const out = join(dir, 'out');
+      buildSkill({ handbookDir: dir, outDir: out, name: 'demo', project: 'Demo', lang });
+      built.set(lang, readFileSync(join(out, 'SKILL.md'), 'utf8'));
+    }
+  });
+
+  it.each(NARRATE_LANGS)('%s produces a complete SKILL.md', (lang) => {
+    const body = built.get(lang) as string;
+    expect(body.startsWith('---\nname: demo-handbook\n')).toBe(true);
+    // Frontmatter and the routing contract are structural, not prose.
+    expect(body).toContain('references/overview.md');
+    expect(body).toContain('references/index.md');
+    // A label that lost a substitution leaves the placeholder behind.
+    expect(body).not.toMatch(/\$\{|\[object Object\]|undefined/);
+  });
+
+  it.each(NARRATE_LANGS.filter((l) => l !== 'en'))('%s is not the English copy', (lang) => {
+    expect(built.get(lang), `${lang} SKILL.md is byte-identical to English`).not.toBe(built.get('en'));
+  });
+
+  it.each(['zh', 'ja', 'ru', 'hi'] as NarrateLang[])('%s body is written in its own script', (lang) => {
+    const body = built.get(lang) as string;
+    // The steps list is the copy table talking; the paths around it are not.
+    const verdict = checkLanguage(body, lang);
+    expect(verdict.ok, `${lang}: ${verdict.detail}`).toBe(true);
   });
 });

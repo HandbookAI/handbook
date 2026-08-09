@@ -198,6 +198,18 @@ describe('studio server (integration, mock LLM)', () => {
     expect(out.languages.length).toBeGreaterThan(6);
   });
 
+  it('serves the prose languages under their native names', async () => {
+    // The generate dialog's language picker renders from this. It used to be a
+    // hand-written pair of options while the registry carried eight — the same
+    // drift `/api/languages` was introduced to end for source languages.
+    const out = await api('/api/narrate-languages');
+    const codes = out.languages.map((l: { code: string }) => l.code);
+    expect(codes).toEqual(['en', 'zh', 'hi', 'es', 'pt', 'ru', 'ja', 'de']);
+    // Native names, so a reader picks their own language rather than a code.
+    expect(out.languages.find((l: { code: string }) => l.code === 'ja')?.name).toBe('日本語');
+    expect(out.languages.find((l: { code: string }) => l.code === 'de')?.name).toBe('Deutsch');
+  });
+
   it('rejects duplicate names and bad paths', async () => {
     await expect(
       api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'demo', sourceRoot }) }),

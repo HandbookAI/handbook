@@ -79,7 +79,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `phase` | `--phase <spec>` | `HANDBOOK_PHASE` | string | `all` | all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3, or a comma list |
 | `strategy` | `--strategy <s>` | `HANDBOOK_STRATEGY` | enum (file\|member) | — | file (default) or member; unset keeps the work dir's recorded strategy |
 | `skeleton` | `--skeleton <path>` | `HANDBOOK_SKELETON` | path | — | user-authored skeleton.yaml, required for the member strategy |
-| `narrateLang` | `--narrate-lang <l>` | `HANDBOOK_NARRATE_LANG` | enum (en\|zh) | `en` | prose language |
+| `narrateLang` | `--narrate-lang <l>` | `HANDBOOK_NARRATE_LANG` | enum (en\|zh\|hi\|es\|pt\|ru\|ja\|de) | `en` | prose language |
 | `detail` | `--detail <d>` | `HANDBOOK_DETAIL` | enum (brief\|deep) | `brief` | card depth |
 | `synthMode` | `--synth-mode <m>` | `HANDBOOK_SYNTH_MODE` | enum (oneshot\|doctor) | `oneshot` | skeleton synthesis mode |
 | `maxDoctorRounds` | `--max-doctor-rounds <n>` | `HANDBOOK_MAX_DOCTOR_ROUNDS` | int | `6` | doctor convergence rounds |
@@ -120,7 +120,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `name` | `--name <slug>` | `HANDBOOK_NAME` | string | required | skill slug (lowercase-hyphen) |
 | `project` | `--project <name>` | `HANDBOOK_PROJECT` | string | — | human project name for prose |
 | `agentDir` | `--agent-dir <dir>` | `HANDBOOK_AGENT_DIR` | path | — | rendered agent locator site; ships under references/agent/ |
-| `bodyLang` | `--lang <l>` | `HANDBOOK_SKILL_BODY_LANG` *(scoped)* | enum (en\|zh) | `en` | SKILL.md body language; frontmatter stays English for routing |
+| `bodyLang` | `--lang <l>` | `HANDBOOK_SKILL_BODY_LANG` *(scoped)* | enum (en\|zh\|hi\|es\|pt\|ru\|ja\|de) | `en` | SKILL.md body language; frontmatter stays English for routing |
 
 ## `validate`
 
@@ -190,7 +190,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `refreshRendered` | `--no-render` | `HANDBOOK_REFRESH_RENDERED` | bool | `true` | set false to skip refreshing already-rendered outputs under <work>/handbook |
 | `corrections` | `--corrections <file>` | `HANDBOOK_CORRECTIONS` | path | — | agent-reported corrections.jsonl; its files widen the refresh set |
 | `cardDetail` | `--detail <d>` | `HANDBOOK_RESYNC_CARD_DETAIL` *(scoped)* | enum (brief\|deep) | — | card depth for regenerated cards; unset matches the existing handbook |
-| `proseLang` | `--narrate-lang <l>` | `HANDBOOK_RESYNC_PROSE_LANG` *(scoped)* | enum (en\|zh) | — | prose language for regenerated cards; unset matches the existing handbook |
+| `proseLang` | `--narrate-lang <l>` | `HANDBOOK_RESYNC_PROSE_LANG` *(scoped)* | enum (en\|zh\|hi\|es\|pt\|ru\|ja\|de) | — | prose language for regenerated cards; unset matches the existing handbook |
 
 ## `studio`
 

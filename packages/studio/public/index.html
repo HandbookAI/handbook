@@ -440,7 +440,7 @@
 <dialog id="dlgGen">
   <h3 id="genTitle"></h3>
   <label id="lbLang" for="gLang"></label>
-  <select id="gLang"><option value="zh">中文</option><option value="en">English</option></select>
+  <select id="gLang"></select>
   <label id="lbDetail" for="gDetail"></label>
   <select id="gDetail"></select>
   <label id="lbSynth" for="gSynth"></label>
@@ -559,7 +559,7 @@ const state = {
   patch: null,             // { dryRun, ok, outcomes, changedFiles, backupDir, fromLog }
   backups: null,
   job: null,               // newest RUNNING job for this view {id, repo, kind, status, startedAt}
-  languages: ['auto'],     // source-language choices; replaced by /api/languages at boot
+  languages: ['auto'], narrateLanguages: [{ code: 'en', name: 'English' }],     // source-language choices; replaced by /api/languages at boot
   settings: null,          // registry surface from /api/settings; null until it loads
 };
 
@@ -740,6 +740,12 @@ async function loadLanguages() {
     const out = await api('/api/languages');
     if (Array.isArray(out && out.languages) && out.languages.length) state.languages = out.languages;
   } catch { /* keep the fallback */ }
+  // The prose languages, for the same reason and with the same fallback: the
+  // picker used to hard-code two against eight registered languages.
+  try {
+    const out = await api('/api/narrate-languages');
+    if (Array.isArray(out && out.languages) && out.languages.length) state.narrateLanguages = out.languages;
+  } catch { /* keep the English-only fallback */ }
 }
 
 /** The registry surface for every studio-runnable command, so the generate
@@ -2265,6 +2271,8 @@ function syncDialogs() {
   keep('gSynth', [['oneshot', t('dlg.synthOne')], ['doctor', t('dlg.synthDoc')]]);
   keep('gStrategy', [['', t('dlg.strategyAuto')], ['file', t('dlg.strategyFile')], ['member', t('dlg.strategyMember')]]);
   keep('gSrcLang', state.languages.map((l) => [l, l]));
+  // Native names, so a Japanese reader picks 日本語 rather than 'ja'.
+  keep('gLang', state.narrateLanguages.map((l) => [l.code, l.name]));
   $('advTitle2').textContent = t('dlg.advanced2');
   renderGenAuto(false);
   $('renderTitle').textContent = t('dlg.render');

@@ -1,5 +1,6 @@
 export * from './ir.js';
 export * from './model.js';
+export * from './lang-detect.js';
 export * from './errors.js';
 export * from './logger.js';
 export * from './util/concurrency.js';
