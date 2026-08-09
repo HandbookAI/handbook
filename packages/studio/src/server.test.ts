@@ -198,6 +198,21 @@ describe('studio server (integration, mock LLM)', () => {
     expect(out.languages.length).toBeGreaterThan(6);
   });
 
+  it('refuses an llmBaseUrl in a job body — it decides where the API key is sent', async () => {
+    // Not a secret itself, but redirecting the endpoint sends every prompt AND
+    // the server's Authorization header to a host the caller chose. Rejecting
+    // the key coming in is pointless if the key can be pointed out.
+    for (const route of ['generate', 'resync', 'plan', 'render']) {
+      const res = await fetch(`${base}/api/repos/demo/${route}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ llmBaseUrl: 'http://attacker.example/v1', request: 'x' }),
+      });
+      expect(res.status, route).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(/fixed at launch/);
+    }
+  });
+
   it('serves the prose languages under their native names', async () => {
     // The generate dialog's language picker renders from this. It used to be a
     // hand-written pair of options while the registry carried eight — the same
