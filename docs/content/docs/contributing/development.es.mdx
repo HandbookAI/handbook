@@ -1,0 +1,213 @@
+---
+title: Desarrollo
+description: La compilación, los controles, las convenciones que impone el tooling y por qué las pruebas nunca necesitan una clave de API.
+---
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm test
+```
+
+Requiere Node ≥ 20.11 y pnpm ≥ 9. Sin compilación nativa.
+
+## Comandos del día a día
+
+```bash
+pnpm build             # tsc -b (composite project references)
+pnpm build:watch
+pnpm test              # build + vitest
+pnpm test:watch
+pnpm check             # the everyday gate — run this before committing
+pnpm check:all         # check + packaging + install + CLI smoke — what CI runs
+pnpm check:cli         # every subcommand and config layer, end to end, offline
+```
+
+`pnpm check` ejecuta, en este orden:
+
+1. `typecheck` — las fuentes y luego las pruebas contra `tsconfig.tests.json`
+2. `check:workspace` — las invariantes estructurales del monorepo
+3. `lint` — eslint sobre todo el repositorio, **cero advertencias toleradas**
+4. `format:check` — prettier
+5. `test:coverage` — vitest con umbrales de cobertura **por paquete**
+
+Es deliberadamente el rápido. `pnpm check:all` añade tres controles más pesados —
+`check:packaging` (publint + are-the-types-wrong), `check:install` (empaqueta once
+tarballs, los instala con npm a secas, ejecuta la CLI) y `check:cli` (más abajo) — que
+corresponden a CI y a antes de una publicación, no a cada ciclo local.
+
+### Qué cubre `check:cli`
+
+`scripts/smoke-cli.sh` ejecuta el binario **real** de extremo a extremo contra el LLM
+simulado incluido, comprobando códigos de salida y artefactos en cada subcomando, cada capa
+de configuración y — lo más importante — los rechazos.
+
+- Todas las superficies de `--help`, y un subcomando desconocido saliendo con `1`
+- La procedencia de `config`, `--json` y `--check` saliendo con `2` ante un valor requerido ausente
+- Valores de enum / entero / fase inválidos saliendo con `1` en lugar de caer al valor por defecto
+- La matriz de generación: subconjuntos de fases, `--resume`, `--detail deep`, `--synth-mode doctor`,
+  `--llm-cache`, `--narrate-lang zh`
+- Todos los formatos de renderizado, y `render` fallando sobre un directorio de trabajo vacío
+- `skill` rechazando un `--out` que se comería su propia entrada; `validate` saliendo con `2`
+- `apply` rechazando un ancla **ambigua** y un **escape de ruta**; un `rollback` real
+  restaurando byte por byte
+- `resync` con y sin LLM, y un diff vacío que se omite limpiamente
+- Precedencia: el entorno del shell sobre el archivo de configuración, `.env.<name>` sobre `handbook.config.<name>.yaml`,
+  con ámbito sobre plano, vacío-como-no-definido, y la clave de API **enmascarada** en la salida de `config`
+- Cordura de los artefactos: todos los archivos esperados presentes, cobertura de fichas completa, ningún archivo
+  sin asignar, uso de tokens registrado
+
+Las pruebas unitarias simulan `generateHandbook` y sus vecinos, así que no pueden detectar
+un flag que se resuelve correctamente y luego nunca se propaga, un código de salida
+equivocado o un contrato de artefacto que se rompió en la costura. Esto sí puede — y es
+totalmente offline, así que es seguro en CI.
+
+```bash
+pnpm check:cli
+SMOKE_PORT=9123 pnpm check:cli    # if port 8123 is taken
+```
+
+Un hook de pre-commit ejecuta el formateador y el linter **solo sobre los archivos en el
+índice**, y `commit-msg` impone Conventional Commits.
+
+## Filosofía de las pruebas
+
+**Todo se ejecuta offline. Ninguna prueba necesita jamás una clave de API.**
+
+- Los flujos que dependen del LLM se prueban contra `MockChatClient` — una lista de reglas,
+  gana la primera coincidencia — y contra un endpoint HTTP simulado incluido para el cliente real.
+- Los paquetes deterministas se prueban directamente. Las pruebas del analizador construyen
+  mini-repositorios **reales** en directorios temporales y comprueban nodos y aristas reales;
+  un árbol de análisis simulado no demostraría nada sobre una gramática.
+- Las rutas de fallo reciben la misma atención que las rutas felices: respuestas no parseables,
+  lotes parciales, niveles de degradación, abortos a mitad de ejecución, escapes del sandbox,
+  anclas ambiguas.
+
+```bash
+pnpm test                                  # everything
+pnpm exec vitest run packages/analyzer     # one package
+pnpm exec vitest run -t "dropped calls"    # one test by name
+pnpm test:coverage
+```
+
+## Cuatro convenciones que impone el tooling
+
+### Las versiones viven en un único sitio
+
+Cada versión de terceros se declara en el catálogo de `pnpm-workspace.yaml`; los paquetes
+dependen de `"catalog:"` y nunca repiten un rango. **Un rango literal en un manifiesto hace
+fallar `pnpm check:workspace`**, y una entrada de catálogo sin usar también.
+
+```json
+{ "dependencies": { "zod": "catalog:" } }
+```
+
+pnpm reescribe `catalog:` al rango resuelto al empaquetar, así que los consumidores nunca
+ven el protocolo.
+
+### `dist/` es la superficie publicada
+
+Los proyectos de compilación excluyen `*.test.ts` y `*.test-helper.ts`; `tsconfig.tests.json`
+comprueba los tipos de las pruebas con `noEmit`. Los source maps quedan fuera del tarball
+porque nombran fuentes que nunca se publican. **Un artefacto de prueba bajo `dist/` hace
+fallar el control.**
+
+### Los umbrales de cobertura son por paquete
+
+Un único número para todo el repositorio esconde lo que importa: con un 86% global,
+`@handbook/cli` está en el 23%. Cada paquete tiene su propio umbral en `vitest.config.ts`,
+fijado justo por debajo de lo que mide, de modo que **avanza como un trinquete**.
+
+Si tu cambio sube la cobertura, sube el umbral con ella. No amplíes la brecha para que pase
+una ejecución en rojo.
+
+### Las pruebas resuelven `@handbook/*` al código fuente, no a `dist`
+
+De lo contrario, la cobertura de todo lo que se consume cruzando el límite de un paquete no
+se atribuye a ninguna parte — `core/src/util/hash.ts` medía 0% mientras el pipeline lo
+llamaba en cada ejecución.
+
+El `dist` real lo verifican `tsc -b` y `pnpm check:install`, que instala los tarballs
+empaquetados con npm a secas y ejecuta la CLI contra ellos. Eso es un control sobre `dist`
+más fuerte de lo que era una prueba unitaria.
+
+## Las invariantes estructurales
+
+`scripts/check-workspace.mjs` impone siete reglas, cada una de las cuales el repositorio
+violó al menos una vez:
+
+1. Las referencias de proyecto de TypeScript reflejan exactamente las dependencias del workspace.
+2. Las dependencias del workspace usan el protocolo `workspace:` y existen de verdad.
+3. El archivo de solución raíz referencia todos los paquetes.
+4. Los proyectos de compilación excluyen las pruebas, y `dist/` no contiene ninguna.
+5. La forma del manifiesto es uniforme — `type`, `description`, `license`, `files`, `engines`,
+   `exports`, `scripts`, `publishConfig`.
+6. Un paquete publicable nunca depende de uno privado.
+7. Las versiones de terceros viven en el catálogo y en ningún otro sitio.
+
+## Archivos generados
+
+Tres archivos se generan a partir del registro de configuración y se comparan **byte por
+byte** mediante una prueba de deriva:
+
+```bash
+pnpm run config:docs
+# writes .env.example
+#        docs/content/docs/reference/configuration.md
+#        handbook.config.example.yaml
+```
+
+Editar a mano cualquiera de ellos hace fallar la build. Cambia el registro en su lugar
+(`packages/core/src/config/registry.ts`) y regenera.
+
+Esa misma prueba de deriva comprueba también que ambos READMEs nombran **todos los lenguajes
+registrados** y no referencian ningún script de pnpm inexistente, y que cada enlace relativo
+en ellos apunta a un archivo **rastreado por git**.
+
+## El sitio de documentación
+
+```bash
+cd docs
+pnpm install
+pnpm dev      # → http://localhost:3000
+```
+
+Next.js + Fumadocs, contenido MDX bajo `docs/content/docs/`. **No** forma parte del
+workspace de pnpm, así que un `pnpm install` en la raíz lo ignora por completo.
+
+Los diagramas viven en `assets/` en la raíz del repositorio — ambos READMEs los referencian
+desde ahí — y se copian a `docs/public/diagrams/` en tiempo de compilación mediante
+`docs/scripts/sync-generated.mjs`. No los copies a mano; la copia está en gitignore
+exactamente por esa razón.
+
+## Convenciones de commit
+
+Conventional Commits, impuestos por `commitlint`:
+
+```text
+feat(analyzer): add a Kotlin generic-tier spec
+fix(patcher): refuse an anchor that matches zero times
+docs(cli): document the --env cascade
+chore(deps): bump vitest
+```
+
+Los cambios que afectan a un paquete publicado necesitan un changeset:
+
+```bash
+pnpm changeset
+```
+
+Commitea ese archivo junto con el código. Consulta [Publicar versiones](/docs/contributing/releasing).
+
+## Dónde vive cada cosa
+
+```text
+packages/<name>/src/         source
+packages/<name>/src/*.test.ts  tests, colocated
+scripts/                     repo tooling (workspace checks, doc generation, smoke tests)
+examples/                    the offline demo, the mock LLM server, the fixture project
+assets/                      diagrams referenced by both READMEs
+docs/                        the documentation site (a standalone Next.js app)
+docs/internal/               the engineering journal — specs, plans, review notes
+```

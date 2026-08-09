@@ -1,0 +1,188 @@
+---
+title: '言語を追加する'
+description: 'generic ティアの言語はパーサーではなく宣言的な仕様です。full ティアの言語は小さなインターフェースです。どちらも新しい依存関係を必要としません。'
+---
+
+Handbook は 2 つの仕組みで 18 の言語をサポートしています。**generic ティア** への追加はたいてい
+オブジェクトリテラル 1 つで済み、**新しい依存関係は不要** です — グラマーはすでに
+`tree-sitter-wasms` に同梱されています。
+
+## Generic ティア — 宣言的な仕様
+
+`packages/analyzer/src/generic.ts` の `GENERIC_LANGUAGES` にエントリを 1 つ追加します。
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+あとは登録するだけです — `packages/analyzer/src/register.ts` の末尾にあるループが
+`GENERIC_LANGUAGES` のすべてのエントリを自動的に拾うため、そこに追加するものはありません。
+
+<Steps>
+
+<Step>
+### グラマーが同梱されているか確認する
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+見つからない場合、その言語には新しい依存関係が必要になり、それはもっと大きな議論になります。
+
+</Step>
+
+<Step>
+### ノードタイプを調べる
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+出力された s 式が、仕様を書く対象となるノードの語彙です。
+
+</Step>
+
+<Step>
+### 仕様とテストを書く
+
+すべての言語には、一時ディレクトリに実際のミニリポジトリを構築し、実際のノードとエッジに対して
+アサートするテストが付きます。`packages/analyzer/src/generic.test.ts` にある既存のテストの形を
+コピーしてください。
+
+**モックされたパースツリーは、グラマーについて何も証明しません。** 実際のソースをパースしてください。
+
+</Step>
+
+<Step>
+### 能力を正直に宣言する
+
+generic エンジンがこれらを設定してくれます。
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+水増ししてはいけません。この宣言の要点は、読み手が generic ティアのエッジを Python 相当の
+エッジと区別できることにあります。[解析忠実度](/docs/concepts/analysis-fidelity) を参照してください。
+
+</Step>
+
+<Step>
+### ドキュメントを更新する。さもないとビルドが失敗する
+
+ドリフトテストが、**登録済みのすべての言語** が両方の README に載っていることを確認します。
+表示名を `packages/cli/src/docs-drift.test.ts` の `DISPLAY` に追加し、続いて次の場所にも
+追加してください。
+
+- `README.md` と `README.zh-CN.md` — 言語の表
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` とその中国語版
+
+このテストが存在するのは、誰かが気づくよりも前に、リストがすでに 6 言語分も遅れて
+ドリフトしていたからです。
+
+</Step>
+
+</Steps>
+
+## Full ティア — アダプタを実装する
+
+言語の呼び出し解決に型情報 — 属性の型、パラメータの注釈、継承 — が本当に必要な場合には、
+その価値があります。
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+`packages/analyzer/src/register.ts` で登録します。
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+契約はこれがすべてです。下流のすべてのフェーズはそのまま動作します。
+
+### 2 パスの原則
+
+**パス 1** で宣言を集め、型インデックスを構築します。**パス 2** ではそのインデックスを手元に
+置いて呼び出し箇所をたどります。
+
+`self.attr.method()` や `param.method()` を 1 パスで解決することは不可能です。`attr` の型は、
+その呼び出しより後に現れるかもしれないコンストラクタでの代入から判明するからです。full ティアの
+アダプタはすべてこの形に従います。
+
+### 解決の原則
+
+特定しきれない呼び出しは `unresolved` となり、グラフビルダーがそれをカテゴリと生のテキストとともに
+`dropped-calls.json` へ隔離します。
+
+**決して推測しないでください。** 推測されたエッジは、下流のあらゆるものにとって本物のエッジと
+区別がつかず、グルーピング、共変更のヒント、エージェント用ロケータインデックスを一度に汚染します。
+
+## 外部からアダプタを登録する
+
+レジストリは公開されているため、フォークせずに言語を追加できます。
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+能力を宣言しない、あるいは出鱈目を宣言するアダプタは、忠実度の主張を勝手に作られるのではなく、
+単に **グラフのメタデータから除外されます**。
+
+## チェックリスト
+
+- [ ] グラマーが `tree-sitter-wasms` に同梱されている
+- [ ] 仕様またはアダプタを書いた
+- [ ] `register.ts` に登録した（generic ティアのエントリは自動的に拾われます）
+- [ ] 一時ディレクトリで **実際の** ソースをパースするテストがある
+- [ ] 能力を正直に宣言した
+- [ ] 表示名をドリフトテストの `DISPLAY` マップに追加した
+- [ ] 両方の README、analyzer の README、言語リファレンスを更新した
+- [ ] `pnpm check` が通る
+- [ ] changeset を追加した

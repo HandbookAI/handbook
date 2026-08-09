@@ -1,0 +1,137 @@
+---
+title: '言語サポート'
+description: '2 つの解析ティアにまたがる 18 言語 — それぞれがどの拡張子を引き受けるのか、generic ティアが何を諦めているのか、そして踏み抜く前に知っておく価値のある 2 つの注意点。'
+---
+
+`--lang auto`（デフォルト）は、1 回のパスで**すべての**言語を検出してマージします。言語を名指しする必要は、ほとんどありません。
+
+```bash
+handbook analyze --source ~/code/polyglot-repo --work work/poly   # one pass, all languages
+handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
+```
+
+## full ティア
+
+手書きのアダプタ: 型駆動の呼び出し解決、継承メンバー、属性ごとの状態追跡、ステートメントスパン。
+
+| 言語                             | 拡張子                                                   | レジストリキー |
+| -------------------------------- | -------------------------------------------------------- | -------------- |
+| Python                           | `.py`                                                    | `python`       |
+| TypeScript _(および JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`   |
+| Go                               | `.go`                                                    | `go`           |
+| Rust                             | `.rs`                                                    | `rust`         |
+| Java                             | `.java`                                                  | `java`         |
+| C#                               | `.cs`                                                    | `csharp`       |
+| C/C++                            | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`          |
+| Ruby                             | `.rb` `.rake` `.gemspec`                                 | `ruby`         |
+| PHP                              | `.php` `.phtml`                                          | `php`          |
+| Swift                            | `.swift`                                                 | `swift`        |
+| Dart                             | `.dart`                                                  | `dart`         |
+| Solidity                         | `.sol`                                                   | `solidity`     |
+| Shell                            | `.sh` `.bash`                                            | `shell`        |
+
+<Callout type="info" title="JavaScript に専用のアダプタはありません">
+  TypeScript のアダプタがまとめて担当します。選ぶものは何もなく、`.js`、`.jsx`、`.mjs`、`.cjs` は
+  自動的に引き受けられます。
+</Callout>
+
+<Callout type="info" title="C ファミリのアダプタは 2 つではなく 1 つ">
+  `cpp` のグラマーは C も扱えますが、`c` のグラマーは C++ をまったく扱えません。そのため 1 つの
+  アダプタが両方を引き受けており、純粋な C のプロジェクトでも `--lang cpp` が正解です。
+</Callout>
+
+## generic ティア
+
+1 つの設定駆動エンジンと、言語ごとの宣言的スペック。**ファイルと関数のインベントリは正確**ですが、呼び出し関係はベストエフォートです。
+
+| 言語        | 拡張子         | レジストリキー |
+| ----------- | -------------- | -------------- |
+| Kotlin      | `.kt` `.kts`   | `kotlin`       |
+| Scala       | `.scala` `.sc` | `scala`        |
+| Zig         | `.zig`         | `zig`          |
+| Objective-C | `.m`           | `objc`         |
+| OCaml       | `.ml`          | `ocaml`        |
+
+解析がティアをまたいでいるハンドブックは、**その概要でそう明言します**。何がどう劣化するのかは
+[解析忠実度](/docs/concepts/analysis-fidelity) を参照してください。
+
+## 踏み抜く前に伝えておく 2 つの注意点
+
+### V8 ≥ 13 では Swift がプロセスを中断させます
+
+同梱の Swift グラマーは、V8 が WASM モジュールをティアアップした時点で、致命的なメモリ枯渇による
+中断を引き起こします — Node 24 では 5 回中 5 回が致命的、Node 21 では問題なし、そして 19 個の
+グラマーのうちこれだけに固有の現象です。
+
+**そのようなランタイムでは、アダプタは検出の時点で拒否し**、実行全体を道連れにする代わりに対処法を
+示します:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work work/ios
+```
+
+`--liftoff-only` は、これを引き起こすティアアップコンパイルをスキップします。このリポジトリ自身の
+テストスイートが同じフラグを渡しているのも、まさに同じ理由です。
+
+### `case` を含むシェルスクリプトはスキップされます
+
+固定された bash グラマーの外部スキャナは `env.isalpha` をインポートしますが、
+`web-tree-sitter@0.25.10` の動的リンカはそれを提供しません。そのため `case` 文があると `parse()` が
+例外を投げ、しかもパーサーが汚染されたまま残るので、アダプタはそれを破棄して先へ進みます。
+
+<Callout type="warn" title="これは聞こえるより大ごとです">
+  `case` はシェルに遍在します。[`nvm`](https://github.com/nvm-sh/nvm) で実測したところ、**6 ファイル
+  すべてと 122 関数すべて**がスキップされました。アダプタが full ティアなので Shell は full ティア
+  として掲載されていますが、そのグラマーが上流で直るまでは、**シェルのカバレッジは部分的だと考えて
+  ください**。
+
+スキャンログはそれを明示し、理由も名指しします:
+
+```text
+[scan] shell: 5 file(s) the grammar could not parse — the pinned bash grammar throws on
+`case`, which most real scripts use; their functions are absent from this graph, not
+merely unresolved — install.sh, nvm.sh, …
+```
+
+</Callout>
+
+## どこでもスキップされるもの
+
+すべてのアダプタは、共有された 1 つのスキップリストを尊重します:
+
+```text
+.git  .hg  .svn  node_modules  vendor  target  build  dist  out
+__pycache__  .mypy_cache  .pytest_cache  .ruff_cache  .tox
+venv  .venv  env  .env  site-packages  .idea  .vscode  .handbook-patches
+```
+
+ビルド出力が別の場所にあるなら、リポジトリのルートではなく本当のソースルートを `--source` に
+指定してください。
+
+## 1 つのファイルが 2 つの言語に属しうるとき
+
+検出は決まった順序でアダプタを実行し、**最初にそのファイルを引き受けたアダプタが保持します**。
+拡張子のマッチングは最長一致を優先します。実際にこれが効いてくるのは `.h`（C/C++ アダプタが引き
+受ける）と `.m`（Objective-C）だけです。
+
+## 実際に何がスキャンされたのかを読む
+
+```bash
+handbook analyze --source ~/code/repo --work work/x -v
+# [scan] auto root=/Users/me/code/repo
+# [scan] typescript: 284 files
+# [scan] python: 96 files
+# [scan] shell: 12 files
+# [build] functions=3187 kept=9042 dropped=611
+```
+
+```bash
+jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
+jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+```
+
+## 言語の追加
+
+**generic ティア**の言語を追加するのは、パーサーではなく宣言的なスペックの追加です — しかも
+グラマーはすでに同梱されているので、新しい依存も要りません。
+[言語の追加](/docs/contributing/adding-a-language) を参照してください。

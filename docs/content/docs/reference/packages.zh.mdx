@@ -1,0 +1,129 @@
+---
+title: '包索引'
+description: '十一个 npm 包、每个包导出什么，以及其中哪些完全不需要 LLM。'
+---
+
+Handbook 是一个由十一个包组成的 monorepo。**其中四个从不接触 LLM**，完全可以独立
+使用。
+
+| 包                   | 角色                                           | LLM？ | 文档                                                       |
+| -------------------- | ---------------------------------------------- | :---: | ---------------------------------------------------------- |
+| `@handbook/core`     | 数据模型、zod schema、配置注册表、工具函数     |  ❌   | [README](https://www.npmjs.com/package/@handbook/core)     |
+| `@handbook/analyzer` | 多语言静态调用图提取                           |  ❌   | [README](https://www.npmjs.com/package/@handbook/analyzer) |
+| `@handbook/llm`      | 兼容 OpenAI 的客户端、缓存、actor–critic、mock |  ✅   | [README](https://www.npmjs.com/package/@handbook/llm)      |
+| `@handbook/pipeline` | 生成流水线，phases 1–3                         |  ✅   | [README](https://www.npmjs.com/package/@handbook/pipeline) |
+| `@handbook/renderer` | Markdown、HTML、代理索引、llms.txt             |  ❌   | [README](https://www.npmjs.com/package/@handbook/renderer) |
+| `@handbook/skill`    | SKILL 打包、校验、漂移哈希                     |  ❌   | [README](https://www.npmjs.com/package/@handbook/skill)    |
+| `@handbook/planner`  | 只读的规划代理                                 |  ✅   | [README](https://www.npmjs.com/package/@handbook/planner)  |
+| `@handbook/patcher`  | 字节精确的应用、备份、回滚                     |  ❌   | [README](https://www.npmjs.com/package/@handbook/patcher)  |
+| `@handbook/resync`   | 增量向前推进                                   |  ✅   | [README](https://www.npmjs.com/package/@handbook/resync)   |
+| `@handbook/studio`   | 本地 Web UI                                    |  ✅   | [README](https://www.npmjs.com/package/@handbook/studio)   |
+| `@handbook/cli`      | `handbook` 命令                                |   —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+
+## 最适合独立使用的三个
+
+### `@handbook/analyzer` —— 覆盖 18 种语言的调用图
+
+```ts
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+
+registerBuiltinAdapters();
+const byLanguage = discoverAll('/path/to/repo');
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, '/path/to/repo'));
+}
+const { graph, stats } = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  {
+    sourceRoot: '/path/to/repo',
+    scannedFiles: Object.values(byLanguage).flat(),
+    language: 'multi',
+    defaultExt: '',
+  },
+);
+```
+
+不需要 LLM，不需要网络，不需要原生编译。
+
+### `@handbook/patcher` —— 安全地应用一份编辑计划
+
+```ts
+import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+
+const problems = parsePlan(planText).problems; // lint a plan without applying it
+const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
+if (dry.ok) {
+  const result = applyPlan({ sourceRoot, plan: planText });
+  // rollback(result.backupDir!, { expectedSourceRoot: sourceRoot })
+}
+```
+
+计划的格式记录在[应用与回滚](/docs/guides/applying-changes)里。没有任何东西要求这
+份计划必须出自 `@handbook/planner`——你完全可以手写一份。
+
+### `@handbook/renderer` —— 渲染任意 `HandbookModel`
+
+```ts
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+
+renderMarkdownHandbook(model, 'out/');
+renderAgentSite(model, 'out/agent');
+renderLlmsTxt(model, 'out/');
+```
+
+`HandbookModel` 是唯一的契约。随你用什么方式把它填满，渲染、skill 打包和规划就都能
+工作。
+
+## 主要导出一览
+
+```ts
+// @handbook/core — the vocabulary
+CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
+FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
+HandbookModel · StageTree · coerceRole
+resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
+writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
+
+// @handbook/analyzer — the parser
+registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
+discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
+
+// @handbook/llm — the model seam
+ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
+resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
+
+// @handbook/pipeline — generation
+generateHandbook · loadHandbookModel · runPhase1 · generateCards
+synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
+narrate · extractRegisters · classifyMembers · WorkDir
+
+// @handbook/renderer — presentation
+renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
+renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
+
+// @handbook/skill — packaging
+buildSkill · validateSkill
+
+// @handbook/planner — localization
+runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
+
+// @handbook/patcher — execution
+applyPlan · rollback · listBackups · parsePlan
+
+// @handbook/resync — roll-forward
+resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
+
+// @handbook/studio — the UI
+startStudio · createStudioServer · StateStore · JobRunner
+```
+
+## 安装
+
+```bash
+pnpm add @handbook/analyzer     # or npm / yarn
+```
+
+每个包都是纯 ESM（`"type": "module"`），随包提供类型声明，要求 Node ≥ 20.11，采用
+MIT 许可。第三方版本在工作区 catalog 里统一钉死一次，所以两个包绝无可能落到同一个
+库的两个版本上。

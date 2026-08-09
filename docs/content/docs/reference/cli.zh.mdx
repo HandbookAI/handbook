@@ -1,0 +1,412 @@
+---
+title: 'CLI 参考'
+description: '每个子命令、每个参数、它的环境变量和默认值——以及每个命令写出什么、以什么退出码结束。'
+---
+
+```bash
+handbook [global options] <command> [command options]
+```
+
+每个命令都把**结果以 JSON 写到 stdout**，把**日志写到 stderr**，所以管道用起来完全符合
+你的预期：
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+```
+
+<Callout title="`--help` 是生成的，不是手写的">
+  下面的每个参数都派生自同一份设置注册表，因此 `handbook <cmd> --help` 总会列出该参数、
+  它的环境变量、它按命令限定作用域的变量以及默认值。如果本页和 `--help` 有出入，以
+  `--help` 为准——而且会有一个漂移测试让构建失败。
+</Callout>
+
+## 全局选项
+
+| 参数                | 作用                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-V, --version`     | 打印版本号                                                                                                                                             |
+| `-v, --verbose`     | 调试日志                                                                                                                                               |
+| `-q, --quiet`       | 只输出错误——**优先级高于 `-v`**                                                                                                                        |
+| `--env <name>`      | 选择一个环境：在 `.env.local` 和 `.env` 之前加载 `.env.<name>.local` 和 `.env.<name>`，并优先使用 `handbook.config.<name>.yaml`。等同于 `HANDBOOK_ENV` |
+| `--env-file <path>` | 只加载这个文件，绕过 `.env` 级联。**文件缺失是一个响亮的错误，而不是回退。**建议优先用 `HANDBOOK_ENV_FILE`——见下面的警告                               |
+| `--config <path>`   | 使用这个配置文件，而不是去发现最近的 `handbook.config.yaml`                                                                                            |
+
+全局选项要放在子命令**之前**：
+
+```bash
+handbook --env prod -v generate --source ~/code/api --work work/api
+```
+
+<Callout type="warn" title="`--env-file` 与一个 Node 参数冲突">
+  Node >= 20.6 有它自己的 `--env-file`，而且它会**预扫描整条命令行**去找这个参数——包括
+  脚本路径之后的部分，可在那里它其实并不会真的应用这个文件。存在的路径会原封不动地传给
+  Handbook，但**不**存在的路径会先把进程杀掉：
+
+```bash
+$ handbook --env-file /gone.env config
+node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+```
+
+于是这个参数承诺要大声报出来的那唯一一种情况，恰恰是它报不出来的那一种。
+`HANDBOOK_ENV_FILE` 做的事情一模一样，而且不会被拦截：
+
+```bash
+$ HANDBOOK_ENV_FILE=/gone.env handbook config
+handbook: error: ENOENT: no such file or directory, open '/gone.env'
+```
+
+只要文件确实在那里，这个参数依然有效；两者都设置时，它优先于环境变量。
+
+</Callout>
+
+---
+
+## `analyze`
+
+只跑 Phase 1：构建静态调用图。**不用 LLM，不需要密钥，免费。**
+
+```bash
+handbook analyze --source <dir> --work <dir> [--lang <lang>]
+```
+
+| 参数             | 默认值   | 环境变量                                      |
+| ---------------- | -------- | --------------------------------------------- |
+| `--source <dir>` | **必填** | `HANDBOOK_SOURCE` / `HANDBOOK_ANALYZE_SOURCE` |
+| `--work <dir>`   | **必填** | `HANDBOOK_WORK` / `HANDBOOK_ANALYZE_WORK`     |
+| `--lang <lang>`  | `auto`   | `HANDBOOK_LANG` / `HANDBOOK_ANALYZE_LANG`     |
+
+`--lang` 接受 `auto`，或者下列之一：`cpp` `csharp` `dart` `go` `java` `kotlin` `objc`
+`ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift` `typescript` `zig`。
+**`auto` 会在一趟里检测并合并所有语言**，几乎总是你想要的那个。
+
+**写出** `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`。
+
+```json title="stdout"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+---
+
+## `generate`
+
+完整流水线。Phase 1 之后的一切都**需要一个 LLM 端点**。
+
+```bash
+handbook generate --source <dir> --work <dir> [options]
+```
+
+### 流水线选项
+
+| 参数                      | 默认值                                  | 作用                                                                       |
+| ------------------------- | --------------------------------------- | -------------------------------------------------------------------------- |
+| `--phase <spec>`          | `all`                                   | `all` · `1` · `2` (=2a+2b+2c) · `2a` · `2b` · `2c` · `3`，或逗号分隔的列表 |
+| `--strategy <s>`          | _(工作目录里记录的那个，否则为 `file`)_ | `file` 或 `member`                                                         |
+| `--skeleton <path>`       | —                                       | 你自己的 `skeleton.yaml`。用 `--strategy member` 时**必填**                |
+| `--detail <d>`            | `brief`                                 | 卡片深度：`brief` 或 `deep`                                                |
+| `--synth-mode <m>`        | `oneshot`                               | `oneshot`，或用 `doctor` 走「行动者—评论者」修复循环                       |
+| `--narrate-lang <l>`      | `en`                                    | `en` 或 `zh`                                                               |
+| `--max-doctor-rounds <n>` | `6`                                     | doctor 的收敛轮数                                                          |
+| `--resume`                | `false`                                 | 跳过已经有完成卡片的文件                                                   |
+| `--refresh`               | `false`                                 | 忽略 phase-3 缓存                                                          |
+| `--llm-cache`             | `false`                                 | 把 LLM 的原始回复缓存到 `<work>/phase3/cache`                              |
+
+### 吞吐量选项
+
+| 参数                       | 默认值                    | 作用                                  |
+| -------------------------- | ------------------------- | ------------------------------------- |
+| `--read-workers <n>`       | `12`                      | 并发的卡片批次数                      |
+| `--read-batch-size <n>`    | _(deep 为 1，brief 为 8)_ | 每个卡片批次包含的文件数              |
+| `--max-chars-per-file <n>` | `0`                       | 每个文件截断到 n 个字符；`0` = 不限制 |
+| `--assign-batch-size <n>`  | `25`                      | 每个归属批次的卡片数                  |
+| `--assign-workers <n>`     | `12`                      | 并发的归属批次数                      |
+| `--organize-workers <n>`   | `8`                       | 并发的阶段组织调用数                  |
+| `--narrate-workers <n>`    | `8`                       | 并发的叙述调用数                      |
+
+### LLM 选项（`generate`、`plan`、`resync`、`studio` 共用）
+
+| 参数                        | 默认值                      | 环境变量别名        |
+| --------------------------- | --------------------------- | ------------------- |
+| `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
+| `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
+| `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
+| `--timeout <sec>`           | `300`                       | `OPENAI_TIMEOUT`    |
+| `--llm-retries <n>`         | `6`                         | —                   |
+| `--llm-retry-backoff <sec>` | `3`                         | —                   |
+| `--llm-concurrency <n>`     | `16`                        | —                   |
+| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
+
+API 密钥**永远不是一个参数**。请在环境变量或 `.env` 文件里设置 `OPENAI_API_KEY`（或
+`HANDBOOK_LLM_API_KEY`）。它在配置文件里会被拒绝，因为配置文件是要提交进仓库的。
+
+`--extra-body` 会把厂商特有的字段合并进每一个请求体——比如
+`{"thinking":{"type":"disabled"}}`。模型、消息和 token 相关的字段不能通过它覆盖。
+
+```json title="stdout"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+---
+
+## `render`
+
+工作目录 → markdown，还可以再多一些。**不用 LLM。**
+
+```bash
+handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+| 参数                      | 默认值            | 作用                                         |
+| ------------------------- | ----------------- | -------------------------------------------- |
+| `--work <dir>`            | **必填**          | 要渲染的工作目录                             |
+| `--title <title>`         | `System Handbook` | 输出中使用的 handbook 标题                   |
+| `--out <dir>`             | `<work>/handbook` | 写到哪里                                     |
+| `--html`                  | `false`           | 同时生成多页 HTML 站点，放在 `<out>/html`    |
+| `--html-single`           | `false`           | 同时生成单文件自包含的 `<out>/handbook.html` |
+| `--agent-site`            | `false`           | 同时生成智能体定位索引，放在 `<out>/agent`   |
+| `--llms-txt`              | `false`           | 同时生成 `llms.txt` 和 `llms-full.txt`       |
+| `--source-base-url <url>` | —                 | 把每张文件卡片链接到 `<url>/<relative path>` |
+
+<Callout type="info">
+  不加 `--source-base-url` 时，输出里**完全不含任何外部 URL**——如果你要为一个私有代码库 交付
+  handbook，这一点很重要。
+</Callout>
+
+`--out` _只有限定作用域的形式_：它的环境变量是 `HANDBOOK_RENDER_OUT`，而不是扁平的
+`HANDBOOK_OUT`，因为 `--out` 在 `plan` 和 `skill` 上的含义并不一样。
+
+---
+
+## `skill`
+
+已渲染的 handbook → 智能体 SKILL 包。**不用 LLM。**
+
+```bash
+handbook skill --handbook <dir> --out <dir> --name <slug> [options]
+```
+
+| 参数                | 默认值       | 作用                                             |
+| ------------------- | ------------ | ------------------------------------------------ |
+| `--handbook <dir>`  | **必填**     | 已渲染的 handbook 目录                           |
+| `--out <dir>`       | **必填**     | SKILL 包放在哪里                                 |
+| `--name <slug>`     | **必填**     | 小写连字符 slug；生成 `<slug>-handbook`          |
+| `--project <name>`  | _(`--name`)_ | 正文里使用的人类可读项目名                       |
+| `--work <dir>`      | —            | 从 phase-2 的归属结果补上 `coverage.json`        |
+| `--source <dir>`    | —            | 与 `--work` 一起用时，为**每个文件加上内容哈希** |
+| `--agent-dir <dir>` | —            | 把定位页面一并放进 `references/agent/`           |
+| `--lang <l>`        | `en`         | SKILL.md **正文**的语言。frontmatter 保持英文    |
+
+<Callout type="warn" title="两条值得知道的拒绝规则">
+  `--out` 不能是 handbook 目录，也不能是它的上级目录：构建一开始就会清空 `--out`，那样会
+  把正要打包的东西直接删掉。另外 `--lang zh` 给你的是中文正文加**英文 frontmatter**—— 智能体运行时是按
+  description 文本来路由的，翻译它会悄无声息地破坏技能选择。
+</Callout>
+
+---
+
+## `validate`
+
+检查一个 SKILL 包。**不用 LLM。失败时以 `2` 退出。**
+
+```bash
+handbook validate --skill <dir> [--source <dir>]
+```
+
+| 参数             | 默认值   | 作用                           |
+| ---------------- | -------- | ------------------------------ |
+| `--skill <dir>`  | **必填** | 要校验的 skill 目录            |
+| `--source <dir>` | —        | 对活的源码重新哈希，以检测漂移 |
+
+会检查结构、frontmatter 约定、索引 ↔ 阶段页面的一致性、`coverage.json` 的 schema，以及
+哈希是否还新鲜。错误和警告都写到 stderr。
+
+---
+
+## `plan`
+
+由 handbook 引导的改动定位。**需要一个 LLM 端点。只读。**
+
+```bash
+handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]
+```
+
+| 参数               | 默认值     | 作用                                                       |
+| ------------------ | ---------- | ---------------------------------------------------------- |
+| `--source <dir>`   | **必填**   | 要为之做规划的代码库（永远不会被写入）                     |
+| `--request <text>` | **必填**   | 自然语言描述的改动请求                                     |
+| `--handbook <dir>` | —          | 已渲染的 handbook 或 `skills/<x>/references`。强烈建议提供 |
+| `--out <file>`     | _(stdout)_ | 把计划写到这里                                             |
+| `--max-turns <n>`  | `30`       | 智能体的回合预算                                           |
+
+外加共用的 LLM 选项。
+
+如果规划器放弃了——它编造了工具结果、用完了回合数，或者最后什么可用的东西都没产出——
+它会**以非零码退出**，而不是写出一份道歉、让某个脚本把它喂给 `apply`。
+
+---
+
+## `apply`
+
+应用一份计划里的 EDIT 块。**不用 LLM。只要有任何一处没落地就以 `2` 退出。**
+
+```bash
+handbook apply --source <dir> --plan <file> [--dry-run] [--backup-root <dir>]
+```
+
+| 参数                  | 默认值                       | 作用                        |
+| --------------------- | ---------------------------- | --------------------------- |
+| `--source <dir>`      | **必填**                     | 要编辑的目录树              |
+| `--plan <file>`       | **必填**                     | 来自 `handbook plan` 的计划 |
+| `--dry-run`           | `false`                      | 只校验——**绝不写入**        |
+| `--backup-root <dir>` | `<source>/.handbook-patches` | 备份放在哪里                |
+
+```json title="stdout"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+状态取值：`applied` · `created` · `no-match` · `ambiguous` · `file-missing` · `not-a-file`
+· `unsafe-path` · `undecodable` · `skipped`。
+
+---
+
+## `rollback`
+
+从补丁备份里恢复源码树。**不用 LLM。**
+
+```bash
+handbook rollback --backup <dir> [--source <dir>] [--force]
+```
+
+| 参数             | 默认值   | 作用                                   |
+| ---------------- | -------- | -------------------------------------- |
+| `--backup <dir>` | **必填** | 含 `manifest.json` 的备份目录          |
+| `--source <dir>` | —        | 拒绝属于另一棵目录树的备份             |
+| `--force`        | `false`  | 连打补丁**之后**又变过的文件也一并恢复 |
+
+不加 `--force` 时，当前哈希与打补丁后的哈希对不上的文件会被拒绝——恢复它会悄无声息地
+毁掉这期间做的所有工作。
+
+---
+
+## `resync`
+
+在代码改动之后，把一份 handbook 向前滚动。
+
+```bash
+handbook resync --case <dir> --work <dir> [options]
+```
+
+| 参数                   | 默认值                | 作用                                                           |
+| ---------------------- | --------------------- | -------------------------------------------------------------- |
+| `--case <dir>`         | **必填**              | case 目录：`edited/` + 可选的 `plan.md` + 可选的 `change.diff` |
+| `--work <dir>`         | **必填**              | 要向前滚动的工作目录                                           |
+| `--title <title>`      | `System Handbook`     | 重新渲染时使用的标题                                           |
+| `--no-llm`             | _(默认开启 LLM)_      | 只做结构刷新；正文会被标记为过期                               |
+| `--no-render`          | _(默认开启渲染)_      | 跳过刷新已经渲染好的输出                                       |
+| `--corrections <file>` | —                     | `corrections.jsonl`；其中列出的文件会**扩大**刷新范围          |
+| `--detail <d>`         | _(沿用现有 handbook)_ | 重新生成的卡片用 `brief` 还是 `deep`                           |
+| `--narrate-lang <l>`   | _(沿用现有 handbook)_ | `en` 或 `zh`                                                   |
+
+外加共用的 LLM 选项。
+
+<Callout type="info">
+  不设 `--detail` 和 `--narrate-lang` 才是正确的默认做法：不设意味着*「和这份 handbook
+  现在的样子保持一致」*，所以一次 resync 绝不会悄悄把一份 deep handbook 降级成 brief。
+</Callout>
+
+---
+
+## `studio`
+
+本地 Web UI。一直运行到 `Ctrl-C`。
+
+```bash
+handbook studio [--port <n>] [--host <addr>] [--state-dir <dir>]
+```
+
+| 参数                | 默认值                   | 作用                           |
+| ------------------- | ------------------------ | ------------------------------ |
+| `--port <n>`        | `4860`                   | 监听的端口                     |
+| `--host <addr>`     | `127.0.0.1`              | 绑定地址。容器里需要 `0.0.0.0` |
+| `--state-dir <dir>` | `$HOME/.handbook-studio` | 注册表和托管的工作目录         |
+
+外加共用的 LLM 选项——Studio 和其他所有命令一样，从同样的几层里解析它们，所以 `--model`
+和配置文件里的 `llm:` 块都能作用到它的任务上。
+
+<Callout type="warn">
+  设置 `--host 0.0.0.0` 并**不**能让 Studio 在任何有意义的层面上变得可远程访问：CSRF 防护 会检查 `Host`
+  头，所以一个写着局域网 IP 的请求会以 `403` 被拒绝。参见 [Studio](/docs/guides/studio)。
+</Callout>
+
+---
+
+## `config`
+
+打印解析后的配置，以及每个值来自哪里。**不用 LLM。**
+
+```bash
+handbook config [--command <name>] [--json] [--check]
+```
+
+| 参数               | 默认值     | 作用                                              |
+| ------------------ | ---------- | ------------------------------------------------- |
+| `--command <name>` | `generate` | 只显示适用于这个子命令的设置                      |
+| `--json`           | `false`    | 机器可读的输出                                    |
+| `--check`          | `false`    | 只做校验；只要有任何无效或缺失的项就**以 2 退出** |
+
+```bash
+handbook config --command generate      # a table, with provenance per row
+handbook config --json | jq '.settings[] | select(.source.kind == "env")'
+handbook config --check                 # put this one in CI
+```
+
+<Callout title="它是故意要把坏掉的配置显示出来的">
+  和其他所有命令不同，`config` 不会因为某个值无效就中止。缺失的 `--source` 会渲染成一行 醒目的 `— unset
+  (required)`，而不是把你唯一能用来调试这个问题的工具直接干掉。
+</Callout>
+
+---
+
+## 退出码
+
+| 退出码 | 含义                                                                                                |
+| :----: | --------------------------------------------------------------------------------------------------- |
+|  `0`   | 成功                                                                                                |
+|  `1`   | 出错了——配置无效、缺少产物、运行失败。消息写在 stderr，前缀是 `handbook: error:`                    |
+|  `2`   | 一次**检查**没通过：`validate` 发现了问题、`apply` 没有完全落地，或者 `config --check` 发现了无效项 |
+
+`2` 的意思是*「工具正常工作了，而答案是否定的」*。脚本应该把它和 `1` 区别对待。
+
+## pnpm 快捷方式
+
+在一个克隆下来的仓库里，下面每一条都会先构建，再把参数原样转发下去：
+
+```bash
+pnpm analyze  --source ~/code/proj --work work/proj
+pnpm generate --source ~/code/proj --work work/proj
+pnpm render   --work work/proj --html --agent-site --llms-txt
+pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
+pnpm validate --skill skills/proj --source ~/code/proj
+pnpm plan     --source ~/code/proj --request "…" --out plan.md
+pnpm apply    --source ~/code/proj --plan plan.md --dry-run
+pnpm rollback --backup ~/code/proj/.handbook-patches/<stamp>
+pnpm resync   --case cases/mycase --work work/proj
+pnpm studio
+pnpm config:show --command generate
+pnpm handbook --help
+```

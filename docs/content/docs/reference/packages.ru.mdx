@@ -1,0 +1,131 @@
+---
+title: 'Указатель пакетов'
+description: 'Одиннадцать npm-пакетов, что экспортирует каждый и какие из них работают вообще без LLM.'
+---
+
+Handbook — это монорепозиторий из одиннадцати пакетов. **Четыре из них никогда не
+обращаются к LLM** и полезны совершенно самостоятельно.
+
+| Пакет                | Роль                                                    | LLM? | Документация                                               |
+| -------------------- | ------------------------------------------------------- | :--: | ---------------------------------------------------------- |
+| `@handbook/core`     | Модель данных, zod-схемы, реестр конфигурации, утилиты  |  ❌  | [README](https://www.npmjs.com/package/@handbook/core)     |
+| `@handbook/analyzer` | Извлечение статического графа вызовов для многих языков |  ❌  | [README](https://www.npmjs.com/package/@handbook/analyzer) |
+| `@handbook/llm`      | OpenAI-совместимый клиент, кеш, актёр–критик, мок       |  ✅  | [README](https://www.npmjs.com/package/@handbook/llm)      |
+| `@handbook/pipeline` | Конвейер генерации, фазы 1–3                            |  ✅  | [README](https://www.npmjs.com/package/@handbook/pipeline) |
+| `@handbook/renderer` | Markdown, HTML, индекс для агентов, llms.txt            |  ❌  | [README](https://www.npmjs.com/package/@handbook/renderer) |
+| `@handbook/skill`    | Упаковка SKILL, проверка, хеши расхождений              |  ❌  | [README](https://www.npmjs.com/package/@handbook/skill)    |
+| `@handbook/planner`  | Планирующий агент, работающий только на чтение          |  ✅  | [README](https://www.npmjs.com/package/@handbook/planner)  |
+| `@handbook/patcher`  | Байт-точное применение, резервные копии, откат          |  ❌  | [README](https://www.npmjs.com/package/@handbook/patcher)  |
+| `@handbook/resync`   | Инкрементальное перекатывание вперёд                    |  ✅  | [README](https://www.npmjs.com/package/@handbook/resync)   |
+| `@handbook/studio`   | Локальный веб-интерфейс                                 |  ✅  | [README](https://www.npmjs.com/package/@handbook/studio)   |
+| `@handbook/cli`      | Команда `handbook`                                      |  —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+
+## Три самых полезных сами по себе
+
+### `@handbook/analyzer` — граф вызовов для 18 языков
+
+```ts
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+
+registerBuiltinAdapters();
+const byLanguage = discoverAll('/path/to/repo');
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, '/path/to/repo'));
+}
+const { graph, stats } = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  {
+    sourceRoot: '/path/to/repo',
+    scannedFiles: Object.values(byLanguage).flat(),
+    language: 'multi',
+    defaultExt: '',
+  },
+);
+```
+
+Без LLM, без сети, без нативной компиляции.
+
+### `@handbook/patcher` — безопасно применить план правок
+
+```ts
+import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+
+const problems = parsePlan(planText).problems; // lint a plan without applying it
+const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
+if (dry.ok) {
+  const result = applyPlan({ sourceRoot, plan: planText });
+  // rollback(result.backupDir!, { expectedSourceRoot: sourceRoot })
+}
+```
+
+Формат плана описан в разделе [Применение изменений](/docs/guides/applying-changes). Ничто
+не требует, чтобы план пришёл именно из `@handbook/planner` — вы можете написать его
+руками.
+
+### `@handbook/renderer` — отрендерить любую `HandbookModel`
+
+```ts
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+
+renderMarkdownHandbook(model, 'out/');
+renderAgentSite(model, 'out/agent');
+renderLlmsTxt(model, 'out/');
+```
+
+`HandbookModel` — единственный контракт. Заполните её как вам угодно, и рендеринг,
+упаковка скилла и планирование заработают все сразу.
+
+## Ключевые экспорты одним взглядом
+
+```ts
+// @handbook/core — the vocabulary
+CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
+FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
+HandbookModel · StageTree · coerceRole
+resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
+writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
+
+// @handbook/analyzer — the parser
+registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
+discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
+
+// @handbook/llm — the model seam
+ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
+resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
+
+// @handbook/pipeline — generation
+generateHandbook · loadHandbookModel · runPhase1 · generateCards
+synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
+narrate · extractRegisters · classifyMembers · WorkDir
+
+// @handbook/renderer — presentation
+renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
+renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
+
+// @handbook/skill — packaging
+buildSkill · validateSkill
+
+// @handbook/planner — localization
+runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
+
+// @handbook/patcher — execution
+applyPlan · rollback · listBackups · parsePlan
+
+// @handbook/resync — roll-forward
+resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
+
+// @handbook/studio — the UI
+startStudio · createStudioServer · StateStore · JobRunner
+```
+
+## Установка
+
+```bash
+pnpm add @handbook/analyzer     # or npm / yarn
+```
+
+Каждый пакет только в формате ESM (`"type": "module"`), поставляется с декларациями типов,
+требует Node ≥ 20.11 и лицензирован по MIT. Версии сторонних библиотек зафиксированы один
+раз в каталоге рабочего пространства, поэтому два пакета никогда не окажутся на двух
+версиях одной и той же библиотеки.

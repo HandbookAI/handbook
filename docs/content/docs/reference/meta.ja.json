@@ -1,0 +1,14 @@
+{
+  "title": "リファレンス",
+  "icon": "Library",
+  "pages": [
+    "cli",
+    "configuration",
+    "environment",
+    "artifacts",
+    "languages",
+    "prompts",
+    "packages",
+    "exit-codes"
+  ]
+}

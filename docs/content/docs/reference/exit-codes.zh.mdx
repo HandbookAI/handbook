@@ -1,0 +1,146 @@
+---
+title: '退出码与输出'
+description: '每个退出码的含义、哪些内容走 stdout 哪些走 stderr，以及如何针对两者编写脚本。'
+---
+
+## 退出码
+
+| 退出码 | 含义                                               | 由谁产生                              |
+| :----: | -------------------------------------------------- | ------------------------------------- |
+|  `0`   | 成功                                               | 所有命令                              |
+|  `1`   | 一个错误：配置无效、产物缺失、运行失败、端点不可达 | 所有命令                              |
+|  `2`   | 某项**检查**未通过——工具正常工作，而答案是「否」   | `validate`, `apply`, `config --check` |
+
+`1` 与 `2` 的区别在脚本里是承重的：
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+case $? in
+  0) echo "fresh" ;;
+  2) echo "the handbook has drifted — schedule a resync" ;;
+  *) echo "something is broken" >&2; exit 1 ;;
+esac
+```
+
+### 哪些命令会以 2 退出
+
+- **`validate`**——SKILL 包未通过某项结构检查，或者源码哈希发生了变化。
+- **`apply`**——一处或多处编辑没有落地（`no-match`、`ambiguous`、`unsafe-path` 等）。
+  在 `--dry-run` 下，这表示「这份计划无法干净地应用」。
+- **`config --check`**——某项设置无效，或缺少必需的设置。
+
+规划器放弃时，`plan` 以 **`1`** 退出，而不是 `2`：一次中途放弃的运行是错误，而不是否定的
+答案。
+
+## stdout 与 stderr
+
+| 流         | 承载内容                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **stdout** | 命令的结果，以 JSON 形式输出——例外是不带 `--out` 的 `plan`，它写出计划本身；以及不带 `--json` 的 `config`，它写出一张表格 |
+| **stderr** | 所有日志、所有进度、所有警告，以及每一条错误消息                                                                          |
+
+正是这种拆分让管道使用变得安全：
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env") | .key'
+handbook plan --source ~/code/api --request "…" > plan.md     # logs still visible
+```
+
+错误消息带有前缀，因此可以用 grep 检索：
+
+```text
+handbook: error: invalid configuration:
+  - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml
+```
+
+## 日志级别
+
+| 方式                       | 级别                     |
+| -------------------------- | ------------------------ |
+| 默认                       | `info`                   |
+| `-v` / `--verbose`         | `debug`                  |
+| `-q` / `--quiet`           | `error`——**优先于 `-v`** |
+| `HANDBOOK_LOG_LEVEL=debug` | `debug`，无需任何标志    |
+
+`HANDBOOK_LOG_LEVEL` 同样会影响那两行启动日志——它们报告加载了哪些 `.env` 文件、以及加载
+了哪个配置文件——当某个值来自你意料之外的地方时，这很有用。
+
+## 结果结构
+
+```json title="analyze"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+```json title="generate"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```json title="render"
+{
+  "outDir": "work/api/handbook",
+  "nStagePages": 9,
+  "agent": { "...": "…" },
+  "html": { "...": "…" },
+  "htmlSingle": { "...": "…" },
+  "llms": { "...": "…" }
+}
+```
+
+```json title="skill"
+{
+  "outDir": "skills/api",
+  "nStagePages": 9,
+  "references": [
+    "agent/how_to_use.md",
+    "agent/disambiguation.md",
+    "overview.md",
+    "index.md",
+    "registers.md",
+    "coverage.json"
+  ]
+}
+```
+
+```json title="plan (with --out)"
+{
+  "out": "plan.md",
+  "turns": 11,
+  "declarations": { "willModify": ["Uploader.send"], "willAdd": ["Uploader._retry"], "willRemove": [] }
+}
+```
+
+```json title="apply"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+```json title="resync"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["…"]
+}
+```
+
+`validate` 是个例外：它把人类可读的行写到 stderr，并通过退出码来传达结果。

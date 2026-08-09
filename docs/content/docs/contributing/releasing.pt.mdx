@@ -1,0 +1,128 @@
+---
+title: Publicando versões
+description: Os changesets conduzem as versões e os changelogs. A publicação permanece inerte até que um token seja configurado, então a contabilidade fica correta de qualquer forma.
+---
+
+## Adicionando um changeset
+
+Qualquer mudança que afete um pacote publicado precisa de um:
+
+```bash
+pnpm changeset
+```
+
+Ele pergunta quais pacotes mudaram e se cada um é patch, minor ou major, e então escreve um
+arquivo markdown sob `.changeset/`. **Faça commit desse arquivo junto com o código.**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+Escreva a descrição para quem **lê o changelog**, não para quem revisa: o que mudou visto de
+fora, não como.
+
+### O que precisa de um
+
+| Mudança                                    | Changeset? |
+| ------------------------------------------ | ---------- |
+| Uma funcionalidade ou flag nova            | ✅ minor   |
+| Uma correção de comportamento já publicado | ✅ patch   |
+| Uma mudança incompatível de API ou da CLI  | ✅ major   |
+| Um novo adaptador de linguagem             | ✅ minor   |
+| Docs, testes, CI, refatorações internas    | ❌         |
+| Qualquer coisa sob `docs/`                 | ❌         |
+
+## O fluxo de release
+
+<Steps>
+
+<Step>
+### Faça merge na `main` com changesets presentes
+
+O workflow de release abre (ou atualiza) um pull request **"Version Packages"**.
+
+</Step>
+
+<Step>
+### Revise esse PR
+
+Ele aplica todo changeset pendente: sobe as versões, escreve o `CHANGELOG.md` de cada pacote
+e apaga os arquivos de changeset consumidos. Leia o diff do changelog — ele é o release
+notes.
+
+</Step>
+
+<Step>
+### Faça o merge
+
+Isso publica no npm.
+
+</Step>
+
+</Steps>
+
+<Callout title="A publicação é inerte até NPM_TOKEN existir">
+  Sem o segredo configurado, o passo de publicação é um no-op. **O versionamento e os changelogs continuam
+  corretos** — então a contabilidade está certa quer os pacotes estejam de fato sendo publicados ou não, e
+  ligar a publicação mais tarde não exige reescrever o histórico.
+</Callout>
+
+## Fazendo na mão
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` também roda `pnpm install --lockfile-only`, porque versões do workspace que
+sobem mudam o lockfile.
+
+## Antes de um release
+
+```bash
+pnpm check:all
+```
+
+Isso é o `pnpm check` mais os dois gates voltados à publicação:
+
+- **`check:packaging`** — `publint` e `@arethetypeswrong/cli` sobre cada pacote. Pega um mapa
+  `exports` errado, uma declaração de tipos ausente, um risco de pacote dual.
+- **`check:install`** — empacota todos os onze tarballs, instala-os com **npm puro** em um
+  diretório temporário e dirige a CLI contra eles. Essa é a verificação mais forte que
+  existe sobre o `dist`: ela exercita a superfície publicada real, não os symlinks do
+  workspace.
+
+Eles empacotam onze tarballs, então pertencem ao CI e ao momento antes de um release, não a
+cada ciclo local.
+
+## Procedência
+
+A procedência do npm exige um campo `repository` apontando para o repositório público, em
+**todo** manifesto. Como isso são doze edições nas quais `directory` difere a cada vez:
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+É idempotente — rode de novo depois de mover o repositório. Ele deliberadamente **não** está
+ligado ao `pnpm check`: até o repositório ter uma URL pública não há nada contra o que
+verificar, e um gate que falha em um clone recém-feito ensina as pessoas a ignorar gates.
+
+## Política de versionamento
+
+Semver padrão, com duas convenções que vale a pena declarar:
+
+- **As flags da CLI são API pública.** Remover ou renomear uma flag é um bump major.
+  Adicionar uma é minor.
+- **Os esquemas dos artefatos são versionados separadamente** pelo campo `version` deles. Uma
+  mudança de esquema que invalida diretórios de trabalho existentes é um bump major dos
+  pacotes que os leem, e precisa de uma nota no changeset dizendo isso — não há mecanismo de
+  migração de artefatos, então "apague o diretório de trabalho e regenere" precisa ser uma
+  resposta aceitável.

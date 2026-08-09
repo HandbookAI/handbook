@@ -1,0 +1,129 @@
+---
+title: Publicar versiones
+description: Los changesets gobiernan las versiones y los changelogs. La publicación permanece inerte hasta que se configura un token, así que la contabilidad es correcta en cualquier caso.
+---
+
+## Añadir un changeset
+
+Cualquier cambio que afecte a un paquete publicado necesita uno:
+
+```bash
+pnpm changeset
+```
+
+Pregunta qué paquetes cambiaron y si cada uno es patch, minor o major, y luego escribe un
+archivo markdown bajo `.changeset/`. **Commitea ese archivo junto con el código.**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+Escribe la descripción para quien **lee el changelog**, no para quien revisa: qué cambió
+visto desde fuera, no cómo.
+
+### Qué necesita uno
+
+| Cambio                                        | ¿Changeset? |
+| --------------------------------------------- | ----------- |
+| Una funcionalidad o un flag nuevos            | ✅ minor    |
+| Una corrección de comportamiento ya publicado | ✅ patch    |
+| Un cambio incompatible de API o de la CLI     | ✅ major    |
+| Un adaptador de lenguaje nuevo                | ✅ minor    |
+| Docs, pruebas, CI, refactorizaciones internas | ❌          |
+| Cualquier cosa bajo `docs/`                   | ❌          |
+
+## El flujo de publicación
+
+<Steps>
+
+<Step>
+### Haz merge a `main` con changesets presentes
+
+El workflow de publicación abre (o actualiza) un pull request **«Version Packages»**.
+
+</Step>
+
+<Step>
+### Revisa ese PR
+
+Aplica todos los changesets pendientes: sube versiones, escribe el `CHANGELOG.md` de cada
+paquete y borra los archivos de changeset consumidos. Lee el diff del changelog — son las
+notas de la versión.
+
+</Step>
+
+<Step>
+### Haz merge
+
+Eso publica en npm.
+
+</Step>
+
+</Steps>
+
+<Callout title="La publicación es inerte hasta que existe NPM_TOKEN">
+  Sin el secreto configurado, el paso de publicación no hace nada. **El versionado y los changelogs siguen
+  siendo correctos** — así que la contabilidad está bien tanto si los paquetes se están publicando de verdad
+  como si no, y activar la publicación más adelante no requiere reescribir el historial.
+</Callout>
+
+## Hacerlo a mano
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` también ejecuta `pnpm install --lockfile-only`, porque las versiones del
+workspace que suben cambian el lockfile.
+
+## Antes de una publicación
+
+```bash
+pnpm check:all
+```
+
+Eso es `pnpm check` más los dos controles orientados a la publicación:
+
+- **`check:packaging`** — `publint` y `@arethetypeswrong/cli` sobre cada paquete. Detecta un
+  mapa `exports` equivocado, una declaración de tipos ausente, un peligro de paquete dual.
+- **`check:install`** — empaqueta los once tarballs, los instala con **npm a secas** en un
+  directorio temporal y ejecuta la CLI contra ellos. Es el control más fuerte que existe
+  sobre `dist`: ejercita la superficie publicada real, no los symlinks del workspace.
+
+Empaquetan once tarballs, así que corresponden a CI y a antes de una publicación, no a cada
+ciclo local.
+
+## Procedencia
+
+La procedencia de npm requiere un campo `repository` que apunte al repositorio público, en
+**todos** los manifiestos. Como eso son doce ediciones en las que `directory` difiere cada
+vez:
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+Es idempotente — vuelve a ejecutarlo después de mover el repositorio. Deliberadamente **no**
+está enganchado a `pnpm check`: hasta que el repositorio tenga una URL pública no hay nada
+contra lo que comprobar, y un control que falla en un clon recién hecho enseña a la gente a
+ignorar los controles.
+
+## Política de versionado
+
+Semver estándar, con dos convenciones que merece la pena enunciar:
+
+- **Los flags de la CLI son API pública.** Quitar o renombrar un flag es un salto major.
+  Añadir uno es minor.
+- **Los esquemas de los artefactos se versionan por separado** mediante su campo `version`.
+  Un cambio de esquema que invalida directorios de trabajo existentes es un salto major de
+  los paquetes que los leen, y necesita una nota en el changeset que lo diga — no hay
+  mecanismo de migración de artefactos, así que «borra el directorio de trabajo y regenera»
+  tiene que ser una respuesta aceptable.
