@@ -1,0 +1,170 @@
+---
+title: '应用与回滚'
+description: '一个带四条安全规则的机械执行器、一份能证明自己在恢复什么的备份，以及一个拒绝一切歧义的解析器。'
+---
+
+```bash
+handbook apply --source <repo> --plan plan.md --dry-run   # verify only
+handbook apply --source <repo> --plan plan.md             # for real
+handbook rollback --backup <dir>                          # undo
+```
+
+**整个过程不涉及 LLM。** `apply` 用精确文本替换精确文本。它真正有意思的地方，
+全在于它拒绝做什么。
+
+## 永远先试运行
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run
+```
+
+```json
+{
+  "ok": true,
+  "dryRun": true,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 },
+    { "index": 2, "file": "src/upload.py", "where": "Uploader", "status": "applied", "line": 71 }
+  ],
+  "changedFiles": [],
+  "problems": []
+}
+```
+
+`ok: true` 表示每个锚点都解析成功。`changedFiles` 为空，因为什么都没有写入。
+**`--dry-run` 绝不触碰文件系统。**
+
+## 四条安全规则
+
+### 1. 先全部校验，再分两阶段写入
+
+计划先针对当前文件内容整体解析。**任何一处失败都会中止整次应用**——在写下任何一个
+字节之前。写入时，每个文件都先暂存为临时文件，只有当*所有*暂存都成功后才逐一重命
+名——如果重命名中途失败，已重命名的文件会从片刻之前刚做好的备份中恢复。
+
+不存在“半份计划已落地”这种状态。
+
+### 2. `old` 必须字节级精确且唯一匹配
+
+| 匹配数 | 结果                                      |
+| :----: | ----------------------------------------- |
+|   0    | `no-match`——计划写下之后，代码已经变了    |
+|   1    | 已应用                                    |
+|   2+   | `ambiguous`——这个锚点无法标识出唯一的位置 |
+
+两种失败都会拒绝。**谁也不会替你挑一个。**“取第一处出现”正是补丁落进错误函数的
+经典方式。
+
+### 3. 每个被触碰的文件都连同打补丁前的哈希一起备份
+
+```text
+<source>/.handbook-patches/
+  .gitignore                     written automatically — backups never enter git
+  2026-08-08T14-05-11-204Z/
+    manifest.json                source root, timestamp, per-file pre/post hashes
+    files/…                      the original bytes
+```
+
+正是这个哈希，让回滚能够**证明**它恢复的就是这个补丁所替换掉的那些字节，而不是
+仅凭文件名去信任。
+
+### 4. 任何路径都逃不出源码根目录
+
+`..`、绝对路径、Windows 盘符绝对路径——还有当文件本身尚不存在时，借道**符号链接
+父目录**的逃逸。最后这个是微妙的情形：realpath 取自最深的*已存在*祖先目录，所以
+一个缺失的叶子文件跳不过这项检查。符号链接目标永远不会被替换。
+
+## 结果状态
+
+| 状态           | 含义                                         |
+| -------------- | -------------------------------------------- |
+| `applied`      | 已替换，并给出找到 `old` 的行号（从 1 开始） |
+| `created`      | `old` 为空；文件被创建                       |
+| `no-match`     | 文件中不存在 `old`                           |
+| `ambiguous`    | `old` 出现不止一次                           |
+| `file-missing` | `old` 非空，但没有这个文件                   |
+| `not-a-file`   | 该路径是目录或符号链接                       |
+| `unsafe-path`  | 该路径逃出了源码根目录                       |
+| `undecodable`  | 文件不是有效的 UTF-8                         |
+| `skipped`      | 更早的一处失败中止了这次运行                 |
+
+当 `ok` 为 false 时，`apply` **以退出码 `2` 退出**。
+
+## 回滚
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z \
+                  --source $REPO
+```
+
+- **拒绝任何在打补丁之后又被改过的文件。** 它当前的哈希与清单中打补丁后的哈希对不
+  上，说明此后有人编辑过它——这时恢复会悄无声息地毁掉那些工作。`--force` 可以
+  覆盖，而且刻意要求你显式写出来。
+- **`--source` 守住另一个方向：** 把回滚指向一份取自另一棵目录树的备份，是一个
+  错误，而不是一个特性。
+- **文件权限位、行尾与末尾换行符全程保留。** 打补丁器不会规范化任何它没被要求修改
+  的东西。
+- **回滚自身创建的空目录会被清理掉。**
+
+```bash
+ls -1t $REPO/.handbook-patches/     # newest first
+```
+
+## 解析器为何对歧义毫不留情
+
+围栏跟踪对反引号与波浪号两种围栏都遵循 CommonMark：一个以连续 N 个标记开启的块，
+只有遇到标记数 ≥ N *且*不带 info string 的行才会关闭。所以围栏区域内的
+`### EDIT n` **是内容，绝不是标题**——一份引用了示例编辑的计划，无法把幽灵编辑
+偷运进这次运行。
+
+| 被拒绝的情况                                             | 消息会告诉你                                                         |
+| -------------------------------------------------------- | -------------------------------------------------------------------- |
+| 某次编辑的两个围栏块之间夹了内容                         | 多半是内部围栏提前关闭了 `old`/`new`——用更长的围栏来开启它们         |
+| 一个未标记的 ``` 块                                      | 同样的原因；无论它在哪里都拒绝，被截断的锚点就无法伪装成“尾声”溜进来 |
+| `old` 与 `new` 不是恰好各一个                            | 各找到了多少个                                                       |
+| `new` 出现在 `old` 之前                                  | 先写锚点，再写替换内容                                               |
+| `old` 与 `new` 完全相同                                  | 无事可做                                                             |
+| `- file:` 行缺失或重复                                   | 必须恰好一行                                                         |
+| 编辑编号乱序或重复                                       | 必须递增                                                             |
+| 路径含空白、反引号、控制字符、反斜杠、`~`，或以 `/` 开头 | 违反了哪条规则                                                       |
+| 一个“差一点”的标题（`## EDIT 1`）                        | 它看起来像标题，但不是 `### EDIT <n>`                                |
+
+最后一对 `old`/`new` **之后**的收尾说明与声明块属于预期输出，会被忽略，而不是被
+拒绝。
+
+## 手写一份计划
+
+没有任何规定要求计划必须出自 `handbook plan`。这个格式小到可以直接手写，这让
+`apply` 本身就是一个好用的机械打补丁工具：
+
+````markdown
+### EDIT 1
+
+- file: `src/config.py`
+- where: `DEFAULTS` — bump the timeout
+
+```old
+TIMEOUT_SECONDS = 30
+```
+
+```new
+TIMEOUT_SECONDS = 60
+```
+````
+
+只做语法检查、不实际应用：
+
+```ts
+import { parsePlan } from '@handbook/patcher';
+console.log(parsePlan(planText).problems);
+```
+
+## 落地之后
+
+手册现在落后于代码了。把它向前滚：
+
+```bash
+handbook resync --case cases/upload-retry --work work/api
+```
+
+见[让手册保持最新](/docs/guides/keeping-current)。

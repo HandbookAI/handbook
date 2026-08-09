@@ -1,8 +1,20 @@
 ---
 title: 'Handbook 是什么？'
-description: 'Handbook 用真正的解析器解析你的仓库，把它变成一张可导航的地图，并把这张地图作为位置索引交给你的编码代理——之后随着代码变动持续保持最新。'
+description: 一个代码库进来，两本手册出去——一份给团队读的叙述式文档站，一份给编码 agent 路由用的位置索引。同一张解析出的地图，随代码演进保持同步。
 icon: House
 ---
+
+## 一个代码库进来，两本手册出去。
+
+Handbook 会把同一张代码地图写成**两份**，因为它有两种完全不同的读者：
+
+<Cards>
+  <Card title="📖 给人读的手册" description="按阶段叙述的文档站——搜索、主题、深链接——由你的代码生成，file:// 直接打开。这本是给你读的。" href="/docs/guides/rendering" />
+  <Card title="🤖 给 AI 用的手册" description="机器友好的位置索引：文件→阶段路由表、逐函数调用事实、llms.txt、可安装的 SKILL 包。这本是给你的编码 agent 用的。" href="/docs/guides/agent-skill" />
+</Cards>
+
+底下是同一份事实——解析器构建的调用图——所以两本永远不会对代码各说各话。
+一本为叙述和导航优化，另一本为路由和过期检测优化。
 
 ## 先把问题说清楚
 
@@ -57,7 +69,7 @@ LLM 负责写给人看的部分：一个文件是干什么的、一个子系统�
 ## 一次运行能得到什么
 
 <img
-  src="/diagrams/outputs.svg"
+  src="/diagrams/outputs.zh.svg"
   alt="产出：markdown 手册、HTML 站点、单页文件、代理定位索引、llms.txt、SKILL 包"
   className="rounded-xl border"
 />

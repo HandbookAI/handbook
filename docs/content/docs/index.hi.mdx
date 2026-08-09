@@ -1,8 +1,20 @@
 ---
 title: 'Handbook क्या है?'
-description: 'Handbook आपकी repository को एक असली parser से parse करता है, उसे एक navigable map में बदलता है, और वह map आपके coding agent को location index के रूप में सौंपता है — फिर code के बदलते रहने पर उसे current बनाए रखता है।'
+description: एक कोडबेस अंदर, दो handbooks बाहर — एक narrated documentation site जो आपकी टीम पढ़ती है, और एक location index जिससे आपका coding agent route करता है। एक ही parsed नक्शे से, कोड के साथ हमेशा अद्यतन।
 icon: House
 ---
+
+## एक कोडबेस अंदर, दो handbooks बाहर।
+
+Handbook आपके कोड के एक ही नक्शे को **दो बार** लिखता है, क्योंकि इसके दो बिल्कुल अलग पाठक हैं:
+
+<Cards>
+  <Card title="📖 इंसानों के लिए handbook" description="stage-दर-stage narrated documentation site — search, theme, deep links — आपके कोड से generated, file:// से सीधे खुलती है। यह आप पढ़ते हैं।" href="/docs/guides/rendering" />
+  <Card title="🤖 AI के लिए handbook" description="machine के लिए बना location index: file→stage routing tables, per-function call facts, llms.txt, और installable SKILL package। इसे आपका coding agent पढ़ता है।" href="/docs/guides/agent-skill" />
+</Cards>
+
+नीचे वही तथ्य हैं — parser से बना call graph — इसलिए दोनों कभी असहमत नहीं हो सकते।
+एक narrative और navigation के लिए, दूसरा routing और staleness detection के लिए अनुकूलित है।
 
 ## समस्या, साफ़ शब्दों में
 
@@ -73,7 +85,7 @@ Output आपके code की summary नहीं है। यह एक ऐ
 ## एक run से आपको क्या मिलता है
 
 <img
-  src="/diagrams/outputs.svg"
+  src="/diagrams/outputs.hi.svg"
   alt="आउटपुट: markdown handbook, HTML site, single page, agent locator index, llms.txt, SKILL package"
   className="rounded-xl border"
 />

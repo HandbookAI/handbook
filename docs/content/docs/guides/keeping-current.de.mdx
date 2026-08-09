@@ -1,0 +1,172 @@
+---
+title: 'Aktuell halten'
+description: 'Resync vergleicht den alten Aufrufgraphen mit dem neuen und regeneriert nur, was sich tatsächlich geändert hat. Drei Dateien angefasst, für drei Dateien bezahlt.'
+---
+
+```bash
+handbook resync --case <case-dir> --work <workdir>
+```
+
+Dokumentation verrottet, weil ihre Aktualisierung so viel kostet wie ihr Schreiben.
+Resync macht die Aktualisierung **proportional zur Änderung**.
+
+## Der Case-Vertrag
+
+Ein **Case** ist ein Verzeichnis, das Sie zusammenstellen. Es beantwortet zwei Fragen:
+_Wie sieht der Code jetzt aus_ und _was sollte die Änderung sein_?
+
+```text
+cases/upload-retry/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — SHARPENS the scope
+  change.diff   unified diff vs the previous tree   optional — WIDENS the scope
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+git -C $REPO diff HEAD~1 > cases/upload-retry/change.diff
+
+handbook resync --case cases/upload-retry --work work/api
+```
+
+<Callout title="Deklarationen und Diffs können die Menge nur erweitern">
+  Der Graph-Diff ist die Untergrenze: Haben sich die Bytes einer Datei geändert, wird sie aktualisiert — ob
+  der Plan sie erwähnt hat oder nicht. **Ein Plan, der seinen eigenen Wirkungsradius zu klein deklariert, kann
+  keine veraltete Seite verursachen.**
+</Callout>
+
+Ein **leeres** `change.diff` bedeutet „nichts zu tun", und der Lauf wird sauber
+übersprungen, statt als „alles hat sich geändert" behandelt zu werden.
+
+## Was es tatsächlich tut
+
+1. Den bearbeiteten Baum neu analysieren — ein frischer Phase-1-Graph.
+2. Alt gegen neu diffen → geänderte / hinzugefügte / gelöschte Dateien.
+3. Karten für geänderte und hinzugefügte Dateien regenerieren.
+4. Hinzugefügte Dateien zuweisen, gelöschte entfernen, die Buckets abgleichen.
+5. Die Organisation für betroffene Etappen neu aufbauen — deterministisch, ohne LLM.
+6. Betroffene Etappen und den Systemüberblick neu erzählen. Dank des
+   Content-Hash-Caches wird eine unbetroffene Etappe gar nicht erst neu erzählt.
+7. Register aktualisieren.
+8. Bereits gerenderte Ausgaben unter `<work>/handbook` auffrischen (`--no-render` zum
+   Überspringen).
+
+```json title="stdout"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["work/api/handbook/overview.md", "work/api/handbook/stage-3.md"]
+}
+```
+
+## Wie der Diff Dinge erwischt
+
+| Signal                        | Erkennt                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Content-Hash**              | Eine In-Place-Bearbeitung des Rumpfes, die Zeilennummern und Signaturen unberührt lässt — der Fall, den ein struktureller Diff komplett übersieht |
+| Funktionsmenge                | Hinzugefügte, entfernte oder umbenannte Funktionen                                                                                                |
+| Signaturen und Zeilenbereiche | Umgeformte Funktionen                                                                                                                             |
+| Aufrufkanten                  | Neue oder entfernte Beziehungen, auch in unberührte Dateien hinein und aus ihnen heraus                                                           |
+| Dateimenge                    | Hinzugefügte und gelöschte Dateien                                                                                                                |
+
+Die Hashes pro Datei wurden von Phase 1 genau zu diesem Zweck gestempelt. Ein Graph, der
+älter ist als sie, fällt auf die Struktur zurück — degradiert, aber nie falsch.
+
+## Arbeiten ohne Endpoint
+
+```bash
+handbook resync --case cases/x --work work/api --no-llm
+```
+
+Strukturelle Fakten werden aufgefrischt — Aufrufgraph, Funktionsinventar, Zuweisung,
+Reihenfolge —, und dem Zweck jeder betroffenen Karte wird
+` (stale: code changed since narration)` angehängt.
+
+**Das ist die ehrliche Degradierung.** Die Alternative — die Prosa unangetastet und
+unmarkiert zu lassen — ist ein Handbook, das leise lügt.
+
+## Korrekturen zurückspeisen
+
+```bash
+handbook resync --case cases/x --work work/api \
+  --corrections skills/api/corrections.jsonl
+```
+
+Dateien, die in `corrections.jsonl` genannt werden, kommen in die Aktualisierungsmenge,
+**selbst wenn sich ihre Bytes nie geändert haben** — denn eine Behauptung, der die Quelle
+widerspricht, ist Grund genug, diese Datei neu zu beschreiben. Die konsumierte Datei wird
+danach mit Zeitstempel archiviert, damit dieselbe Korrektur nicht zweimal angewendet
+werden kann.
+
+Fehlerhafte Zeilen werden in `report.corrections.problems` gemeldet und sind nie fatal —
+eine schlechte Zeile, geschrieben von einem Agenten, darf die Aktualisierung nicht
+blockieren.
+
+## Detailgrad und Sprache bleiben, wie sie sind
+
+`--detail` und `--narrate-lang` sind **standardmäßig nicht gesetzt**, und nicht gesetzt
+bedeutet _„entspreche dem, was dieses Handbook bereits ist"_. Ein Resync stuft ein tiefes
+Handbook nie stillschweigend auf brief herab und kippt ein chinesisches Handbook nie ins
+Englische.
+
+Übergeben Sie sie nur dann explizit, wenn Sie Tiefe oder Sprache wirklich ändern wollen —
+und rechnen Sie mit einem gemischten Handbook, bis jede Karte regeneriert wurde.
+
+## Wann stattdessen regenerieren
+
+Resync rollt die **abgeleitete** Schicht nach vorn. Regenerieren Sie, wenn sich die
+_Struktur_ ändern soll:
+
+| Situation                                            | Das ist zu tun                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| Ein paar Dateien haben sich geändert                 | `resync`                                                     |
+| Ein Refactoring hat Code zwischen Modulen verschoben | `resync` — der Graph-Diff erledigt das                       |
+| Sie haben ein ganz neues Subsystem hinzugefügt       | `resync`, dann prüfen, ob das Skelett noch passt             |
+| Das Skelett beschreibt das System nicht mehr         | `generate --phase 2b,2c,3 --synth-mode doctor`               |
+| Sie haben Erzähltextsprache oder Detailgrad geändert | `generate --phase 2a` / `--phase 3 --refresh`                |
+| Das halbe Repo wurde neu geschrieben                 | `generate` von Grund auf — günstiger als ein riesiger Resync |
+
+## Automatisieren
+
+```yaml title=".github/workflows/handbook-resync.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - run: |
+          mkdir -p case
+          cp -R . case/edited
+          git diff HEAD~1 > case/change.diff
+      - run: handbook resync --case case --work work/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - run: handbook validate --skill skills/api --source .
+```
+
+`edited/` lässt sich auch ganz überspringen, wenn Sie Resync programmatisch ansteuern:
+Die Option `editedRoot` zeigt stattdessen auf einen lebenden Baum — so führt Studio es an
+Ort und Stelle aus, ohne das Repository zu kopieren.
+
+## Sicherheit
+
+- **Dieselbe Verzeichnissperre wie `generate`**, sodass sich ein Resync nie mit einer
+  gleichzeitigen Generierung auf denselben Artefakten verzahnen kann.
+- **Der Phase-1-Staging-Bereich wird immer aufgeräumt** — `<case>/.resync-phase1`
+  überlebt den Aufruf nie, weder bei Erfolg noch bei Fehlschlag.
+- **Karten gelöschter Dateien werden entfernt**, damit eine gelöschte Datei nicht im
+  Handbook verweilen kann.
+- **Abbrechbar** — ein `AbortSignal` wird zwischen den Schritten geprüft und in jeden
+  LLM-Durchgang durchgereicht.

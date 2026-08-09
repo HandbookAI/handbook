@@ -1,8 +1,21 @@
 ---
 title: 'Was ist Handbook?'
-description: 'Handbook parst das Repository mit einem echten Parser, verwandelt es in eine navigierbare Karte und übergibt diese Karte dem Coding-Agenten als Ortsindex — und hält sie aktuell, während sich der Code weiterbewegt.'
+description: Eine Codebasis rein, zwei Handbücher raus — eine erzählte Doku-Site für dein Team und ein Orts-Index, mit dem dein Coding-Agent navigiert. Aus derselben geparsten Karte, immer aktuell zum Code.
 icon: House
 ---
+
+## Eine Codebasis rein. Zwei Handbücher raus.
+
+Handbook schreibt dieselbe Karte deines Codes **zweimal** auf, denn es hat zwei sehr unterschiedliche Leser:
+
+<Cards>
+  <Card title="📖 Das Handbuch für Menschen" description="Eine erzählte, etappenweise Doku-Site — Suche, Theme, Deep-Links — aus deinem Code generiert, direkt per file:// zu öffnen. Dieses liest du." href="/docs/guides/rendering" />
+  <Card title="🤖 Das Handbuch für die KI" description="Ein maschinengerechter Orts-Index: Datei→Etappe-Routing-Tabellen, Aufruf-Fakten je Funktion, llms.txt und ein installierbares SKILL-Paket. Dieses liest dein Coding-Agent." href="/docs/guides/agent-skill" />
+</Cards>
+
+Darunter liegen dieselben Fakten — ein vom Parser gebauter Aufrufgraph — die beiden
+können sich also nie widersprechen. Eines ist auf Erzählung und Navigation optimiert,
+das andere auf Routing und Veraltungs-Erkennung.
 
 ## Das Problem, klar benannt
 
@@ -76,7 +89,7 @@ diesen Index, liest an jeder gefundenen Adresse den echten Quelltext und erzeugt
 ## Was ein Lauf liefert
 
 <img
-  src="/diagrams/outputs.svg"
+  src="/diagrams/outputs.de.svg"
   alt="Ausgaben: Markdown-Handbuch, HTML-Site, Einzelseite, Agenten-Locator-Index, llms.txt, SKILL-Paket"
   className="rounded-xl border"
 />

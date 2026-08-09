@@ -1,0 +1,156 @@
+---
+title: 'Eine Änderung planen'
+description: 'Geben Sie dem Planner eine Anfrage und ein Handbook; zurück kommt ein byte-genauer Bearbeitungsplan samt maschinenlesbarer Deklaration dessen, was er anfasst.'
+---
+
+```bash
+handbook plan --source <repo> --handbook <dir> --request "<text>" --out plan.md
+```
+
+Der Planner ist ein **rein lesender** Agent. Er listet, liest und greppt — er hat
+überhaupt kein Schreibwerkzeug, nicht einmal ein deaktiviertes — und seine Ausgabe ist ein
+Plan, den etwas anderes ausführt.
+
+## Die Schleife
+
+1. Mit dem Handbook routen: Welche Dateien, Funktionen und welcher Zustand sind betroffen?
+2. Die **echte Quelle** an jeder gefundenen Adresse lesen.
+3. `### EDIT n`-Blöcke mit byte-genauem `old`- und `new`-Text ausgeben.
+4. Mit einem JSON-Deklarationsblock abschließen.
+
+<Callout title="Zwei Artefakte, zwei Rollen">
+  Das **Handbook** ist ein Ortsindex: Es bringt die verstreuten, nicht offensichtlichen Stellen zum Vorschein,
+  die eine Textsuche übersieht — Spiegel-Implementierungen, jeden Lese- und Schreibzugriff auf ein Stück
+  Zustand, Berührungspunkte über Subsystemgrenzen hinweg. Die **echte Quelle** ist die Grundwahrheit dafür,
+  was zu ändern ist. Das Handbook liefert die Adresse; der Code an dieser Adresse liefert die Bytes.
+</Callout>
+
+## Eine gute Anfrage formulieren
+
+| Schwach                 | Stark                                                                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| „Behebe den Upload-Bug" | „Uploads, die mit einem 503 fehlschlagen, sollen dreimal mit exponentiellem Backoff wiederholt werden, bevor ein Fehler gemeldet wird" |
+| „Füge Logging hinzu"    | „Logge Request-ID und Dauer auf INFO bei jedem abgeschlossenen HTTP-Request, mit dem vorhandenen Logger"                               |
+| „Mach es schneller"     | „Cache das Ergebnis von `resolveTenant` für 60 Sekunden, geschlüsselt nach Tenant-ID"                                                  |
+
+Beschreiben Sie **das gewünschte Verhalten**, nicht die Datei, in der Sie es vermuten.
+Eine Datei zu nennen verengt die Suche des Planners auf die Stelle, an die Sie ohnehin
+schon gedacht haben — und genau das verfehlt den Zweck.
+
+## Den Plan lesen
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+### EDIT 2
+
+- file: `src/upload.py`
+- where: `Uploader` — add the helper
+
+```old
+    def send(self, url, data):
+```
+
+```new
+    def _retry(self, call, attempts):
+        last = None
+        for _ in range(attempts):
+            try:
+                return call()
+            except TransientError as exc:
+                last = exc
+        raise last
+
+    def send(self, url, data):
+```
+
+Both call sites now share one retry policy.
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+Regeln, denen das Format gehorcht:
+
+- `old` muss **byte-genau** sein und **genau einmal** in der Datei vorkommen.
+- Ein **leeres** `old` bedeutet „diese Datei anlegen".
+- Edits sind nummeriert und **aufsteigend**, von oben nach unten.
+- Der abschließende `json`-Block wird von `resync` konsumiert, um seinen
+  Aktualisierungsumfang zu schärfen.
+
+**Lesen Sie den Plan, bevor Sie ihn anwenden.** Der Dry-Run sagt Ihnen, ob er sich
+anwenden _ließe_; nur Sie können beurteilen, ob er angewendet werden _sollte_.
+
+## Wenn er aufgibt
+
+`plan` **beendet sich mit einem Exit-Code ungleich null** — es schreibt keine
+Entschuldigung in `plan.md`, die ein Skript anschließend in `apply` füttert.
+
+| `aborted`     | Was passiert ist                                                                                                     | Was zu tun ist                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `fabrication` | Die Antwort hat dreimal `## Tool result`-Abschnitte erfunden — sie hat auf eingebildeten Dateiinhalten weitergedacht | Ein stärkeres Modell verwenden. Nichts aus diesem Lauf ist vertrauenswürdig                     |
+| `turn-limit`  | Die Züge waren aufgebraucht, ohne dass EDIT-Blöcke entstanden                                                        | `--max-turns` erhöhen oder die Anfrage eingrenzen                                               |
+| `no-plan`     | `finish` wurde ohne etwas Brauchbares aufgerufen                                                                     | Meist eine Anfrage, die keine Codeänderung braucht, oder eine, die zu vage zum Lokalisieren ist |
+
+<Callout type="warn" title="Warum Fabrikation rundheraus abgelehnt wird">
+  Eine beobachtete Antwort enthielt dreizehn fabrizierte Tool-Ergebnisse und einen Plan, der auf einer Zeile
+  aufbaute, die in der Datei nicht existiert. Der Planner verwirft diese Antwort vollständig —
+  **einschließlich des Plans an ihrem Ende**, denn der Plan wurde aus Fiktion abgeleitet.
+</Callout>
+
+## Feinjustieren
+
+| Flag               | Standard      | Wann ändern                                                                         |
+| ------------------ | ------------- | ----------------------------------------------------------------------------------- |
+| `--max-turns <n>`  | `30`          | Für ein großes Repo oder eine breite Änderung erhöhen; senken, um Kosten zu deckeln |
+| `--model <id>`     | `gpt-4o-mini` | Dies ist der Befehl, der am meisten von einem stärkeren Modell profitiert           |
+| `--handbook <dir>` | —             | Immer übergeben. Ohne dieses Flag exploriert der Planner blind                      |
+| `--out <file>`     | _(stdout)_    | Weglassen, um zu pipen                                                              |
+
+## Ohne Handbook
+
+```bash
+handbook plan --source ~/code/api --request "…"
+```
+
+Es funktioniert — der Planner fällt darauf zurück, die Quelle direkt zu erkunden —, aber
+das ist der degradierte Modus. Das Handbook existiert genau deshalb, weil ungeführte
+Exploration die offensichtlichen Stellen findet und die verstreuten übersieht.
+
+## Was die Sandbox erlaubt
+
+```ts
+list_dir(path)
+read_file(path, start_line?, end_line?)
+grep(pattern, path)
+finish(plan)
+```
+
+- Jeder Pfad wird innerhalb des Sandbox-Wurzelverzeichnisses aufgelöst; Ausbrüche, auch
+  über Symlinks, werden abgelehnt.
+- Das Handbook ist schreibgeschützt unter `__handbook__/` eingehängt, einer von der Quelle
+  **getrennten** Sandbox.
+- Lesezugriffe sind auf 60.000 Zeichen begrenzt; grep ist auf 100 Treffer begrenzt und
+  überspringt Dateien über 5 MB.
+- Katastrophale reguläre Ausdrücke — ein unbeschränkter Quantifizierer über einer Gruppe,
+  die selbst einen enthält, wie `(a+)+` oder `(.*)*` — werden mit einem sauberen
+  Tool-Fehler abgewiesen, statt den Lauf aufzuhängen.
+
+## Weiter
+
+<Cards>
+  <Card title="Einen Plan sicher anwenden" href="/docs/guides/applying-changes" />
+  <Card title="Das Handbook aktuell halten" href="/docs/guides/keeping-current" />
+</Cards>
