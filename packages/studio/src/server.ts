@@ -476,6 +476,7 @@ function parseGenerateParams(
   configFile?: ConfigFileData,
 ): GenerateParams {
   rejectSecrets(body);
+  preflight('generate', body, configFile, { source: repo.sourceRoot, work: repo.workDir });
   const { values, errors } = resolveConfig({
     command: 'generate',
     flags: { ...body, source: repo.sourceRoot, work: repo.workDir },
@@ -1086,6 +1087,45 @@ function settingsPayload(): unknown {
 /** The UI's locale files, as a fixed allowlist — never joined from user input. */
 const I18N_LOCALES = ['en', 'zh', 'hi', 'es', 'pt', 'ru', 'ja', 'de'] as const;
 
+/**
+ * Validate a job request against the registry BEFORE the job exists.
+ *
+ * `generate` and `resync` have their own parsers that do this; `render`,
+ * `skill` and `plan` resolve inside the job, which means a value the registry
+ * would reject — `{"html":"yes-please"}`, `{"maxTurns":"many"}` — came back as
+ * a 202 and only surfaced as a failed job in the drawer seconds later. Bad
+ * input is the caller's bug and deserves the status code that says so.
+ *
+ * The job re-resolves the same flags afterwards. That is deliberate duplicated
+ * work: it is deterministic and microseconds, and threading the values through
+ * would give the run a second source of truth to drift from.
+ */
+function preflight(
+  command: string,
+  body: Record<string, unknown>,
+  configFile: ConfigFileData | undefined,
+  managed: Record<string, unknown>,
+): void {
+  const { errors } = resolveConfig({
+    command,
+    flags: { ...body, ...managed },
+    env: process.env,
+    file: configFile,
+  });
+  if (errors.length > 0) throw new Error(errors.join('; '));
+  // `lang` declares `dynamicChoices`, so the resolver cannot check it — the
+  // valid set only exists once adapters are registered. Unchecked, an unknown
+  // language reached the analyzer and came back as an empty analysis, which
+  // reads as "your repo has no code" rather than "that is not a language".
+  if (typeof body.lang === 'string') {
+    registerBuiltinAdapters();
+    const known = ['auto', ...availableLanguages()];
+    if (!known.includes(body.lang)) {
+      throw new Error(`lang must be one of ${known.join(' | ')}, got "${body.lang}"`);
+    }
+  }
+}
+
 /** Body minus anything that must not be persisted, for `lastParams`. */
 function persistableParams(body: Record<string, unknown>): Record<string, unknown> {
   const { llmApiKey: _key, OPENAI_API_KEY: _envKey, ...rest } = body;
@@ -1235,6 +1275,30 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       // this request, not a failed job discovered in the drawer later.
       const genParams = kind === 'generate' ? parseGenerateParams(body, repo, ctx.configFile) : undefined;
       const resyncParams = kind === 'resync' ? parseResyncParams(body, repo, ctx.configFile) : undefined;
+      // The other registry-backed jobs get the same contract. `analyze`'s own
+      // resolve happens in the run, but its only setting is `lang`, so it is
+      // checked here too rather than being the one route that differs.
+      if (kind === 'render') {
+        preflight('render', body, ctx.configFile, { work: repo.workDir });
+      } else if (kind === 'analyze') {
+        preflight('analyze', body, ctx.configFile, { source: repo.sourceRoot, work: repo.workDir });
+      } else if (kind === 'plan') {
+        preflight('plan', body, ctx.configFile, {
+          source: repo.sourceRoot,
+          request: typeof body.request === 'string' ? body.request : '',
+        });
+      } else if (kind === 'skill') {
+        preflight('skill', body, ctx.configFile, {
+          source: repo.sourceRoot,
+          work: repo.workDir,
+          handbook: join(repo.workDir, 'handbook'),
+          out: join(repo.workDir, 'skill'),
+          name:
+            typeof body.name === 'string' && body.name.trim()
+              ? body.name
+              : `${repo.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-handbook`,
+        });
+      }
       // A repo already running a job is a state CONFLICT (409), like DELETE and
       // cancel report — not a malformed request (400). Check before start(), whose
       // own throw would otherwise surface as a misleading 400 via the catch-all.
