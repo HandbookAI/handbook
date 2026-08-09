@@ -29,7 +29,10 @@ const generateHandbookMock = vi.fn((_options: GenerateOptions) =>
   Promise.resolve({ phasesRun: [] } as GenerateStats),
 );
 
-vi.mock('@handbook/studio', () => ({ startStudio: startStudioMock }));
+// `boundPort` too: the action reads the port back off the socket rather than
+// echoing the requested one, so a mock without it throws before startStudio is
+// even reached — and the failure reads as "startStudio was never called".
+vi.mock('@handbook/studio', () => ({ startStudio: startStudioMock, boundPort: () => 4860 }));
 vi.mock('@handbook/pipeline', async () => {
   const actual = await vi.importActual<typeof Pipeline>('@handbook/pipeline');
   return { ...actual, generateHandbook: generateHandbookMock };

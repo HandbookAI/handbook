@@ -37,6 +37,7 @@ import {
   loadConfigFile,
   resolveConfig,
   settingByKey,
+  SETTINGS,
   type LogLevel,
 } from '@handbook/core';
 import { renderConfigJson, renderConfigTable } from './config-command.js';
@@ -401,13 +402,20 @@ addSettings(
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('rollback', opts);
   const { rollback } = await import('@handbook/patcher');
-  printJson(
-    rollback(cfg.backup as string, {
-      force: cfg.force as boolean,
-      expectedSourceRoot: cfg.source as string | undefined,
-      logger: logger(cfg),
-    }),
-  );
+  const result = rollback(cfg.backup as string, {
+    force: cfg.force as boolean,
+    expectedSourceRoot: cfg.source as string | undefined,
+    logger: logger(cfg),
+  });
+  printJson(result);
+  // Exit 2 = the tool worked and the answer is no, exactly as `apply` reports
+  // it. A rollback that refused every file (changed since the patch, backup
+  // copy missing) used to exit 0, so `handbook rollback && <deploy>` treated a
+  // zero-file restore as a successful one.
+  if (result.skipped.length > 0) {
+    process.stderr.write(`rollback: ${result.skipped.length} file(s) were not restored\n`);
+    process.exitCode = 2;
+  }
 });
 
 addSettings(
@@ -419,12 +427,12 @@ addSettings(
   'studio',
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('studio', opts);
-  const { startStudio } = await import('@handbook/studio');
+  const { startStudio, boundPort } = await import('@handbook/studio');
   const port = cfg.port as number;
   const host = cfg.host as string;
   const stateDir =
     (cfg.stateDir as string | undefined) ?? resolve(`${process.env.HOME ?? '.'}/.handbook-studio`);
-  await startStudio({
+  const server = await startStudio({
     stateDir,
     port,
     host,
@@ -446,7 +454,9 @@ addSettings(
     // job's parameters (detail, narrateLang, readWorkers, …) also see it.
     configFile: currentConfigFile(),
   });
-  process.stderr.write(`handbook studio → http://${host}:${port}\n`);
+  // The BOUND port, not the requested one: `--port 0` asks the OS to pick, so
+  // echoing the request would print `http://127.0.0.1:0`.
+  process.stderr.write(`handbook studio → http://${host}:${boundPort(server)}\n`);
   await new Promise(() => {}); // run until Ctrl-C
 });
 
@@ -456,6 +466,17 @@ addSettings(
 ).action((opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('config', opts);
   const target = (cfg.forCommand as string | undefined) ?? 'generate';
+  // An unknown command name makes `settingsFor` return an empty list, so every
+  // check passed and `--check` printed OK — the one gate that exists to catch
+  // misconfiguration in CI validated nothing, in green.
+  const known = new Set(SETTINGS.flatMap((setting) => setting.commands));
+  if (!known.has(target)) {
+    process.stderr.write(
+      `config: unknown command "${target}" — expected one of ${[...known].sort().join(', ')}\n`,
+    );
+    process.exitCode = 2;
+    return;
+  }
   // Plain resolveConfig, not resolveOrThrow: this command's job is to show
   // configuration, including when it is broken, so a missing --source on
   // `generate` must render as a visible row (`— unset (required)`) rather

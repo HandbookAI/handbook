@@ -146,7 +146,7 @@ resync:
   # proseLang:
 
 studio:
-  # port to listen on
+  # port to listen on; 0 picks any free port
   port: 4860
   # bind address; stays on loopback unless you set it (containers need 0.0.0.0). The CSRF guard still requires a loopback Host header
   host: 127.0.0.1

@@ -206,7 +206,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF` | int | `3` | base backoff between retries, in seconds |
 | `llmConcurrency` | `--llm-concurrency <n>` | `HANDBOOK_LLM_CONCURRENCY` | int | `16` | global cap on concurrent requests through one client |
 | `llmExtraBody` | `--extra-body <json>` | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden |
-| `port` | `--port <n>` | `HANDBOOK_PORT` | int | `4860` | port to listen on |
+| `port` | `--port <n>` | `HANDBOOK_PORT` | int | `4860` | port to listen on; 0 picks any free port |
 | `host` | `--host <addr>` | `HANDBOOK_HOST` | string | `127.0.0.1` | bind address; stays on loopback unless you set it (containers need 0.0.0.0). The CSRF guard still requires a loopback Host header |
 | `stateDir` | `--state-dir <dir>` | `HANDBOOK_STATE_DIR` | path | — | where studio.json and managed work dirs live; defaults to $HOME/.handbook-studio |
 

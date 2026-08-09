@@ -28,6 +28,14 @@ export interface Setting {
   readonly default?: string | number | boolean;
   /** Required for `int`. */
   readonly min?: number;
+  /**
+   * Upper bound for `int`. Every int had a floor and no ceiling, so
+   * `--read-workers 1200` or `llmConcurrency: 1e9` resolved cleanly and turned
+   * the concurrency limiter into a no-op — every task firing at once. A
+   * fat-fingered digit should be a configuration error, not a resource
+   * exhaustion event.
+   */
+  readonly max?: number;
   /** Required for `enum`. */
   readonly choices?: readonly string[];
   /** Additional accepted env names, for vendor standards like `OPENAI_MODEL`. */

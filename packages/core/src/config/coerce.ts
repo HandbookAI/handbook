@@ -51,11 +51,17 @@ export function coerceValue(
   switch (type) {
     case 'int': {
       const min = setting.min ?? 0;
+      const max = setting.max;
       const parsed = Number(text);
       // Number('') is 0 and Number('  ') is 0, which would sail past a `>= 0`
       // check — the trim test below is what rejects them.
       if (text.trim() === '' || !Number.isFinite(parsed) || parsed < min || Object.is(parsed, -0)) {
         return fail(where, `${key} must be an integer >= ${min}, got "${text}"`);
+      }
+      // An upper bound where one exists. Without it a mistyped worker count
+      // resolved happily and made the concurrency limiter meaningless.
+      if (max !== undefined && parsed > max) {
+        return fail(where, `${key} must be an integer between ${min} and ${max}, got "${text}"`);
       }
       return Math.trunc(parsed);
     }
