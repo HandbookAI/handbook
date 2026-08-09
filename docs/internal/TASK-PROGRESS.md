@@ -484,10 +484,39 @@ environment、exit-codes、languages、packages、prompts）+ `contributing/`
 - 还发现并修掉一个英文源 bug：环境变量别名表写「Five settings」而表里有 6 行
   （注册表 ground truth 也是 6），5 个已翻译语种一并修正。
 
-### 待办（按序）
-1. 补 de（12 个）与 hi（13 个）的 C 批
-2. 对抗第 4、5 轮
-3. 收尾：`pnpm check` + `pnpm check:cli` + docs build + 三个浏览器套件
+### 全部完成 ✅（2026-08-09）
+
+**翻译**：7 语种 × 34 页 = **237 个翻译页全部完成**，全部通过结构校验。
+4 张图 × 7 语种 = 28 张本地化 SVG。Studio 词典 8 语种 × 320 键全部一致。
+
+**对抗第 4 轮（逐语种真浏览器渲染）** ✅ 21/21
+- 8 语种 × 6 页 = 48 次真实加载，0 console error，侧边栏/图片/横幅全部正确。
+- 真 bug：印地语 5 个页面标题仍是英文——是我 prompt 的锅（把「术语保留英文」
+  的规则错误地套到了页面标题上；标题是导航，印地语读者扫侧边栏该看到印地语）。
+  已修；Docker 作为产品名保留，与 zh/ru/ja 一致。
+- **2 个探测器 bug**（会变成假信心）：横幅检测用文本匹配，把 pipeline 页对比表里的
+  "aún no"/"ainda não"/"ещё не" 当成了回退横幅（3 个幽灵告警）——改成结构检测；
+  ASCII 标题检测没有产品名白名单。
+
+**对抗第 5 轮（配置端到端真的到达 pipeline 了吗）** ✅ 12/12
+- 真起 studio + mock LLM，一次 generate 带上全部 6 个曾被丢弃的参数 + llmCache，
+  再 render(llms.txt) → skill → validate 全链路。
+- **llmCache 确认真的写了缓存**（demo 项目 21 条 / harness 10 条）——这是「job 变绿」
+  永远证明不了的部分。
+- **3 个失败全是探针写错**，都值得记下来：① 缓存查错了目录（studio 按证据
+  **收养**了已有 work dir，这是有意行为）；② `repo.title` 在状态响应里是**渲染出的
+  标题**、不是存储的条目（两个都该断言，分开断言）；③ `logLevel: debug` 没有 debug
+  行——因为整个 workspace 只有 analyzer 一处 `.debug()` 调用点。通道现在是通的
+  （jobs.ts 原来硬编码成 no-op），但 generate 目前无话可说，所以断言管道而不是
+  断言不存在的输出。
+
+**最终验收**：`pnpm check` 绿（64 文件 / 1394 测试）、prettier 全绿、
+docs build 358/358、三个浏览器套件全绿（docs-site 15/15、handbook-html 32/32、
+studio-ui 14/14）。
+
+### 仍可继续（非阻塞）
+- `logLevel: debug` 目前几乎无输出——若要它有用，需要在 pipeline 里补 `.debug()` 调用点。
+- Studio UI 的 render/skill 对话框尚未做真浏览器点击测试（API 层已有 62 个测试覆盖）。
 3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
    README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
 4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +
