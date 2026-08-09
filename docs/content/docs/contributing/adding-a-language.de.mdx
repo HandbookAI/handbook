@@ -1,0 +1,193 @@
+---
+title: 'Eine Sprache hinzufügen'
+description: 'Eine Sprache der generischen Stufe ist eine deklarative Spezifikation, kein Parser. Eine der vollen Stufe ist ein kleines Interface. Beide brauchen keine neue Abhängigkeit.'
+---
+
+Handbook unterstützt 18 Sprachen über zwei Mechanismen. Eine zur **generischen Stufe**
+hinzuzufügen ist meist ein einziges Objektliteral und braucht **keine neue Abhängigkeit** —
+die Grammatiken werden bereits mit `tree-sitter-wasms` ausgeliefert.
+
+## Generische Stufe — eine deklarative Spezifikation
+
+Füge einen Eintrag zu `GENERIC_LANGUAGES` in `packages/analyzer/src/generic.ts` hinzu:
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+Danach registrieren — die Schleife am Ende von `packages/analyzer/src/register.ts` greift
+jeden Eintrag in `GENERIC_LANGUAGES` automatisch ab, dort ist also nichts zu ergänzen.
+
+<Steps>
+
+<Step>
+### Prüfe, ob die Grammatik mitgeliefert wird
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+Ist sie nicht da, braucht die Sprache eine neue Abhängigkeit, und das ist ein größeres
+Gespräch.
+
+</Step>
+
+<Step>
+### Finde die Knotentypen
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+Der ausgegebene S-Ausdruck ist das Knotenvokabular, gegen das du die Spezifikation
+schreibst.
+
+</Step>
+
+<Step>
+### Schreibe die Spezifikation und einen Test
+
+Jede Sprache bekommt einen Test, der ein echtes Mini-Repository in einem temporären
+Verzeichnis baut und echte Knoten und Kanten prüft. Übernimm die Form eines bestehenden
+Tests in `packages/analyzer/src/generic.test.ts`.
+
+**Ein gemockter Parse-Baum beweist nichts über eine Grammatik.** Parse echte Quellen.
+
+</Step>
+
+<Step>
+### Deklariere ehrliche Fähigkeiten
+
+Die generische Engine setzt diese für dich:
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+Blase sie nicht auf. Der ganze Sinn der Deklaration ist, dass ein Leser eine Kante der
+generischen Stufe von einer in Python-Qualität unterscheiden kann. Siehe
+[Analysetreue](/docs/concepts/analysis-fidelity).
+
+</Step>
+
+<Step>
+### Aktualisiere die Doku, sonst scheitert der Build
+
+Ein Drift-Test prüft, dass **jede registrierte Sprache** in beiden READMEs auftaucht. Füge
+den Anzeigenamen zu `DISPLAY` in `packages/cli/src/docs-drift.test.ts` hinzu, danach zu:
+
+- `README.md` und `README.zh-CN.md` — den Sprachtabellen
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` und seinem chinesischen Zwilling
+
+Diesen Test gibt es, weil die Liste bereits sechs Sprachen hinterherhinkte, bevor es
+jemandem auffiel.
+
+</Step>
+
+</Steps>
+
+## Volle Stufe — den Adapter implementieren
+
+Lohnt sich, wenn die Aufrufauflösung einer Sprache wirklich Typinformationen braucht:
+Attributtypen, Parameter-Annotationen, Vererbung.
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+Registriere ihn in `packages/analyzer/src/register.ts`:
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+Das ist der gesamte Vertrag. Jede nachgelagerte Phase funktioniert unverändert.
+
+### Die Zwei-Durchgang-Regel
+
+**Durchgang 1** sammelt Deklarationen und baut Typindizes. **Durchgang 2** läuft die
+Aufrufstellen ab, mit diesen Indizes in der Hand.
+
+`self.attr.method()` oder `param.method()` in einem Durchgang aufzulösen ist unmöglich,
+weil der Typ von `attr` aus einer Konstruktor-Zuweisung gelernt wird, die nach dem Aufruf
+stehen kann. Jeder Adapter der vollen Stufe folgt dieser Form.
+
+### Die Auflösungsregel
+
+Ein Aufruf, den du nicht festnageln kannst, wird `unresolved`, und der Graph-Builder stellt
+ihn mit einer Kategorie und seinem Rohtext in `dropped-calls.json` unter Quarantäne.
+
+**Nie raten.** Eine geratene Kante ist für alles Nachgelagerte von einer echten nicht zu
+unterscheiden, was Gruppierung, Co-Change-Hinweise und den Agent-Locator-Index auf einen
+Schlag vergiftet.
+
+## Einen Adapter von außen registrieren
+
+Die Registry ist öffentlich, du kannst also eine Sprache hinzufügen, ohne zu forken:
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+Ein Adapter, der keine Fähigkeiten deklariert oder Unsinn deklariert, wird schlicht **aus
+den Graph-Metadaten herausgelassen**, statt dass eine Treue-Behauptung für ihn erfunden
+wird.
+
+## Checkliste
+
+- [ ] Die Grammatik wird mit `tree-sitter-wasms` ausgeliefert
+- [ ] Spezifikation oder Adapter geschrieben
+- [ ] In `register.ts` registriert (Einträge der generischen Stufe werden automatisch
+      abgegriffen)
+- [ ] Ein Test, der **echte** Quellen in einem temporären Verzeichnis parst
+- [ ] Fähigkeiten ehrlich deklariert
+- [ ] Anzeigename zur `DISPLAY`-Map des Drift-Tests hinzugefügt
+- [ ] Beide READMEs, die Analyzer-READMEs und die Sprachreferenz aktualisiert
+- [ ] `pnpm check` läuft durch
+- [ ] Ein Changeset hinzugefügt

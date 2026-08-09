@@ -1,0 +1,149 @@
+---
+title: 'Exit codes और आउटपुट'
+description: 'हर exit code का क्या मतलब है, stdout बनाम stderr पर क्या जाता है, और दोनों के लिए स्क्रिप्ट कैसे लिखें।'
+---
+
+## Exit codes
+
+| Code | अर्थ                                                                     | कौन देता है                           |
+| :--: | ------------------------------------------------------------------------ | ------------------------------------- |
+| `0`  | सफलता                                                                    | हर कमांड                              |
+| `1`  | एक त्रुटि: अमान्य configuration, गायब artifact, विफल रन, अपहुँच endpoint | हर कमांड                              |
+| `2`  | एक **जाँच** विफल — औज़ार ने काम किया, और जवाब है नहीं                    | `validate`, `apply`, `config --check` |
+
+स्क्रिप्टों में `1` और `2` का फ़र्क़ भार उठाता है:
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+case $? in
+  0) echo "fresh" ;;
+  2) echo "the handbook has drifted — schedule a resync" ;;
+  *) echo "something is broken" >&2; exit 1 ;;
+esac
+```
+
+### कौन-सी कमांड 2 लौटा सकती हैं
+
+- **`validate`** — SKILL पैकेज कोई संरचनात्मक जाँच नहीं निकाल पाया, या स्रोत hashes खिसक
+  गए।
+- **`apply`** — एक या अधिक संपादन नहीं उतरे (`no-match`, `ambiguous`, `unsafe-path`, …)।
+  `--dry-run` में इसका मतलब है «यह योजना साफ़-साफ़ लागू नहीं होती»।
+- **`config --check`** — कोई setting अमान्य है या कोई आवश्यक setting गायब है।
+
+Planner के हार मानने पर `plan` **`1`** लौटाता है, `2` नहीं: छोड़ा गया रन एक त्रुटि है, कोई
+नकारात्मक उत्तर नहीं।
+
+## stdout बनाम stderr
+
+| धारा       | क्या ले जाती है                                                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **stdout** | कमांड का परिणाम, JSON के रूप में — सिवाय `--out` के बिना `plan` के, जो योजना खुद लिखता है, और `--json` के बिना `config` के, जो एक तालिका लिखता है |
+| **stderr** | सारा logging, सारी प्रगति, सारी चेतावनियाँ, और हर त्रुटि संदेश                                                                                    |
+
+यही बँटवारा piping को सुरक्षित बनाता है:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env") | .key'
+handbook plan --source ~/code/api --request "…" > plan.md     # logs still visible
+```
+
+त्रुटियों पर उपसर्ग लगा होता है ताकि उन्हें grep किया जा सके:
+
+```text
+handbook: error: invalid configuration:
+  - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml
+```
+
+## Log स्तर
+
+| कैसे                       | स्तर                                |
+| -------------------------- | ----------------------------------- |
+| डिफ़ॉल्ट                   | `info`                              |
+| `-v` / `--verbose`         | `debug`                             |
+| `-q` / `--quiet`           | `error` — **`-v` पर भारी पड़ता है** |
+| `HANDBOOK_LOG_LEVEL=debug` | `debug`, बिना किसी flag के          |
+
+`HANDBOOK_LOG_LEVEL` उन दो bootstrap पंक्तियों को भी प्रभावित करता है जो बताती हैं कि
+कौन-सी `.env` फ़ाइलें और कौन-सी config फ़ाइल लोड हुईं — तब उपयोगी जब कोई मान वहाँ से आ रहा
+हो जहाँ से आपने उम्मीद नहीं की थी।
+
+## परिणाम के रूप
+
+```json title="analyze"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+```json title="generate"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```json title="render"
+{
+  "outDir": "work/api/handbook",
+  "nStagePages": 9,
+  "agent": { "...": "…" },
+  "html": { "...": "…" },
+  "htmlSingle": { "...": "…" },
+  "llms": { "...": "…" }
+}
+```
+
+```json title="skill"
+{
+  "outDir": "skills/api",
+  "nStagePages": 9,
+  "references": [
+    "agent/how_to_use.md",
+    "agent/disambiguation.md",
+    "overview.md",
+    "index.md",
+    "registers.md",
+    "coverage.json"
+  ]
+}
+```
+
+```json title="plan (with --out)"
+{
+  "out": "plan.md",
+  "turns": 11,
+  "declarations": { "willModify": ["Uploader.send"], "willAdd": ["Uploader._retry"], "willRemove": [] }
+}
+```
+
+```json title="apply"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+```json title="resync"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["…"]
+}
+```
+
+`validate` अपवाद है: वह मानव-पठनीय पंक्तियाँ stderr पर लिखती है और अपने exit code के ज़रिये
+बात करती है।

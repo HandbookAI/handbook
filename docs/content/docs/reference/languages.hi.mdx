@@ -1,0 +1,140 @@
+---
+title: 'भाषा समर्थन'
+description: 'दो analysis स्तरों में 18 भाषाएँ — कौन-सी भाषा कौन-से extensions लेती है, generic स्तर क्या छोड़ देता है, और टकराने से पहले जानने लायक दो चेतावनियाँ।'
+---
+
+`--lang auto` (डिफ़ॉल्ट) एक ही पास में **हर** भाषा पहचानकर मिला देता है। आपको लगभग कभी कोई
+भाषा नाम से बतानी नहीं पड़ती।
+
+```bash
+handbook analyze --source ~/code/polyglot-repo --work work/poly   # one pass, all languages
+handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
+```
+
+## पूर्ण स्तर
+
+हाथ से लिखे adapters: प्रकार-आधारित call resolution, विरासत में मिले सदस्य, प्रति-attribute
+स्थिति ट्रैकिंग, statement spans।
+
+| भाषा                         | Extensions                                               | Registry key |
+| ---------------------------- | -------------------------------------------------------- | ------------ |
+| Python                       | `.py`                                                    | `python`     |
+| TypeScript _(और JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` |
+| Go                           | `.go`                                                    | `go`         |
+| Rust                         | `.rs`                                                    | `rust`       |
+| Java                         | `.java`                                                  | `java`       |
+| C#                           | `.cs`                                                    | `csharp`     |
+| C/C++                        | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        |
+| Ruby                         | `.rb` `.rake` `.gemspec`                                 | `ruby`       |
+| PHP                          | `.php` `.phtml`                                          | `php`        |
+| Swift                        | `.swift`                                                 | `swift`      |
+| Dart                         | `.dart`                                                  | `dart`       |
+| Solidity                     | `.sol`                                                   | `solidity`   |
+| Shell                        | `.sh` `.bash`                                            | `shell`      |
+
+<Callout type="info" title="JavaScript का अलग adapter नहीं है">
+  उसे TypeScript वाला adapter ही समेटता है। चुनने को कुछ है ही नहीं — `.js`, `.jsx`, `.mjs` और `.cjs` अपने आप
+  ले लिए जाते हैं।
+</Callout>
+
+<Callout type="info" title="C-परिवार के लिए एक adapter, दो नहीं">
+  `cpp` grammar C को भी सँभालती है; `c` grammar C++ को बिल्कुल नहीं सँभालती। इसलिए एक ही adapter दोनों लेता
+  है, और शुद्ध C प्रोजेक्ट के लिए `--lang cpp` ही सही है।
+</Callout>
+
+## Generic स्तर
+
+एक config-आधारित इंजन, प्रति भाषा एक घोषणात्मक spec। **फ़ाइलों और functions की सूची सटीक
+है**; call संबंध यथासंभव अच्छे हैं।
+
+| भाषा        | Extensions     | Registry key |
+| ----------- | -------------- | ------------ |
+| Kotlin      | `.kt` `.kts`   | `kotlin`     |
+| Scala       | `.scala` `.sc` | `scala`      |
+| Zig         | `.zig`         | `zig`        |
+| Objective-C | `.m`           | `objc`       |
+| OCaml       | `.ml`          | `ocaml`      |
+
+जिस handbook का विश्लेषण स्तरों को मिलाता है, वह **अपने overview में यह बता देता है**। ठीक
+क्या घटता है, इसके लिए देखें [Analysis fidelity](/docs/concepts/analysis-fidelity)।
+
+## दो चेतावनियाँ, टकराने से पहले बता दी गईं
+
+### V8 ≥ 13 पर Swift प्रक्रिया गिरा देता है
+
+साथ आने वाली Swift grammar तब घातक out-of-memory abort कराती है जब V8 उस WASM मॉड्यूल को
+अगले स्तर पर संकलित करता है — Node 24 पर 5 में से 5 बार घातक मापा गया, Node 21 पर ठीक, और
+उन्नीस grammars में यही अकेली ऐसी है।
+
+**ऐसे runtime पर adapter discovery के समय ही मना कर देता है** और आपका पूरा रन गिराने के
+बजाय उपाय बता देता है:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work work/ios
+```
+
+`--liftoff-only` उसी स्तर-वृद्धि संकलन को छोड़ देता है जो इसे भड़काता है। repo की अपनी test
+suite ठीक इसी वजह से वही flag देती है।
+
+### `case` वाली shell स्क्रिप्ट छोड़ दी जाती हैं
+
+पिन की गई bash grammar का बाहरी scanner `env.isalpha` import करता है, जिसे
+`web-tree-sitter@0.25.10` का dynamic linker नहीं देता, इसलिए किसी भी `case` statement पर
+`parse()` फेंक देता है — और parser को विषाक्त छोड़ जाता है, तो adapter उसे फेंककर आगे बढ़
+जाता है।
+
+<Callout type="warn" title="यह जितना लगता है उससे बड़ी बात है">
+  Shell में `case` हर जगह है। [`nvm`](https://github.com/nvm-sh/nvm) पर मापा गया: **सभी 6 फ़ाइलें
+  और सभी 122 functions** छोड़ दिए गए। Shell पूर्ण स्तर में सूचीबद्ध है क्योंकि adapter पूर्ण स्तर का है,
+  पर जब तक वह grammar upstream ठीक न हो जाए, **shell की coverage को आंशिक ही मानें**।
+
+Scan log यह साफ़-साफ़ कहता है, और कारण भी बताता है:
+
+```text
+[scan] shell: 5 file(s) the grammar could not parse — the pinned bash grammar throws on
+`case`, which most real scripts use; their functions are absent from this graph, not
+merely unresolved — install.sh, nvm.sh, …
+```
+
+</Callout>
+
+## हर जगह क्या छोड़ा जाता है
+
+हर adapter एक साझा skip सूची मानता है:
+
+```text
+.git  .hg  .svn  node_modules  vendor  target  build  dist  out
+__pycache__  .mypy_cache  .pytest_cache  .ruff_cache  .tox
+venv  .venv  env  .env  site-packages  .idea  .vscode  .handbook-patches
+```
+
+अगर आपका build आउटपुट कहीं और रहता है, तो `--source` को repository मूल के बजाय असली स्रोत
+मूल पर इंगित करें।
+
+## जब एक फ़ाइल दो भाषाओं की हो सकती हो
+
+Discovery adapters को एक तय क्रम में चलाती है और **जो पहले किसी फ़ाइल पर दावा कर दे वही उसे
+रखता है**; extension मिलान में सबसे लंबा मिलान पसंद किया जाता है। व्यवहार में यह केवल `.h`
+(C/C++ adapter लेता है) और `.m` (Objective-C) के लिए मायने रखता है।
+
+## असल में क्या scan हुआ, यह पढ़ना
+
+```bash
+handbook analyze --source ~/code/repo --work work/x -v
+# [scan] auto root=/Users/me/code/repo
+# [scan] typescript: 284 files
+# [scan] python: 96 files
+# [scan] shell: 12 files
+# [build] functions=3187 kept=9042 dropped=611
+```
+
+```bash
+jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
+jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+```
+
+## एक भाषा जोड़ना
+
+**Generic स्तर** की भाषा जोड़ना एक घोषणात्मक spec है, parser नहीं — और इसके लिए कोई नई
+निर्भरता नहीं चाहिए, क्योंकि grammars पहले से साथ आती हैं। देखें
+[एक भाषा जोड़ना](/docs/contributing/adding-a-language)।

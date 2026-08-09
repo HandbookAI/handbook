@@ -1,0 +1,131 @@
+---
+title: 'Veröffentlichen'
+description: 'Changesets steuern Versionen und Changelogs. Das Veröffentlichen bleibt untätig, bis ein Token konfiguriert ist, sodass die Buchführung in jedem Fall stimmt.'
+---
+
+## Ein Changeset hinzufügen
+
+Jede Änderung, die ein veröffentlichtes Paket betrifft, braucht eines:
+
+```bash
+pnpm changeset
+```
+
+Es fragt, welche Pakete sich geändert haben und ob das jeweils patch, minor oder major ist,
+und schreibt dann eine Markdown-Datei unter `.changeset/`. **Committe diese Datei zusammen
+mit dem Code.**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+Schreibe die Beschreibung für **jemanden, der den Changelog liest**, nicht für einen
+Reviewer: was sich von außen geändert hat, nicht wie.
+
+### Was eines braucht
+
+| Änderung                               | Changeset? |
+| -------------------------------------- | ---------- |
+| Ein neues Feature oder Flag            | ✅ minor   |
+| Ein Bugfix in ausgeliefertem Verhalten | ✅ patch   |
+| Eine brechende API- oder CLI-Änderung  | ✅ major   |
+| Ein neuer Sprach-Adapter               | ✅ minor   |
+| Doku, Tests, CI, interne Refactorings  | ❌         |
+| Alles unterhalb von `docs/`            | ❌         |
+
+## Der Release-Ablauf
+
+<Steps>
+
+<Step>
+### Nach `main` mergen, während Changesets vorliegen
+
+Der Release-Workflow öffnet (oder aktualisiert) einen **„Version Packages“**-Pull-Request.
+
+</Step>
+
+<Step>
+### Diesen PR prüfen
+
+Er wendet jedes ausstehende Changeset an: hebt Versionen an, schreibt die `CHANGELOG.md`
+jedes Pakets und löscht die verbrauchten Changeset-Dateien. Lies das Changelog-Diff — das
+sind die Release Notes.
+
+</Step>
+
+<Step>
+### Ihn mergen
+
+Das veröffentlicht auf npm.
+
+</Step>
+
+</Steps>
+
+<Callout title="Das Veröffentlichen ist untätig, solange NPM_TOKEN fehlt">
+  Ohne konfiguriertes Secret ist der Publish-Schritt ein No-op. **Versionierung und Changelogs stimmen
+  trotzdem** — die Buchführung ist also richtig, ob die Pakete nun schon wirklich veröffentlicht werden oder
+  nicht, und das Veröffentlichen später einzuschalten erfordert kein Umschreiben der Historie.
+</Callout>
+
+## Von Hand
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` führt außerdem `pnpm install --lockfile-only` aus, weil angehobene
+Workspace-Versionen die Lockfile ändern.
+
+## Vor einem Release
+
+```bash
+pnpm check:all
+```
+
+Das ist `pnpm check` plus die zwei auf die Veröffentlichung gerichteten Gates:
+
+- **`check:packaging`** — `publint` und `@arethetypeswrong/cli` über jedes Paket. Fängt
+  eine falsche `exports`-Map, eine fehlende Typdeklaration, eine Dual-Package-Gefahr.
+- **`check:install`** — packt alle elf Tarballs, installiert sie mit **schlichtem npm** in
+  ein temporäres Verzeichnis und fährt die CLI dagegen. Das ist die stärkste Prüfung von
+  `dist`, die es gibt: sie beansprucht die echte veröffentlichte Oberfläche, nicht die
+  Workspace-Symlinks.
+
+Sie packen elf Tarballs, gehören also in die CI und vor ein Release, nicht in jede lokale
+Schleife.
+
+## Provenance
+
+npm-Provenance verlangt ein `repository`-Feld, das auf das öffentliche Repository zeigt, in
+**jedem** Manifest. Da das zwölf Änderungen sind, bei denen `directory` jedes Mal anders
+lautet:
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+Es ist idempotent — führe es nach einem Umzug des Repositorys einfach erneut aus. Es ist
+bewusst **nicht** in `pnpm check` verdrahtet: solange das Repository keine öffentliche URL
+hat, gibt es nichts zu prüfen, und ein Gate, das bei einem frischen Klon scheitert, bringt
+Leuten bei, Gates zu ignorieren.
+
+## Versionierungs-Richtlinie
+
+Standard-Semver, mit zwei Konventionen, die man aussprechen sollte:
+
+- **Die Flags der CLI sind öffentliche API.** Ein Flag zu entfernen oder umzubenennen ist
+  ein Major-Sprung. Eines hinzuzufügen ist minor.
+- **Artefakt-Schemata werden separat versioniert** über ihr `version`-Feld. Eine
+  Schema-Änderung, die bestehende Arbeitsverzeichnisse ungültig macht, ist ein
+  Major-Sprung der Pakete, die sie lesen, und braucht einen entsprechenden Hinweis im
+  Changeset — es gibt keinen Migrationsmechanismus für Artefakte, „lösche das
+  Arbeitsverzeichnis und generiere neu“ muss also eine akzeptable Antwort sein.

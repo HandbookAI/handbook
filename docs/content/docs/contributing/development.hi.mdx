@@ -1,0 +1,212 @@
+---
+title: 'विकास'
+description: 'Build, gates, वे परंपराएँ जिन्हें औज़ार लागू करते हैं, और क्यों tests को कभी API key की ज़रूरत नहीं पड़ती।'
+---
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm test
+```
+
+Node ≥ 20.11 और pnpm ≥ 9 चाहिए। कोई native संकलन नहीं।
+
+## रोज़मर्रा की कमांड
+
+```bash
+pnpm build             # tsc -b (composite project references)
+pnpm build:watch
+pnpm test              # build + vitest
+pnpm test:watch
+pnpm check             # the everyday gate — run this before committing
+pnpm check:all         # check + packaging + install + CLI smoke — what CI runs
+pnpm check:cli         # every subcommand and config layer, end to end, offline
+```
+
+`pnpm check` इसी क्रम में चलाता है:
+
+1. `typecheck` — स्रोत, फिर `tsconfig.tests.json` के विरुद्ध tests
+2. `check:workspace` — monorepo के संरचनात्मक अपरिवर्तनीय नियम
+3. `lint` — पूरे repo पर eslint, **शून्य चेतावनियाँ ही सहनीय हैं**
+4. `format:check` — prettier
+5. `test:coverage` — **प्रति-पैकेज** coverage न्यूनतम सीमाओं के साथ vitest
+
+यह जान-बूझकर तेज़ वाला है। `pnpm check:all` तीन भारी gates जोड़ता है —
+`check:packaging` (publint + are-the-types-wrong), `check:install` (ग्यारह tarballs पैक
+करो, उन्हें सादे npm से इंस्टॉल करो, CLI चलाओ) और `check:cli` (नीचे) — जिनकी जगह CI में और
+release से पहले है, हर स्थानीय चक्कर में नहीं।
+
+### `check:cli` क्या समेटता है
+
+`scripts/smoke-cli.sh` **असली** binary को साथ आए mock LLM के विरुद्ध शुरू से आख़िर तक
+चलाता है, और हर subcommand, हर configuration परत और — सबसे ज़रूरी — इनकारों पर exit codes
+और artifacts जाँचता है।
+
+- हर `--help` सतह, और अनजान subcommand का `1` के साथ निकलना
+- `config` का स्रोत-विवरण, `--json`, और किसी आवश्यक मान के गायब होने पर `--check` का `2`
+  लौटाना
+- अमान्य enum / पूर्णांक / phase मानों का किसी डिफ़ॉल्ट पर गिरने के बजाय `1` लौटाना
+- Generation मैट्रिक्स: phase उपसमुच्चय, `--resume`, `--detail deep`,
+  `--synth-mode doctor`, `--llm-cache`, `--narrate-lang zh`
+- हर render प्रारूप, और खाली work directory पर `render` का विफल होना
+- ऐसे `--out` से `skill` का इनकार जो उसका अपना input निगल जाए; `validate` का `2` लौटाना
+- **अस्पष्ट** anchor और **path escape** से `apply` का इनकार; एक असली `rollback` का byte
+  दर byte बहाल करना
+- LLM के साथ और उसके बिना `resync`, और खाली diff का साफ़-साफ़ छूट जाना
+- प्राथमिकता: config फ़ाइल पर shell env, `handbook.config.<name>.yaml` पर `.env.<name>`,
+  सपाट पर scoped, खाली-यानी-अनसेट, और `config` आउटपुट में API key का **छिपा** होना
+- Artifacts की समझदारी: हर अपेक्षित फ़ाइल मौजूद, card coverage पूरी, कोई फ़ाइल
+  नाबँटी नहीं, token खपत दर्ज
+
+Unit tests `generateHandbook` और उसके पड़ोसियों को mock करते हैं, इसलिए वे न तो ऐसा flag
+पकड़ सकते हैं जो ठीक हल तो होता है पर आगे कभी भेजा नहीं जाता, न ग़लत exit code, न ही जोड़
+पर टूटा artifact अनुबंध। यह पकड़ सकता है — और यह पूरी तरह offline है, इसलिए CI में सुरक्षित
+है।
+
+```bash
+pnpm check:cli
+SMOKE_PORT=9123 pnpm check:cli    # if port 8123 is taken
+```
+
+एक pre-commit hook **केवल staged फ़ाइलों** पर formatter और linter चलाता है, और
+`commit-msg` Conventional Commits लागू करता है।
+
+## परीक्षण का दर्शन
+
+**सब कुछ offline चलता है। किसी test को कभी API key नहीं चाहिए।**
+
+- LLM पर निर्भर प्रवाह `MockChatClient` के विरुद्ध जाँचे जाते हैं — नियमों की एक सूची, जहाँ
+  पहला मिलान जीतता है — और असली client के लिए साथ आए mock HTTP endpoint के विरुद्ध।
+- नियतात्मक पैकेज सीधे जाँचे जाते हैं। Analyzer tests अस्थायी directories में **असली**
+  मिनी-repos बनाते हैं और असली nodes व edges जाँचते हैं; mock किया parse tree किसी grammar
+  के बारे में कुछ सिद्ध नहीं करता।
+- विफलता के रास्तों को खुशहाल रास्तों जितना ही ध्यान मिलता है: न पार्स होने वाले उत्तर,
+  अधूरे बैच, degradation स्तर, बीच रन में रुकावट, sandbox से भागना, अस्पष्ट anchors।
+
+```bash
+pnpm test                                  # everything
+pnpm exec vitest run packages/analyzer     # one package
+pnpm exec vitest run -t "dropped calls"    # one test by name
+pnpm test:coverage
+```
+
+## चार परंपराएँ जिन्हें औज़ार लागू करते हैं
+
+### संस्करण एक ही जगह रहते हैं
+
+तीसरे पक्ष का हर संस्करण `pnpm-workspace.yaml` के catalog में घोषित है; पैकेज `"catalog:"`
+पर निर्भर करते हैं और कोई श्रेणी दोबारा नहीं लिखते। **किसी manifest में शाब्दिक श्रेणी
+`pnpm check:workspace` को गिरा देती है**, और अप्रयुक्त catalog प्रविष्टि भी वैसा ही करती
+है।
+
+```json
+{ "dependencies": { "zod": "catalog:" } }
+```
+
+पैक करते समय pnpm `catalog:` को हल की गई श्रेणी में बदल देता है, इसलिए उपभोक्ता यह
+protocol कभी नहीं देखते।
+
+### `dist/` ही प्रकाशित सतह है
+
+Build प्रोजेक्ट `*.test.ts` और `*.test-helper.ts` को बाहर रखते हैं;
+`tsconfig.tests.json` tests की type जाँच `noEmit` के साथ करता है। Source maps tarball से
+बाहर हैं क्योंकि वे उन स्रोतों का नाम लेते हैं जो कभी प्रकाशित ही नहीं होते। **`dist/` के
+नीचे कोई test artifact जाँच को गिरा देता है।**
+
+### Coverage की न्यूनतम सीमाएँ प्रति पैकेज हैं
+
+पूरे repo का एक अकेला आँकड़ा वही छिपा देता है जो मायने रखता है: कुल 86% पर
+`@handbook/cli` 23% पर बैठा है। हर पैकेज की अपनी सीमा `vitest.config.ts` में है, जो मापे
+गए मान से बस थोड़ी नीचे रखी जाती है, ताकि वह **खटके की तरह आगे ही बढ़े**।
+
+अगर आपका बदलाव coverage बढ़ाता है, तो सीमा भी उसके साथ बढ़ाएँ। लाल रन को पास कराने के लिए
+खाई चौड़ी न करें।
+
+### Tests `@handbook/*` को स्रोत पर हल करते हैं, `dist` पर नहीं
+
+वरना पैकेज सीमा के आर-पार जो भी उपभोग होता है उसकी coverage कहीं भी दर्ज नहीं होती —
+`core/src/util/hash.ts` 0% मापा जाता था जबकि pipeline उसे हर रन पर बुलाती थी।
+
+असली `dist` की पुष्टि `tsc -b` और `pnpm check:install` करते हैं, जो पैक किए tarballs को
+सादे npm से इंस्टॉल करके उनके विरुद्ध CLI चलाता है। यह `dist` पर उससे कहीं मज़बूत जाँच है
+जो कोई unit test थी।
+
+## संरचनात्मक अपरिवर्तनीय नियम
+
+`scripts/check-workspace.mjs` सात नियम लागू करता है, और repo ने हर एक को कम से कम एक बार
+तोड़ा है:
+
+1. TypeScript project references workspace निर्भरताओं को ठीक-ठीक दर्शाते हैं।
+2. Workspace निर्भरताएँ `workspace:` protocol इस्तेमाल करती हैं और सचमुच मौजूद हैं।
+3. मूल solution फ़ाइल हर पैकेज का हवाला देती है।
+4. Build प्रोजेक्ट tests बाहर रखते हैं, और `dist/` में एक भी नहीं होता।
+5. Manifest का रूप एक-सा है — `type`, `description`, `license`, `files`, `engines`,
+   `exports`, `scripts`, `publishConfig`।
+6. प्रकाशन योग्य पैकेज कभी किसी निजी पैकेज पर निर्भर नहीं करता।
+7. तीसरे पक्ष के संस्करण catalog में रहते हैं और कहीं और नहीं।
+
+## जनरेट की गई फ़ाइलें
+
+तीन फ़ाइलें settings registry से जनरेट होती हैं और एक drift test उनकी **byte दर byte**
+तुलना करता है:
+
+```bash
+pnpm run config:docs
+# writes .env.example
+#        docs/content/docs/reference/configuration.md
+#        handbook.config.example.yaml
+```
+
+इनमें से किसी को हाथ से बदलना build गिरा देता है। इसके बजाय registry
+(`packages/core/src/config/registry.ts`) बदलें और दोबारा जनरेट करें।
+
+वही drift test यह भी जाँचता है कि दोनों READMEs **हर पंजीकृत भाषा** का नाम लें और किसी
+अस्तित्वहीन pnpm स्क्रिप्ट का हवाला न दें, और यह भी कि उनमें हर सापेक्ष लिंक किसी **git से
+ट्रैक की गई** फ़ाइल पर जाए।
+
+## दस्तावेज़ीकरण साइट
+
+```bash
+cd docs
+pnpm install
+pnpm dev      # → http://localhost:3000
+```
+
+Next.js + Fumadocs, MDX सामग्री `docs/content/docs/` के नीचे। यह pnpm workspace का हिस्सा
+**नहीं** है, इसलिए मूल में चलाया `pnpm install` उसे पूरी तरह अनदेखा कर देता है।
+
+आरेख repo के मूल में `assets/` में रहते हैं — दोनों READMEs उन्हें वहीं से संदर्भित करते
+हैं — और build के समय `docs/scripts/sync-generated.mjs` उन्हें `docs/public/diagrams/` में
+कॉपी करता है। उन्हें हाथ से कॉपी न करें; कॉपी ठीक इसी वजह से gitignore में है।
+
+## Commit परंपराएँ
+
+Conventional Commits, `commitlint` द्वारा लागू:
+
+```text
+feat(analyzer): add a Kotlin generic-tier spec
+fix(patcher): refuse an anchor that matches zero times
+docs(cli): document the --env cascade
+chore(deps): bump vitest
+```
+
+जो बदलाव किसी प्रकाशित पैकेज को प्रभावित करते हैं उन्हें changeset चाहिए:
+
+```bash
+pnpm changeset
+```
+
+उस फ़ाइल को कोड के साथ commit करें। देखें [Release करना](/docs/contributing/releasing)।
+
+## चीज़ें कहाँ रहती हैं
+
+```text
+packages/<name>/src/         source
+packages/<name>/src/*.test.ts  tests, colocated
+scripts/                     repo tooling (workspace checks, doc generation, smoke tests)
+examples/                    the offline demo, the mock LLM server, the fixture project
+assets/                      diagrams referenced by both READMEs
+docs/                        the documentation site (a standalone Next.js app)
+docs/internal/               the engineering journal — specs, plans, review notes
+```

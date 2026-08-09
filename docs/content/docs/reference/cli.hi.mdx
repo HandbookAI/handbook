@@ -1,0 +1,422 @@
+---
+title: 'CLI संदर्भ'
+description: 'हर subcommand, हर flag, उसका environment variable और उसका डिफ़ॉल्ट — साथ ही यह भी कि हर कमांड क्या लिखती है और किस exit code के साथ खत्म होती है।'
+---
+
+```bash
+handbook [global options] <command> [command options]
+```
+
+हर कमांड अपना **परिणाम stdout पर JSON के रूप में** और अपने **logs stderr पर** लिखती है,
+इसलिए piping ठीक वैसे ही काम करती है जैसी आप उम्मीद करेंगे:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+```
+
+<Callout title="`--help` जनरेट होती है, लिखी नहीं जाती">
+  नीचे का हर flag एक ही settings registry से निकलता है, इसलिए `handbook <cmd> --help` हमेशा
+  flag, उसका environment variable, उसका per-command scoped variable और उसका डिफ़ॉल्ट दिखाती
+  है। अगर यह पृष्ठ और `--help` कभी असहमत हों, तो `--help` सही है — और एक drift test build को
+  गिरा देता है।
+</Callout>
+
+## वैश्विक विकल्प
+
+| Flag                | प्रभाव                                                                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-V, --version`     | संस्करण छापें                                                                                                                                                                         |
+| `-v, --verbose`     | Debug logging                                                                                                                                                                         |
+| `-q, --quiet`       | केवल त्रुटियाँ — **`-v` पर भारी पड़ता है**                                                                                                                                            |
+| `--env <name>`      | एक environment चुनें: `.env.local` और `.env` से पहले `.env.<name>.local` और `.env.<name>` लोड करता है, और `handbook.config.<name>.yaml` को प्राथमिकता देता है। `HANDBOOK_ENV` जैसा ही |
+| `--env-file <path>` | ठीक यही फ़ाइल लोड करें, `.env` cascade को छोड़कर। **गायब फ़ाइल एक ज़ोरदार त्रुटि है, कोई fallback नहीं।** `HANDBOOK_ENV_FILE` को प्राथमिकता दें — नीचे की चेतावनी देखें               |
+| `--config <path>`   | निकटतम `handbook.config.yaml` खोजने के बजाय यह config फ़ाइल इस्तेमाल करें                                                                                                             |
+
+वैश्विक विकल्प subcommand से **पहले** आते हैं:
+
+```bash
+handbook --env prod -v generate --source ~/code/api --work work/api
+```
+
+<Callout type="warn" title="`--env-file` एक Node flag से टकराता है">
+  Node >= 20.6 का अपना `--env-file` है, और वह उसके लिए **पूरी command line को पहले से स्कैन
+  करता है** — उस हिस्से समेत जो script path के बाद आता है, जहाँ वह फ़ाइल को असल में लागू नहीं
+  करता। मौजूद रास्ता Handbook तक बिना छेड़े पहुँच जाता है, पर जो रास्ता मौजूद **नहीं** है वह
+  प्रक्रिया को पहले ही मार देता है:
+
+```bash
+$ handbook --env-file /gone.env config
+node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+```
+
+तो जिस एक मामले को ज़ोर से बताने का वादा यह flag करता है, वही एकमात्र मामला है जिसे वह बता
+नहीं सकता। `HANDBOOK_ENV_FILE` बिल्कुल वही काम करता है और उसे बीच में रोका नहीं जा सकता:
+
+```bash
+$ HANDBOOK_ENV_FILE=/gone.env handbook config
+handbook: error: ENOENT: no such file or directory, open '/gone.env'
+```
+
+जब फ़ाइल सचमुच वहाँ हो तब flag अब भी काम करता है, और दोनों सेट होने पर वह environment
+variable पर भारी पड़ता है।
+
+</Callout>
+
+---
+
+## `analyze`
+
+केवल Phase 1: static call graph बनाना। **कोई LLM नहीं, कोई key नहीं, मुफ़्त।**
+
+```bash
+handbook analyze --source <dir> --work <dir> [--lang <lang>]
+```
+
+| Flag             | डिफ़ॉल्ट   | Env                                           |
+| ---------------- | ---------- | --------------------------------------------- |
+| `--source <dir>` | **आवश्यक** | `HANDBOOK_SOURCE` / `HANDBOOK_ANALYZE_SOURCE` |
+| `--work <dir>`   | **आवश्यक** | `HANDBOOK_WORK` / `HANDBOOK_ANALYZE_WORK`     |
+| `--lang <lang>`  | `auto`     | `HANDBOOK_LANG` / `HANDBOOK_ANALYZE_LANG`     |
+
+`--lang` `auto` या इनमें से कोई एक स्वीकार करता है: `cpp` `csharp` `dart` `go` `java`
+`kotlin` `objc` `ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift`
+`typescript` `zig`. **`auto` एक ही पास में हर भाषा को पहचानकर मिला देता है** और लगभग हमेशा
+वही होता है जो आप चाहते हैं।
+
+**लिखता है** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`।
+
+```json title="stdout"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+---
+
+## `generate`
+
+पूरी pipeline। phase 1 के बाद की हर चीज़ के लिए **एक LLM endpoint चाहिए।**
+
+```bash
+handbook generate --source <dir> --work <dir> [options]
+```
+
+### Pipeline विकल्प
+
+| Flag                      | डिफ़ॉल्ट                                 | यह क्या करता है                                                             |
+| ------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| `--phase <spec>`          | `all`                                    | `all` · `1` · `2` (=2a+2b+2c) · `2a` · `2b` · `2c` · `3`, या अल्पविराम सूची |
+| `--strategy <s>`          | _(work directory में दर्ज, वरना `file`)_ | `file` या `member`                                                          |
+| `--skeleton <path>`       | —                                        | आपका अपना `skeleton.yaml`। `--strategy member` के लिए **आवश्यक**            |
+| `--detail <d>`            | `brief`                                  | card की गहराई `brief` या `deep`                                             |
+| `--synth-mode <m>`        | `oneshot`                                | `oneshot`, या actor–critic मरम्मत लूप के लिए `doctor`                       |
+| `--narrate-lang <l>`      | `en`                                     | `en` या `zh`                                                                |
+| `--max-doctor-rounds <n>` | `6`                                      | Doctor अभिसरण राउंड                                                         |
+| `--resume`                | `false`                                  | जिन फ़ाइलों का card पहले से पूरा है उन्हें छोड़ दें                         |
+| `--refresh`               | `false`                                  | phase 3 के caches को अनदेखा करें                                            |
+| `--llm-cache`             | `false`                                  | कच्चे LLM उत्तर `<work>/phase3/cache` के नीचे cache करें                    |
+
+### थ्रूपुट विकल्प
+
+| Flag                       | डिफ़ॉल्ट                          | यह क्या करता है                                     |
+| -------------------------- | --------------------------------- | --------------------------------------------------- |
+| `--read-workers <n>`       | `12`                              | समवर्ती card बैच                                    |
+| `--read-batch-size <n>`    | _(deep के लिए 1, brief के लिए 8)_ | प्रति card बैच फ़ाइलें                              |
+| `--max-chars-per-file <n>` | `0`                               | हर फ़ाइल को n अक्षरों पर काटें; `0` = कोई सीमा नहीं |
+| `--assign-batch-size <n>`  | `25`                              | प्रति assignment बैच cards                          |
+| `--assign-workers <n>`     | `12`                              | समवर्ती assignment बैच                              |
+| `--organize-workers <n>`   | `8`                               | समवर्ती stage-organize कॉल                          |
+| `--narrate-workers <n>`    | `8`                               | समवर्ती narration कॉल                               |
+
+### LLM विकल्प (`generate`, `plan`, `resync`, `studio` में साझा)
+
+| Flag                        | डिफ़ॉल्ट                    | Env उपनाम           |
+| --------------------------- | --------------------------- | ------------------- |
+| `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
+| `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
+| `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
+| `--timeout <sec>`           | `300`                       | `OPENAI_TIMEOUT`    |
+| `--llm-retries <n>`         | `6`                         | —                   |
+| `--llm-retry-backoff <sec>` | `3`                         | —                   |
+| `--llm-concurrency <n>`     | `16`                        | —                   |
+| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
+
+API key **कभी flag नहीं होती**। `OPENAI_API_KEY` (या `HANDBOOK_LLM_API_KEY`) को environment
+में या किसी `.env` फ़ाइल में सेट करें। config फ़ाइल में यह अस्वीकार कर दी जाती है, क्योंकि
+config फ़ाइलें commit होती हैं।
+
+`--extra-body` हर request body में vendor फ़ील्ड मिला देता है — जैसे
+`{"thinking":{"type":"disabled"}}`। इसके ज़रिये model, message और token फ़ील्ड override नहीं
+किए जा सकते।
+
+```json title="stdout"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+---
+
+## `render`
+
+Work directory → markdown, और चाहें तो और भी। **कोई LLM नहीं।**
+
+```bash
+handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+| Flag                      | डिफ़ॉल्ट          | यह क्या करता है                                    |
+| ------------------------- | ----------------- | -------------------------------------------------- |
+| `--work <dir>`            | **आवश्यक**        | रेंडर करने के लिए work directory                   |
+| `--title <title>`         | `System Handbook` | आउटपुट में handbook का शीर्षक                      |
+| `--out <dir>`             | `<work>/handbook` | कहाँ लिखना है                                      |
+| `--html`                  | `false`           | साथ में बहु-पृष्ठ HTML साइट, `<out>/html` के नीचे  |
+| `--html-single`           | `false`           | साथ में एक स्वयं-निहित `<out>/handbook.html`       |
+| `--agent-site`            | `false`           | साथ में agent locator index, `<out>/agent` के नीचे |
+| `--llms-txt`              | `false`           | साथ में `llms.txt` और `llms-full.txt`              |
+| `--source-base-url <url>` | —                 | हर file card को `<url>/<relative path>` से जोड़ें  |
+
+<Callout type="info">
+  `--source-base-url` के बिना आउटपुट में **कोई भी बाहरी URL नहीं** होता, जो तब मायने रखता है जब आप किसी निजी
+  codebase के लिए handbook भेज रहे हों।
+</Callout>
+
+`--out` _केवल scoped_ है: इसका environment variable `HANDBOOK_RENDER_OUT` है, सपाट
+`HANDBOOK_OUT` नहीं, क्योंकि `plan` और `skill` पर `--out` का मतलब अलग होता है।
+
+---
+
+## `skill`
+
+रेंडर किया गया handbook → agent SKILL पैकेज। **कोई LLM नहीं।**
+
+```bash
+handbook skill --handbook <dir> --out <dir> --name <slug> [options]
+```
+
+| Flag                | डिफ़ॉल्ट     | यह क्या करता है                                                  |
+| ------------------- | ------------ | ---------------------------------------------------------------- |
+| `--handbook <dir>`  | **आवश्यक**   | रेंडर किए गए handbook की directory                               |
+| `--out <dir>`       | **आवश्यक**   | SKILL पैकेज कहाँ जाएगा                                           |
+| `--name <slug>`     | **आवश्यक**   | छोटे अक्षरों-हाइफ़न वाला slug; `<slug>-handbook` बनाता है        |
+| `--project <name>`  | _(`--name`)_ | गद्य में इस्तेमाल होने वाला मानवीय प्रोजेक्ट नाम                 |
+| `--work <dir>`      | —            | phase 2 के assignment से `coverage.json` जोड़ता है               |
+| `--source <dir>`    | —            | `--work` के साथ, **हर फ़ाइल का content hash** जोड़ता है          |
+| `--agent-dir <dir>` | —            | locator पृष्ठ `references/agent/` के नीचे भेजता है               |
+| `--lang <l>`        | `en`         | SKILL.md के **मुख्य भाग** की भाषा। Frontmatter अंग्रेज़ी रहता है |
+
+<Callout type="warn" title="जानने लायक दो इनकार">
+  `--out` न तो handbook directory होनी चाहिए और न ही उसकी कोई पूर्वज: build की शुरुआत `--out` को मिटाने से
+  होती है, जो ठीक उसी चीज़ को हटा देगा जिसे पैक किया जा रहा है। और `--lang zh` आपको **अंग्रेज़ी frontmatter**
+  के साथ चीनी मुख्य भाग देता है — agent runtimes description के पाठ पर रूटिंग करते हैं, इसलिए उसका अनुवाद
+  चुपचाप skill चयन तोड़ देगा।
+</Callout>
+
+---
+
+## `validate`
+
+एक SKILL पैकेज जाँचें। **कोई LLM नहीं। विफलता पर `2` लौटाता है।**
+
+```bash
+handbook validate --skill <dir> [--source <dir>]
+```
+
+| Flag             | डिफ़ॉल्ट   | यह क्या करता है                                    |
+| ---------------- | ---------- | -------------------------------------------------- |
+| `--skill <dir>`  | **आवश्यक** | जाँचने के लिए skill directory                      |
+| `--source <dir>` | —          | drift पकड़ने के लिए जीवित स्रोत का दोबारा hash लें |
+
+संरचना, frontmatter अनुबंध, index ↔ stage-पृष्ठ संगति, `coverage.json` स्कीमा और hash की
+ताज़गी जाँचता है। त्रुटियाँ और चेतावनियाँ stderr पर जाती हैं।
+
+---
+
+## `plan`
+
+Handbook-निर्देशित परिवर्तन स्थानीयकरण। **एक LLM endpoint चाहिए। केवल पढ़ने वाला।**
+
+```bash
+handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]
+```
+
+| Flag               | डिफ़ॉल्ट   | यह क्या करता है                                                  |
+| ------------------ | ---------- | ---------------------------------------------------------------- |
+| `--source <dir>`   | **आवश्यक** | जिस codebase के लिए योजना बननी है (उसमें कभी लिखा नहीं जाता)     |
+| `--request <text>` | **आवश्यक** | प्राकृतिक भाषा में परिवर्तन का अनुरोध                            |
+| `--handbook <dir>` | —          | रेंडर किया handbook या `skills/<x>/references`। ज़ोरदार सिफ़ारिश |
+| `--out <file>`     | _(stdout)_ | योजना यहाँ लिखें                                                 |
+| `--max-turns <n>`  | `30`       | Agent का turn बजट                                                |
+
+साथ में साझा LLM विकल्प।
+
+अगर planner ने हार मान ली — उसने tool परिणाम गढ़ लिए, turns खत्म कर दिए, या बिना किसी काम
+की चीज़ के खत्म किया — तो वह **गैर-शून्य के साथ बाहर निकलता है**, बजाय ऐसी माफ़ी लिखने के
+जिसे कोई स्क्रिप्ट `apply` में डाल दे।
+
+---
+
+## `apply`
+
+किसी योजना के EDIT ब्लॉक लागू करें। **कोई LLM नहीं। कुछ भी न उतरे तो `2` लौटाता है।**
+
+```bash
+handbook apply --source <dir> --plan <file> [--dry-run] [--backup-root <dir>]
+```
+
+| Flag                  | डिफ़ॉल्ट                     | यह क्या करता है                   |
+| --------------------- | ---------------------------- | --------------------------------- |
+| `--source <dir>`      | **आवश्यक**                   | संपादित किया जाने वाला वृक्ष      |
+| `--plan <file>`       | **आवश्यक**                   | `handbook plan` से आई योजना       |
+| `--dry-run`           | `false`                      | केवल सत्यापन — **कभी नहीं लिखता** |
+| `--backup-root <dir>` | `<source>/.handbook-patches` | बैकअप कहाँ जाते हैं               |
+
+```json title="stdout"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+स्थितियाँ: `applied` · `created` · `no-match` · `ambiguous` · `file-missing` ·
+`not-a-file` · `unsafe-path` · `undecodable` · `skipped`।
+
+---
+
+## `rollback`
+
+Patch बैकअप से स्रोत वृक्ष बहाल करें। **कोई LLM नहीं।**
+
+```bash
+handbook rollback --backup <dir> [--source <dir>] [--force]
+```
+
+| Flag             | डिफ़ॉल्ट   | यह क्या करता है                               |
+| ---------------- | ---------- | --------------------------------------------- |
+| `--backup <dir>` | **आवश्यक** | `manifest.json` वाली बैकअप directory          |
+| `--source <dir>` | —          | किसी दूसरे वृक्ष का बैकअप हो तो अस्वीकार करें |
+| `--force`        | `false`    | patch के **बाद** बदली फ़ाइलें भी बहाल करें    |
+
+`--force` के बिना, जिस फ़ाइल का मौजूदा hash patch-के-बाद वाले hash से मेल नहीं खाता उसे
+अस्वीकार कर दिया जाता है — उसे बहाल करना तब से किए गए हर काम को चुपचाप मिटा देता।
+
+---
+
+## `resync`
+
+कोड बदलने के बाद handbook को आगे बढ़ाएँ।
+
+```bash
+handbook resync --case <dir> --work <dir> [options]
+```
+
+| Flag                   | डिफ़ॉल्ट                      | यह क्या करता है                                                         |
+| ---------------------- | ----------------------------- | ----------------------------------------------------------------------- |
+| `--case <dir>`         | **आवश्यक**                    | Case directory: `edited/` + वैकल्पिक `plan.md` + वैकल्पिक `change.diff` |
+| `--work <dir>`         | **आवश्यक**                    | आगे बढ़ाने के लिए work directory                                        |
+| `--title <title>`      | `System Handbook`             | दोबारा रेंडर करते समय इस्तेमाल होने वाला शीर्षक                         |
+| `--no-llm`             | _(LLM चालू)_                  | केवल संरचनात्मक ताज़गी; गद्य बासी चिह्नित होता है                       |
+| `--no-render`          | _(रेंडर चालू)_                | पहले से रेंडर किए आउटपुट ताज़ा करना छोड़ दें                            |
+| `--corrections <file>` | —                             | `corrections.jsonl`; उसकी फ़ाइलें refresh सेट को **चौड़ा** करती हैं     |
+| `--detail <d>`         | _(मौजूदा handbook से मिलाएँ)_ | दोबारा बने cards के लिए `brief` या `deep`                               |
+| `--narrate-lang <l>`   | _(मौजूदा handbook से मिलाएँ)_ | `en` या `zh`                                                            |
+
+साथ में साझा LLM विकल्प।
+
+<Callout type="info">
+  `--detail` और `--narrate-lang` को अनसेट छोड़ना ही सही डिफ़ॉल्ट है: अनसेट का मतलब है *«जो यह handbook पहले से
+  है, वही रखो»*, इसलिए resync किसी deep handbook को चुपचाप brief पर नहीं गिराता।
+</Callout>
+
+---
+
+## `studio`
+
+स्थानीय वेब UI। `Ctrl-C` तक चलता रहता है।
+
+```bash
+handbook studio [--port <n>] [--host <addr>] [--state-dir <dir>]
+```
+
+| Flag                | डिफ़ॉल्ट                 | यह क्या करता है                         |
+| ------------------- | ------------------------ | --------------------------------------- |
+| `--port <n>`        | `4860`                   | जिस पोर्ट पर सुनना है                   |
+| `--host <addr>`     | `127.0.0.1`              | Bind पता। Containers को `0.0.0.0` चाहिए |
+| `--state-dir <dir>` | `$HOME/.handbook-studio` | Registry और प्रबंधित work directories   |
+
+साथ में साझा LLM विकल्प — Studio उन्हें बाकी हर कमांड जैसी ही परतों से हल करता है, इसलिए
+`--model` और config फ़ाइल का `llm:` ब्लॉक दोनों उसके jobs तक पहुँचते हैं।
+
+<Callout type="warn">
+  `--host 0.0.0.0` सेट करने से Studio किसी काम के अर्थ में दूर से पहुँच योग्य **नहीं** हो जाता: CSRF guard
+  `Host` हेडर जाँचता है, इसलिए LAN IP बताने वाला अनुरोध `403` के साथ अस्वीकार होता है। देखें
+  [Studio](/docs/guides/studio)।
+</Callout>
+
+---
+
+## `config`
+
+हल की गई configuration और हर मान कहाँ से आया, यह छापें। **कोई LLM नहीं।**
+
+```bash
+handbook config [--command <name>] [--json] [--check]
+```
+
+| Flag               | डिफ़ॉल्ट   | यह क्या करता है                                           |
+| ------------------ | ---------- | --------------------------------------------------------- |
+| `--command <name>` | `generate` | केवल वे settings दिखाएँ जो इस subcommand पर लागू होती हैं |
+| `--json`           | `false`    | मशीन-पठनीय आउटपुट                                         |
+| `--check`          | `false`    | केवल सत्यापन; कुछ भी अमान्य या गायब हो तो **exit code 2** |
+
+```bash
+handbook config --command generate      # a table, with provenance per row
+handbook config --json | jq '.settings[] | select(.source.kind == "env")'
+handbook config --check                 # put this one in CI
+```
+
+<Callout title="यह जान-बूझकर टूटी configuration दिखाती है">
+  हर दूसरी कमांड के उलट, `config` अमान्य मान पर रुकती नहीं। गायब `--source` एक दिखने वाली पंक्ति `— unset
+  (required)` के रूप में आता है, बजाय उसी एक औज़ार को गिरा देने के जिससे आप ठीक वही समस्या डीबग करते।
+</Callout>
+
+---
+
+## Exit codes
+
+| Code | अर्थ                                                                                                               |
+| :--: | ------------------------------------------------------------------------------------------------------------------ |
+| `0`  | सफलता                                                                                                              |
+| `1`  | एक त्रुटि — अमान्य configuration, गायब artifact, विफल रन। संदेश stderr पर, उपसर्ग `handbook: error:`               |
+| `2`  | एक **जाँच** विफल: `validate` को समस्याएँ मिलीं, `apply` पूरी तरह नहीं उतरा, या `config --check` को कुछ अमान्य मिला |
+
+`2` का मतलब है _«औज़ार ने काम किया, और जवाब है नहीं»_। स्क्रिप्टों को इसे `1` से अलग तरह से
+बरतना चाहिए।
+
+## pnpm शॉर्टकट
+
+किसी clone से, इनमें से हर एक पहले build करता है और flags सीधे आगे भेज देता है:
+
+```bash
+pnpm analyze  --source ~/code/proj --work work/proj
+pnpm generate --source ~/code/proj --work work/proj
+pnpm render   --work work/proj --html --agent-site --llms-txt
+pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
+pnpm validate --skill skills/proj --source ~/code/proj
+pnpm plan     --source ~/code/proj --request "…" --out plan.md
+pnpm apply    --source ~/code/proj --plan plan.md --dry-run
+pnpm rollback --backup ~/code/proj/.handbook-patches/<stamp>
+pnpm resync   --case cases/mycase --work work/proj
+pnpm studio
+pnpm config:show --command generate
+pnpm handbook --help
+```

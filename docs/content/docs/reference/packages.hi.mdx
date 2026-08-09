@@ -1,0 +1,129 @@
+---
+title: 'पैकेज सूचकांक'
+description: 'ग्यारह npm पैकेज, हर एक क्या export करता है, और इनमें से कौन बिना किसी LLM के काम करते हैं।'
+---
+
+Handbook ग्यारह पैकेजों का monorepo है। **इनमें से चार कभी किसी LLM को नहीं छूते** और अपने
+आप में पूरी तरह उपयोगी हैं।
+
+| पैकेज                | भूमिका                                             | LLM? | दस्तावेज़                                                  |
+| -------------------- | -------------------------------------------------- | :--: | ---------------------------------------------------------- |
+| `@handbook/core`     | डेटा मॉडल, zod schemas, config registry, utilities |  ❌  | [README](https://www.npmjs.com/package/@handbook/core)     |
+| `@handbook/analyzer` | बहु-भाषी static call graph निष्कर्षण               |  ❌  | [README](https://www.npmjs.com/package/@handbook/analyzer) |
+| `@handbook/llm`      | OpenAI-संगत client, cache, actor–critic, mock      |  ✅  | [README](https://www.npmjs.com/package/@handbook/llm)      |
+| `@handbook/pipeline` | generation pipeline, phases 1–3                    |  ✅  | [README](https://www.npmjs.com/package/@handbook/pipeline) |
+| `@handbook/renderer` | Markdown, HTML, agent index, llms.txt              |  ❌  | [README](https://www.npmjs.com/package/@handbook/renderer) |
+| `@handbook/skill`    | SKILL पैकेजिंग, सत्यापन, drift hashes              |  ❌  | [README](https://www.npmjs.com/package/@handbook/skill)    |
+| `@handbook/planner`  | केवल पढ़ने वाला planning agent                     |  ✅  | [README](https://www.npmjs.com/package/@handbook/planner)  |
+| `@handbook/patcher`  | Byte-सटीक apply, बैकअप, rollback                   |  ❌  | [README](https://www.npmjs.com/package/@handbook/patcher)  |
+| `@handbook/resync`   | वृद्धिशील roll-forward                             |  ✅  | [README](https://www.npmjs.com/package/@handbook/resync)   |
+| `@handbook/studio`   | स्थानीय वेब UI                                     |  ✅  | [README](https://www.npmjs.com/package/@handbook/studio)   |
+| `@handbook/cli`      | `handbook` कमांड                                   |  —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+
+## अकेले सबसे उपयोगी तीन
+
+### `@handbook/analyzer` — 18 भाषाओं के लिए एक call graph
+
+```ts
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+
+registerBuiltinAdapters();
+const byLanguage = discoverAll('/path/to/repo');
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, '/path/to/repo'));
+}
+const { graph, stats } = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  {
+    sourceRoot: '/path/to/repo',
+    scannedFiles: Object.values(byLanguage).flat(),
+    language: 'multi',
+    defaultExt: '',
+  },
+);
+```
+
+कोई LLM नहीं, कोई नेटवर्क नहीं, कोई native संकलन नहीं।
+
+### `@handbook/patcher` — किसी edit योजना को सुरक्षित लागू करें
+
+```ts
+import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+
+const problems = parsePlan(planText).problems; // lint a plan without applying it
+const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
+if (dry.ok) {
+  const result = applyPlan({ sourceRoot, plan: planText });
+  // rollback(result.backupDir!, { expectedSourceRoot: sourceRoot })
+}
+```
+
+योजना का प्रारूप [परिवर्तन लागू करना](/docs/guides/applying-changes) में दर्ज है। यह ज़रूरी
+नहीं कि योजना `@handbook/planner` से ही आई हो — आप उसे हाथ से भी लिख सकते हैं।
+
+### `@handbook/renderer` — किसी भी `HandbookModel` को रेंडर करें
+
+```ts
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+
+renderMarkdownHandbook(model, 'out/');
+renderAgentSite(model, 'out/agent');
+renderLlmsTxt(model, 'out/');
+```
+
+`HandbookModel` ही एकमात्र अनुबंध है। उसे जैसे चाहें भरें, और रेंडरिंग, skill पैकेजिंग और
+planning — सब काम कर जाते हैं।
+
+## मुख्य exports एक नज़र में
+
+```ts
+// @handbook/core — the vocabulary
+CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
+FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
+HandbookModel · StageTree · coerceRole
+resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
+writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
+
+// @handbook/analyzer — the parser
+registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
+discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
+
+// @handbook/llm — the model seam
+ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
+resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
+
+// @handbook/pipeline — generation
+generateHandbook · loadHandbookModel · runPhase1 · generateCards
+synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
+narrate · extractRegisters · classifyMembers · WorkDir
+
+// @handbook/renderer — presentation
+renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
+renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
+
+// @handbook/skill — packaging
+buildSkill · validateSkill
+
+// @handbook/planner — localization
+runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
+
+// @handbook/patcher — execution
+applyPlan · rollback · listBackups · parsePlan
+
+// @handbook/resync — roll-forward
+resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
+
+// @handbook/studio — the UI
+startStudio · createStudioServer · StateStore · JobRunner
+```
+
+## स्थापना
+
+```bash
+pnpm add @handbook/analyzer     # or npm / yarn
+```
+
+हर पैकेज केवल ESM है (`"type": "module"`), type declarations भेजता है, Node ≥ 20.11 माँगता
+है, और MIT लाइसेंस वाला है। तीसरे पक्ष के संस्करण workspace catalog में एक ही बार पिन किए
+गए हैं, इसलिए दो पैकेज कभी एक ही library के दो संस्करणों पर नहीं पहुँच सकते।
