@@ -1,0 +1,177 @@
+---
+title: 'Anwenden und Rollback'
+description: 'Ein mechanischer Ausführer mit vier Sicherheitsregeln, ein Backup, das beweisen kann, was es wiederherstellt, und ein Parser, der alles Mehrdeutige ablehnt.'
+---
+
+```bash
+handbook apply --source <repo> --plan plan.md --dry-run   # verify only
+handbook apply --source <repo> --plan plan.md             # for real
+handbook rollback --backup <dir>                          # undo
+```
+
+**Kein LLM ist beteiligt.** `apply` ersetzt exakten Text durch exakten Text. Alles
+Interessante daran ist, was es sich zu tun weigert.
+
+## Immer zuerst der Dry-Run
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run
+```
+
+```json
+{
+  "ok": true,
+  "dryRun": true,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 },
+    { "index": 2, "file": "src/upload.py", "where": "Uploader", "status": "applied", "line": 71 }
+  ],
+  "changedFiles": [],
+  "problems": []
+}
+```
+
+`ok: true` bedeutet, dass jeder Anker aufgelöst wurde. `changedFiles` ist leer, weil
+nichts geschrieben wurde. **`--dry-run` rührt das Dateisystem nie an.**
+
+## Die vier Sicherheitsregeln
+
+### 1. Alles verifizieren, dann in zwei Phasen schreiben
+
+Der Plan wird zuerst gegen die aktuellen Dateiinhalte aufgelöst. **Ein einziger
+Fehlschlag bricht die gesamte Anwendung ab**, bevor ein Byte geschrieben wird. Der
+Schreibvorgang legt dann jede Datei als temporäre Datei an und benennt erst um, wenn
+_das gesamte_ Staging gelungen ist — und schlägt ein Umbenennen mittendrin fehl, werden
+die bereits umbenannten Dateien aus dem kurz zuvor angelegten Backup wiederhergestellt.
+
+Es gibt keinen Zustand, in dem ein halber Plan gelandet ist.
+
+### 2. `old` muss byte-genau und eindeutig passen
+
+| Treffer | Ergebnis                                                                     |
+| :-----: | ---------------------------------------------------------------------------- |
+|    0    | `no-match` — der Code hat sich weiterbewegt, seit der Plan geschrieben wurde |
+|    1    | angewendet                                                                   |
+|   2+    | `ambiguous` — der Anker identifiziert keine eindeutige Stelle                |
+
+Beide Fehlschläge verweigern. **Keiner von beiden wählt eine Stelle aus.** „Nimm das
+erste Vorkommen" ist genau der Weg, auf dem ein Patch in der falschen Funktion landet.
+
+### 3. Jede berührte Datei wird mit ihrem Vor-Patch-Hash gesichert
+
+```text
+<source>/.handbook-patches/
+  .gitignore                     written automatically — backups never enter git
+  2026-08-08T14-05-11-204Z/
+    manifest.json                source root, timestamp, per-file pre/post hashes
+    files/…                      the original bytes
+```
+
+Der Hash ist es, was das Rollback **beweisen** lässt, dass es die Bytes wiederherstellt,
+die dieser Patch ersetzt hat, statt einem Dateinamen zu vertrauen.
+
+### 4. Kein Pfad entkommt dem Quellwurzelverzeichnis
+
+`..`, absolute Pfade, laufwerksabsolute Windows-Pfade — und Ausbrüche über ein
+**symbolisch verlinktes Elternverzeichnis**, wenn die Datei selbst noch nicht existiert.
+Letzteres ist der subtile Fall: realpath wird auf dem tiefsten _existierenden_ Vorfahren
+gebildet, sodass ein fehlendes Blatt die Prüfung nicht überspringen kann. Symlink-Ziele
+werden nie ersetzt.
+
+## Ergebnis-Status
+
+| Status         | Bedeutung                                                       |
+| -------------- | --------------------------------------------------------------- |
+| `applied`      | Ersetzt, mit der 1-basierten Zeile, in der `old` gefunden wurde |
+| `created`      | `old` war leer; die Datei wurde angelegt                        |
+| `no-match`     | `old` steht nicht in der Datei                                  |
+| `ambiguous`    | `old` kommt mehr als einmal vor                                 |
+| `file-missing` | Nicht leeres `old`, aber keine solche Datei                     |
+| `not-a-file`   | Der Pfad ist ein Verzeichnis oder ein Symlink                   |
+| `unsafe-path`  | Der Pfad entkommt dem Quellwurzelverzeichnis                    |
+| `undecodable`  | Die Datei ist kein gültiges UTF-8                               |
+| `skipped`      | Ein früherer Fehlschlag hat den Lauf abgebrochen                |
+
+`apply` **beendet sich mit `2`**, wenn `ok` false ist.
+
+## Rollback
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z \
+                  --source $REPO
+```
+
+- **Verweigert jede Datei, die nach dem Patch geändert wurde.** Ihr aktueller Hash stimmt
+  nicht mehr mit dem Nach-Patch-Hash im Manifest überein, also hat sie seitdem jemand
+  bearbeitet — sie wiederherzustellen würde diese Arbeit stillschweigend zerstören.
+  `--force` setzt das außer Kraft, bewusst explizit.
+- **`--source` sichert die Gegenrichtung ab:** Das Rollback auf ein Backup zu richten,
+  das aus einem anderen Baum stammt, ist ein Fehler, kein Feature.
+- **Dateimodi, Zeilenenden und der abschließende Zeilenumbruch bleiben durchgängig
+  erhalten.** Der Patcher normalisiert nichts, worum er nicht gebeten wurde.
+- **Leere Verzeichnisse, die das Rollback selbst angelegt hat, werden aufgeräumt.**
+
+```bash
+ls -1t $REPO/.handbook-patches/     # newest first
+```
+
+## Warum der Parser Mehrdeutigkeit feindselig behandelt
+
+Die Fence-Verfolgung folgt CommonMark für Backtick- wie Tilde-Fences: Ein Block, der mit
+einer Folge von N Markern geöffnet wurde, schließt nur auf einer Zeile, deren Folge ≥ N
+ist _und_ die keinen Info-String trägt. `### EDIT n` innerhalb eines gefencten Bereichs
+ist damit **Inhalt, niemals eine Überschrift** — ein Plan, der ein Beispiel-Edit zitiert,
+kann keinen Phantom-Edit in den Lauf schmuggeln.
+
+| Abgelehnt                                                                            | Die Meldung sagt Ihnen                                                                                              |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Inhalt zwischen den gefencten Blöcken eines Edits                                    | Ein innerer Fence hat `old`/`new` vermutlich zu früh geschlossen — mit einem längeren Fence öffnen                  |
+| Ein ungetaggter ``` Block                                                            | Gleiche Ursache; wird abgelehnt, wo immer er steht, damit ein abgeschnittener Anker nicht als „Epilog" durchrutscht |
+| Nicht genau ein `old` und ein `new`                                                  | Wie viele von jedem er gefunden hat                                                                                 |
+| `new` vor `old`                                                                      | Erst den Anker schreiben, dann den Ersatz                                                                           |
+| `old` identisch mit `new`                                                            | Nichts zu tun                                                                                                       |
+| Fehlende oder doppelte `- file:`-Zeile                                               | Genau eine ist erforderlich                                                                                         |
+| Edit-Nummern außer der Reihenfolge oder doppelt                                      | Sie müssen aufsteigen                                                                                               |
+| Ein Pfad mit Leerraum, Backticks, Steuerzeichen, Backslashes, `~` oder führendem `/` | Welche Regel er verletzt hat                                                                                        |
+| Eine Beinahe-Überschrift (`## EDIT 1`)                                               | Sie sieht aus wie eine Überschrift, ist aber nicht `### EDIT <n>`                                                   |
+
+Nachlaufende Prosa und der Deklarationsblock **nach** dem letzten `old`/`new`-Paar sind
+erwartete Ausgabe und werden ignoriert, nicht abgelehnt.
+
+## Einen Plan von Hand schreiben
+
+Nichts verlangt, dass ein Plan aus `handbook plan` stammt. Das Format ist klein genug, um
+es direkt zu schreiben — was `apply` für sich genommen zu einem nützlichen mechanischen
+Patcher macht:
+
+````markdown
+### EDIT 1
+
+- file: `src/config.py`
+- where: `DEFAULTS` — bump the timeout
+
+```old
+TIMEOUT_SECONDS = 30
+```
+
+```new
+TIMEOUT_SECONDS = 60
+```
+````
+
+Linten, ohne anzuwenden:
+
+```ts
+import { parsePlan } from '@handbook/patcher';
+console.log(parsePlan(planText).problems);
+```
+
+## Nachdem er gelandet ist
+
+Das Handbook hinkt dem Code jetzt hinterher. Rollen Sie es nach vorn:
+
+```bash
+handbook resync --case cases/upload-retry --work work/api
+```
+
+Siehe [Aktuell halten](/docs/guides/keeping-current).

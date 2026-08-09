@@ -1,8 +1,21 @@
 ---
 title: 'O que é o Handbook?'
-description: 'O Handbook analisa seu repositório com um parser de verdade, transforma-o em um mapa navegável e entrega esse mapa ao seu agente de codificação como um índice de localização — e o mantém atualizado conforme o código muda.'
+description: Um código-fonte entra, dois manuais saem — um site de documentação narrado que o seu time lê e um índice de localização com que o seu agente de código se orienta. Do mesmo mapa parseado, sempre em dia com o código.
 icon: House
 ---
+
+## Um código-fonte entra. Saem dois manuais.
+
+O Handbook escreve o mesmo mapa do seu código **duas vezes**, porque tem dois leitores muito diferentes:
+
+<Cards>
+  <Card title="📖 O manual para humanos" description="Um site de documentação narrado etapa por etapa — busca, tema, links profundos — gerado do seu código e aberto direto de file://. Este você lê." href="/docs/guides/rendering" />
+  <Card title="🤖 O manual para a IA" description="Um índice de localização em formato de máquina: tabelas de roteamento arquivo→etapa, fatos de chamadas por função, llms.txt e um pacote SKILL instalável. Este o seu agente de código lê." href="/docs/guides/agent-skill" />
+</Cards>
+
+Por baixo estão os mesmos fatos — um grafo de chamadas construído pelo parser — então os
+dois nunca podem discordar. Um otimiza narrativa e navegação; o outro, roteamento e
+detecção de desatualização.
 
 ## O problema, dito com clareza
 
@@ -74,7 +87,7 @@ emite um plano de edição exato ao byte, aplicável mecanicamente.
 ## O que uma execução produz
 
 <img
-  src="/diagrams/outputs.svg"
+  src="/diagrams/outputs.pt.svg"
   alt="Saídas: handbook em markdown, site HTML, página única, índice localizador para agentes, llms.txt, pacote SKILL"
   className="rounded-xl border"
 />
