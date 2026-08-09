@@ -1,0 +1,143 @@
+---
+title: 'Docker'
+description: 'ローカルに Node をインストールせずにツールチェーン全体を実行 — Studio も含めて、すべての環境で 1 つのイメージ。'
+---
+
+イメージは Node 22(意図的に 24 では **ありません** — Dockerfile を参照)と、ビルド済みの
+パッケージ群です。
+
+```bash
+pnpm run docker:build      # docker build -t handbook:local .
+```
+
+## コマンドの実行
+
+`HANDBOOK_SOURCE=/src` と `HANDBOOK_WORK=/work` はイメージに焼き込まれているので、
+ボリュームをマウントするだけで済みます — `--source` も `--work` も不要です:
+
+```bash
+# free, no key
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+
+# with an endpoint
+docker run --rm --env-file .env \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate --detail deep
+
+# render, then get the output back out
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local render --html --agent-site --llms-txt
+docker run --rm -v handbook-work:/work -v "$PWD/out:/out" \
+  --entrypoint cp handbook:local -R /work/handbook /out/
+```
+
+ソースを **読み取り専用**(`:ro`)でマウントするのは、`apply` を除くすべてにおいて
+良い習慣です。
+
+## 環境変数
+
+Docker 自身の `--env-file` は、ツールチェーンの `.env` ロードの **上に** 重なります —
+両方が適用され、その方法で渡された `OPENAI_*` 変数は、シェルの export とまったく同じように
+見えます。
+
+```bash
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+### 1 つのイメージで、すべての環境
+
+`.env*` ファイルは **決してイメージに焼き込まれません** — `.dockerignore` を参照して
+ください。環境は実行時に選択します:
+
+```bash
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+あるいは設定ファイルをマウントします:
+
+```bash
+docker run --rm \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  -v "$PWD/handbook.config.prod.yaml:/cfg.yaml:ro" \
+  handbook:local --config /cfg.yaml generate
+```
+
+## Studio
+
+```bash
+pnpm run docker:studio     # docker compose up --build studio
+```
+
+その後 **`http://localhost:4860`** を開いてください。
+
+<Callout type="warn" title="localhost だけが動作します — LAN の IP やコンテナ名では動きません">
+  Studio の CSRF 防御はソケットではなく、`Host` **リクエストヘッダー** をチェックします。
+  公開されたポートに到達できるようにするには、コンテナは `0.0.0.0` にバインドしなければ
+  なりません(compose ファイルの `HANDBOOK_STUDIO_HOST=0.0.0.0`)。**しかし、それによって
+  誰が話しかけられるかが広がることはありません。** ホストからブラウズすれば依然として
+  `Host: localhost:4860` が送られて通過します。LAN の IP や `studio` コンテナのホスト名を
+  指名するリクエストは、設計どおり `403` で拒否されます。
+
+リモートアクセスは、意図的に未実装のままにされた別個の機能です — 明示的な許可リストが
+必要になるでしょう — この防御のバグではありません。
+
+</Callout>
+
+```yaml title="docker-compose.yml (excerpt)"
+services:
+  studio:
+    build: .
+    command: studio
+    environment:
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:4860:4860'
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+```
+
+ポートを `4860:4860` ではなく `127.0.0.1:4860:4860` として公開すれば、LAN インター
+フェイスからも遮断されます。Host ヘッダーチェックに加えた二重の備えです。
+
+## ボリューム
+
+| パス    | 内容                 | 提案                                           |
+| ------- | -------------------- | ---------------------------------------------- |
+| `/src`  | あなたのソースツリー | `apply` を除くすべてで `:ro` でマウントする    |
+| `/work` | Handbook の成果物    | 実行間で生き残るよう、名前付きボリュームにする |
+
+## CI での利用
+
+```yaml title=".github/workflows/handbook.yml"
+jobs:
+  handbook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t handbook:ci .
+      - run: |
+          docker run --rm \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci generate --detail brief
+      - run: |
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci render --html --agent-site --llms-txt
+      - uses: actions/upload-artifact@v4
+        with: { name: handbook, path: work/handbook }
+```
+
+`analyze`、`render`、`skill`、`validate` にはキーがまったく不要なので、フォークセーフな
+ワークフローはそれらをすべてのプルリクエストで実行し、`generate` は `main` のために
+取っておくことができます。
+
+## なぜ Node 24 ではなく 22 なのか
+
+同梱されている tree-sitter 文法の 1 つ(Swift)が、V8 ≥ 13 でプロセスを異常終了させます。
+Node 22 はその境界より下にあるので、イメージには特別なフラグが不要です。Node 24 では
+アダプタが検出時点で拒否し、`--liftoff-only` を渡すよう伝えます。イメージを 22 に固定すれば、
+この問題自体を回避できます。[言語サポート](/docs/reference/languages)を参照してください。

@@ -1,0 +1,165 @@
+---
+title: आउटपुट रेंडर करना
+description: Markdown, एक HTML साइट, एक स्वयं-निहित पृष्ठ, agent locator index और llms.txt — सब नियतात्मक, सब दोबारा चलाने के लिए मुफ़्त।
+---
+
+```bash
+handbook render --work <workdir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+**कोई LLM नहीं। कोई नेटवर्क नहीं। नियतात्मक।** वही model अंदर, byte-समान फ़ाइलें बाहर —
+इसलिए यह CI में, हर कमिट पर चलने लायक है।
+
+## पाँच आउटपुट
+
+<Tabs items={['Markdown', 'HTML site', 'Single page', 'Agent index', 'llms.txt']}>
+
+<Tab value="Markdown">
+
+हमेशा लिखा जाता है।
+
+```text
+<out>/
+  overview.md      system prose + a mermaid stage map + "see also" links
+  index.md         every stage, nested by depth, a paragraph each
+  <stage-id>.md    one page per content-bearing stage
+  register.md      the cross-stage state table (only when registers exist)
+```
+
+एक stage पृष्ठ में stage का सारांश, उप-stages के लिंक, और फिर उसकी फ़ाइलें होती हैं — जैसा
+phase 2c ने तय किया वैसे ही समूहीकृत और क्रमबद्ध, और हर फ़ाइल एक **file card** के रूप में
+रेंडर होती है: उद्देश्य, भूमिका, जीवनचक्र, call तथ्य, और deep cards के लिए प्रति-function नोट्स।
+
+दो व्यवहार जो जानने लायक हैं:
+
+- **बासी पृष्ठ साफ़ कर दिए जाते हैं।** Stage ids हर generation के बीच बदलती हैं; हर render
+  पहले पिछले render के पृष्ठ हटाता है, ताकि नाम बदले हुए किसी stage का कोई भूतिया पृष्ठ
+  skill packager के हाथ न लग जाए।
+- **प्रति-stage register अनुभाग idempotent है** — एक marker के अंतर्गत जोड़ा जाता है, और
+  केवल तभी जब marker अनुपस्थित हो। दोबारा render करने से डुप्लिकेट कभी नहीं जमते।
+
+</Tab>
+
+<Tab value="HTML site">
+
+`--html` → `<out>/html/`
+
+एक बहु-पृष्ठ साइट जो एक ही shell साझा करती है: वर्तमान पृष्ठ को हाइलाइट करने वाला sticky
+sidebar TOC, breadcrumbs, आपकी पसंद याद रखने वाला थीम toggle, और function विवरण के लिए
+सब-खोलें/सब-समेटें।
+
+**सारा CSS और JS inline है; हर लिंक relative है।** यह सीधे `file://` से काम करता है —
+न कोई सर्वर, न कोई CDN, न कहीं से कोई फ़ॉन्ट मँगाया जाता है। `open <out>/html/overview.html`।
+
+</Tab>
+
+<Tab value="Single page">
+
+`--html-single` → `<out>/handbook.html`
+
+पूरा handbook **एक फ़ाइल** में, क्रमांकित अनुभागों के साथ और हर stage एक समेटे हुए (collapsed)
+`<details>` के रूप में।
+
+यही वह फ़ाइल है जिसे ईमेल करें, किसी टिकट के साथ जोड़ें, या साझा ड्राइव में डाल दें। इसकी
+किसी भी प्रकार की कोई निर्भरता नहीं है।
+
+</Tab>
+
+<Tab value="Agent index">
+
+`--agent-site` → `<out>/agent/`
+
+```text
+how_to_use.md      the agent-side search protocol
+index.md           every stage, as locator blocks
+disambiguation.md  terms that legitimately point at several stages
+<stage-id>.md      one locator page per stage
+```
+
+हर stage को एक निश्चित-schema ब्लॉक मिलता है: **duty**, **entry concepts**, **state**,
+**exemplar**, **core files**, और **strong co-change**।
+
+सत्रह वास्तविक रिपॉज़िटरियों पर मापने पर, पहले पाँच फ़ील्ड अधिकांश पृष्ठों पर भरते हैं;
+**strong co-change जानबूझकर सबसे विरल है** — यह केवल वहीं सक्रिय होता है जहाँ कोई test
+फ़ाइल अपने स्रोत के _ठीक बगल में_ बैठी हो (`engine.go` + `engine_test.go`), और अधिकांश
+प्रोजेक्ट इसके बजाय tests को एक अलग tree में रखते हैं। वहाँ किसी फ़ील्ड की अनुपस्थिति gating
+के काम करने का प्रमाण है, कोई कमी नहीं।
+
+अपरिवर्तनीय नियम: **कोई फ़ील्ड तभी और केवल तभी लिखा जाता है जब उसका संरचनात्मक संकेत
+मौजूद हो।** कोई placeholder नहीं, कोई "N/A" नहीं। खाली फ़ील्ड का अर्थ है _"graph के पास
+यहाँ कोई संकेत नहीं है"_ — वास्तविक जानकारी — न कि _"model को पता नहीं था"_, जो ऐसा शोर
+है जिसके ऊपर कोई agent तर्क करने लगेगा।
+
+इस निर्देशिका को SKILL पैकेज के अंदर शामिल करने के लिए `handbook skill --agent-dir` को
+पास करें।
+
+</Tab>
+
+<Tab value="llms.txt">
+
+`--llms-txt` → `<out>/llms.txt` और `<out>/llms-full.txt`
+
+[llms.txt परिपाटी](https://llmstxt.org/) का पालन करता है:
+
+- **`llms.txt`** — एक H1 शीर्षक, एक-वाक्य का सारांश blockquote, फिर एक `## Handbook`
+  अनुभाग जो हर पृष्ठ को एक छोटे विवरण के साथ लिंक करता है।
+- **`llms-full.txt`** — पूरा handbook पढ़ने के क्रम में एक सादे-markdown दस्तावेज़ में
+  समतल किया हुआ।
+
+जहाँ भी आप handbook प्रकाशित करें, वहाँ की root पर `llms.txt` उपलब्ध कराएँ।
+
+</Tab>
+
+</Tabs>
+
+## अपने स्रोत से लिंक करना
+
+```bash
+handbook render --work $WORK --source-base-url https://github.com/me/repo/blob/main
+```
+
+handbook का हर फ़ाइल पथ असली फ़ाइल का लिंक बन जाता है। अगर आप चाहते हैं कि handbook
+उसी कोड को संदर्भित करे जिससे वह जनरेट हुआ था, तो इसे `main` के बजाय किसी tag या commit
+SHA की ओर इंगित करें।
+
+**इस flag के बिना आउटपुट में कोई भी बाहरी URL नहीं होता**, जो एक निजी codebase के लिए
+सही डिफ़ॉल्ट है।
+
+## शीर्षक और भाषाएँ
+
+```bash
+handbook render --work $WORK --title "Payments Service — Engineering Handbook"
+```
+
+narration की भाषा generation के समय तय होती है (`--narrate-lang`) और `phase3/narration.json`
+में संग्रहीत रहती है। Renderer उसे वहीं से पढ़ता है — हर लेबल, शीर्षक और तालिका header उसी से
+मेल खाने के लिए स्थानीयकृत होता है। **दोनों भाषाओं में संरचना एक जैसी रहती है**, इसलिए आउटपुट
+पढ़ने वाले टूलिंग को यह जानने की ज़रूरत नहीं कि वह कौन-सी भाषा है।
+
+## दोबारा render करने की आदत डालें
+
+Rendering मुफ़्त और नियतात्मक है, इसलिए इसे CI में जोड़ दें:
+
+```yaml title=".github/workflows/handbook.yml"
+- run: handbook render --work work/api --title "API Handbook" --html --agent-site --llms-txt
+- run: handbook skill --handbook work/api/handbook --out skills/api --name api \
+    --work work/api --source . --agent-dir work/api/handbook/agent
+- run: handbook validate --skill skills/api --source .
+```
+
+देखें [CI एकीकरण](/docs/guides/ci)।
+
+## HTML साइट प्रकाशित करना
+
+आउटपुट relative लिंकों वाली और बिना किसी बाहरी asset की एक स्थिर निर्देशिका है, इसलिए कोई
+भी static host काम करता है:
+
+```bash
+# GitHub Pages
+cp -R work/api/handbook/html/* docs-site/ && git add docs-site
+
+# Netlify / Vercel / S3 / nginx
+npx serve work/api/handbook/html
+```
+
+साइट root पर `llms.txt` उपलब्ध कराएँ ताकि agents उसे ढूँढ सकें।

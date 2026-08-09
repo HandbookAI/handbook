@@ -1,0 +1,192 @@
+---
+title: 'Настройка Handbook'
+description: 'Пять уровней приоритета, один реестр и команда, которая точно скажет, какой уровень победил.'
+---
+
+<div className="not-prose">
+  <img
+    src="/diagrams/config-cascade.svg"
+    alt="Configuration cascade: flag, environment, .env files, handbook.config.yaml, default"
+    className="rounded-xl border"
+  />
+</div>
+
+Каждая настройка объявляется **один раз**, в одной таблице реестра. CLI-флаги, имена
+переменных окружения, ключи конфигурационного файла, `.env.example`,
+`handbook.config.example.yaml` и [справочник по конфигурации](/docs/reference/configuration)
+— всё это _генерируется_ из неё, поэтому они не могут разойтись, а тест на дрейф провалит
+сборку, если кто-то попробует.
+
+## Приоритет, от высшего к низшему
+
+1. **CLI-флаг** — `--read-workers 4`
+2. **Окружение оболочки** — `HANDBOOK_GENERATE_READ_WORKERS`, затем
+   `HANDBOOK_READ_WORKERS`, затем вендорный псевдоним вроде `OPENAI_MODEL`
+3. **Каскад `.env`** — вливается в окружение до того, как кто-либо его прочитает
+4. **`handbook.config.yaml`** — обнаруживается подъёмом вверх от текущего каталога, с остановкой на корне git
+5. **Значение по умолчанию из реестра**
+
+Первый уровень, давший значение, побеждает; все уровни ниже игнорируются _для этой
+настройки_.
+
+## `handbook.config.yaml`
+
+Положите его в корень репозитория и закоммитьте. Поиск идёт вверх от текущего каталога и
+**останавливается на границе репозитория** — поэтому проект без конфигурационного файла
+не наследует файл родителя.
+
+```yaml title="handbook.config.yaml"
+# Paths are resolved relative to THIS FILE, so the config stays portable.
+source: ./src
+work: ./.handbook
+
+llm:
+  model: gpt-4o-mini
+  baseUrl: https://api.openai.com/v1
+  maxTokens: 16000
+  concurrency: 16
+
+generate:
+  detail: deep
+  synthMode: doctor
+  narrateLang: en
+  readWorkers: 12
+
+render:
+  title: Payments API Handbook
+  html: true
+  agentSite: true
+  llmsTxt: true
+  sourceBaseUrl: https://github.com/me/api/blob/main
+
+studio:
+  port: 4860
+```
+
+Две вещи, которые нужно знать:
+
+- **Вложенность и плоская запись — одно и то же.** `generate: { detail: deep }` и плоское
+  `generateDetail: deep` означают ровно одно и то же, потому что перед чтением файл
+  разворачивается в плоский вид склейкой в camelCase.
+- **Относительные значения `path` разрешаются относительно каталога самого
+  конфигурационного файла**, а не текущего каталога. Именно это позволяет закоммиченному
+  конфигурационному файлу работать независимо от того, откуда вы запускаете команду.
+
+<Callout type="warn" title="Секреты здесь отклоняются">
+  `llmApiKey` / `OPENAI_API_KEY` никогда не должны появляться в конфигурационном файле — конфигурационные
+  файлы попадают в коммиты. Загрузчик наотрез отказывается от такого файла и объясняет почему. Положите ключ в
+  `.env` или в окружение оболочки.
+</Callout>
+
+Начните с копии `handbook.config.example.yaml`; она генерируется из реестра, поэтому
+перечисляет каждый реально существующий ключ.
+
+## Область действия по командам
+
+Любую настройку можно ограничить одной подкомандой — на **всех трёх** поверхностях, одним
+и тем же преобразованием:
+
+```bash
+export HANDBOOK_NARRATE_LANG=en            # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh   # …except generate
+```
+
+```yaml
+narrateLang: en
+generate:
+  narrateLang: zh
+```
+
+Форма с областью действия всегда побеждает плоскую.
+
+## Несколько окружений
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+```
+
+`--env prod` (или `HANDBOOK_ENV=prod`) делает две вещи:
+
+1. Загружает `.env.prod.local` → `.env.prod` → `.env.local` → `.env`; побеждает тот, кто
+   записал первым.
+2. Предпочитает `handbook.config.prod.yaml` обычному файлу — в **каждом** каталоге,
+   посещённом на пути вверх, поэтому именованный файл побеждает обычный, даже если
+   обычный лежит ближе.
+
+Типичная раскладка:
+
+```text
+.env                     # team baseline, committed
+.env.local               # your machine, gitignored
+.env.prod                # team prod settings, committed (no secrets)
+.env.prod.local          # your prod credentials, gitignored
+handbook.config.yaml     # defaults
+handbook.config.prod.yaml
+```
+
+`--env-file <path>` полностью обходит каскад и загружает ровно этот один файл.
+**Отсутствующий файл здесь — громкая ошибка, а не тихий запасной вариант** — вы попросили
+конкретный файл.
+
+## Спросите, что разрешилось на самом деле
+
+```bash
+handbook config --command generate
+```
+
+```text
+environment   prod  (--env)
+env files     .env.prod, .env
+config file   /repo/handbook.config.prod.yaml
+
+SETTING            VALUE                     FROM
+source             /Users/me/code/api        flag --source
+llmModel           gpt-4o                    env HANDBOOK_LLM_MODEL
+llmApiKey          sk-••••••                 env OPENAI_API_KEY
+readWorkers        4                         handbook.config.prod.yaml (generate.readWorkers)
+detail             deep                      handbook.config.prod.yaml (generate.detail)
+narrateLang        en                        default
+```
+
+```bash
+handbook config --json                # machine-readable
+handbook config --check               # exit 2 on the first invalid or missing value
+```
+
+<Callout title="Добавьте --check в CI">
+  Опечатка в переменной раньше означала «молча запустились с умолчанием». `--check` превращает её в сбой с
+  именем переменной в сообщении — куда дешевле, чем обнаружить это через сорок минут генерации.
+</Callout>
+
+`config` намеренно использует небросающий резолвер: **его работа — показывать
+конфигурацию, в том числе сломанную.** Отсутствующий `--source` отображается видимой
+строкой `— unset (required)`, вместо того чтобы уронить единственный инструмент, которым
+вы стали бы отлаживать именно эту проблему.
+
+## Что контролирует резолвер
+
+- **Пустое значение читается как незаданное.** `HANDBOOK_TITLE=` не может породить
+  handbook без заголовка.
+- **Заданное, но некорректное значение никогда не проваливается к умолчанию.** Число с
+  опечаткой — это ошибка, а не тихие 12.
+- **Типы проверяются на границе**, с указанием источника в сообщении:
+
+  ```text
+  env HANDBOOK_READ_WORKERS: readWorkers must be an integer >= 1, got "twelve"
+  handbook.config.yaml (generate.detail): detail must be one of brief | deep, got "verbose"
+  ```
+
+- **Обязательность проверяется после всех уровней**, и ошибка перечисляет каждый способ
+  задать значение:
+
+  ```text
+  source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+  or add it to handbook.config.yaml
+  ```
+
+## Полный справочник
+
+<Cards>
+  <Card title="Каждая настройка, сгенерированная из реестра" href="/docs/reference/configuration" />
+  <Card title="Переменные окружения и каскад .env" href="/docs/reference/environment" />
+</Cards>

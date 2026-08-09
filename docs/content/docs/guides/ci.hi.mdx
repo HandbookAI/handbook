@@ -1,0 +1,203 @@
+---
+title: CI एकीकरण
+description: कौन-से कमांड इतने मुफ़्त हैं कि हर commit पर चलें, किन्हें key चाहिए, और handbook drift पर build को कैसे fail करें।
+---
+
+## किसकी क्या लागत है
+
+| कमांड                | Key चाहिए? | Deterministic? | इसे चलाएँ…                |
+| -------------------- | :--------: | :------------: | ------------------------- |
+| `analyze`            |     ❌     |       ✅       | हर commit पर              |
+| `render`             |     ❌     |       ✅       | हर commit पर              |
+| `skill`              |     ❌     |       ✅       | हर commit पर              |
+| `validate`           |     ❌     |       ✅       | हर commit पर              |
+| `config --check`     |     ❌     |       ✅       | हर commit पर              |
+| `apply` / `rollback` |     ❌     |       ✅       | ज़रूरत पड़ने पर           |
+| `generate`           |     ✅     |       ❌       | `main` पर, या schedule पर |
+| `resync`             |     ✅     |       ❌       | `main` पर                 |
+| `plan`               |     ✅     |       ❌       | ज़रूरत पड़ने पर           |
+
+**इनमें से पाँच मुफ़्त हैं।** इन्हें चलाने वाले pull-request workflow की कोई लागत नहीं
+होती और वह असली समस्याएँ पकड़ता है।
+
+## मुफ़्त pull-request job
+
+```yaml title=".github/workflows/handbook-check.yml"
+name: handbook check
+
+on: [pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # 1. Configuration is valid — catches a typo'd variable before it costs a run.
+      - run: node packages/cli/dist/main.js config --check --command generate
+
+      # 2. The call graph still builds, and the file count has not collapsed.
+      - name: analyze
+        run: |
+          node packages/cli/dist/main.js analyze --source . --work work/self > stats.json
+          cat stats.json
+          test "$(jq .files stats.json)" -gt 10
+
+      # 3. The committed SKILL package is still structurally valid, and still fresh.
+      - name: validate the skill
+        run: node packages/cli/dist/main.js validate --skill skills/self --source .
+```
+
+जब skill drift कर चुकी हो, तो `validate` **exit `2`** करता है। तय करें कि इससे build fail
+होना चाहिए या केवल चेतावनी मिलनी चाहिए:
+
+```yaml
+- run: node packages/cli/dist/main.js validate --skill skills/self --source .
+  continue-on-error: true # warn; schedule a resync instead of blocking the PR
+```
+
+## `main` पर regenerate करना
+
+```yaml title=".github/workflows/handbook-resync.yml"
+name: handbook resync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: handbook-resync
+  cancel-in-progress: false # never interleave two runs on the same work dir
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: assemble the resync case
+        run: |
+          mkdir -p case
+          rsync -a --exclude .git --exclude node_modules --exclude work ./ case/edited/
+          git diff HEAD~1 > case/change.diff
+
+      - name: resync
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node packages/cli/dist/main.js resync --case case --work work/self
+
+      - name: repackage and validate
+        run: |
+          node packages/cli/dist/main.js skill \
+            --handbook work/self/handbook --out skills/self --name self \
+            --work work/self --source . --agent-dir work/self/handbook/agent
+          node packages/cli/dist/main.js validate --skill skills/self --source .
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/handbook-resync
+          title: 'docs: roll the handbook forward'
+          commit-message: 'docs: roll the handbook forward'
+```
+
+दो विवरण जो मायने रखते हैं:
+
+- **`cancel-in-progress: false` के साथ `concurrency`।** प्रति work directory एक ही run
+  एक lock द्वारा लागू होता है; दो overlapping CI runs का नतीजा बस यह होता कि उनमें से एक
+  fail हो जाता।
+- **Push करने के बजाय PR खोलें।** फिर से generate किया गया handbook एक ऐसा diff है जिसे
+  पढ़ना सार्थक है।
+
+## HTML साइट प्रकाशित करना
+
+```yaml title=".github/workflows/handbook-pages.yml"
+name: publish handbook
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - run: |
+          node packages/cli/dist/main.js render \
+            --work work/self --title "Self Handbook" \
+            --html --html-single --agent-site --llms-txt \
+            --source-base-url https://github.com/${{ github.repository }}/blob/${{ github.sha }}
+
+      - run: cp work/self/handbook/llms*.txt work/self/handbook/html/
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: work/self/handbook/html }
+      - uses: actions/deploy-pages@v4
+```
+
+Rendering मुफ़्त और deterministic है, इसलिए यह हर push पर चल सकता है। `--source-base-url`
+को `main` के बजाय `${{ github.sha }}` पर इंगित करने से प्रकाशित handbook का हर लिंक ठीक
+उसी कोड की ओर इशारा करता है जिससे वह render हुआ था।
+
+## Work directory को commit करना
+
+यह सादा JSON और YAML है, इसलिए इसे commit करना एक वैध विकल्प है:
+
+**पक्ष** — regeneration का diff समीक्षा योग्य होता है, CI में `render` को किसी key की
+ज़रूरत नहीं, और `validate` के पास जाँचने के लिए कुछ होता है।
+
+**विपक्ष** — बड़े repository पर `phase2/cards/` बड़ा हो जाता है, और card का गद्य model
+संस्करणों के बीच बदलता रहता है।
+
+एक अच्छा बीच का रास्ता: `skills/<name>/` को commit करें (छोटा, और वही जो agents उपयोग
+करते हैं) और `work/` को gitignore करें (बड़ा, और फिर से generate करने योग्य)।
+
+## Runs के बीच caching
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: work/self/phase3/cache
+    key: handbook-cache-${{ hashFiles('**/*.ts', '**/*.py') }}
+    restore-keys: handbook-cache-
+```
+
+Phase-3 cache content-hash से keyed है, इसलिए किसी बासी cache को restore करना सुरक्षित
+है — वह बस miss हो जाता है। जब प्रति run केवल कुछ ही फ़ाइलें बदलती हों, तो `phase2/cards/`
+की caching और साथ में `--resume` और भी प्रभावी है।
+
+## Drift पर जानबूझकर fail होना
+
+```bash
+handbook validate --skill skills/api --source .
+case $? in
+  0) echo "handbook is fresh" ;;
+  2) echo "::warning::handbook has drifted — a resync is due" ;;
+  *) exit 1 ;;
+esac
+```
+
+`2` को build तोड़ने के बजाय एक scheduling संकेत मानें। बासी handbook एक रखरखाव का काम
+है; _टूटा हुआ_ handbook (exit `1`) एक bug है।

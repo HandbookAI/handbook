@@ -1,0 +1,203 @@
+---
+title: 'Интеграция с CI'
+description: 'Какие команды достаточно бесплатны, чтобы выполнять их на каждом коммите, каким нужен ключ, и как провалить сборку при дрейфе handbook.'
+---
+
+## Что сколько стоит
+
+| Команда              | Нужен ключ? | Детерминирована? | Запускайте…                 |
+| -------------------- | :---------: | :--------------: | --------------------------- |
+| `analyze`            |     ❌      |        ✅        | на каждом коммите           |
+| `render`             |     ❌      |        ✅        | на каждом коммите           |
+| `skill`              |     ❌      |        ✅        | на каждом коммите           |
+| `validate`           |     ❌      |        ✅        | на каждом коммите           |
+| `config --check`     |     ❌      |        ✅        | на каждом коммите           |
+| `apply` / `rollback` |     ❌      |        ✅        | по требованию               |
+| `generate`           |     ✅      |        ❌        | на `main` или по расписанию |
+| `resync`             |     ✅      |        ❌        | на `main`                   |
+| `plan`               |     ✅      |        ❌        | по требованию               |
+
+**Пять из них бесплатны.** Pull-request-воркфлоу, который их выполняет, ничего не стоит и
+ловит настоящие проблемы.
+
+## Бесплатная задача для pull request
+
+```yaml title=".github/workflows/handbook-check.yml"
+name: handbook check
+
+on: [pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # 1. Configuration is valid — catches a typo'd variable before it costs a run.
+      - run: node packages/cli/dist/main.js config --check --command generate
+
+      # 2. The call graph still builds, and the file count has not collapsed.
+      - name: analyze
+        run: |
+          node packages/cli/dist/main.js analyze --source . --work work/self > stats.json
+          cat stats.json
+          test "$(jq .files stats.json)" -gt 10
+
+      # 3. The committed SKILL package is still structurally valid, and still fresh.
+      - name: validate the skill
+        run: node packages/cli/dist/main.js validate --skill skills/self --source .
+```
+
+`validate` **выходит с кодом `2`**, когда скилл продрейфовал. Решите, должно ли это
+валить сборку или лишь предупреждать:
+
+```yaml
+- run: node packages/cli/dist/main.js validate --skill skills/self --source .
+  continue-on-error: true # warn; schedule a resync instead of blocking the PR
+```
+
+## Перегенерация на `main`
+
+```yaml title=".github/workflows/handbook-resync.yml"
+name: handbook resync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: handbook-resync
+  cancel-in-progress: false # never interleave two runs on the same work dir
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: assemble the resync case
+        run: |
+          mkdir -p case
+          rsync -a --exclude .git --exclude node_modules --exclude work ./ case/edited/
+          git diff HEAD~1 > case/change.diff
+
+      - name: resync
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node packages/cli/dist/main.js resync --case case --work work/self
+
+      - name: repackage and validate
+        run: |
+          node packages/cli/dist/main.js skill \
+            --handbook work/self/handbook --out skills/self --name self \
+            --work work/self --source . --agent-dir work/self/handbook/agent
+          node packages/cli/dist/main.js validate --skill skills/self --source .
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/handbook-resync
+          title: 'docs: roll the handbook forward'
+          commit-message: 'docs: roll the handbook forward'
+```
+
+Две важные детали:
+
+- **`concurrency` с `cancel-in-progress: false`.** Один запуск на рабочий каталог
+  обеспечивается блокировкой; два перекрывающихся CI-запуска просто уронили бы один из
+  них.
+- **Открывайте PR, а не пушьте напрямую.** Перегенерированный handbook — это дифф,
+  который стоит прочитать.
+
+## Публикация HTML-сайта
+
+```yaml title=".github/workflows/handbook-pages.yml"
+name: publish handbook
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - run: |
+          node packages/cli/dist/main.js render \
+            --work work/self --title "Self Handbook" \
+            --html --html-single --agent-site --llms-txt \
+            --source-base-url https://github.com/${{ github.repository }}/blob/${{ github.sha }}
+
+      - run: cp work/self/handbook/llms*.txt work/self/handbook/html/
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: work/self/handbook/html }
+      - uses: actions/deploy-pages@v4
+```
+
+Рендеринг бесплатен и детерминирован, поэтому это может выполняться на каждом пуше.
+Указание `--source-base-url` на `${{ github.sha }}` вместо `main` заставляет каждую
+ссылку в опубликованном handbook вести на точно тот код, из которого он был отрендерен.
+
+## Коммитить ли рабочий каталог
+
+Это обычные JSON и YAML, поэтому коммитить его — легитимный выбор:
+
+**За** — дифф перегенерации можно ревьюить, `render` не требует ключа в CI, а у
+`validate` есть с чем сверяться.
+
+**Против** — `phase2/cards/` велик на большом репозитории, а проза карточек меняется от
+версии модели к версии.
+
+Хорошая середина: коммитить `skills/<name>/` (маленький, и именно его потребляют агенты)
+и занести `work/` в gitignore (большой и восстановимый).
+
+## Кэширование между запусками
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: work/self/phase3/cache
+    key: handbook-cache-${{ hashFiles('**/*.ts', '**/*.py') }}
+    restore-keys: handbook-cache-
+```
+
+Кэш phase 3 ключуется хешем содержимого, поэтому восстановить устаревший кэш безопасно —
+он просто промахнётся. Кэширование `phase2/cards/` плюс `--resume` ещё эффективнее, когда
+за запуск меняется лишь несколько файлов.
+
+## Осознанный сбой при дрейфе
+
+```bash
+handbook validate --skill skills/api --source .
+case $? in
+  0) echo "handbook is fresh" ;;
+  2) echo "::warning::handbook has drifted — a resync is due" ;;
+  *) exit 1 ;;
+esac
+```
+
+Относитесь к `2` как к сигналу для планирования, а не как к поломке сборки. Устаревший
+handbook — задача на сопровождение; _сломанный_ (код выхода `1`) — баг.

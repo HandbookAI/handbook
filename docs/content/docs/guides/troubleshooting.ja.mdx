@@ -1,0 +1,284 @@
+---
+title: 'トラブルシューティング'
+description: '実際に起きる問題、メッセージの意味、そしてその対処法。'
+---
+
+<Callout title="毎回、ここから始めてください">
+```bash
+handbook config --command <the-command-that-failed>
+```
+アクティブな環境、ロードされたすべての `.env` ファイル、解決された設定ファイル、そして
+設定ごとに 1 行で **その値がどこから来たか** を表示します。「設定が無視された」系の問題の
+大半は、この表を見れば 10 秒で答えが出ます。
+</Callout>
+
+## 設定
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+書いてあるとおりです — 供給するためのすべての方法が列挙されています。必須チェックは
+すべてのレイヤーを参照した _後_ に行われるので、これはどのレイヤーにもなかったことを
+意味します。
+
+### 環境変数が無視されている
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+`FROM` 列が、実際にどのレイヤーが勝ったかを教えてくれます。よくある原因:
+
+- **フラグ** が上書きしている。フラグはすべてに勝ちます。
+- フラットな名前を設定したが、**スコープ付き** のものが存在する — `HANDBOOK_GENERATE_DETAIL`
+  は `HANDBOOK_DETAIL` に勝ちます。
+- **空** の値を設定した。空は意図的に未設定として扱われます。
+- 別のディレクトリから実行している: **`.env` カスケードは cwd 限定です**。上へ辿って
+  発見される `handbook.config.yaml` とは異なります。
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+`.env` かシェル環境に移してください。この拒否は意図的なものです。
+
+### `node: /some/path.env: not found` と終了コード 9
+
+Handbook のエラーではまったくありません。Node >= 20.6 は独自の `--env-file` フラグを持ち、
+コマンドライン全体を事前スキャンするため、Handbook が起動する **前に** 存在しないパスで
+落ちます。何にも横取りされない変数を代わりに使ってください:
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+ファイルが実際に存在するなら、フラグで問題ありません。
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+ファイルは YAML としてパースされたものの、トップレベルがオブジェクトではありません。
+最初のキーのインデントを確認してください。
+
+## 解析
+
+### `no analyzable files found under <dir>`
+
+`--source` が、アナライザーが認識できるものが何もない場所を指しています。タイポがないか、
+そしてビルド出力のディレクトリではなくソースルートを指しているかを確認してください。
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### ファイル数が予想よりはるかに少ない
+
+`-v` を付けて実行し、`[scan]` 行を読んでください。ありがちな原因:
+
+- 言語が丸ごとリストから欠けている → [言語サポート](/docs/reference/languages)を参照。
+- コードが共有スキップリスト内のディレクトリ(`vendor`、`build`、`dist`、`out`、`target`
+  など)の下にある。`--source` を実際のソースルートに向けてください。
+- Node ≥ 24 での Swift → アダプタが検出時点で拒否しました。`node --liftoff-only` を
+  使ってください。
+
+### ファイル数が予想よりはるかに多い
+
+`node_modules`、ベンダリングされたツリー、あるいは生成コードをスキャンしています。
+一般的なディレクトリは自動的にスキップされますが、それ以外はより狭い `--source` が
+必要です。
+
+### `edgesDropped` が巨大
+
+動的言語では正常であり、エラーでは **ありません** — ドロップされたすべての呼び出しは、
+推測される代わりに `phase1/dropped-calls.json` で分類されています:
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+generic ティアの言語は、設計上より多くをドロップします。
+[解析忠実度](/docs/concepts/analysis-fidelity)を参照してください。
+
+### Swift がプロセスを殺す
+
+```text
+Fatal process out of memory: Zone
+```
+
+同梱の Swift 文法は V8 ≥ 13 で異常終了します。そのようなランタイムでは、これが起きる前に
+アダプタが検出時点で拒否します — 異常終了そのものを見たなら、それを迂回するコードパスに
+いるということです。次のように実行してください:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## 生成
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+API キーが解決されませんでした。`handbook config --command generate` を確認してください —
+`llmApiKey` の行が `— unset (required)` になっているはずです。キー不要のローカル
+エンドポイントの場合は、明示的に `OPENAI_API_KEY=EMPTY` を設定してください。
+
+### エンドポイントが HTML を返す
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+企業プロキシがリクエストを横取りし、`200` でログインページを返しています。プロキシを
+直すか、`--base-url` を到達可能な場所に向けてください。
+
+### カードが空で返ってくる
+
+モデルが実際に何と言ったかを見てください:
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+これらは使えるカードを生まなかった応答です。よくある原因: スキーマに従うには小さすぎる
+モデル、拒否応答、あるいは切り詰めです。`--detail brief`、より小さい `--read-batch-size`、
+またはより強い `--model` を試してください。
+
+どのファイルが文章なしになったか:
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### レート制限エラー、または非常に遅い実行
+
+まず `--llm-concurrency` を **下げて** ください。レート制限に対してより強くリトライする
+ことは、同じトークンを二度支払うことです。
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### ステージが意味をなさない
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+actor–critic ループはまさにこのために存在します。それでも失敗する場合は、自分で
+`skeleton.yaml` を書いて `--skeleton` で渡してください。
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+意図的なものです。戦略を切り替えるには Phase 2b を再実行してください:
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+ロックです。本当に実行が進行中か — Studio のジョブも含みます — あるいは以前の実行が
+強制終了されたかのどちらかです。待つか、何も実行されていないことを確認したうえで、
+メッセージに記載されたロックディレクトリを削除してください。
+
+## レンダリングとパッケージング
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` は **レンダリング済み** ディレクトリ(`<work>/handbook`)を指さなければ
+なりません。作業ディレクトリではありません。
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+スキルのビルドは最初に `--out` を消去します。ハンドブックに向ければ、入力を削除して
+しまいます。別のディレクトリを使ってください: `--handbook work/api/handbook --out skills/api`。
+
+### `validate` が古いハッシュを警告する
+
+意図どおりの動作です: パッケージング後にソースが動きました。ハンドブックを前へ進めて
+ください:
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## プランニングと適用
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+モデルが `## Tool result` セクションを捏造しました — 想像上のファイル内容の上で推論して
+いたのです。その実行から得られたものは何も信頼できません。**より強いモデルを使って
+ください。**
+
+### `planner reached the turn limit without producing a plan`
+
+`--max-turns` を上げるか、リクエストを絞ってください。曖昧なリクエストは、プランナーに
+局所化ではなく探索をさせてしまいます。
+
+### `apply` が `no-match` と言う
+
+プランが書かれた後にコードが変わりました。`plan` を再実行してください。マッチさせるために
+アンカーを手で編集しては **いけません** — アンカーこそが安全機構です。
+
+### `apply` が `ambiguous` と言う
+
+`old` テキストが複数回出現しています。`plan` を再実行するか、`old` が一意になるよう
+周辺のコンテキストを増やす形でプランを手で編集してください。
+
+### `EDIT 1: content between the fenced blocks`
+
+`old` または `new` の内容にコードフェンスが含まれていて、ブロックが早く閉じられました。
+それらのブロックを **より長い** フェンスで開いてください:
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` があるファイルを拒否する
+
+現在のハッシュがパッチ後のハッシュと一致していません — パッチの後に誰かがそれを編集して
+おり、復元すればその作業を破壊してしまいます。何が変わったかを確認し、確信があるなら
+`--force` を使ってください。
+
+## Studio
+
+### Studio を開くと `403`
+
+`localhost` を使っていません。CSRF ガードは `Host` ヘッダーをチェックするため、LAN の IP
+やコンテナ名は **設計どおり** 拒否されます。`http://localhost:4860` を使うか、SSH トンネルを
+使ってください:
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+成果物は並行書き込みに対して安全ではないため、1 リポジトリにつき同時に 1 ジョブです。
+待つか、UI から実行中のジョブをキャンセルしてください。
+
+## それでも行き詰まったら
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+```
+
+再現可能であれば、上記の成果物こそがバグレポートに必要なものそのものです。

@@ -1,0 +1,284 @@
+---
+title: 'Устранение неполадок'
+description: 'Что действительно ломается, что означает сообщение и что с этим делать.'
+---
+
+<Callout title="Всегда начинайте отсюда">
+```bash
+handbook config --command <the-command-that-failed>
+```
+Команда печатает активное окружение, каждый загруженный файл `.env`, разрешённый
+конфигурационный файл и по строке на настройку с указанием, **откуда пришло её
+значение**. Большинство проблем вида «он игнорирует мою настройку» эта таблица решает за
+десять секунд.
+</Callout>
+
+## Конфигурация
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+Ровно то, что написано, — и перечислены все способы задать значение. Обязательность
+проверяется _после_ опроса всех уровней, так что это означает: значения не было ни в
+одном из них.
+
+### Моя переменная окружения игнорируется
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+Колонка `FROM` говорит, какой уровень на самом деле победил. Обычные причины:
+
+- Её перекрывает **флаг**. Флаги побеждают всё.
+- Вы задали плоское имя, а существует имя **с областью действия** —
+  `HANDBOOK_GENERATE_DETAIL` побеждает `HANDBOOK_DETAIL`.
+- Вы задали **пустое** значение. Пустое читается как незаданное — намеренно.
+- Вы запускаетесь из другого каталога: **каскад `.env` работает только от cwd**, в
+  отличие от `handbook.config.yaml`, который ищется подъёмом вверх.
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+Перенесите его в `.env` или в окружение оболочки. Этот отказ намеренный.
+
+### `node: /some/path.env: not found` и код выхода 9
+
+Это вообще не ошибка Handbook. Node >= 20.6 имеет собственный флаг `--env-file` и заранее
+сканирует всю командную строку в его поисках, поэтому умирает на отсутствующем пути
+**до** старта Handbook. Используйте переменную — её ничто не может перехватить:
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+Флаг безопасен всегда, когда файл действительно существует.
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+Файл разобрался как YAML, но на верхнем уровне это не объект. Проверьте отступ первого
+ключа.
+
+## Анализ
+
+### `no analyzable files found under <dir>`
+
+`--source` указывает туда, где нет ничего, что анализатор распознаёт. Проверьте, нет ли
+опечатки, и убедитесь, что указываете на корень исходников, а не на каталог с результатами
+сборки.
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### Число файлов сильно меньше ожидаемого
+
+Запустите с `-v` и прочитайте строки `[scan]`. Вероятные причины:
+
+- В списке отсутствует целый язык → см. [Поддержка языков](/docs/reference/languages).
+- Ваш код лежит в каталоге из общего списка пропуска (`vendor`, `build`, `dist`, `out`,
+  `target`, …). Направьте `--source` на настоящий корень исходников.
+- Swift на Node ≥ 24 → адаптер отказал на этапе обнаружения. Используйте
+  `node --liftoff-only`.
+
+### Число файлов сильно больше ожидаемого
+
+Вы сканируете `node_modules`, вендорное дерево или сгенерированный код. Типовые каталоги
+пропускаются автоматически; всё остальное требует более узкого `--source`.
+
+### `edgesDropped` огромен
+
+Нормально для динамических языков и **не** ошибка — каждый отброшенный вызов
+категоризирован в `phase1/dropped-calls.json`, а не угадан:
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+Языки generic-уровня отбрасывают больше — так задумано. См.
+[Достоверность анализа](/docs/concepts/analysis-fidelity).
+
+### Swift убивает процесс
+
+```text
+Fatal process out of memory: Zone
+```
+
+Встроенная грамматика Swift аварийно завершается на V8 ≥ 13. На такой среде выполнения
+адаптер отказывает на этапе обнаружения, не давая этому случиться, — если вы видите сам
+аварийный выход, вы на кодовом пути, который его обошёл. Запустите так:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## Генерация
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+API-ключ не разрешился. Проверьте `handbook config --command generate` — строка
+`llmApiKey` покажет `— unset (required)`. Для локального эндпоинта без ключа явно задайте
+`OPENAI_API_KEY=EMPTY`.
+
+### Эндпоинт возвращает HTML
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+Корпоративный прокси перехватывает запрос и возвращает страницу входа с кодом `200`.
+Почините прокси или направьте `--base-url` на что-то достижимое.
+
+### Карточки возвращаются пустыми
+
+Посмотрите, что модель сказала на самом деле:
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+Это ответы, из которых не получилось ни одной пригодной карточки. Частые причины: модель
+слишком мала, чтобы следовать схеме, отказ или усечение. Попробуйте `--detail brief`,
+меньший `--read-batch-size` или более сильную `--model`.
+
+Какие файлы остались без прозы:
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### Ошибки ограничения частоты или очень медленный запуск
+
+Сначала **понизьте** `--llm-concurrency`. Упорнее ретраить упор в ограничение частоты —
+значит потратить те же токены дважды.
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### Этапы не имеют смысла
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+Цикл «актор–критик» существует ровно для этого. Если и он не помог, напишите
+`skeleton.yaml` сами и передайте `--skeleton`.
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+Намеренно. Перезапустите phase 2b, чтобы сменить стратегию:
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+Блокировка. Либо запуск действительно идёт — включая задачу Studio, — либо предыдущий
+запуск умер жёстко. Подождите или удалите каталог блокировки, названный в сообщении,
+предварительно убедившись, что ничего не выполняется.
+
+## Рендеринг и упаковка
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` должен указывать на **отрендеренный** каталог (`<work>/handbook`), а не на
+рабочий каталог.
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+Сборка скилла начинается с очистки `--out`. Направить его на handbook значило бы удалить
+вход. Используйте отдельный каталог: `--handbook work/api/handbook --out skills/api`.
+
+### `validate` предупреждает об устаревших хешах
+
+Работает как задумано: исходники изменились после упаковки. Прокатите handbook вперёд:
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## Планирование и применение
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+Модель изобрела секции `## Tool result` — она рассуждала над воображаемым содержимым
+файлов. Ничему из этого запуска нельзя доверять. **Используйте более сильную модель.**
+
+### `planner reached the turn limit without producing a plan`
+
+Повысьте `--max-turns` или сузьте запрос. Расплывчатый запрос заставляет планировщика
+исследовать, а не локализовать.
+
+### `apply` говорит `no-match`
+
+Код изменился после написания плана. Перезапустите `plan`. **Не** правьте якорь руками,
+чтобы он совпал, — якорь и есть механизм безопасности.
+
+### `apply` говорит `ambiguous`
+
+Текст `old` встречается более одного раза. Перезапустите `plan` или вручную дополните
+`old` в плане окружающим контекстом, чтобы он стал уникальным.
+
+### `EDIT 1: content between the fenced blocks`
+
+Содержимое `old` или `new` содержит ограждение кода, которое закрыло блок раньше времени.
+Открывайте такие блоки **более длинным** ограждением:
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` отказывается от файла
+
+Его текущий хеш не совпадает с пост-патчевым — кто-то редактировал файл после патча, и
+восстановление уничтожило бы эту работу. Проверьте, что изменилось, затем `--force`, если
+уверены.
+
+## Studio
+
+### `403` при открытии Studio
+
+Вы обращаетесь не через `localhost`. CSRF-защита проверяет заголовок `Host`, поэтому IP
+из LAN или имя контейнера отклоняются **намеренно**. Используйте `http://localhost:4860`
+или SSH-туннель:
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+Одна задача на репозиторий одновременно, потому что артефакты небезопасны для
+конкурентных писателей. Подождите или отмените выполняющуюся задачу из UI.
+
+## Всё ещё не получается
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+```
+
+Если проблема воспроизводится, перечисленные артефакты — ровно то, что нужно для отчёта
+об ошибке.

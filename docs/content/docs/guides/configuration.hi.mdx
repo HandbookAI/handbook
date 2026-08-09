@@ -1,0 +1,193 @@
+---
+title: Handbook को कॉन्फ़िगर करना
+description: पाँच precedence परतें, एक registry, और एक कमांड जो आपको ठीक-ठीक बताता है कि कौन-सी परत जीती।
+---
+
+<div className="not-prose">
+  <img
+    src="/diagrams/config-cascade.svg"
+    alt="Configuration cascade: flag, environment, .env files, handbook.config.yaml, default"
+    className="rounded-xl border"
+  />
+</div>
+
+हर सेटिंग **एक ही बार** घोषित होती है, एक registry तालिका में। CLI flags, environment
+variable के नाम, config-file की keys, `.env.example`, `handbook.config.example.yaml` और
+[कॉन्फ़िगरेशन संदर्भ](/docs/reference/configuration) — ये सभी उसी से _जनरेट_ होते हैं —
+इसलिए वे एक-दूसरे से drift नहीं कर सकते, और अगर कोई कोशिश करे तो एक drift test build को
+fail कर देता है।
+
+## Precedence, सबसे ऊँची परत पहले
+
+1. **CLI flag** — `--read-workers 4`
+2. **Shell environment** — `HANDBOOK_GENERATE_READ_WORKERS`, फिर `HANDBOOK_READ_WORKERS`,
+   फिर `OPENAI_MODEL` जैसा कोई vendor alias
+3. **`.env` cascade** — कुछ भी उसे पढ़े, उससे पहले environment में मिला दिया जाता है
+4. **`handbook.config.yaml`** — cwd से ऊपर की ओर चलते हुए खोजा जाता है, git root पर रुककर
+5. **Registry डिफ़ॉल्ट**
+
+जो पहली परत कोई मान देती है वही जीतती है; _उस सेटिंग के लिए_ नीचे की हर परत की अनदेखी
+की जाती है।
+
+## `handbook.config.yaml`
+
+इसे रिपॉज़िटरी root पर रखें और commit करें। खोज working directory से ऊपर की ओर चलती है
+और **repo की सीमा पर रुक जाती है** — इसलिए बिना config फ़ाइल वाला कोई प्रोजेक्ट अपने parent
+की फ़ाइल विरासत में नहीं लेता।
+
+```yaml title="handbook.config.yaml"
+# Paths are resolved relative to THIS FILE, so the config stays portable.
+source: ./src
+work: ./.handbook
+
+llm:
+  model: gpt-4o-mini
+  baseUrl: https://api.openai.com/v1
+  maxTokens: 16000
+  concurrency: 16
+
+generate:
+  detail: deep
+  synthMode: doctor
+  narrateLang: en
+  readWorkers: 12
+
+render:
+  title: Payments API Handbook
+  html: true
+  agentSite: true
+  llmsTxt: true
+  sourceBaseUrl: https://github.com/me/api/blob/main
+
+studio:
+  port: 4860
+```
+
+दो बातें जानने योग्य:
+
+- **Nesting और flattening एक ही चीज़ हैं।** `generate: { detail: deep }` और एक flat
+  `generateDetail: deep` का अर्थ बिल्कुल एक ही है, क्योंकि फ़ाइल को पढ़े जाने से पहले camelCase
+  जोड़ द्वारा समतल कर दिया जाता है।
+- **Relative `path` मान config फ़ाइल की अपनी निर्देशिका के सापेक्ष resolve होते हैं**, cwd के नहीं।
+  यही वह बात है जो एक committed config फ़ाइल को काम करती रखती है, चाहे आप कमांड कहीं से
+  भी चलाएँ।
+
+<Callout type="warn" title="यहाँ secrets अस्वीकार कर दिए जाते हैं">
+  `llmApiKey` / `OPENAI_API_KEY` कभी भी किसी config फ़ाइल में नहीं होने चाहिए — config फ़ाइलें commit हो जाती
+  हैं। Loader ऐसी फ़ाइल को सिरे से अस्वीकार कर देता है और कारण बताता है। इसे `.env` में या shell environment
+  में रखें।
+</Callout>
+
+शुरू करने के लिए `handbook.config.example.yaml` कॉपी करें; यह registry से जनरेट होती है,
+इसलिए इसमें हर वह key सूचीबद्ध है जो वास्तव में मौजूद है।
+
+## प्रति-कमांड scoping
+
+कोई भी सेटिंग **तीनों** सतहों पर, एक ही transform के साथ, किसी एक subcommand तक सीमित
+(scoped) की जा सकती है:
+
+```bash
+export HANDBOOK_NARRATE_LANG=en            # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh   # …except generate
+```
+
+```yaml
+narrateLang: en
+generate:
+  narrateLang: zh
+```
+
+Scoped रूप हमेशा flat रूप पर जीतता है।
+
+## एकाधिक environments
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+```
+
+`--env prod` (या `HANDBOOK_ENV=prod`) दो काम करता है:
+
+1. `.env.prod.local` → `.env.prod` → `.env.local` → `.env` लोड करता है, पहले लिखने
+   वाले की जीत होती है।
+2. सादी फ़ाइल की तुलना में `handbook.config.prod.yaml` को प्राथमिकता देता है — ऊपर जाते
+   समय देखी गई **हर** निर्देशिका में, इसलिए नामित फ़ाइल सादी फ़ाइल को हरा देती है, भले ही
+   सादी फ़ाइल अधिक पास बैठी हो।
+
+एक सामान्य लेआउट:
+
+```text
+.env                     # team baseline, committed
+.env.local               # your machine, gitignored
+.env.prod                # team prod settings, committed (no secrets)
+.env.prod.local          # your prod credentials, gitignored
+handbook.config.yaml     # defaults
+handbook.config.prod.yaml
+```
+
+`--env-file <path>` cascade को पूरी तरह दरकिनार करता है और ठीक वही एक फ़ाइल लोड करता है।
+**वहाँ फ़ाइल का न मिलना एक स्पष्ट त्रुटि है, कोई fallback नहीं** — आपने एक विशिष्ट फ़ाइल
+माँगी थी।
+
+## पूछें कि वास्तव में क्या resolve हुआ
+
+```bash
+handbook config --command generate
+```
+
+```text
+environment   prod  (--env)
+env files     .env.prod, .env
+config file   /repo/handbook.config.prod.yaml
+
+SETTING            VALUE                     FROM
+source             /Users/me/code/api        flag --source
+llmModel           gpt-4o                    env HANDBOOK_LLM_MODEL
+llmApiKey          sk-••••••                 env OPENAI_API_KEY
+readWorkers        4                         handbook.config.prod.yaml (generate.readWorkers)
+detail             deep                      handbook.config.prod.yaml (generate.detail)
+narrateLang        en                        default
+```
+
+```bash
+handbook config --json                # machine-readable
+handbook config --check               # exit 2 on the first invalid or missing value
+```
+
+<Callout title="--check को CI में डालें">
+  पहले किसी variable में typo का मतलब होता था "चुपचाप डिफ़ॉल्ट पर चल गया"। `--check` इसे एक ऐसी विफलता में बदल
+  देता है जिसके संदेश में उस variable का नाम होता है — generation रन के चालीस मिनट बाद इसका पता चलने से कहीं
+  सस्ता।
+</Callout>
+
+`config` जानबूझकर non-throwing resolver का उपयोग करता है: **उसका काम कॉन्फ़िगरेशन दिखाना
+है, तब भी जब वह टूटी हुई हो।** एक अनुपस्थित `--source` एक दिखाई देने वाली
+`— unset (required)` पंक्ति के रूप में रेंडर होता है, बजाय इसके कि वही एक टूल ठप हो जाए
+जिसका उपयोग आप ठीक उसी समस्या को debug करने के लिए करते।
+
+## Resolver क्या लागू करता है
+
+- **खाली मान unset के रूप में पढ़ा जाता है।** `HANDBOOK_TITLE=` कोई बिना-शीर्षक handbook नहीं
+  बना सकता।
+- **दिया गया लेकिन अमान्य मान कभी डिफ़ॉल्ट पर नहीं गिरता।** typo वाली संख्या एक त्रुटि है,
+  चुपचाप 12 नहीं।
+- **Types सीमा पर ही जाँचे जाते हैं**, और संदेश में स्रोत का नाम होता है:
+
+  ```text
+  env HANDBOOK_READ_WORKERS: readWorkers must be an integer >= 1, got "twelve"
+  handbook.config.yaml (generate.detail): detail must be one of brief | deep, got "verbose"
+  ```
+
+- **आवश्यकता की जाँच हर परत के बाद होती है**, और त्रुटि हर वह तरीका सूचीबद्ध करती है जिससे
+  आप उसे दे सकते थे:
+
+  ```text
+  source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+  or add it to handbook.config.yaml
+  ```
+
+## संपूर्ण संदर्भ
+
+<Cards>
+  <Card title="हर सेटिंग, registry से जनरेट की गई" href="/docs/reference/configuration" />
+  <Card title="Environment variables और .env cascade" href="/docs/reference/environment" />
+</Cards>

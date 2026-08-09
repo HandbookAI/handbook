@@ -1,0 +1,181 @@
+---
+title: 'Упаковка для вашего агента'
+description: 'Превратите отрендеренный handbook в пакет SKILL с обнаружением дрейфа и подключите его к кодинг-агенту.'
+---
+
+```bash
+handbook skill --handbook <rendered-dir> --out <skill-dir> --name <slug> [options]
+handbook validate --skill <skill-dir> --source <repo>
+```
+
+Обе команды детерминированы. **Без LLM.**
+
+## Соберите пакет
+
+```bash
+handbook skill \
+  --handbook work/api/handbook \
+  --out skills/api \
+  --name api \
+  --project "Payments API" \
+  --work work/api \
+  --source ~/code/api \
+  --agent-dir work/api/handbook/agent
+```
+
+| Флаг                  | Зачем он вам                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `--work` + `--source` | Порождает `coverage.json` с **хешем содержимого каждого файла** — сигналом дрейфа                |
+| `--agent-dir`         | Включает локаторные страницы и добавляет шаг устранения неоднозначности в протокол маршрутизации |
+| `--project`           | Человекочитаемое имя, используемое в прозе. По умолчанию — `--name`                              |
+| `--lang zh`           | **Тело** на китайском. Фронтматтер остаётся английским — см. ниже                                |
+
+## Что вы получаете
+
+```text
+skills/api/
+  SKILL.md                    the routing guide
+  corrections.jsonl           agent-written feedback (created by the agent, never the build)
+  references/
+    overview.md               the system's shape
+    index.md                  every subsystem → its files
+    registers.md              cross-stage state
+    stages/<id>.md            one page per stage
+    agent/how_to_use.md
+    agent/disambiguation.md
+    coverage.json             file → stage + sha256
+```
+
+Пакет **самодостаточен и пригоден для передачи**, и он никогда не содержит исходный код.
+Он поставляет карту, а не территорию.
+
+## Контракт SKILL.md
+
+```yaml
+---
+name: api-handbook
+description: Navigate the Payments API codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing Payments API work that is unfamiliar,
+  spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated
+  to Payments API or isolated edits where the exact file is already known and no
+  cross-cutting impact is plausible.
+---
+```
+
+<Callout type="warn" title="Фронтматтер остаётся английским даже с --lang zh">
+  Среды выполнения агентов выбирают скиллы, сопоставляя текст описания, а проверяемый контракт «Use when … /
+  Do not use …» — часть этой поверхности маршрутизации. Его перевод незаметно сломал бы выбор скилла. Тело
+  переводится; поверхность маршрутизации — нет.
+</Callout>
+
+Тело — это нумерованный протокол:
+
+1. Прочитать `references/overview.md`, чтобы понять форму системы.
+2. Маршрутизироваться через `references/index.md` — индекс этапов сопоставляет каждой подсистеме её файлы.
+3. Открывать только релевантные страницы `references/stages/<id>.md`.
+4. Проверить `references/registers.md` на сквозное состояние — бесценно для изменений с широким разлётом.
+5. _(с `--agent-dir`)_ Устранять неоднозначность, когда термин многозначен.
+6. **Выполнить `read_file` реального исходника по каждому процитированному пути, прежде чем предлагать или вносить изменения.**
+
+А первая строка тела говорит самое важное:
+
+> Этот handbook — **индекс местоположений** для кодовой базы, а не описание кода.
+
+## Обнаружение дрейфа
+
+```json title="references/coverage.json"
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+```
+
+повторно хеширует живой исходник и предупреждает о каждом файле, чьё содержимое
+изменилось. **Код выхода `2`** при неудаче, так что это сразу встраивается в CI:
+
+```yaml
+- run: handbook validate --skill skills/api --source .
+  continue-on-error: true # a warning, not a build break — then schedule a resync
+```
+
+## Цикл исправлений
+
+Когда утверждение handbook противоречит реальному исходнику, агент дописывает одну строку
+в `corrections.jsonl` в **корне скилла**:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py",
+  "notedAt": "2026-08-08T12:00:00Z"
+}
+```
+
+Обязательно только поле `file`. Файл живёт в корне и никогда не под `references/`, потому
+что планировщики монтируют это дерево только для чтения.
+
+```bash
+handbook resync --case cases/x --work work/api --corrections skills/api/corrections.jsonl
+```
+
+Названные файлы попадают в набор обновления, **даже если их байты не менялись** —
+утверждение, которому противоречит исходник, само по себе повод заново описать файл.
+Использованный файл затем архивируется с меткой времени, поэтому одно и то же исправление
+не может быть применено дважды.
+
+Пересборка сохраняет ещё не применённые исправления при очистке.
+
+## Подключение к агенту
+
+### Claude Code
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/api .claude/skills/api-handbook
+```
+
+Агент подхватывает скилл по описанию во фронтматтере.
+
+### Любой агент с файловой системой
+
+Укажите ему каталог и попросите сначала прочитать `SKILL.md`. Протокол внутри
+самоописателен и не зависит от конкретной среды выполнения.
+
+### Планировщик
+
+```bash
+handbook plan --source ~/code/api --handbook skills/api/references \
+  --request "Retry failed uploads three times" --out plan.md
+```
+
+`--handbook` принимает каталог `references/`, который монтируется только для чтения в
+`__handbook__/` внутри песочницы планировщика.
+
+## Отказы, которые обеспечивает сборка
+
+- **`--out` не должен быть каталогом handbook или его предком.** Сборка начинается с
+  очистки `--out`; иначе она удалила бы то самое, что упаковывается, а затем тихо
+  произвела бы пустой скилл.
+- **Локаторные страницы поставляются парой или не поставляются вовсе.** `SKILL.md`
+  никогда не должен маршрутизировать к файлу, которого нет.
+- **Страница регистров существует всегда**, даже для handbook без единого регистра,
+  потому что стабильная раскладка справочных материалов — часть контракта.
+
+## Поддержание свежести
+
+```bash
+handbook resync --case cases/latest --work work/api    # roll the handbook forward
+handbook skill  --handbook work/api/handbook --out skills/api --name api \
+                --work work/api --source ~/code/api --agent-dir work/api/handbook/agent
+handbook validate --skill skills/api --source ~/code/api
+```
+
+Resync инкрементален, а `skill` + `validate` бесплатны. Вся эта последовательность
+достаточно дешева, чтобы выполнять её по расписанию.

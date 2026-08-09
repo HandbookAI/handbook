@@ -1,0 +1,199 @@
+---
+title: Handbook जनरेट करना
+description: Detail, synthesis mode और strategy चुनना; phases को अलग-अलग चलाना; resume करना; और परिणाम गलत होने पर क्या करें।
+---
+
+```bash
+handbook generate --source <repo> --work <workdir> [options]
+```
+
+यह एकमात्र महंगा कमांड है। इस पृष्ठ पर सब कुछ इसी बारे में है कि इस पर कम खर्च कैसे
+किया जाए और इससे अधिक कैसे पाया जाए।
+
+## सस्ते से शुरू करें, फिर अपग्रेड करें
+
+<Steps>
+
+<Step>
+### पुष्टि करें कि scan सही है — मुफ़्त
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+फ़ाइलों की संख्या जाँचें। अगर यह गलत है, तो एक भी token खर्च करने से पहले उसे ठीक करें।
+
+</Step>
+
+<Step>
+### सस्ते defaults के साथ जनरेट करें
+
+```bash
+handbook generate --source $REPO --work $WORK
+```
+
+`--detail brief` और `--synth-mode oneshot`। `$WORK/phase2/skeleton.yaml` पढ़ें।
+
+</Step>
+
+<Step>
+### जो आधा हिस्सा गलत हो, उसे ठीक करें
+
+**Prose बहुत पतली है?** केवल cards को गहरा करें, और जिस skeleton को आप पहले ही परख चुके हैं उसे बनाए रखें:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+**संरचना गलत है?** cards को बनाए रखते हुए, repair loop के साथ 2b दोबारा चलाएँ:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+</Steps>
+
+इस क्रम में काम करने का मतलब है कि आप कभी भी ऐसे skeleton के ऊपर deep cards के लिए
+भुगतान नहीं करते जिसे आप फेंकने ही वाले हैं।
+
+## `--detail brief` बनाम `deep`
+
+|                | `brief` (डिफ़ॉल्ट)         | `deep`                                  |
+| -------------- | -------------------------- | --------------------------------------- |
+| प्रति फ़ाइल    | उद्देश्य, भूमिका, जीवनचक्र | + 120–300 शब्दों की एक विस्तृत व्याख्या |
+| प्रति function | —                          | उद्देश्य, data flow, संबंध              |
+| Batch आकार     | प्रति अनुरोध 8 फ़ाइलें     | प्रति अनुरोध 1 फ़ाइल                    |
+| लागत           | लगभग 1×                    | उसका कई गुना                            |
+
+**जब कोई agent handbook का उपयोग करने वाला हो, तब deep सार्थक है**, क्योंकि प्रति-function
+नोट्स ही किसी stage पृष्ठ को एक पता-पुस्तिका में बदलते हैं। पहली बार चलाने के लिए, बहुत बड़े
+repo के लिए, या जब आपको मुख्य रूप से संरचना चाहिए, तब brief सही है।
+
+आप मिश्रण भी कर सकते हैं: हर जगह brief जनरेट करें, फिर `--source` को अपनी सबसे
+महत्वपूर्ण उपनिर्देशिका की ओर इंगित करने के बाद `--phase 2a --detail deep --resume`
+दोबारा चलाएँ।
+
+## `--synth-mode oneshot` बनाम `doctor`
+
+`oneshot` एक ही pass में skeleton का संश्लेषण करता है। तेज़, सस्ता, और आमतौर पर उचित।
+
+`doctor` एक actor–critic repair loop चलाता है: यह अधिकतम तीन संरचनात्मक बदलाव प्रस्तावित
+करता है, उन्हें तीन critics (engineer, architect, reader) से समीक्षा करवाता है, बचे हुए
+बदलावों को असली graph के विरुद्ध **यांत्रिक रूप से** सत्यापित करता है, apply करता है, फिर से
+assign करता है, और दोहराता है।
+
+<Callout title="जब doctor अपनी लागत वसूल करता है">
+  इसका उपयोग तब करें जब `oneshot` ने आपको असंतुलित stages दिए हों (एक stage में 200 फ़ाइलें, तीन में दो-दो),
+  ऐसे stages जिनके शीर्षकों का कोई अर्थ नहीं निकलता, या बहुत सारी unassigned फ़ाइलें। `--max-doctor-rounds` का
+  डिफ़ॉल्ट 6 है; यह convergence पर, या बिना किसी प्रगति के दो राउंड बीत जाने पर, पहले भी रुक जाता है।
+</Callout>
+
+## `--strategy file` बनाम `member`
+
+**`file` (डिफ़ॉल्ट)** — LLM skeleton का संश्लेषण करता है; एक स्रोत फ़ाइल ही leaf इकाई होती है।
+बड़ी रिपॉज़िटरियों तक स्केल करता है। जब तक कोई विशेष कारण न हो, इसी का उपयोग करें।
+
+**`member`** — `skeleton.yaml` _आप_ स्वयं लिखते हैं; अलग-अलग functions और methods को
+आपके stages में वर्गीकृत किया जाता है, और फ़ाइल-स्तर के artifacts उसी से व्युत्पन्न होते हैं।
+
+```yaml title="skeleton.yaml"
+metadata:
+  version: 1
+  archetype: HTTP API server
+stages:
+  - id: stage-1
+    title: Request intake
+    description: Accepting connections, parsing requests, and routing them.
+    parent: null
+    children: []
+    crosscut: false
+  - id: stage-2
+    title: Business logic
+    description: What the service actually does with a validated request.
+    parent: null
+    children: []
+    crosscut: false
+  - id: crosscut-1
+    title: Configuration and logging
+    description: Cross-cutting infrastructure used by every stage.
+    parent: null
+    children: []
+    crosscut: true
+```
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy member --skeleton skeleton.yaml
+```
+
+Member की लागत अधिक है — हर function वर्गीकृत होता है — लेकिन यह अधिक कसी हुई prose
+देता है, और phase 2c मुफ़्त हो जाता है क्योंकि संगठन नियतात्मक रूप से व्युत्पन्न होता है।
+
+<Callout type="warn">
+  Strategy `phase2/strategy.json` में दर्ज होती है। किसी भिन्न `--strategy` के साथ और बिना `--phase 2b` के
+  आंशिक री-रन **अस्वीकार** कर दिया जाता है, ताकि `file`-strategy का डिफ़ॉल्ट किसी member-व्युत्पन्न संगठन को
+  चुपचाप ओवरराइट न कर सके।
+</Callout>
+
+## Phases को अलग-अलग चलाना
+
+```bash
+--phase 1        # just the graph (same as `handbook analyze`)
+--phase 2a       # just the cards
+--phase 2b       # just skeleton + assignment
+--phase 2c       # just the grouping
+--phase 3        # just narration + registers
+--phase 2        # 2a + 2b + 2c
+--phase 2c,3     # a comma list
+```
+
+हर phase केवल अपने upstream artifacts ही पढ़ता है, इसलिए यह हमेशा सुरक्षित है। सबसे आम स्थितियाँ:
+
+| स्थिति                                  | कमांड                                   |
+| --------------------------------------- | --------------------------------------- |
+| Cards ठीक हैं, skeleton गलत है          | `--phase 2b,2c,3 --synth-mode doctor`   |
+| सब कुछ ठीक है, prose पढ़ने में खराब है  | `--phase 3 --refresh`                   |
+| आपको केवल गहरे cards चाहिए, और कुछ नहीं | `--phase 2a --detail deep --resume`     |
+| आपने narration की भाषा बदल दी           | `--phase 3 --narrate-lang zh --refresh` |
+
+## Resume और caching
+
+- **`--resume`** उन फ़ाइलों को छोड़ देता है जिनके पास अनुरोधित गहराई पर पहले से एक पूर्ण card है।
+  Cards पूरे होते ही लिख दिए जाते हैं, इसलिए `Ctrl-C` हमेशा सुरक्षित है।
+- **`--llm-cache`** कच्चे उत्तरों को `<work>/phase3/cache` के अंतर्गत कैश करता है, जिनकी कुंजी model, prompt
+  और विकल्प होते हैं। जब आप बार-बार प्रयोग कर रहे हों तो री-रन लगभग मुफ़्त हो जाते हैं।
+- **`--refresh`** phase-3 कैश की अनदेखी करता है। इसका उपयोग तब करें जब आपने prompt के इनपुट बदले हों
+  लेकिन cache key को इसका पता न चला हो — उदाहरण के लिए, `skeleton.yaml` को हाथ से संपादित करने के बाद।
+
+`--refresh` उस रन के लिए `--llm-cache` को निष्क्रिय कर देता है — यह जानबूझकर किया गया है।
+
+## इसे काम करते हुए देखना
+
+```bash
+handbook generate --source $REPO --work $WORK -v
+```
+
+```text
+[scan] auto root=/Users/me/code/api
+[scan] typescript: 284 files
+[2a] batch 12/36 · 96 cards
+[2b] 9 stages; 0 files unassigned
+[3] narrating stage-4 (2 children)
+```
+
+रन पूरा होने पर token उपयोग `run-manifest.json` में दर्ज हो जाता है।
+
+## जब परिणाम गलत हो
+
+| लक्षण                                     | संभावित कारण                                  | समाधान                                                                         |
+| ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Stages असंतुलित या अर्थहीन हैं            | असामान्य लेआउट पर one-shot संश्लेषण           | `--phase 2b,2c,3 --synth-mode doctor`                                          |
+| कई फ़ाइलें unassigned हैं                 | skeleton, repo के एक हिस्से को कवर नहीं करता  | doctor mode, या स्वयं एक skeleton लिखें और `--skeleton` पास करें               |
+| Cards के विवरण खाली हैं                   | model के उत्तर parse नहीं हो पाए              | `phase2/cards/_rejected/` पढ़ें; कोई मज़बूत model या `--detail brief` आज़माएँ  |
+| Prose सामान्य और बेकार है                 | codebase के लिए model बहुत छोटा है            | `--model` बदलें; बेहतर model का लाभ इस phase में किसी भी अन्य से अधिक मिलता है |
+| Overview में "generic analyzer" का उल्लेख | आपके पास generic-tier भाषाएँ हैं              | अपेक्षित — देखें [Analysis fidelity](/docs/concepts/analysis-fidelity)         |
+| रन बहुत धीमा है                           | worker संख्या बहुत कम है, या endpoint धीमा है | `--read-workers` और `--llm-concurrency` बढ़ाएँ                                 |
+| Rate-limit त्रुटियाँ                      | concurrency बहुत अधिक है                      | `--llm-concurrency` घटाएँ; `--llm-retries` बढ़ाएँ                              |
+
+अधिक जानकारी [समस्या-निवारण](/docs/guides/troubleshooting) में।

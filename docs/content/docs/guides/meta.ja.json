@@ -1,0 +1,18 @@
+{
+  "title": "ガイド",
+  "icon": "BookOpen",
+  "pages": [
+    "generating",
+    "rendering",
+    "agent-skill",
+    "planning-changes",
+    "applying-changes",
+    "keeping-current",
+    "studio",
+    "configuration",
+    "docker",
+    "ci",
+    "cost-and-performance",
+    "troubleshooting"
+  ]
+}

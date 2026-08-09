@@ -1,0 +1,165 @@
+---
+title: '出力のレンダリング'
+description: 'Markdown、HTML サイト、単一の自己完結ページ、エージェント用ロケータインデックス、llms.txt — すべて決定的で、何度でも無料で再実行できます。'
+---
+
+```bash
+handbook render --work <workdir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+**LLM なし。ネットワークなし。決定的。** 同じモデルを入力すればバイト単位で同一のファイルが
+出力されます — だからこそ CI に組み込み、コミットごとに実行するのに向いています。
+
+## 5 つの出力
+
+<Tabs items={['Markdown', 'HTML site', 'Single page', 'Agent index', 'llms.txt']}>
+
+<Tab value="Markdown">
+
+常に書き出されます。
+
+```text
+<out>/
+  overview.md      system prose + a mermaid stage map + "see also" links
+  index.md         every stage, nested by depth, a paragraph each
+  <stage-id>.md    one page per content-bearing stage
+  register.md      the cross-stage state table (only when registers exist)
+```
+
+ステージページには、ステージの要約、サブステージへのリンク、そしてそのファイル群が載ります —
+グループ化と順序は Phase 2c が決めたとおりで、各ファイルは **ファイルカード** として
+レンダリングされます: 目的、役割、ライフサイクル、呼び出しの事実、そして deep カードの場合は
+関数ごとのノートです。
+
+知っておく価値のある挙動が 2 つあります。
+
+- **古くなったページはクリーンアップされます。** ステージ ID は生成のたびに変わります。
+  各レンダリングはまず前回のレンダリングのページを削除するので、名前が変わったステージが
+  ゴーストページを残して、スキルのパッケージャに拾われることはありません。
+- **ステージごとの状態レジスタセクションは冪等です** — マーカーの下に追記されるのは、
+  マーカーが存在しないときだけです。再レンダリングしても重複が積み重なることはありません。
+
+</Tab>
+
+<Tab value="HTML site">
+
+`--html` → `<out>/html/`
+
+1 つのシェルを共有するマルチページサイトです: 現在のページがハイライトされる固定サイドバー
+TOC、パンくずリスト、選択を保持するテーマ切り替え、そして関数詳細の全展開/全折りたたみを
+備えています。
+
+**すべての CSS と JS はインライン化され、すべてのリンクは相対パスです。** `file://` から
+そのまま動作します — サーバーも CDN も不要で、フォントをどこかから取得することもありません。
+`open <out>/html/overview.html` で開けます。
+
+</Tab>
+
+<Tab value="Single page">
+
+`--html-single` → `<out>/handbook.html`
+
+ハンドブック全体を **1 つのファイル** にまとめたもので、番号付きのセクションと、折りたたまれた
+`<details>` としての各ステージを含みます。
+
+メールに添付する、チケットに付ける、共有ドライブに置く、といった用途にはこれが最適です。
+いかなる種類の依存関係も持ちません。
+
+</Tab>
+
+<Tab value="Agent index">
+
+`--agent-site` → `<out>/agent/`
+
+```text
+how_to_use.md      the agent-side search protocol
+index.md           every stage, as locator blocks
+disambiguation.md  terms that legitimately point at several stages
+<stage-id>.md      one locator page per stage
+```
+
+各ステージには固定スキーマのブロックが与えられます: **duty**、**entry concepts**、
+**state**、**exemplar**、**core files**、**strong co-change** です。
+
+17 の実在リポジトリで計測したところ、最初の 5 つはほとんどのページで埋まります。
+**strong co-change は意図的に最も疎です** — テストファイルがソースの _隣_ にある場合
+(`engine.go` + `engine_test.go`)にだけ発火しますが、多くのプロジェクトはテストを別ツリーに
+置いています。このフィールドが空なのはゲーティングが機能している証であって、欠落ではありません。
+
+不変条件はこうです: **フィールドが出力されるのは、その構造的シグナルが存在するとき、
+かつそのときに限ります。** プレースホルダも「N/A」もありません。空のフィールドは
+_「グラフにここのシグナルがない」_ という実際の情報を意味します — _「モデルが知らなかった」_
+というノイズではありません。後者はエージェントがその上で推論してしまうノイズです。
+
+このディレクトリを `handbook skill --agent-dir` に渡せば、SKILL パッケージの中に同梱できます。
+
+</Tab>
+
+<Tab value="llms.txt">
+
+`--llms-txt` → `<out>/llms.txt` と `<out>/llms-full.txt`
+
+[llms.txt の規約](https://llmstxt.org/)に従います:
+
+- **`llms.txt`** — H1 タイトル、1 文の要約 blockquote、続いて各ページを短い説明付きで
+  リンクする `## Handbook` セクション。
+- **`llms-full.txt`** — ハンドブック全体を読み順で 1 つのプレーン Markdown ドキュメントに
+  平坦化したもの。
+
+ハンドブックを公開する場所のルートで `llms.txt` を配信してください。
+
+</Tab>
+
+</Tabs>
+
+## ソースへのリンク
+
+```bash
+handbook render --work $WORK --source-base-url https://github.com/me/repo/blob/main
+```
+
+ハンドブック内のすべてのファイルパスが、実際のファイルへのリンクになります。ハンドブックが
+生成元のコードを参照し続けるようにしたい場合は、`main` の代わりにタグやコミット SHA を
+指定してください。
+
+**このフラグを付けない場合、出力には外部 URL が一切含まれません。** これはプライベートな
+コードベースにとって正しいデフォルトです。
+
+## タイトルと言語
+
+```bash
+handbook render --work $WORK --title "Payments Service — Engineering Handbook"
+```
+
+ナレーションの言語は生成時に固定され(`--narrate-lang`)、`phase3/narration.json` に
+保存されます。レンダラーはそこから言語を読み取ります — すべてのラベル、見出し、テーブルの
+ヘッダーがそれに合わせてローカライズされます。**構造はどちらの言語でも同一** なので、
+出力を読むツールはどちらの言語なのかを知る必要がありません。
+
+## 再レンダリングを習慣に
+
+レンダリングは無料かつ決定的なので、CI に組み込みましょう:
+
+```yaml title=".github/workflows/handbook.yml"
+- run: handbook render --work work/api --title "API Handbook" --html --agent-site --llms-txt
+- run: handbook skill --handbook work/api/handbook --out skills/api --name api \
+    --work work/api --source . --agent-dir work/api/handbook/agent
+- run: handbook validate --skill skills/api --source .
+```
+
+[CI 統合](/docs/guides/ci)を参照してください。
+
+## HTML サイトの公開
+
+出力は相対リンクのみで外部アセットを持たない静的ディレクトリなので、どんな静的ホストでも
+動作します:
+
+```bash
+# GitHub Pages
+cp -R work/api/handbook/html/* docs-site/ && git add docs-site
+
+# Netlify / Vercel / S3 / nginx
+npx serve work/api/handbook/html
+```
+
+エージェントが見つけられるよう、サイトのルートで `llms.txt` を配信してください。

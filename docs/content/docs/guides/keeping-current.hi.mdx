@@ -1,0 +1,166 @@
+---
+title: इसे अप-टू-डेट रखना
+description: Resync पुराने call graph की तुलना नए से करता है और केवल वही regenerate करता है जो वास्तव में बदला है। तीन फ़ाइलें छुएँ, तीन फ़ाइलों की ही क़ीमत चुकाएँ।
+---
+
+```bash
+handbook resync --case <case-dir> --work <workdir>
+```
+
+Documentation इसलिए सड़ती है क्योंकि उसे अपडेट करने की लागत उसे लिखने जितनी ही होती है।
+Resync अपडेट को **बदलाव के अनुपात में** बना देता है।
+
+## Case का अनुबंध
+
+एक **case** वह डायरेक्टरी है जिसे आप स्वयं तैयार करते हैं। यह दो सवालों का जवाब देती है:
+_कोड अभी कैसा दिखता है_, और _बदलाव क्या होना था_।
+
+```text
+cases/upload-retry/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — SHARPENS the scope
+  change.diff   unified diff vs the previous tree   optional — WIDENS the scope
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+git -C $REPO diff HEAD~1 > cases/upload-retry/change.diff
+
+handbook resync --case cases/upload-retry --work work/api
+```
+
+<Callout title="घोषणाएँ और diff केवल सेट को व्यापक बना सकते हैं">
+  Graph का diff न्यूनतम आधार है: यदि किसी फ़ाइल के bytes बदले हैं, तो वह refresh होगी — चाहे plan में उसका
+  उल्लेख हो या न हो। **ऐसा plan जो अपने प्रभाव-क्षेत्र को कम घोषित करता है, किसी पेज को बासी नहीं कर सकता।**
+</Callout>
+
+एक **खाली** `change.diff` का अर्थ है "कुछ नहीं करना है", और ऐसे run को साफ़ तौर पर छोड़
+दिया जाता है, न कि उसे "सब कुछ बदल गया" मान लिया जाता है।
+
+## यह वास्तव में क्या करता है
+
+1. संपादित tree का फिर से विश्लेषण — एक ताज़ा phase-1 graph।
+2. पुराने और नए के बीच diff → बदली हुई / जोड़ी गई / हटाई गई फ़ाइलें।
+3. बदली हुई और जोड़ी गई फ़ाइलों के लिए cards फिर से generate करना।
+4. जोड़ी गई फ़ाइलों को assign करना, हटाई गई फ़ाइलों को निकालना, और buckets का मिलान करना।
+5. प्रभावित stages के लिए organization का पुनर्निर्माण — deterministic, कोई LLM नहीं।
+6. प्रभावित stages और system overview की narration फिर से करना। Content-hash cache का
+   मतलब है कि किसी अप्रभावित stage की narration दोबारा होती ही नहीं।
+7. Registers को refresh करना।
+8. `<work>/handbook` के अंतर्गत पहले से render किए गए आउटपुट को refresh करना (छोड़ने के
+   लिए `--no-render`)।
+
+```json title="stdout"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["work/api/handbook/overview.md", "work/api/handbook/stage-3.md"]
+}
+```
+
+## Diff चीज़ें कैसे पकड़ता है
+
+| संकेत                     | क्या पकड़ता है                                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Content hash**          | ऐसा in-place body संपादन जो line numbers और signatures को अछूता छोड़ देता है — वह मामला जो structural diff से पूरी तरह छूट जाता है |
+| Function सेट              | जोड़े गए, हटाए गए या rename किए गए functions                                                                                       |
+| Signatures और line ranges | बदले हुए स्वरूप वाले functions                                                                                                     |
+| Call edges                | नए या हटाए गए संबंध, जिनमें अछूती फ़ाइलों के भीतर आने-जाने वाले संबंध भी शामिल हैं                                                 |
+| फ़ाइल सेट                 | जोड़ी गई और हटाई गई फ़ाइलें                                                                                                        |
+
+प्रति-फ़ाइल hashes ठीक इसी उद्देश्य से phase 1 द्वारा अंकित किए गए थे। जो graph इनसे
+पहले का है, वह structure पर लौट आता है — degraded, पर कभी ग़लत नहीं।
+
+## बिना endpoint के काम करना
+
+```bash
+handbook resync --case cases/x --work work/api --no-llm
+```
+
+संरचनात्मक तथ्य refresh हो जाते हैं — call graph, functions की सूची, assignment, क्रम —
+और हर प्रभावित card के purpose में ` (stale: code changed since narration)` जोड़ दिया जाता है।
+
+**यही ईमानदार degradation है।** विकल्प — गद्य को अछूता और बिना चिह्नित छोड़ देना — एक
+ऐसा handbook है जो चुपचाप झूठ बोलता है।
+
+## सुधारों को वापस शामिल करना
+
+```bash
+handbook resync --case cases/x --work work/api \
+  --corrections skills/api/corrections.jsonl
+```
+
+`corrections.jsonl` में नामित फ़ाइलें refresh सेट में शामिल हो जाती हैं, **भले ही उनके
+bytes कभी न बदले हों**, क्योंकि जिस दावे का source ही खंडन करता है, वह उस फ़ाइल को फिर से
+वर्णित करने के लिए पर्याप्त कारण है। उपयोग की जा चुकी फ़ाइल को बाद में timestamp के साथ
+archive कर दिया जाता है, ताकि एक ही सुधार दो बार लागू न हो सके।
+
+विकृत पंक्तियाँ `report.corrections.problems` में रिपोर्ट की जाती हैं और कभी घातक नहीं
+होतीं — किसी एक agent द्वारा लिखी गई एक ख़राब पंक्ति refresh को रोक नहीं सकती।
+
+## Detail और भाषा यथावत रहते हैं
+
+`--detail` और `--narrate-lang` **डिफ़ॉल्ट रूप से unset हैं**, और unset का अर्थ है _"यह
+handbook जो पहले से है, उसी से मेल खाओ"_। कोई resync कभी भी चुपचाप किसी deep handbook को
+brief में downgrade नहीं करता, या किसी चीनी handbook को अंग्रेज़ी में नहीं पलटता।
+
+इन्हें स्पष्ट रूप से तभी पास करें जब आप वाक़ई गहराई या भाषा बदलना चाहते हों — और तब तक
+मिश्रित handbook की अपेक्षा रखें जब तक हर card फिर से generate न हो जाए।
+
+## इसके बजाय कब regenerate करें
+
+Resync **व्युत्पन्न** परत को आगे बढ़ाता है। जब _संरचना_ बदलनी हो, तब regenerate करें:
+
+| स्थिति                                         | यह करें                                                   |
+| ---------------------------------------------- | --------------------------------------------------------- |
+| कुछ फ़ाइलें बदलीं                              | `resync`                                                  |
+| किसी refactor ने कोड को modules के बीच खिसकाया | `resync` — graph का diff इसे संभाल लेता है                |
+| आपने एक पूरा नया subsystem जोड़ा               | `resync`, फिर जाँचें कि skeleton अब भी उपयुक्त है या नहीं |
+| skeleton अब सिस्टम का वर्णन नहीं करता          | `generate --phase 2b,2c,3 --synth-mode doctor`            |
+| आपने narration की भाषा या गहराई बदली           | `generate --phase 2a` / `--phase 3 --refresh`             |
+| आधा repo फिर से लिखा गया                       | शुरू से `generate` — एक विशाल resync से सस्ता             |
+
+## इसे स्वचालित करना
+
+```yaml title=".github/workflows/handbook-resync.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - run: |
+          mkdir -p case
+          cp -R . case/edited
+          git diff HEAD~1 > case/change.diff
+      - run: handbook resync --case case --work work/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - run: handbook validate --skill skills/api --source .
+```
+
+जब आप resync को programmatically चलाते हैं, तो `edited/` को पूरी तरह छोड़ा भी जा सकता है:
+`editedRoot` विकल्प इसके बजाय एक live tree की ओर इशारा करता है — Studio इसी तरीक़े से
+repository की नक़ल किए बिना इसे उसी जगह चलाता है।
+
+## सुरक्षा
+
+- **`generate` जैसा ही डायरेक्टरी lock**, इसलिए कोई resync कभी भी उन्हीं artifacts पर चल
+  रही समवर्ती generation के साथ आपस में नहीं उलझ सकता।
+- **Phase-1 का staging क्षेत्र हमेशा साफ़ कर दिया जाता है** — `<case>/.resync-phase1`
+  कभी भी कॉल से अधिक समय तक नहीं टिकता, चाहे सफलता हो या विफलता।
+- **हटाई गई फ़ाइलों के cards हटा दिए जाते हैं**, ताकि कोई हटाई गई फ़ाइल handbook में बनी न
+  रह सके।
+- **रद्द करने योग्य** — चरणों के बीच एक `AbortSignal` जाँचा जाता है और उसे हर LLM pass में
+  पिरोया जाता है।

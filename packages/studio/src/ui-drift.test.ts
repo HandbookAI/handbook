@@ -60,3 +60,53 @@ describe('studio UI choice lists match the config registry', () => {
     expect(html).not.toMatch(/keep\('gSrcLang',\s*\[\[/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// i18n dictionaries
+// ---------------------------------------------------------------------------
+
+const UI_LOCALES = ['en', 'zh', 'hi', 'es', 'pt', 'ru', 'ja', 'de'] as const;
+
+/** Evaluate a locale file exactly the way the browser does: a plain script
+ *  assigning into `window.HB_DICT`. Returns that locale's dictionary object. */
+function loadDict(file: string): Record<string, unknown> {
+  const code = readFileSync(fileURLToPath(new URL(`../public/${file}`, import.meta.url)), 'utf8');
+  const window: { HB_DICT?: Record<string, Record<string, unknown>> } = {};
+  new Function('window', code)(window);
+  const locales = Object.keys(window.HB_DICT ?? {});
+  if (locales.length !== 1) {
+    throw new Error(`${file} must define exactly one locale, got: ${locales.join(', ') || 'none'}`);
+  }
+  return window.HB_DICT![locales[0]!]!;
+}
+
+/** Dotted path of every leaf value, array indices included — so a dictionary
+ *  that dropped one list entry (a guide bullet, a home step) fails too. */
+function leafKeys(node: unknown, prefix = ''): string[] {
+  if (node === null || typeof node !== 'object') return [prefix];
+  const entries = Array.isArray(node)
+    ? node.map((v, i) => [String(i), v] as const)
+    : Object.entries(node as Record<string, unknown>);
+  return entries.flatMap(([k, v]) => leafKeys(v, prefix ? `${prefix}.${k}` : k));
+}
+
+describe('studio UI i18n dictionaries', () => {
+  it('i18n.en.js and i18n.zh.js parse and carry the same set of leaf keys', () => {
+    const en = loadDict('i18n.en.js');
+    const zh = loadDict('i18n.zh.js');
+    expect(leafKeys(en).length).toBeGreaterThan(100); // a truncated file must not pass as "equal"
+    expect(leafKeys(zh).sort()).toEqual(leafKeys(en).sort());
+  });
+
+  it('index.html holds no inline dictionary literal any more', () => {
+    // The dictionary moved to /i18n.<loc>.js; English is the canonical fallback.
+    expect(html).not.toContain('DICT = {');
+    expect(html).toContain('const DICT = window.HB_DICT || {};');
+  });
+
+  it('index.html loads all eight locale files before the main script', () => {
+    for (const loc of UI_LOCALES) {
+      expect(html).toContain(`<script src="/i18n.${loc}.js"></script>`);
+    }
+  });
+});

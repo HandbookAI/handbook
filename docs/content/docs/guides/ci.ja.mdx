@@ -1,0 +1,202 @@
+---
+title: 'CI 統合'
+description: 'どのコマンドがコミットごとに実行できるほど無料で、どれにキーが必要か、そしてハンドブックのドリフトでビルドを失敗させる方法。'
+---
+
+## 何にいくらかかるか
+
+| コマンド             | キーが必要? | 決定的? | 実行するのは…                   |
+| -------------------- | :---------: | :-----: | ------------------------------- |
+| `analyze`            |     ❌      |   ✅    | コミットごと                    |
+| `render`             |     ❌      |   ✅    | コミットごと                    |
+| `skill`              |     ❌      |   ✅    | コミットごと                    |
+| `validate`           |     ❌      |   ✅    | コミットごと                    |
+| `config --check`     |     ❌      |   ✅    | コミットごと                    |
+| `apply` / `rollback` |     ❌      |   ✅    | 必要に応じて                    |
+| `generate`           |     ✅      |   ❌    | `main` 上、またはスケジュールで |
+| `resync`             |     ✅      |   ❌    | `main` 上                       |
+| `plan`               |     ✅      |   ❌    | 必要に応じて                    |
+
+**このうち 5 つは無料です。** それらを実行するプルリクエストワークフローはコストゼロで、
+実際の問題を捕まえます。
+
+## 無料のプルリクエストジョブ
+
+```yaml title=".github/workflows/handbook-check.yml"
+name: handbook check
+
+on: [pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # 1. Configuration is valid — catches a typo'd variable before it costs a run.
+      - run: node packages/cli/dist/main.js config --check --command generate
+
+      # 2. The call graph still builds, and the file count has not collapsed.
+      - name: analyze
+        run: |
+          node packages/cli/dist/main.js analyze --source . --work work/self > stats.json
+          cat stats.json
+          test "$(jq .files stats.json)" -gt 10
+
+      # 3. The committed SKILL package is still structurally valid, and still fresh.
+      - name: validate the skill
+        run: node packages/cli/dist/main.js validate --skill skills/self --source .
+```
+
+`validate` はスキルがドリフトしていると **終了コード `2`** で終了します。それでビルドを
+失敗させるか、警告にとどめるかを決めてください:
+
+```yaml
+- run: node packages/cli/dist/main.js validate --skill skills/self --source .
+  continue-on-error: true # warn; schedule a resync instead of blocking the PR
+```
+
+## `main` 上での再生成
+
+```yaml title=".github/workflows/handbook-resync.yml"
+name: handbook resync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: handbook-resync
+  cancel-in-progress: false # never interleave two runs on the same work dir
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: assemble the resync case
+        run: |
+          mkdir -p case
+          rsync -a --exclude .git --exclude node_modules --exclude work ./ case/edited/
+          git diff HEAD~1 > case/change.diff
+
+      - name: resync
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node packages/cli/dist/main.js resync --case case --work work/self
+
+      - name: repackage and validate
+        run: |
+          node packages/cli/dist/main.js skill \
+            --handbook work/self/handbook --out skills/self --name self \
+            --work work/self --source . --agent-dir work/self/handbook/agent
+          node packages/cli/dist/main.js validate --skill skills/self --source .
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/handbook-resync
+          title: 'docs: roll the handbook forward'
+          commit-message: 'docs: roll the handbook forward'
+```
+
+重要なディテールが 2 つあります。
+
+- **`concurrency` と `cancel-in-progress: false`。** 作業ディレクトリごとに 1 実行という
+  制約はロックで強制されており、CI の実行が 2 つ重なれば、片方が失敗するだけです。
+- **プッシュするのではなく PR を開くこと。** 再生成されたハンドブックは、読む価値のある
+  diff です。
+
+## HTML サイトの公開
+
+```yaml title=".github/workflows/handbook-pages.yml"
+name: publish handbook
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - run: |
+          node packages/cli/dist/main.js render \
+            --work work/self --title "Self Handbook" \
+            --html --html-single --agent-site --llms-txt \
+            --source-base-url https://github.com/${{ github.repository }}/blob/${{ github.sha }}
+
+      - run: cp work/self/handbook/llms*.txt work/self/handbook/html/
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: work/self/handbook/html }
+      - uses: actions/deploy-pages@v4
+```
+
+レンダリングは無料かつ決定的なので、これはプッシュのたびに実行できます。
+`--source-base-url` を `main` ではなく `${{ github.sha }}` に向けることで、公開された
+ハンドブック内のすべてのリンクが、レンダリング元となった正確なコードを指すようになります。
+
+## 作業ディレクトリのコミット
+
+中身はプレーンな JSON と YAML なので、コミットするのは正当な選択肢です:
+
+**利点** — 再生成の diff がレビュー可能になり、CI で `render` にキーが不要になり、
+`validate` に照合対象ができます。
+
+**欠点** — 大きなリポジトリでは `phase2/cards/` が大きくなり、カードの文章はモデルの
+バージョン間で揺れます。
+
+良い中間点はこうです: `skills/<name>/` をコミットし(小さく、エージェントが消費するもの)、
+`work/` を gitignore します(大きく、再生成可能なもの)。
+
+## 実行間のキャッシュ
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: work/self/phase3/cache
+    key: handbook-cache-${{ hashFiles('**/*.ts', '**/*.py') }}
+    restore-keys: handbook-cache-
+```
+
+Phase 3 のキャッシュはコンテンツハッシュをキーとするため、古いキャッシュを復元しても
+安全です — 単にヒットしないだけです。1 回の実行で変わるファイルが少ないなら、
+`phase2/cards/` のキャッシュと `--resume` の組み合わせはさらに効果的です。
+
+## ドリフトで、意図的に失敗させる
+
+```bash
+handbook validate --skill skills/api --source .
+case $? in
+  0) echo "handbook is fresh" ;;
+  2) echo "::warning::handbook has drifted — a resync is due" ;;
+  *) exit 1 ;;
+esac
+```
+
+`2` はビルドの失敗ではなく、スケジューリングのシグナルとして扱ってください。古くなった
+ハンドブックはメンテナンスのタスクであり、_壊れた_ ハンドブック(終了コード `1`)はバグです。
