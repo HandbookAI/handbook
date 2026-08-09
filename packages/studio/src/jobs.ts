@@ -5,7 +5,7 @@
  * writers on the same work dir.
  */
 import { randomUUID } from 'node:crypto';
-import type { Logger } from '@handbook/core';
+import type { Logger, ProgressEvent } from '@handbook/core';
 
 export type JobKind = 'generate' | 'render' | 'skill' | 'plan' | 'resync' | 'apply' | 'rollback';
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -18,11 +18,17 @@ export interface Job {
   log: string[];
   result?: unknown;
   error?: string;
+  /**
+   * The most recent progress update, so a page that reloads mid-run can draw
+   * the bar immediately instead of waiting for the next tick — which on a slow
+   * batch can be minutes away.
+   */
+  progress?: ProgressEvent;
   startedAt: string;
   endedAt?: string;
 }
 
-type Listener = (line: string, done: boolean) => void;
+type Listener = (line: string, done: boolean, progress?: ProgressEvent) => void;
 
 export class JobRunner {
   private readonly jobs = new Map<string, Job>();
@@ -35,7 +41,7 @@ export class JobRunner {
   start(
     repo: string,
     kind: JobKind,
-    work: (logger: Logger, signal: AbortSignal) => Promise<unknown>,
+    work: (logger: Logger, signal: AbortSignal, onProgress: (e: ProgressEvent) => void) => Promise<unknown>,
     options: { debug?: boolean } = {},
   ): Job {
     if (this.busyRepos.has(repo)) {
@@ -65,6 +71,18 @@ export class JobRunner {
         }
       }
     };
+
+    /** Progress travels beside the log, not inside it: a bar is not a sentence. */
+    const onProgress = (event: ProgressEvent): void => {
+      job.progress = event;
+      for (const listener of this.listeners.get(job.id) ?? []) {
+        try {
+          listener('', false, event);
+        } catch {
+          // a dead subscriber must not kill the job chain
+        }
+      }
+    };
     const logger: Logger = {
       // Off unless asked for: debug is the pipeline narrating every batch, which
       // would drown the drawer. `logLevel: debug` on the job request enables it —
@@ -85,7 +103,7 @@ export class JobRunner {
     // Promise.resolve() guard: a synchronously-throwing work fn must still
     // flow into the cleanup chain instead of wedging busyRepos.
     void Promise.resolve()
-      .then(() => work(logger, controller.signal))
+      .then(() => work(logger, controller.signal, onProgress))
       .then((result) => {
         job.status = 'succeeded';
         job.result = result;

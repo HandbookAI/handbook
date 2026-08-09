@@ -33,6 +33,7 @@ import {
 import { buildInventory } from './inventory.js';
 import type { WorkDir } from './workdir.js';
 import { rulesFor as rulesForLang } from './prompt-lang.js';
+import type { ProgressSink } from '@handbook/core';
 
 export type CardDetail = 'brief' | 'deep';
 
@@ -58,6 +59,8 @@ export interface CardsOptions {
   /** Cooperative cancellation: checked per batch and passed into every LLM call. */
   signal?: AbortSignal;
   logger?: Logger;
+  /** Machine-readable progress, for a UI drawing a bar. */
+  onProgress?: ProgressSink;
 }
 
 export interface CardsResult {
@@ -477,7 +480,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     batches.push(todo.slice(i, i + Math.max(1, batchSize)));
   }
 
-  const progress = new Progress(logger, 'cards', todo.length);
+  const progress = new Progress(logger, 'cards', todo.length, options.onProgress);
   await mapLimit(batches, maxWorkers, async (batch) => {
     signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
     let described = await describeBatch(batch);

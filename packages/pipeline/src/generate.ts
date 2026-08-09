@@ -4,6 +4,7 @@
  * {@link HandbookModel} for the renderer.
  */
 import type { ChatClient } from '@handbook/llm';
+import { RunProgress, type ProgressSink } from '@handbook/core';
 import {
   MissingArtifactError,
   PIPELINE_DEFAULTS,
@@ -85,6 +86,13 @@ export interface GenerateOptions {
    */
   signal?: AbortSignal;
   logger?: Logger;
+  /**
+   * Machine-readable progress for a UI. Each pass reports its own units, and
+   * `overall` carries the fraction of the WHOLE run — computed from the unit
+   * counts the call graph makes knowable, not from counting phase boundaries,
+   * which would claim 20% for a phase that takes seconds.
+   */
+  onProgress?: ProgressSink;
 }
 
 export interface GenerateStats {
@@ -194,7 +202,23 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
   const client = options.client as ChatClient;
   const graph = work.loadGraph();
 
+  // Overall progress, reported two ways because neither alone is honest:
+  //
+  //  - the COARSE bar is which phase of the planned set is running. Always
+  //    correct, and it never moves backwards.
+  //  - the FINE bar is units of real work. Each pass announces its own total
+  //    when it starts, so the denominator grows as the run proceeds — a card
+  //    pass cannot know how many stages phase 2b will invent. Growing is the
+  //    truth; a fixed denominator would be a number made up in advance.
+  //
+  // The alternative — weighting phases 20% each — claims a fifth of the run for
+  // phase 1, which finishes in seconds on a repo where phase 2a takes an hour.
+  const run = new RunProgress(options.onProgress, [...phases].sort());
+  const progressFor = (scope: string): ProgressSink | undefined =>
+    options.onProgress ? run.sinkFor(scope) : undefined;
+
   if (phases.has('2a')) {
+    run.enterPhase('2a');
     signal?.throwIfAborted();
     const result = await generateCards({
       client,
@@ -209,11 +233,13 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       lang: narrateLang,
       signal,
       logger,
+      onProgress: progressFor('cards'),
     });
     stats.nCards = result.coverage.nFiles;
   }
 
   if (phases.has('2b')) {
+    run.enterPhase('2b');
     signal?.throwIfAborted();
     const cards = work.loadCards();
     if (Object.keys(cards).length === 0) {
@@ -238,6 +264,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         cards,
         signal,
         logger,
+        onProgress: progressFor('assign'),
       });
       work.saveSkeleton(skeleton);
       work.saveAssignment(assignment);
@@ -273,6 +300,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         cards,
         signal,
         logger,
+        onProgress: progressFor('assign'),
       });
       work.saveSkeleton(skeleton);
       work.saveAssignment(assignment);
@@ -287,6 +315,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
     logger.info('[2c] member strategy: organization was derived deterministically in 2b — nothing to do');
   }
   if (phases.has('2c') && strategy === 'file') {
+    run.enterPhase('2c');
     signal?.throwIfAborted();
     const skeleton = work.loadSkeleton();
     const assignment = work.loadAssignment();
@@ -296,11 +325,13 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       lang: narrateLang,
       signal,
       logger,
+      onProgress: progressFor('organize'),
     });
     work.saveOrganization(organization);
   }
 
   if (phases.has('3')) {
+    run.enterPhase('3');
     signal?.throwIfAborted();
     const skeleton = work.loadSkeleton();
     const assignment = work.loadAssignment();
@@ -316,6 +347,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         cacheDir: work.cacheDir,
         signal,
         logger,
+        onProgress: progressFor('narrate'),
       },
     );
     work.saveNarration(narration);

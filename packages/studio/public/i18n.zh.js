@@ -295,6 +295,8 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       unreadable: '这条记录读不出来',
     },
     job: {
+      phase: '阶段 {0}/{1}',
+      eta: '预计剩余 {0}',
       title: '任务',
       running: 'RUNNING',
       succeeded: 'SUCCEEDED',

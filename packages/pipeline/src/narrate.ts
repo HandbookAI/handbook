@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
 import {
   PIPELINE_DEFAULTS,
+  Progress,
   StageTree,
   ensureDir,
   fileExists,
@@ -25,6 +26,7 @@ import {
   type NarrateLang,
   type Narration,
   type Organization,
+  type ProgressSink,
   type RegisterEntry,
   type Skeleton,
   describeJsonShape,
@@ -65,6 +67,8 @@ const SYSTEM_RULES_ZH = `你在为普通读者撰写系统手册的顶层总览�
 
 export interface NarrateOptions {
   workers?: number;
+  /** Machine-readable progress, for a UI drawing a bar. */
+  onProgress?: ProgressSink;
   refresh?: boolean;
   lang?: NarrateLang;
   cacheDir?: string;
@@ -143,6 +147,10 @@ export async function narrate(
     (byDepth.get(depth) ?? byDepth.set(depth, []).get(depth))?.push(sid);
   }
   const depths = [...byDepth.keys()].sort((a, b) => b - a);
+  // Narration is one call per stage and is often the slowest phase after cards,
+  // so it reports like the others rather than looking hung for minutes.
+  const nStages = [...byDepth.values()].reduce((sum, list) => sum + list.length, 0);
+  const progress = new Progress(logger, 'narrate', nStages, options.onProgress);
 
   const summaries: Record<string, string> = {};
   for (const depth of depths) {
@@ -179,8 +187,10 @@ export async function narrate(
         logger,
         signal,
       );
+      progress.tick();
     });
   }
+  progress.finish('stage');
 
   // System overview from top-level stage summaries.
   const archetype = inputs.skeleton.metadata.archetype ?? '';

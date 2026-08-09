@@ -312,6 +312,8 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       unreadable: 'यह रिकॉर्ड पढ़ा नहीं जा सका',
     },
     job: {
+      phase: 'phase {0}/{1}',
+      eta: 'अनुमानित {0}',
       title: 'जॉब',
       running: 'चल रही है',
       succeeded: 'सफल',

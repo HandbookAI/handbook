@@ -20,6 +20,7 @@ import {
   replyExcerpt,
 } from '@handbook/core';
 import { stageShortDescriptions } from './skeleton.js';
+import type { ProgressSink } from '@handbook/core';
 
 const ASSIGN_RULES = `You are assigning whole SOURCE FILES to stages of a system handbook.
 Pick the ONE stage whose description best matches each file's PRIMARY responsibility; genuinely
@@ -41,6 +42,8 @@ export interface AssignOptions {
   /** Cooperative cancellation: checked per batch and passed into every LLM call. */
   signal?: AbortSignal;
   logger?: Logger;
+  /** Machine-readable progress, for a UI drawing a bar. */
+  onProgress?: ProgressSink;
 }
 
 function fileDescriptorLine(descriptor: NavFileDescriptor, card: FileCard | undefined): string {
@@ -165,7 +168,7 @@ export async function assignFiles(
   for (let i = 0; i < files.length; i += batchSize) batches.push(files.slice(i, i + batchSize));
 
   const fileStage: Record<string, { stage: string; also: string[] }> = {};
-  const progress = new Progress(logger, 'assign', files.length);
+  const progress = new Progress(logger, 'assign', files.length, options.onProgress);
   await mapLimit(batches, maxWorkers, async (batch) => {
     signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
     const result = await assignBatch(client, batch, menuBlock, validIds, cards, logger, signal);

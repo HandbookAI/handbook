@@ -314,6 +314,8 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       unreadable: 'この記録は読み取れませんでした',
     },
     job: {
+      phase: 'フェーズ {0}/{1}',
+      eta: '残り {0}',
       title: 'ジョブ',
       running: '実行中',
       succeeded: '成功',

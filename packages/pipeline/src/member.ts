@@ -33,6 +33,7 @@ import { readFileSync } from 'node:fs';
 import { stageShortDescriptions } from './skeleton.js';
 import { fileCallAdjacency, suggestOrder } from './organize.js';
 import type { WorkDir } from './workdir.js';
+import type { ProgressSink } from '@handbook/core';
 
 export const memberAssignmentSchema = z.object({
   version: z.literal(1),
@@ -65,6 +66,8 @@ export interface ClassifyMembersOptions {
   /** Cooperative cancellation: checked per batch and passed into every LLM call. */
   signal?: AbortSignal;
   logger?: Logger;
+  /** Machine-readable progress, for a UI drawing a bar. */
+  onProgress?: ProgressSink;
 }
 
 interface MemberDescriptor {
@@ -126,7 +129,7 @@ export async function classifyMembers(
   const batches: MemberDescriptor[][] = [];
   for (let i = 0; i < members.length; i += batchSize) batches.push(members.slice(i, i + batchSize));
 
-  const progress = new Progress(logger, 'members', members.length);
+  const progress = new Progress(logger, 'members', members.length, options.onProgress);
   await mapLimit(batches, maxWorkers, async (batch) => {
     signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
     const rows = batch.map((m) => {
