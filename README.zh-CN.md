@@ -2,12 +2,15 @@
 
 # Handbook
 
-**把任意代码库变成一本「手册」——让你的 AI 编码助手真正知道该改哪里。**
+### 一个代码库进来，**两本手册出去。**
+
+**📖 一本给团队真正读。 🤖 一本给 AI 真正用。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
 [![Tests](https://img.shields.io/badge/tests-offline%2C%20no%20API%20key-2dd4bf.svg?style=flat-square)](#开发)
 [![Languages](https://img.shields.io/badge/languages-18-a78bfa.svg?style=flat-square)](#语言支持)
+[![Outputs](https://img.shields.io/badge/outputs-human%20%2B%20AI-f472b6.svg?style=flat-square)](#你会得到什么)
 [![LLM](https://img.shields.io/badge/LLM-any%20OpenAI--compatible-fbbf24.svg?style=flat-square)](#环境要求)
 
 [English](README.md) · **中文**
@@ -15,18 +18,45 @@
 </div>
 
 <p align="center">
-  <img src="assets/pipeline.svg" alt="Handbook 全流程：analyze、generate、render、skill、plan、apply、resync" width="100%">
+  <img src="assets/pipeline.zh.svg" alt="Handbook 全流程：analyze、generate、render、skill、plan、apply、resync" width="100%">
 </p>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📖 给「人」的那本
+
+一份按阶段叙述的系统漫游——一个真正的文档站点：搜索、主题切换、深链接，全部由你的
+代码生成。`file://` 直接打开，随处可托管，还能整本装进一个 HTML 文件发邮件。
+
+**这本是给你读的。**
+
+</td>
+<td width="50%" valign="top">
+
+### 🤖 给「AI」的那本
+
+一份机器友好的**位置索引**——文件→阶段路由表、逐函数调用事实、消歧规则、
+`llms.txt`、可安装的 SKILL 包。不是摘要，是**地址簿**。
+
+**这本是给你的编码 agent 用的。**
+
+</td>
+</tr>
+</table>
 
 ---
 
 ## 60 秒看懂
 
 你有一个仓库。它大到装不进你的脑子，也大到装不进上下文窗口。你的 AI 助手 grep 一个符号，
-找到了七处里的三处，改完这三处，然后交出了一个只改了一半的补丁。
+找到了七处里的三处，改完这三处，然后交出了一个只改了一半的补丁。与此同时，团队的 wiki
+上一次说真话还是八个月前。
 
-**Handbook 解决的是「定位」问题。** 它用真正的语法解析器读你的代码，画出一张地图，
-再把这张地图作为**位置索引**（不是代码摘要）交给 agent。之后代码变了，地图跟着变。
+**Handbook 一次跑通，两个问题一起解。** 它用真正的语法解析器读你的代码，画出一张地图，
+然后把这张地图写成两份：一份是人愿意读下去的叙述，一份是 agent 能拿来路由的位置索引。
+之后代码变了，两份一起跟着变。
 
 ```bash
 git clone <本仓库> && cd handbook
@@ -101,25 +131,38 @@ _「这次改动必须碰哪些文件、哪些函数、哪些状态？」_ 的�
 ## 你会得到什么
 
 <p align="center">
-  <img src="assets/outputs.svg" alt="产出物：Markdown 手册、HTML 站点、单文件页面、agent 定位索引、llms.txt、SKILL 包" width="100%">
+  <img src="assets/outputs.zh.svg" alt="产出物：Markdown 手册、HTML 站点、单文件页面、agent 定位索引、llms.txt、SKILL 包" width="100%">
 </p>
 
-一次 `generate` + `render` 具体会产出：
+一次 `generate` + `render` 会从**同一张地图**产出**两族产物**——它们长得不一样，
+因为读者不一样：
 
+### 📖 给人读的 —— 你愿意主动打开的文档
+
+- **多页 HTML 文档站** —— 带编号的阶段目录树、每页右侧「本页目录」随滚动高亮、
+  **⌘K 全局搜索（阶段/文件/函数/状态寄存器全索引）**、深链接、浅色/深色/跟随系统三态主题、
+  上一页/下一页、移动端抽屉。CSS 和 JS 全部内联，链接全部相对：`file://` 直接打开就能用，
+  不需要服务器，不依赖 CDN，不需要构建。
+- **单文件 HTML** —— 整本手册压成一个文件，可以直接发邮件、丢进工单。
 - **Markdown 手册** —— `overview.md`（系统总览 + mermaid 阶段地图）、`index.md`（全部阶段，带层级）、
   每个阶段一页（文件卡片已分组），以及 `register.md`：一张跨阶段状态表，标明每个状态被哪些阶段触碰。
-- **多页 HTML 站点** —— 侧边栏常驻目录、面包屑、会记住选择的主题切换、一键展开/收起。
-  CSS 和 JS 全部内联，链接全部相对：直接 `file://` 打开就能用，不需要服务器，不依赖 CDN。
-- **单文件 HTML** —— 整本手册压成一个文件，可以直接发邮件、丢进工单。
-- **Agent 定位索引** —— 一层确定性的、事实门控的路由信息：职责、入口概念、涉及的状态、
-  典型文件、核心文件，以及联动改动提示。**只有结构信号存在时才输出对应字段**，
+  在 git 平台上直接看也完全成立。
+
+### 🤖 给 AI 用的 —— 是地址簿，不是散文
+
+- **Agent 定位索引**（`agent/`）—— 一层确定性的、事实门控的路由信息：职责、入口概念、
+  涉及的状态、典型文件、核心文件，以及联动改动提示。**只有结构信号存在时才输出对应字段**，
   所以字段为空的意思是「没有信号」，而不是「不知道」。
   （联动改动提示是其中最稀疏的一项，而且是设计使然：它只在测试文件与源文件**并排放置**时触发，
   而大多数项目并不这么放。）
 - **`llms.txt` 和 `llms-full.txt`** —— [llms.txt](https://llmstxt.org/) 约定，
-  外加把整本手册摊平成一份文档。
-- **SKILL 包** —— `SKILL.md` + `references/`，其中 `coverage.json` 为每个文件带上内容哈希，
-  于是 agent 能判断某一页是不是已经落后于代码了。
+  外加把整本手册摊平成一份文档，方便一次性装进上下文。
+- **SKILL 包** —— `SKILL.md` + `references/`，可直接装进编码 agent；`coverage.json`
+  为每个文件带上内容哈希，于是 agent 能判断某一页是不是已经落后于代码——并且**说出来**，
+  而不是继续信。
+
+这个「分两本」本身就是核心设计：给人的那本为叙述和导航优化，给 AI 的那本为路由和
+过期检测优化。底下是同一份事实——解析器产出的调用图——所以两本永远不会对代码各说各话。
 
 ---
 
@@ -369,7 +412,7 @@ pnpm studio --port 5000        # 参数直接透传
 ## 配置
 
 <p align="center">
-  <img src="assets/config-cascade.svg" alt="配置优先级：flag、环境变量、.env 级联、handbook.config.yaml、默认值" width="100%">
+  <img src="assets/config-cascade.zh.svg" alt="配置优先级：flag、环境变量、.env 级联、handbook.config.yaml、默认值" width="100%">
 </p>
 
 每个设置只声明**一次**，在同一张 registry 表里。CLI 参数、环境变量名、配置文件键、
@@ -456,7 +499,7 @@ handbook config --check                      # 有任何非法或缺失就非零
 ## 仓库结构
 
 <p align="center">
-  <img src="assets/architecture.svg" alt="分层结构：入口、能力包、引擎、地基" width="100%">
+  <img src="assets/architecture.zh.svg" alt="分层结构：入口、能力包、引擎、地基" width="100%">
 </p>
 
 | 包                                                  | 职责                                                                    | 用 LLM？ |

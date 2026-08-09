@@ -2,12 +2,15 @@
 
 # Handbook
 
-**Turn any codebase into a handbook your agent can actually route with.**
+### One codebase in. **Two handbooks out.**
+
+**📖 One your team actually reads. 🤖 One your AI agent actually routes with.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
 [![Tests](https://img.shields.io/badge/tests-offline%2C%20no%20API%20key-2dd4bf.svg?style=flat-square)](#development)
 [![Languages](https://img.shields.io/badge/languages-18-a78bfa.svg?style=flat-square)](#language-support)
+[![Outputs](https://img.shields.io/badge/outputs-human%20%2B%20AI-f472b6.svg?style=flat-square)](#what-you-get)
 [![LLM](https://img.shields.io/badge/LLM-any%20OpenAI--compatible-fbbf24.svg?style=flat-square)](#requirements)
 
 **English** · [中文](README.zh-CN.md)
@@ -18,17 +21,46 @@
   <img src="assets/pipeline.svg" alt="Handbook pipeline: analyze, generate, render, skill, plan, apply, resync" width="100%">
 </p>
 
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📖 The handbook for **humans**
+
+A narrated, stage-by-stage walkthrough of your system — a real documentation site
+with search, a theme toggle and deep links, generated from your code. Open it from
+`file://`, host it anywhere, email it as a single page.
+
+**You read this one.**
+
+</td>
+<td width="50%" valign="top">
+
+### 🤖 The handbook for **AI**
+
+A machine-shaped _location index_ — file→stage routing tables, per-function call
+facts, disambiguation rules, `llms.txt`, and an installable SKILL package. Not a
+summary: an address book.
+
+**Your coding agent reads this one.**
+
+</td>
+</tr>
+</table>
+
 ---
 
 ## The 60-second version
 
 You have a repository. It is too big to hold in your head, and too big to hold in a
 context window. Your coding agent greps for a symbol, finds three of the seven places
-that matter, edits those three, and ships a half-change.
+that matter, edits those three, and ships a half-change. Meanwhile the humans on the
+team have a wiki that was last true eight months ago.
 
-**Handbook fixes the routing problem.** It reads your code with a real parser, builds a
-map of it, and hands that map to the agent as a _location index_ — not a summary. Then
-it keeps the map current as the code moves.
+**Handbook fixes both with one pass.** It reads your code with a real parser, builds a
+map of it, then writes that map down twice: once as prose a person enjoys reading, once
+as a location index an agent can route with. Then it keeps both current as the code
+moves.
 
 ```bash
 git clone <this repo> && cd handbook
@@ -109,24 +141,38 @@ address it found, and emits an edit plan that is byte-exact enough to apply mech
   <img src="assets/outputs.svg" alt="Outputs: markdown handbook, HTML site, single page, agent locator index, llms.txt, SKILL package" width="100%">
 </p>
 
-Concretely, one `generate` + `render` produces:
+One `generate` + `render` produces **two families of artifacts from the same map** —
+know which one you are looking at, because they are shaped for different readers:
 
+### 📖 For humans — documentation you'd choose to read
+
+- **A multi-page HTML documentation site** — numbered stage tree, per-page table of
+  contents with scroll-spy, **⌘K search across every stage, file, function and state
+  register**, deep links, light/dark/auto theme, previous/next paging, a mobile drawer.
+  All CSS and JS inlined, every link relative: it works straight off `file://`, no
+  server, no CDN, no build step.
+- **One self-contained HTML page** — the whole handbook in a single file you can email.
 - **A markdown handbook** — `overview.md` (system prose + a mermaid stage map),
   `index.md` (every stage, nested), one page per stage with grouped file cards, and
-  `register.md`: a table of cross-stage state with the stages that touch it.
-- **A multi-page HTML site** — sticky sidebar TOC, breadcrumbs, a persisted theme
-  toggle, expand/collapse-all. All CSS and JS inlined, every link relative: it works
-  straight off `file://`, no server, no CDN.
-- **One self-contained HTML page** — the whole handbook in a single file you can email.
-- **An agent locator index** — a deterministic, fact-gated routing layer: duty, entry
-  concepts, state touched, exemplar files, core files, and co-change hints. A field is
-  emitted _only_ if the structural signal for it exists, so an empty field means
-  "no signal", never "unknown". (Co-change is the sparsest by design: it fires only where
-  a test file sits _beside_ its source, which most projects do not do.)
+  `register.md`: a table of cross-stage state with the stages that touch it. Reads
+  perfectly in a git forge.
+
+### 🤖 For AI — an address book, not an essay
+
+- **An agent locator index** (`agent/`) — a deterministic, fact-gated routing layer:
+  duty, entry concepts, state touched, exemplar files, core files, and co-change hints.
+  A field is emitted _only_ if the structural signal for it exists, so an empty field
+  means "no signal", never "unknown". (Co-change is the sparsest by design: it fires
+  only where a test file sits _beside_ its source, which most projects do not do.)
 - **`llms.txt` and `llms-full.txt`** — the [llms.txt](https://llmstxt.org/) convention,
-  plus the whole handbook flattened into one document.
-- **A SKILL package** — `SKILL.md` + `references/`, with `coverage.json` carrying a
-  content hash per file, so an agent can tell when a page has fallen behind the code.
+  plus the whole handbook flattened into one document for a single-shot context load.
+- **A SKILL package** — `SKILL.md` + `references/`, installable into a coding agent,
+  with `coverage.json` carrying a content hash per file, so the agent can tell when a
+  page has fallen behind the code — and say so instead of trusting it.
+
+The split is the point: the human pages optimise for narrative and navigation; the
+agent surfaces optimise for routing and staleness detection. Same facts underneath —
+the parser's call graph — so the two never disagree about what the code does.
 
 ---
 
