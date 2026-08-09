@@ -1,6 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { request, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockChatClient, type MockRule } from '@handbook/llm';
@@ -141,15 +150,22 @@ describe('studio server (integration, mock LLM)', () => {
   });
 
   it('serves the locale dictionaries from a fixed allowlist', async () => {
-    const en = await fetch(`${base}/i18n.en.js`);
-    expect(en.status).toBe(200);
-    expect(en.headers.get('content-type')).toBe('text/javascript; charset=utf-8');
-    expect(await en.text()).toContain('window.HB_DICT');
-    // A locale whose dictionary has not landed yet is a harmless no-op script,
-    // not a 404 — the UI then falls back to English key by key.
-    const hi = await fetch(`${base}/i18n.hi.js`);
-    expect(hi.status).toBe(200);
-    expect(await hi.text()).toContain('not translated yet');
+    // Which locales have a dictionary on disk changes as translations land, so
+    // the expectation is derived from the file rather than naming a locale that
+    // is "not translated yet" — that hard-coding went stale the moment one did.
+    // Either way the response is a 200 JavaScript file: a locale still awaiting
+    // its dictionary gets a harmless no-op script, not a 404, and the UI falls
+    // back to English key by key.
+    const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
+    for (const loc of ['en', 'zh', 'hi', 'es', 'pt', 'ru', 'ja', 'de']) {
+      const res = await fetch(`${base}/i18n.${loc}.js`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8');
+      const body = await res.text();
+      expect(body).toContain(
+        existsSync(join(publicDir, `i18n.${loc}.js`)) ? 'window.HB_DICT' : 'not translated yet',
+      );
+    }
     // Off the allowlist nothing is served: the file name is never joined from input.
     expect((await fetch(`${base}/i18n.xx.js`)).status).toBe(404);
     expect((await fetch(`${base}/i18n.%2e%2e.js`)).status).toBe(404);
@@ -406,6 +422,44 @@ describe('studio server (integration, mock LLM)', () => {
       body: JSON.stringify({ description: '', llmMaxTokens: 'lots' }),
     });
     expect(bad.status).toBe(400);
+  });
+
+  it('rejects registry-invalid input BEFORE starting a job, on every route', async () => {
+    // Adversarial finding: generate and resync pre-validated, but render, skill,
+    // plan and analyze resolved INSIDE the job — so `{"html":"yes-please"}` came
+    // back 202 and only failed in the drawer seconds later. Bad input is the
+    // caller's bug and deserves the status code that says so.
+    const bad: Array<[string, Record<string, unknown>]> = [
+      ['render', { html: 'yes-please' }],
+      ['plan', { request: 'x', maxTurns: 'many' }],
+      ['skill', { bodyLang: 'klingon' }],
+      ['generate', { detail: 'exhaustive' }],
+      ['resync', { cardDetail: 'medium' }],
+      // `lang` declares dynamicChoices, so the resolver alone cannot catch this:
+      // unchecked, an unknown language reached the analyzer and returned an empty
+      // analysis, which reads as "your repo has no code".
+      ['analyze', { lang: 'esperanto' }],
+      ['generate', { lang: 'esperanto' }],
+    ];
+    for (const [route, body] of bad) {
+      const res = await fetch(`${base}/api/repos/demo/${route}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(res.status, `${route} ${JSON.stringify(body)}`).toBe(400);
+    }
+  });
+
+  it('serves the locale dictionaries from a fixed allowlist only', async () => {
+    expect((await fetch(`${base}/i18n.en.js`)).status).toBe(200);
+    // A locale with no file yet is a no-op, not a 404: the UI falls back to
+    // English and stays whole while translations land.
+    const pending = await fetch(`${base}/i18n.hi.js`);
+    expect([200]).toContain(pending.status);
+    for (const path of ['/i18n.xx.js', '/i18n.%2e%2e%2fserver.js', '/i18n.en.js/../../etc/passwd']) {
+      expect((await fetch(`${base}${path}`)).status, path).toBe(404);
+    }
   });
 
   it('serves the registry settings for every studio-runnable command', async () => {

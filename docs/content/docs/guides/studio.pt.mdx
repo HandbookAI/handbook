@@ -1,0 +1,119 @@
+---
+title: 'Studio — a interface web'
+description: 'Toda a toolchain em uma aba do navegador, com logs ao vivo e rollback em um clique. Somente localhost, por design.'
+---
+
+```bash
+handbook studio                 # → http://127.0.0.1:4860
+handbook studio --port 5000     # or: pnpm studio --port 5000
+```
+
+Os mesmos caminhos de código da CLI, a mesma resolução de configuração, os mesmos
+artefatos em disco — apenas uma outra forma de conduzir tudo isso.
+
+**Zero build.** A interface é um único arquivo HTML escrito à mão, com CSS inline e JS
+puro. Sem bundler, sem framework, nada buscado de uma CDN. Ela carrega instantaneamente e
+funciona com o cabo de rede desconectado.
+
+## O que dá para fazer nela
+
+| Área                       | O que faz                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| **Repositórios**           | Registre uma árvore de código + diretório de trabalho sob um nome seguro para URL    |
+| **Generate**               | Conjunto completo de parâmetros, logs ao vivo via SSE, cancelável durante a execução |
+| **Navegador do handbook**  | Leia o handbook renderizado ali mesmo                                                |
+| **Grafo de impacto**       | Quais arquivos uma etapa possui, o que chama ela e o que ela chama                   |
+| **Visualizador de código** | Abra o arquivo real por trás de qualquer ficha, na linha citada                      |
+| **Plan**                   | Digite um pedido, acompanhe o agente somente-leitura trabalhando e leia o plano      |
+| **Apply / rollback**       | Dry-run, aplicação, todos os backups listados, rollback em um clique                 |
+| **Resync**                 | Avance o handbook contra a árvore viva — sem diretório de caso para montar           |
+| **Histórico**              | Evolução por repositório: o que cada execução mudou, e quando                        |
+
+## Jobs
+
+Geração, planejamento e resync rodam como **jobs em segundo plano**, com o log capturado e
+servido por Server-Sent Events.
+
+- **Um job por repositório de cada vez.** Os artefatos do pipeline não são seguros para
+  escritores concorrentes no mesmo diretório de trabalho; um segundo start é recusado com
+  uma mensagem clara.
+- **Cancelável.** Todo job tem um `AbortController` cujo sinal alcança as requisições de
+  LLM em voo. Cancelar significa cancelar, não "pare de me mostrar o log".
+- **Estados:** `running` → `succeeded` | `failed` | `cancelled`. O log completo é
+  preservado, então dá para ler o que aconteceu depois que terminou.
+
+## Configuração
+
+O Studio resolve suas opções a partir das **mesmas camadas de todos os outros comandos** —
+flags, ambiente, cascata de `.env`, `handbook.config.yaml`, padrões:
+
+```bash
+handbook studio --model gpt-4o --base-url https://my-proxy/v1 --port 5000
+handbook --env prod studio
+```
+
+Um job de generate iniciado pela interface enxerga a mesma camada de arquivo de
+configuração que a CLI enxergaria, então `detail`, `narrateLang`, `readWorkers` e o resto
+funcionam a partir do YAML.
+
+## Modelo de segurança
+
+O Studio é uma **ferramenta local**. Ele não é endurecido para exposição e não finge ser.
+
+- **Faz bind em `127.0.0.1` por padrão.**
+- **A proteção contra CSRF verifica o cabeçalho de requisição `Host`**, não o socket.
+  Apenas nomes de host de loopback passam.
+- **`POST` exige `application/json`**, o que bloqueia o clássico ataque de formulário HTML
+  cross-origin.
+- **Nomes de repositório são validados** contra `^[A-Za-z0-9][A-Za-z0-9._-]*$` antes de
+  tocarem o sistema de arquivos, e os caminhos são normalizados por realpath.
+- **O serviço de arquivos de código e do handbook roda em sandbox**, restrito às raízes
+  registradas.
+
+### Em um contêiner
+
+```bash
+pnpm run docker:studio    # docker compose up --build studio
+```
+
+Um contêiner precisa fazer bind em `0.0.0.0` para que a porta publicada seja sequer
+alcançável (`HANDBOOK_STUDIO_HOST=0.0.0.0` no `docker-compose.yml`).
+
+<Callout type="warn" title="Só http://localhost:4860 funciona">
+  Nem um IP da LAN, nem o nome do contêiner. Navegar a partir do host continua enviando `Host: localhost:4860`
+  e passa; uma requisição que nomeie um IP da LAN ou o hostname do contêiner é recusada com `403` **por
+  design**. O acesso remoto é um recurso separado e deliberadamente não implementado — exigiria uma allowlist
+  explícita — não uma lacuna nessa defesa.
+</Callout>
+
+## Estado
+
+```text
+~/.handbook-studio/
+  studio.json        the repository registry (schema-validated on read)
+  work/<name>/       auto-created work dirs for repos that did not bring their own
+```
+
+`--state-dir` muda o local. Todo o resto — artefatos do handbook, histórico de evolução —
+vive no diretório de trabalho de cada repositório, então apagar o diretório de estado faz
+perder o registro de repositórios e nada que importe.
+
+## Automatizando via script
+
+A interface é apenas um cliente. A API HTTP é estável o bastante para automatizar:
+
+```bash
+curl -s http://localhost:4860/api/repos | jq
+
+curl -s -X POST http://localhost:4860/api/repos \
+  -H 'content-type: application/json' \
+  -d '{"name":"api","sourceRoot":"/Users/me/code/api","workDir":"/Users/me/work/api"}'
+
+curl -s -X POST http://localhost:4860/api/repos/api \
+  -H 'content-type: application/json' \
+  -d '{"action":"analyze"}'
+
+curl -N http://localhost:4860/api/jobs/<job-id>    # SSE log stream
+```
+
+Tabela completa de rotas no [README do pacote](https://www.npmjs.com/package/@handbook/studio).
