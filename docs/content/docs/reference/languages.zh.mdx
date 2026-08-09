@@ -1,0 +1,129 @@
+---
+title: '语言支持'
+description: '18 种语言，横跨两个分析层级——各层级分别认领哪些扩展名、generic 层级放弃了什么，以及在你撞上之前值得先知道的两个注意事项。'
+---
+
+`--lang auto`（默认值）会在一趟扫描中检测并合并**每一种**语言。你几乎从来不需要指定其中某一种。
+
+```bash
+handbook analyze --source ~/code/polyglot-repo --work work/poly   # one pass, all languages
+handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
+```
+
+## full 层级
+
+手写的适配器：类型驱动的调用解析、继承成员、按属性的状态跟踪、语句范围。
+
+| 语言                           | 扩展名                                                   | 注册表键     |
+| ------------------------------ | -------------------------------------------------------- | ------------ |
+| Python                         | `.py`                                                    | `python`     |
+| TypeScript _(以及 JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` |
+| Go                             | `.go`                                                    | `go`         |
+| Rust                           | `.rs`                                                    | `rust`       |
+| Java                           | `.java`                                                  | `java`       |
+| C#                             | `.cs`                                                    | `csharp`     |
+| C/C++                          | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        |
+| Ruby                           | `.rb` `.rake` `.gemspec`                                 | `ruby`       |
+| PHP                            | `.php` `.phtml`                                          | `php`        |
+| Swift                          | `.swift`                                                 | `swift`      |
+| Dart                           | `.dart`                                                  | `dart`       |
+| Solidity                       | `.sol`                                                   | `solidity`   |
+| Shell                          | `.sh` `.bash`                                            | `shell`      |
+
+<Callout type="info" title="JavaScript 没有单独的适配器">
+  它由 TypeScript 那个适配器覆盖。这里没有什么好选的——`.js`、`.jsx`、`.mjs` 和 `.cjs` 都会被自动 认领。
+</Callout>
+
+<Callout type="info" title="C 系只有一个适配器，不是两个">
+  `cpp` 语法同样能处理 C；而 `c` 语法根本处理不了 C++。所以由一个适配器同时认领两者，对纯 C 项目来说 `--lang
+  cpp` 才是正确的写法。
+</Callout>
+
+## generic 层级
+
+一套配置驱动的引擎，每种语言一份声明式规格。**文件和函数清单是精确的**；调用关系是尽力而为。
+
+| 语言        | 扩展名         | 注册表键 |
+| ----------- | -------------- | -------- |
+| Kotlin      | `.kt` `.kts`   | `kotlin` |
+| Scala       | `.scala` `.sc` | `scala`  |
+| Zig         | `.zig`         | `zig`    |
+| Objective-C | `.m`           | `objc`   |
+| OCaml       | `.ml`          | `ocaml`  |
+
+分析结果混用了层级的手册，会**在它的总览里说明这一点**。究竟有哪些能力会退化，参见
+[分析保真度](/docs/concepts/analysis-fidelity)。
+
+## 两个注意事项，在你撞上之前先讲清楚
+
+### 在 V8 ≥ 13 上，Swift 会让进程直接中止
+
+随包发布的 Swift 语法，会在 V8 把 WASM 模块升到更高编译层之后触发一次致命的内存耗尽中止——在
+Node 24 上实测 5 次中 5 次致命，在 Node 21 上一切正常，而且在十九种语法里只有它是这样。
+
+**在这样的运行时上，适配器会在发现阶段就直接拒绝**，并点明补救办法，而不是把你整趟运行一起拖垮：
+
+```bash
+node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work work/ios
+```
+
+`--liftoff-only` 会跳过触发它的那次升层编译。本仓库自己的测试套件传同一个标志，正是出于同一个原因。
+
+### 含 `case` 的 shell 脚本会被跳过
+
+固定版本的 bash 语法，其外部扫描器会导入 `env.isalpha`，而 `web-tree-sitter@0.25.10` 的动态链接器
+并不提供这个符号，于是 `parse()` 一遇到 `case` 语句就抛错——而且会让解析器就此中毒，所以适配器会
+丢弃它并继续往下走。
+
+<Callout type="warn" title="这件事比听上去要严重">
+  `case` 在 shell 里无处不在。在 [`nvm`](https://github.com/nvm-sh/nvm) 上实测：**全部 6 个文件、
+  全部 122 个函数**都被跳过了。Shell 之所以列在 full 层级，是因为适配器本身是 full 层级的，但在那个
+  语法于上游修好之前，请**把 shell 的覆盖率当作部分覆盖**。
+
+扫描日志会明确说明这一点，并点出原因：
+
+```text
+[scan] shell: 5 file(s) the grammar could not parse — the pinned bash grammar throws on
+`case`, which most real scripts use; their functions are absent from this graph, not
+merely unresolved — install.sh, nvm.sh, …
+```
+
+</Callout>
+
+## 到处都会被跳过的东西
+
+每个适配器都遵守同一份共享的跳过清单：
+
+```text
+.git  .hg  .svn  node_modules  vendor  target  build  dist  out
+__pycache__  .mypy_cache  .pytest_cache  .ruff_cache  .tox
+venv  .venv  env  .env  site-packages  .idea  .vscode  .handbook-patches
+```
+
+如果你的构建产物放在别的地方，请把 `--source` 指向真正的源码根目录，而不是仓库根目录。
+
+## 当一个文件可能同属两种语言
+
+发现阶段会按固定顺序运行各个适配器，**第一个认领某个文件的适配器就把它留下**；扩展名匹配优先取最长
+匹配。实际当中，这只对 `.h`（由 C/C++ 适配器认领）和 `.m`（Objective-C）有影响。
+
+## 查看实际扫描到了什么
+
+```bash
+handbook analyze --source ~/code/repo --work work/x -v
+# [scan] auto root=/Users/me/code/repo
+# [scan] typescript: 284 files
+# [scan] python: 96 files
+# [scan] shell: 12 files
+# [build] functions=3187 kept=9042 dropped=611
+```
+
+```bash
+jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
+jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+```
+
+## 新增一门语言
+
+新增一门 **generic 层级**的语言，写的是一份声明式规格，而不是一个解析器——而且不需要任何新依赖，
+因为那些语法已经随包发布了。参见[新增一门语言](/docs/contributing/adding-a-language)。

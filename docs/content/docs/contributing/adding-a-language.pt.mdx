@@ -1,0 +1,193 @@
+---
+title: Adicionando uma linguagem
+description: Uma linguagem de nível generic é uma especificação declarativa, não um parser. Uma de nível full é uma interface pequena. Nenhuma das duas precisa de uma nova dependência.
+---
+
+O Handbook suporta 18 linguagens através de dois mecanismos. Adicionar uma ao **nível
+generic** costuma ser um único objeto literal, e não precisa de **nenhuma dependência nova**
+— as gramáticas já vêm com o `tree-sitter-wasms`.
+
+## Nível generic — uma especificação declarativa
+
+Adicione uma entrada a `GENERIC_LANGUAGES` em `packages/analyzer/src/generic.ts`:
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+Depois registre-a — o laço no fim de `packages/analyzer/src/register.ts` recolhe
+automaticamente toda entrada de `GENERIC_LANGUAGES`, então não há nada a acrescentar ali.
+
+<Steps>
+
+<Step>
+### Verifique se a gramática vem incluída
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+Se ela não estiver lá, a linguagem precisa de uma dependência nova, o que é uma conversa
+maior.
+
+</Step>
+
+<Step>
+### Encontre os tipos de nó
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+A expressão-s impressa é o vocabulário de nós contra o qual você está escrevendo a
+especificação.
+
+</Step>
+
+<Step>
+### Escreva a especificação e um teste
+
+Toda linguagem ganha um teste que constrói um mini-repositório real em um diretório
+temporário e verifica nós e arestas reais. Copie o formato de um já existente em
+`packages/analyzer/src/generic.test.ts`.
+
+**Uma árvore de análise simulada não prova nada sobre uma gramática.** Parseie código-fonte
+real.
+
+</Step>
+
+<Step>
+### Declare capacidades honestas
+
+O motor generic define estas para você:
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+Não as infle. O propósito inteiro da declaração é que quem lê consiga distinguir uma aresta
+de nível generic de uma do calibre do Python. Veja
+[Fidelidade da análise](/docs/concepts/analysis-fidelity).
+
+</Step>
+
+<Step>
+### Atualize a documentação, ou a build falha
+
+Um teste de deriva verifica que **toda linguagem registrada** aparece em ambos os READMEs.
+Adicione o nome de exibição a `DISPLAY` em `packages/cli/src/docs-drift.test.ts`, e depois
+a:
+
+- `README.md` e `README.zh-CN.md` — as tabelas de linguagens
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` e seu gêmeo em chinês
+
+Esse teste existe porque a lista já havia ficado seis linguagens para trás antes que alguém
+percebesse.
+
+</Step>
+
+</Steps>
+
+## Nível full — implemente o adaptador
+
+Vale a pena quando a resolução de chamadas de uma linguagem realmente precisa de informação
+de tipos: tipos de atributos, anotações de parâmetros, herança.
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+Registre-o em `packages/analyzer/src/register.ts`:
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+Esse é o contrato inteiro. Toda fase seguinte funciona sem alteração.
+
+### A regra das duas passagens
+
+**A passagem 1** coleta declarações e constrói índices de tipos. **A passagem 2** percorre os
+pontos de chamada com esses índices em mãos.
+
+Resolver `self.attr.method()` ou `param.method()` é impossível em uma única passagem, porque
+o tipo de `attr` é aprendido de uma atribuição no construtor que pode aparecer depois da
+chamada. Todo adaptador de nível full segue esse formato.
+
+### A regra de resolução
+
+Uma chamada que você não consegue determinar com precisão vira `unresolved`, e o construtor
+do grafo a coloca em quarentena em `dropped-calls.json` com uma categoria e seu texto bruto.
+
+**Nunca adivinhe.** Uma aresta adivinhada é indistinguível de uma real para tudo o que vem
+depois, o que envenena de uma só vez o agrupamento, as dicas de co-alteração e o índice
+localizador do agente.
+
+## Registrando um adaptador de fora
+
+O registro é público, então você pode adicionar uma linguagem sem fazer um fork:
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+Um adaptador que não declara capacidades, ou que declara lixo, é simplesmente **deixado de
+fora dos metadados do grafo** em vez de ter uma alegação de fidelidade inventada para ele.
+
+## Checklist
+
+- [ ] A gramática vem incluída com o `tree-sitter-wasms`
+- [ ] Especificação ou adaptador escrito
+- [ ] Registrado em `register.ts` (entradas de nível generic são recolhidas automaticamente)
+- [ ] Um teste que parseia código-fonte **real** em um diretório temporário
+- [ ] Capacidades declaradas honestamente
+- [ ] Nome de exibição adicionado ao mapa `DISPLAY` do teste de deriva
+- [ ] Ambos os READMEs, os READMEs do analisador e a referência de linguagens atualizados
+- [ ] `pnpm check` passa
+- [ ] Um changeset adicionado

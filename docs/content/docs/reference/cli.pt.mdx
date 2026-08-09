@@ -1,0 +1,423 @@
+---
+title: Referência da CLI
+description: Cada subcomando, cada flag, sua variável de ambiente e seu padrão — além do que cada comando escreve e com o que ele sai.
+---
+
+```bash
+handbook [global options] <command> [command options]
+```
+
+Todo comando escreve seu **resultado no stdout como JSON** e seus **logs no stderr**, então
+o encadeamento com pipes funciona exatamente como você esperaria:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+```
+
+<Callout title="`--help` é gerado, não escrito">
+  Toda flag abaixo deriva de um único registro de configurações, então `handbook <cmd> --help`
+  sempre lista a flag, sua variável de ambiente, sua variável específica daquele comando e seu
+  padrão. Se esta página e o `--help` algum dia discordarem, o `--help` está certo — e um teste
+  de deriva quebra o build.
+</Callout>
+
+## Opções globais
+
+| Flag                | Efeito                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-V, --version`     | Imprime a versão                                                                                                                                                                |
+| `-v, --verbose`     | Log de depuração                                                                                                                                                                |
+| `-q, --quiet`       | Apenas erros — **vence o `-v`**                                                                                                                                                 |
+| `--env <name>`      | Seleciona um ambiente: carrega `.env.<name>.local` e `.env.<name>` antes de `.env.local` e `.env`, e prefere `handbook.config.<name>.yaml`. O mesmo que `HANDBOOK_ENV`          |
+| `--env-file <path>` | Carrega exatamente este arquivo, ignorando a cascata de `.env`. **Um arquivo ausente é um erro barulhento, não um fallback.** Prefira `HANDBOOK_ENV_FILE` — veja o aviso abaixo |
+| `--config <path>`   | Usa este arquivo de configuração em vez de descobrir o `handbook.config.yaml` mais próximo                                                                                      |
+
+As opções globais vêm **antes** do subcomando:
+
+```bash
+handbook --env prod -v generate --source ~/code/api --work work/api
+```
+
+<Callout type="warn" title="`--env-file` colide com uma flag do Node">
+  O Node >= 20.6 tem seu próprio `--env-file`, e ele **varre antecipadamente toda a linha de
+  comando** atrás dela — inclusive a parte depois do caminho do script, onde ele na verdade não
+  aplica o arquivo. Um caminho que existe passa intacto para o Handbook, mas um caminho que
+  **não** existe mata o processo antes:
+
+```bash
+$ handbook --env-file /gone.env config
+node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+```
+
+Ou seja, o único caso que a flag promete relatar em alto e bom som é justamente o caso que ela
+não consegue relatar. `HANDBOOK_ENV_FILE` faz exatamente a mesma coisa e não pode ser
+interceptada:
+
+```bash
+$ HANDBOOK_ENV_FILE=/gone.env handbook config
+handbook: error: ENOENT: no such file or directory, open '/gone.env'
+```
+
+A flag continua funcionando sempre que o arquivo está realmente lá, e ela vence a variável de
+ambiente quando ambas estão definidas.
+
+</Callout>
+
+---
+
+## `analyze`
+
+Somente a Phase 1: constrói o grafo de chamadas estático. **Sem LLM, sem chave, de graça.**
+
+```bash
+handbook analyze --source <dir> --work <dir> [--lang <lang>]
+```
+
+| Flag             | Padrão          | Env                                           |
+| ---------------- | --------------- | --------------------------------------------- |
+| `--source <dir>` | **obrigatório** | `HANDBOOK_SOURCE` / `HANDBOOK_ANALYZE_SOURCE` |
+| `--work <dir>`   | **obrigatório** | `HANDBOOK_WORK` / `HANDBOOK_ANALYZE_WORK`     |
+| `--lang <lang>`  | `auto`          | `HANDBOOK_LANG` / `HANDBOOK_ANALYZE_LANG`     |
+
+`--lang` aceita `auto` ou qualquer um destes: `cpp` `csharp` `dart` `go` `java` `kotlin` `objc`
+`ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift` `typescript` `zig`.
+**`auto` detecta e mescla todas as linguagens em uma única passagem** e é quase sempre o que você quer.
+
+**Escreve** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+
+```json title="stdout"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+---
+
+## `generate`
+
+O pipeline completo. **Precisa de um endpoint de LLM** para qualquer coisa além da Phase 1.
+
+```bash
+handbook generate --source <dir> --work <dir> [options]
+```
+
+### Opções de pipeline
+
+| Flag                      | Padrão                                                  | O que faz                                                                           |
+| ------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `--phase <spec>`          | `all`                                                   | `all` · `1` · `2` (=2a+2b+2c) · `2a` · `2b` · `2c` · `3`, ou uma lista com vírgulas |
+| `--strategy <s>`          | _(a registrada no diretório de trabalho, senão `file`)_ | `file` ou `member`                                                                  |
+| `--skeleton <path>`       | —                                                       | Seu próprio `skeleton.yaml`. **Obrigatório** para `--strategy member`               |
+| `--detail <d>`            | `brief`                                                 | Profundidade da ficha: `brief` ou `deep`                                            |
+| `--synth-mode <m>`        | `oneshot`                                               | `oneshot`, ou `doctor` para o laço de reparo ator–crítico                           |
+| `--narrate-lang <l>`      | `en`                                                    | `en` ou `zh`                                                                        |
+| `--max-doctor-rounds <n>` | `6`                                                     | Rodadas de convergência do doctor                                                   |
+| `--resume`                | `false`                                                 | Pula arquivos que já têm uma ficha de arquivo concluída                             |
+| `--refresh`               | `false`                                                 | Ignora os caches da Phase 3                                                         |
+| `--llm-cache`             | `false`                                                 | Guarda em cache as respostas cruas do LLM em `<work>/phase3/cache`                  |
+
+### Opções de vazão
+
+| Flag                       | Padrão                        | O que faz                                             |
+| -------------------------- | ----------------------------- | ----------------------------------------------------- |
+| `--read-workers <n>`       | `12`                          | Lotes de fichas concorrentes                          |
+| `--read-batch-size <n>`    | _(1 para deep, 8 para brief)_ | Arquivos por lote de fichas                           |
+| `--max-chars-per-file <n>` | `0`                           | Trunca cada arquivo em n caracteres; `0` = sem limite |
+| `--assign-batch-size <n>`  | `25`                          | Fichas por lote de atribuição                         |
+| `--assign-workers <n>`     | `12`                          | Lotes de atribuição concorrentes                      |
+| `--organize-workers <n>`   | `8`                           | Chamadas de organização de etapas concorrentes        |
+| `--narrate-workers <n>`    | `8`                           | Chamadas de narração concorrentes                     |
+
+### Opções de LLM (compartilhadas por `generate`, `plan`, `resync`, `studio`)
+
+| Flag                        | Padrão                      | Alias de env        |
+| --------------------------- | --------------------------- | ------------------- |
+| `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
+| `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
+| `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
+| `--timeout <sec>`           | `300`                       | `OPENAI_TIMEOUT`    |
+| `--llm-retries <n>`         | `6`                         | —                   |
+| `--llm-retry-backoff <sec>` | `3`                         | —                   |
+| `--llm-concurrency <n>`     | `16`                        | —                   |
+| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
+
+A chave de API **nunca é uma flag**. Defina `OPENAI_API_KEY` (ou `HANDBOOK_LLM_API_KEY`) no
+ambiente ou em um arquivo `.env`. Ela é rejeitada em um arquivo de configuração, porque
+arquivos de configuração são commitados.
+
+`--extra-body` mescla campos do fornecedor em todo corpo de requisição — `{"thinking":{"type":"disabled"}}`,
+por exemplo. Campos de modelo, mensagem e tokens não podem ser sobrescritos por ele.
+
+```json title="stdout"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+---
+
+## `render`
+
+Diretório de trabalho → markdown, e opcionalmente mais. **Sem LLM.**
+
+```bash
+handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+| Flag                      | Padrão            | O que faz                                                  |
+| ------------------------- | ----------------- | ---------------------------------------------------------- |
+| `--work <dir>`            | **obrigatório**   | O diretório de trabalho a renderizar                       |
+| `--title <title>`         | `System Handbook` | Título do handbook na saída                                |
+| `--out <dir>`             | `<work>/handbook` | Onde escrever                                              |
+| `--html`                  | `false`           | Também o site HTML de múltiplas páginas, em `<out>/html`   |
+| `--html-single`           | `false`           | Também um único `<out>/handbook.html` autocontido          |
+| `--agent-site`            | `false`           | Também o índice localizador para agentes, em `<out>/agent` |
+| `--llms-txt`              | `false`           | Também `llms.txt` e `llms-full.txt`                        |
+| `--source-base-url <url>` | —                 | Liga cada ficha de arquivo a `<url>/<relative path>`       |
+
+<Callout type="info">
+  Sem `--source-base-url` a saída não contém **nenhuma URL externa**, o que importa se você está entregando um
+  handbook de uma base de código privada.
+</Callout>
+
+`--out` é _apenas escopada_: sua variável de ambiente é `HANDBOOK_RENDER_OUT`, não uma
+`HANDBOOK_OUT` plana, porque `--out` significa coisas diferentes em `plan` e `skill`.
+
+---
+
+## `skill`
+
+Handbook renderizado → pacote SKILL para agentes. **Sem LLM.**
+
+```bash
+handbook skill --handbook <dir> --out <dir> --name <slug> [options]
+```
+
+| Flag                | Padrão          | O que faz                                                     |
+| ------------------- | --------------- | ------------------------------------------------------------- |
+| `--handbook <dir>`  | **obrigatório** | O diretório do handbook renderizado                           |
+| `--out <dir>`       | **obrigatório** | Para onde vai o pacote SKILL                                  |
+| `--name <slug>`     | **obrigatório** | Slug em minúsculas com hífens; produz `<slug>-handbook`       |
+| `--project <name>`  | _(`--name`)_    | Nome legível do projeto usado na prosa                        |
+| `--work <dir>`      | —               | Adiciona `coverage.json` da atribuição da Phase 2             |
+| `--source <dir>`    | —               | Com `--work`, adiciona um **hash de conteúdo por arquivo**    |
+| `--agent-dir <dir>` | —               | Entrega as páginas localizadoras em `references/agent/`       |
+| `--lang <l>`        | `en`            | Idioma do **corpo** do SKILL.md. O frontmatter fica em inglês |
+
+<Callout type="warn" title="Duas recusas que vale conhecer">
+  `--out` não pode ser o diretório do handbook, nem um ancestral dele: a construção começa apagando `--out`, o
+  que apagaria justamente aquilo que está sendo empacotado. E `--lang zh` te dá um corpo em chinês com
+  **frontmatter em inglês** — os runtimes de agentes roteiam pelo texto da descrição, então traduzi-lo
+  quebraria silenciosamente a seleção do skill.
+</Callout>
+
+---
+
+## `validate`
+
+Verifica um pacote SKILL. **Sem LLM. Sai com `2` em caso de falha.**
+
+```bash
+handbook validate --skill <dir> [--source <dir>]
+```
+
+| Flag             | Padrão          | O que faz                                              |
+| ---------------- | --------------- | ------------------------------------------------------ |
+| `--skill <dir>`  | **obrigatório** | O diretório do skill a validar                         |
+| `--source <dir>` | —               | Refaz o hash do código-fonte vivo para detectar deriva |
+
+Verifica a estrutura, o contrato do frontmatter, a consistência entre índice ↔ páginas de etapa,
+o schema do `coverage.json` e a atualidade dos hashes. Erros e avisos vão para o stderr.
+
+---
+
+## `plan`
+
+Localização de mudanças guiada pelo handbook. **Precisa de um endpoint de LLM. Somente leitura.**
+
+```bash
+handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]
+```
+
+| Flag               | Padrão          | O que faz                                                               |
+| ------------------ | --------------- | ----------------------------------------------------------------------- |
+| `--source <dir>`   | **obrigatório** | A base de código sobre a qual planejar (nunca é escrita)                |
+| `--request <text>` | **obrigatório** | O pedido de mudança em linguagem natural                                |
+| `--handbook <dir>` | —               | Handbook renderizado ou `skills/<x>/references`. Fortemente recomendado |
+| `--out <file>`     | _(stdout)_      | Escreve o plano aqui                                                    |
+| `--max-turns <n>`  | `30`            | Orçamento de turnos do agente                                           |
+
+Mais as opções de LLM compartilhadas.
+
+**Sai com código diferente de zero** se o planejador desistiu — inventou resultados de
+ferramentas, esgotou os turnos ou terminou sem nada aproveitável — em vez de escrever um pedido
+de desculpas que um script alimentaria no `apply`.
+
+---
+
+## `apply`
+
+Aplica os blocos EDIT de um plano. **Sem LLM. Sai com `2` se algo não foi aplicado.**
+
+```bash
+handbook apply --source <dir> --plan <file> [--dry-run] [--backup-root <dir>]
+```
+
+| Flag                  | Padrão                       | O que faz                           |
+| --------------------- | ---------------------------- | ----------------------------------- |
+| `--source <dir>`      | **obrigatório**              | A árvore a editar                   |
+| `--plan <file>`       | **obrigatório**              | O plano vindo do `handbook plan`    |
+| `--dry-run`           | `false`                      | Apenas verifica — **nunca escreve** |
+| `--backup-root <dir>` | `<source>/.handbook-patches` | Para onde vão os backups            |
+
+```json title="stdout"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+Status: `applied` · `created` · `no-match` · `ambiguous` · `file-missing` · `not-a-file`
+· `unsafe-path` · `undecodable` · `skipped`.
+
+---
+
+## `rollback`
+
+Restaura uma árvore de código a partir de um backup de patch. **Sem LLM.**
+
+```bash
+handbook rollback --backup <dir> [--source <dir>] [--force]
+```
+
+| Flag             | Padrão          | O que faz                                             |
+| ---------------- | --------------- | ----------------------------------------------------- |
+| `--backup <dir>` | **obrigatório** | Diretório de backup contendo `manifest.json`          |
+| `--source <dir>` | —               | Recusa um backup que pertence a outra árvore          |
+| `--force`        | `false`         | Restaura até arquivos que mudaram **depois** do patch |
+
+Sem `--force`, um arquivo cujo hash atual não bate com o hash pós-patch é recusado — restaurá-lo
+destruiria silenciosamente tudo o que foi feito desde então.
+
+---
+
+## `resync`
+
+Avança um handbook depois de uma mudança de código.
+
+```bash
+handbook resync --case <dir> --work <dir> [options]
+```
+
+| Flag                   | Padrão                          | O que faz                                                                  |
+| ---------------------- | ------------------------------- | -------------------------------------------------------------------------- |
+| `--case <dir>`         | **obrigatório**                 | Diretório do caso: `edited/` + `plan.md` opcional + `change.diff` opcional |
+| `--work <dir>`         | **obrigatório**                 | O diretório de trabalho a avançar                                          |
+| `--title <title>`      | `System Handbook`               | Título usado ao re-renderizar                                              |
+| `--no-llm`             | _(LLM ligado)_                  | Apenas atualização estrutural; a prosa é marcada como obsoleta             |
+| `--no-render`          | _(render ligado)_               | Pula a atualização das saídas já renderizadas                              |
+| `--corrections <file>` | —                               | `corrections.jsonl`; seus arquivos **ampliam** o conjunto a atualizar      |
+| `--detail <d>`         | _(igual ao handbook existente)_ | `brief` ou `deep` para as fichas regeradas                                 |
+| `--narrate-lang <l>`   | _(igual ao handbook existente)_ | `en` ou `zh`                                                               |
+
+Mais as opções de LLM compartilhadas.
+
+<Callout type="info">
+  Deixar `--detail` e `--narrate-lang` sem definir é o padrão certo: não definir significa *"seja igual ao que
+  este handbook já é"*, então um resync nunca rebaixa silenciosamente um handbook deep para brief.
+</Callout>
+
+---
+
+## `studio`
+
+A interface web local. Roda até `Ctrl-C`.
+
+```bash
+handbook studio [--port <n>] [--host <addr>] [--state-dir <dir>]
+```
+
+| Flag                | Padrão                   | O que faz                                           |
+| ------------------- | ------------------------ | --------------------------------------------------- |
+| `--port <n>`        | `4860`                   | Porta em que escutar                                |
+| `--host <addr>`     | `127.0.0.1`              | Endereço de bind. Contêineres precisam de `0.0.0.0` |
+| `--state-dir <dir>` | `$HOME/.handbook-studio` | Registro e diretórios de trabalho gerenciados       |
+
+Mais as opções de LLM compartilhadas — o Studio as resolve a partir das mesmas camadas que todos
+os outros comandos, então tanto `--model` quanto um bloco `llm:` em arquivo de configuração
+chegam aos seus jobs.
+
+<Callout type="warn">
+  Definir `--host 0.0.0.0` **não** torna o Studio acessível remotamente em nenhum sentido útil: a proteção
+  CSRF verifica o cabeçalho `Host`, então uma requisição que nomeia um IP da LAN é recusada com `403`. Veja
+  [Studio](/docs/guides/studio).
+</Callout>
+
+---
+
+## `config`
+
+Imprime a configuração resolvida e de onde veio cada valor. **Sem LLM.**
+
+```bash
+handbook config [--command <name>] [--json] [--check]
+```
+
+| Flag               | Padrão     | O que faz                                                             |
+| ------------------ | ---------- | --------------------------------------------------------------------- |
+| `--command <name>` | `generate` | Mostra apenas as configurações que se aplicam a este subcomando       |
+| `--json`           | `false`    | Saída legível por máquina                                             |
+| `--check`          | `false`    | Apenas valida; **sai com 2** se algo for inválido ou estiver faltando |
+
+```bash
+handbook config --command generate      # a table, with provenance per row
+handbook config --json | jq '.settings[] | select(.source.kind == "env")'
+handbook config --check                 # put this one in CI
+```
+
+<Callout title="Ele mostra configuração quebrada de propósito">
+  Ao contrário de todos os outros comandos, o `config` não aborta diante de um valor inválido. Um `--source`
+  ausente aparece como uma linha visível `— unset (required)` em vez de derrubar a única ferramenta que você
+  usaria para depurar exatamente esse problema.
+</Callout>
+
+---
+
+## Códigos de saída
+
+| Código | Significado                                                                                                                                  |
+| :----: | -------------------------------------------------------------------------------------------------------------------------------------------- |
+|  `0`   | Sucesso                                                                                                                                      |
+|  `1`   | Um erro — configuração inválida, um artefato ausente, uma execução que falhou. Mensagem no stderr, prefixada `handbook: error:`              |
+|  `2`   | Uma **verificação** falhou: o `validate` achou problemas, o `apply` não foi aplicado por completo, ou o `config --check` achou algo inválido |
+
+`2` significa _"a ferramenta funcionou, e a resposta é não"_. Scripts devem tratá-lo de forma
+diferente de `1`.
+
+## Os atalhos do pnpm
+
+A partir de um clone, cada um destes faz o build antes e repassa as flags diretamente:
+
+```bash
+pnpm analyze  --source ~/code/proj --work work/proj
+pnpm generate --source ~/code/proj --work work/proj
+pnpm render   --work work/proj --html --agent-site --llms-txt
+pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
+pnpm validate --skill skills/proj --source ~/code/proj
+pnpm plan     --source ~/code/proj --request "…" --out plan.md
+pnpm apply    --source ~/code/proj --plan plan.md --dry-run
+pnpm rollback --backup ~/code/proj/.handbook-patches/<stamp>
+pnpm resync   --case cases/mycase --work work/proj
+pnpm studio
+pnpm config:show --command generate
+pnpm handbook --help
+```

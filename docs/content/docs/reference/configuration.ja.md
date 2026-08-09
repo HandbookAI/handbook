@@ -1,0 +1,220 @@
+---
+title: '設定リファレンス'
+description: 'Handbook のすべての設定を、フラグ・環境変数・設定ファイルのキー・型・デフォルトとともに掲載 — レジストリから生成されています。'
+---
+
+設定レジストリから `pnpm run config:docs` によって生成されています — 手で編集しないでください。内容が `SETTINGS` から乖離すると packages/cli/src/docs-drift.test.ts がビルドを失敗させます。
+
+## 優先順位
+
+すべての設定は同じレイヤーを通じて解決されます。優先度の高い順に **フラグ** > **シェル環境変数** > **`.env`** > **`handbook.config.yaml`** > **デフォルト** です。値を供給した最初のレイヤーが勝ち、その設定については下位のレイヤーがすべて無視されます。実際に何が解決され、それがどのレイヤー由来なのかを確認するには `handbook config` を実行してください。1 つのサブコマンドだけを見たい場合は `handbook config --command <name>` を使います。
+
+## 命名
+
+レジストリ内の 1 つの camelCase の `key` が、フラグ・環境変数・設定ファイルのキーという 3 つのサーフェスを同時に駆動します。いずれかにコマンド名を前置すると、そのサーフェスが 1 つのサブコマンドにスコープされます。変換規則は 3 つとも同じで、`HANDBOOK_<KEY>` は `HANDBOOK_<COMMAND>_<KEY>` になり、`key` は `<command>Key` になります。これは設定ファイルでフラットに書いても `<command>:` の下に 1 段ネストして書いても同じです。以下で _(スコープ付き)_ と記された設定は、コマンドごとに意味が変わるため、前置された環境変数名しか受け付けません（skill パッケージの `--out`、`--lang`）。
+
+## ブートストラップ
+
+3 つのトップレベル設定は上記のレイヤー自体を指し示すもので、それら自身はレジストリの外側にあり、他のすべての設定より前に一度だけ解決されます — だからこそ、いずれも自分が読み込む対象そのものからは設定できません。`handbook.config.yaml` の中の `--env` キー、`.env` の中の `--env-file` 行、あるいはその同じファイルの中の `--config` キーは、それを読み取る手段が何も残っていないからです。
+
+- `--env <name>`（または `HANDBOOK_ENV`）は環境ごとのカスケードを選択します — 3 つのうち唯一フラグと環境変数の両方の形式を持つのは、これが 1 つの正確なファイルを指すのではなく環境に名前を付けるものだからです。
+- `--env-file <path>` はそのファイル 1 つだけを読み込み、下記のカスケードをバイパスします。
+- `--config <path>` は 1 つの正確な設定ファイルを指定し、下記の環境を考慮した探索をバイパスします（デフォルト: 作業ディレクトリから上に辿り、リポジトリ境界で停止しながら見つかった最も近い `handbook.config.yaml` 系のファイル）。
+
+### `.env` のカスケード
+
+`--env-file` がない場合、CLI は固定の 1 ファイルではなく `.env*` ファイルのカスケードを、優先度の高い順に読み込みます。既存の `applyEnvFile` のルール — すでに設定済みのキーを決して上書きしない — があるからこそ、カスケードは「この順序で呼び出し、キーを最初に設定したファイルが勝つ」以上のものではなくなります。
+
+| #   | ファイル            | 対象   | スコープ     | コミットする?            |
+| --- | ------------------- | ------ | ------------ | ------------------------ |
+| 1   | シェル環境          | —      | —            | 常に優先                 |
+| 2   | `.env.<name>.local` | 個人   | この環境のみ | いいえ（gitignore 対象） |
+| 3   | `.env.<name>`       | チーム | この環境のみ | はい                     |
+| 4   | `.env.local`        | 個人   | すべての環境 | いいえ（gitignore 対象） |
+| 5   | `.env`              | チーム | ベースライン | はい                     |
+
+行 2 と行 3 が適用されるのは、`--env`/`HANDBOOK_ENV` が環境に名前を付けている場合だけです。**どちらも設定されていない場合は行 4 と行 5 だけが読み込まれます — これはこのカスケードが存在する前に読み込まれていたものとまったく同じであり、`.env.local` を持たない既存のセットアップには何の変化もありません。**
+
+### 環境を伴う設定ファイルの探索
+
+`--config` を別にすれば、探索は従来どおり作業ディレクトリから上に辿り、リポジトリ境界で停止します。ただし訪問する各ディレクトリで、まず `handbook.config.<name>.{yaml,yml,json}`（環境に名前が付いている場合のみ）を確認してから、素の `handbook.config.yaml` などを確認するようになりました — したがって、名前付きファイルは同じディレクトリにある素のファイルより常に優先され、素のファイルが作業ディレクトリにより近い階層に存在する場合でも同様です。環境に名前が付いていない場合、探索の挙動は変わりません。
+
+どの環境が有効で、どのファイルがどの優先順位で読み込まれたのかを正確に確認するには `handbook config` を実行してください — 4 つの値レイヤーの上にカスケードが乗ると、記憶だけで追うには取りうる供給元が多すぎますし、このコマンドが表示できないレイヤーは機能しないレイヤーと何ら変わりません。
+
+`readWorkers`（フラグ `--read-workers <n>`、デフォルト `12`）の具体例:
+
+| サーフェス                    | フラット                | `generate` にスコープ            |
+| ----------------------------- | ----------------------- | -------------------------------- |
+| 環境変数                      | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS` |
+| `handbook.config.yaml` のキー | `readWorkers`           | `generateReadWorkers`            |
+
+設定ファイルの 2 つの形式は相互に置き換え可能です。フラットな `readWorkers: ...` とネストした `generate: { readWorkers: ... }` は同じ意味になります。ファイルは読み込まれる前に、同じ camelCase の連結によってフラット化されるからです。
+
+## `analyze`
+
+| キー       | フラグ           | 環境変数             | 型                                          | デフォルト | 説明                                                                                                                                                             |
+| ---------- | ---------------- | -------------------- | ------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel` | —                | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent)     | `info`     | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `source`   | `--source <dir>` | `HANDBOOK_SOURCE`    | path                                        | required   | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `work`     | `--work <dir>`   | `HANDBOOK_WORK`      | path                                        | required   | パイプラインの成果物を保持する作業ディレクトリ。skill では任意で、指定すると coverage.json が追加される                                                          |
+| `lang`     | `--lang <lang>`  | `HANDBOOK_LANG`      | enum (`auto`, plus any registered language) | `auto`     | ソースの言語。auto は登録済みのすべての言語を検出してマージする                                                                                                  |
+
+## `generate`
+
+| キー              | フラグ                      | 環境変数                                       | 型                                          | デフォルト                  | 説明                                                                                                                                                             |
+| ----------------- | --------------------------- | ---------------------------------------------- | ------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel`        | —                           | `HANDBOOK_LOG_LEVEL`                           | enum (debug\|info\|warn\|error\|silent)     | `info`                      | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `llmApiKey`       | —                           | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY`       | string                                      | `""` (empty)                | LLM エンドポイントの API キー。キー不要のローカルエンドポイントでは EMPTY を指定。フラグにはならず、設定ファイルでも決して許可されない                           |
+| `llmModel`        | `--model <id>`              | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL`           | string                                      | `gpt-4o-mini`               | モデル識別子                                                                                                                                                     |
+| `llmBaseUrl`      | `--base-url <url>`          | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL`     | string                                      | `https://api.openai.com/v1` | OpenAI 互換の任意のエンドポイント（ホスト型、vLLM、LiteLLM、プロキシ）                                                                                           |
+| `llmMaxTokens`    | `--max-tokens <n>`          | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int                                         | `16000`                     | リクエストあたりの最大出力トークン数                                                                                                                             |
+| `llmTimeout`      | `--timeout <sec>`           | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT`       | int                                         | `300`                       | リクエストごとの制限時間（秒）。停止した呼び出しはフェーズを人質に取らせるのではなく再試行される                                                                 |
+| `llmMaxRetries`   | `--llm-retries <n>`         | `HANDBOOK_LLM_MAX_RETRIES`                     | int                                         | `6`                         | リクエストごとの再試行回数。0 は 1 回だけ試行する意味                                                                                                            |
+| `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF`                   | int                                         | `3`                         | 再試行間の基本バックオフ（秒）                                                                                                                                   |
+| `llmConcurrency`  | `--llm-concurrency <n>`     | `HANDBOOK_LLM_CONCURRENCY`                     | int                                         | `16`                        | 1 つのクライアントを通る同時リクエスト数の全体上限                                                                                                               |
+| `llmExtraBody`    | `--extra-body <json>`       | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json                                        | —                           | すべてのリクエストボディにマージされるベンダー固有フィールド。model/messages/token の各フィールドは上書きできない                                                |
+| `source`          | `--source <dir>`            | `HANDBOOK_SOURCE`                              | path                                        | required                    | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `work`            | `--work <dir>`              | `HANDBOOK_WORK`                                | path                                        | required                    | パイプラインの成果物を保持する作業ディレクトリ。skill では任意で、指定すると coverage.json が追加される                                                          |
+| `lang`            | `--lang <lang>`             | `HANDBOOK_LANG`                                | enum (`auto`, plus any registered language) | `auto`                      | ソースの言語。auto は登録済みのすべての言語を検出してマージする                                                                                                  |
+| `phase`           | `--phase <spec>`            | `HANDBOOK_PHASE`                               | string                                      | `all`                       | all \| 1 \| 2 \| 2a \| 2b \| 2c \| 3、またはカンマ区切りのリスト                                                                                                 |
+| `strategy`        | `--strategy <s>`            | `HANDBOOK_STRATEGY`                            | enum (file\|member)                         | —                           | file（デフォルト）または member。未設定の場合は作業ディレクトリに記録された戦略を維持                                                                            |
+| `skeleton`        | `--skeleton <path>`         | `HANDBOOK_SKELETON`                            | path                                        | —                           | ユーザーが記述した skeleton.yaml。member 戦略では必須                                                                                                            |
+| `narrateLang`     | `--narrate-lang <l>`        | `HANDBOOK_NARRATE_LANG`                        | enum (en\|zh)                               | `en`                        | 散文の言語                                                                                                                                                       |
+| `detail`          | `--detail <d>`              | `HANDBOOK_DETAIL`                              | enum (brief\|deep)                          | `brief`                     | カードの深さ                                                                                                                                                     |
+| `synthMode`       | `--synth-mode <m>`          | `HANDBOOK_SYNTH_MODE`                          | enum (oneshot\|doctor)                      | `oneshot`                   | スケルトン合成のモード                                                                                                                                           |
+| `maxDoctorRounds` | `--max-doctor-rounds <n>`   | `HANDBOOK_MAX_DOCTOR_ROUNDS`                   | int                                         | `6`                         | doctor の収束ラウンド数                                                                                                                                          |
+| `readWorkers`     | `--read-workers <n>`        | `HANDBOOK_READ_WORKERS`                        | int                                         | `12`                        | 同時実行するカードバッチ数                                                                                                                                       |
+| `readBatchSize`   | `--read-batch-size <n>`     | `HANDBOOK_READ_BATCH_SIZE`                     | int                                         | —                           | カードバッチあたりのファイル数。未設定の場合は --detail deep で 1、brief で 8                                                                                    |
+| `maxCharsPerFile` | `--max-chars-per-file <n>`  | `HANDBOOK_MAX_CHARS_PER_FILE`                  | int                                         | `0`                         | 各ファイルを n 文字で切り詰める。0 は無制限                                                                                                                      |
+| `assignBatchSize` | `--assign-batch-size <n>`   | `HANDBOOK_ASSIGN_BATCH_SIZE`                   | int                                         | `25`                        | 割り当てバッチあたりのカード数                                                                                                                                   |
+| `assignWorkers`   | `--assign-workers <n>`      | `HANDBOOK_ASSIGN_WORKERS`                      | int                                         | `12`                        | 同時実行する割り当てバッチ数                                                                                                                                     |
+| `organizeWorkers` | `--organize-workers <n>`    | `HANDBOOK_ORGANIZE_WORKERS`                    | int                                         | `8`                         | 同時実行するステージ整理呼び出し数                                                                                                                               |
+| `narrateWorkers`  | `--narrate-workers <n>`     | `HANDBOOK_NARRATE_WORKERS`                     | int                                         | `8`                         | 同時実行するナレーション呼び出し数                                                                                                                               |
+| `resume`          | `--resume`                  | `HANDBOOK_RESUME`                              | bool                                        | `false`                     | 完成したカードが既に存在するファイルをスキップ                                                                                                                   |
+| `refresh`         | `--refresh`                 | `HANDBOOK_REFRESH`                             | bool                                        | `false`                     | phase-3 のキャッシュを無視                                                                                                                                       |
+| `llmCache`        | `--llm-cache`               | `HANDBOOK_LLM_CACHE`                           | bool                                        | `false`                     | LLM の生の応答を <work>/phase3/cache にキャッシュする。--refresh を指定すると無効                                                                                |
+
+## `render`
+
+| キー            | フラグ                    | 環境変数                               | 型                                      | デフォルト        | 説明                                                                                                    |
+| --------------- | ------------------------- | -------------------------------------- | --------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `logLevel`      | —                         | `HANDBOOK_LOG_LEVEL`                   | enum (debug\|info\|warn\|error\|silent) | `info`            | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                |
+| `work`          | `--work <dir>`            | `HANDBOOK_WORK`                        | path                                    | required          | パイプラインの成果物を保持する作業ディレクトリ。skill では任意で、指定すると coverage.json が追加される |
+| `title`         | `--title <title>`         | `HANDBOOK_TITLE`                       | string                                  | `System Handbook` | レンダリング出力に使う handbook のタイトル                                                              |
+| `out`           | `--out <dir>`             | `HANDBOOK_RENDER_OUT` _(スコープ付き)_ | path                                    | —                 | 出力先。render は既定で <work>/handbook、plan はファイル、skill はディレクトリを書き出す                |
+| `html`          | `--html`                  | `HANDBOOK_HTML`                        | bool                                    | `false`           | <out>/html にマルチページの HTML サイトも出力する                                                       |
+| `htmlSingle`    | `--html-single`           | `HANDBOOK_HTML_SINGLE`                 | bool                                    | `false`           | 自己完結型の単一 HTML ページも出力する                                                                  |
+| `agentSite`     | `--agent-site`            | `HANDBOOK_AGENT_SITE`                  | bool                                    | `false`           | <out>/agent にエージェントロケーターのインデックスも出力する                                            |
+| `llmsTxt`       | `--llms-txt`              | `HANDBOOK_LLMS_TXT`                    | bool                                    | `false`           | markdown の隣に llms.txt と llms-full.txt も書き出す                                                    |
+| `sourceBaseUrl` | `--source-base-url <url>` | `HANDBOOK_SOURCE_BASE_URL`             | string                                  | —                 | ファイルカードを <url>/<relative path> のソースへリンクする                                             |
+
+## `skill`
+
+| キー       | フラグ              | 環境変数                                    | 型                                      | デフォルト | 説明                                                                                                                                                             |
+| ---------- | ------------------- | ------------------------------------------- | --------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel` | —                   | `HANDBOOK_LOG_LEVEL`                        | enum (debug\|info\|warn\|error\|silent) | `info`     | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `source`   | `--source <dir>`    | `HANDBOOK_SOURCE`                           | path                                    | —          | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `work`     | `--work <dir>`      | `HANDBOOK_WORK`                             | path                                    | —          | パイプラインの成果物を保持する作業ディレクトリ。skill では任意で、指定すると coverage.json が追加される                                                          |
+| `out`      | `--out <dir>`       | `HANDBOOK_SKILL_OUT` _(スコープ付き)_       | path                                    | required   | 出力先。render は既定で <work>/handbook、plan はファイル、skill はディレクトリを書き出す                                                                         |
+| `handbook` | `--handbook <dir>`  | `HANDBOOK_SKILL_HANDBOOK` _(スコープ付き)_  | path                                    | required   | レンダリング済み handbook のディレクトリ。skill では必須、plan では任意のコンテキスト                                                                            |
+| `name`     | `--name <slug>`     | `HANDBOOK_NAME`                             | string                                  | required   | skill のスラッグ（小文字とハイフン）                                                                                                                             |
+| `project`  | `--project <name>`  | `HANDBOOK_PROJECT`                          | string                                  | —          | 散文で使う人間向けのプロジェクト名                                                                                                                               |
+| `agentDir` | `--agent-dir <dir>` | `HANDBOOK_AGENT_DIR`                        | path                                    | —          | レンダリング済みのエージェントロケーターサイト。references/agent/ 配下に同梱される                                                                               |
+| `bodyLang` | `--lang <l>`        | `HANDBOOK_SKILL_BODY_LANG` _(スコープ付き)_ | enum (en\|zh)                           | `en`       | SKILL.md 本文の言語。フロントマターはルーティングのため英語のまま                                                                                                |
+
+## `validate`
+
+| キー       | フラグ           | 環境変数             | 型                                      | デフォルト | 説明                                                                                                                                                             |
+| ---------- | ---------------- | -------------------- | --------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel` | —                | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info`     | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `source`   | `--source <dir>` | `HANDBOOK_SOURCE`    | path                                    | —          | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `skill`    | `--skill <dir>`  | `HANDBOOK_SKILL`     | path                                    | required   | 検証対象の skill ディレクトリ                                                                                                                                    |
+
+## `plan`
+
+| キー              | フラグ                      | 環境変数                                       | 型                                      | デフォルト                  | 説明                                                                                                                                                             |
+| ----------------- | --------------------------- | ---------------------------------------------- | --------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel`        | —                           | `HANDBOOK_LOG_LEVEL`                           | enum (debug\|info\|warn\|error\|silent) | `info`                      | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `llmApiKey`       | —                           | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY`       | string                                  | `""` (empty)                | LLM エンドポイントの API キー。キー不要のローカルエンドポイントでは EMPTY を指定。フラグにはならず、設定ファイルでも決して許可されない                           |
+| `llmModel`        | `--model <id>`              | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL`           | string                                  | `gpt-4o-mini`               | モデル識別子                                                                                                                                                     |
+| `llmBaseUrl`      | `--base-url <url>`          | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL`     | string                                  | `https://api.openai.com/v1` | OpenAI 互換の任意のエンドポイント（ホスト型、vLLM、LiteLLM、プロキシ）                                                                                           |
+| `llmMaxTokens`    | `--max-tokens <n>`          | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int                                     | `16000`                     | リクエストあたりの最大出力トークン数                                                                                                                             |
+| `llmTimeout`      | `--timeout <sec>`           | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT`       | int                                     | `300`                       | リクエストごとの制限時間（秒）。停止した呼び出しはフェーズを人質に取らせるのではなく再試行される                                                                 |
+| `llmMaxRetries`   | `--llm-retries <n>`         | `HANDBOOK_LLM_MAX_RETRIES`                     | int                                     | `6`                         | リクエストごとの再試行回数。0 は 1 回だけ試行する意味                                                                                                            |
+| `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF`                   | int                                     | `3`                         | 再試行間の基本バックオフ（秒）                                                                                                                                   |
+| `llmConcurrency`  | `--llm-concurrency <n>`     | `HANDBOOK_LLM_CONCURRENCY`                     | int                                     | `16`                        | 1 つのクライアントを通る同時リクエスト数の全体上限                                                                                                               |
+| `llmExtraBody`    | `--extra-body <json>`       | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json                                    | —                           | すべてのリクエストボディにマージされるベンダー固有フィールド。model/messages/token の各フィールドは上書きできない                                                |
+| `source`          | `--source <dir>`            | `HANDBOOK_SOURCE`                              | path                                    | required                    | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `out`             | `--out <dir>`               | `HANDBOOK_PLAN_OUT` _(スコープ付き)_           | path                                    | —                           | 出力先。render は既定で <work>/handbook、plan はファイル、skill はディレクトリを書き出す                                                                         |
+| `handbook`        | `--handbook <dir>`          | `HANDBOOK_PLAN_HANDBOOK` _(スコープ付き)_      | path                                    | —                           | レンダリング済み handbook のディレクトリ。skill では必須、plan では任意のコンテキスト                                                                            |
+| `request`         | `--request <text>`          | `HANDBOOK_REQUEST`                             | string                                  | required                    | 自然言語による変更リクエスト                                                                                                                                     |
+| `maxTurns`        | `--max-turns <n>`           | `HANDBOOK_MAX_TURNS`                           | int                                     | `30`                        | エージェントのターン数の上限                                                                                                                                     |
+
+## `apply`
+
+| キー         | フラグ                | 環境変数               | 型                                      | デフォルト | 説明                                                                                                                                                             |
+| ------------ | --------------------- | ---------------------- | --------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel`   | —                     | `HANDBOOK_LOG_LEVEL`   | enum (debug\|info\|warn\|error\|silent) | `info`     | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `source`     | `--source <dir>`      | `HANDBOOK_SOURCE`      | path                                    | required   | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `plan`       | `--plan <file>`       | `HANDBOOK_PLAN`        | path                                    | required   | `handbook plan` が生成したプランファイル                                                                                                                         |
+| `dryRun`     | `--dry-run`           | `HANDBOOK_DRY_RUN`     | bool                                    | `false`    | 検証のみ行い、書き込みは一切しない                                                                                                                               |
+| `backupRoot` | `--backup-root <dir>` | `HANDBOOK_BACKUP_ROOT` | path                                    | —          | バックアップの出力先。既定は <source>/.handbook-patches                                                                                                          |
+
+## `rollback`
+
+| キー       | フラグ           | 環境変数             | 型                                      | デフォルト | 説明                                                                                                                                                             |
+| ---------- | ---------------- | -------------------- | --------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel` | —                | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info`     | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                         |
+| `source`   | `--source <dir>` | `HANDBOOK_SOURCE`    | path                                    | —          | ソースのルート。analyze/generate/plan/apply では必須、それ以外では任意（validate/skill ではハッシュの鮮度、rollback ではバックアップが属するツリーの特定に使用） |
+| `backup`   | `--backup <dir>` | `HANDBOOK_BACKUP`    | path                                    | required   | manifest.json を含むバックアップディレクトリ                                                                                                                     |
+| `force`    | `--force`        | `HANDBOOK_FORCE`     | bool                                    | `false`    | パッチ適用後に変更されたファイルも復元する                                                                                                                       |
+
+## `resync`
+
+| キー              | フラグ                      | 環境変数                                       | 型                                      | デフォルト                  | 説明                                                                                                                                   |
+| ----------------- | --------------------------- | ---------------------------------------------- | --------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel`        | —                           | `HANDBOOK_LOG_LEVEL`                           | enum (debug\|info\|warn\|error\|silent) | `info`                      | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                               |
+| `llmApiKey`       | —                           | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY`       | string                                  | `""` (empty)                | LLM エンドポイントの API キー。キー不要のローカルエンドポイントでは EMPTY を指定。フラグにはならず、設定ファイルでも決して許可されない |
+| `llmModel`        | `--model <id>`              | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL`           | string                                  | `gpt-4o-mini`               | モデル識別子                                                                                                                           |
+| `llmBaseUrl`      | `--base-url <url>`          | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL`     | string                                  | `https://api.openai.com/v1` | OpenAI 互換の任意のエンドポイント（ホスト型、vLLM、LiteLLM、プロキシ）                                                                 |
+| `llmMaxTokens`    | `--max-tokens <n>`          | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int                                     | `16000`                     | リクエストあたりの最大出力トークン数                                                                                                   |
+| `llmTimeout`      | `--timeout <sec>`           | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT`       | int                                     | `300`                       | リクエストごとの制限時間（秒）。停止した呼び出しはフェーズを人質に取らせるのではなく再試行される                                       |
+| `llmMaxRetries`   | `--llm-retries <n>`         | `HANDBOOK_LLM_MAX_RETRIES`                     | int                                     | `6`                         | リクエストごとの再試行回数。0 は 1 回だけ試行する意味                                                                                  |
+| `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF`                   | int                                     | `3`                         | 再試行間の基本バックオフ（秒）                                                                                                         |
+| `llmConcurrency`  | `--llm-concurrency <n>`     | `HANDBOOK_LLM_CONCURRENCY`                     | int                                     | `16`                        | 1 つのクライアントを通る同時リクエスト数の全体上限                                                                                     |
+| `llmExtraBody`    | `--extra-body <json>`       | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json                                    | —                           | すべてのリクエストボディにマージされるベンダー固有フィールド。model/messages/token の各フィールドは上書きできない                      |
+| `work`            | `--work <dir>`              | `HANDBOOK_WORK`                                | path                                    | required                    | パイプラインの成果物を保持する作業ディレクトリ。skill では任意で、指定すると coverage.json が追加される                                |
+| `title`           | `--title <title>`           | `HANDBOOK_TITLE`                               | string                                  | `System Handbook`           | レンダリング出力に使う handbook のタイトル                                                                                             |
+| `case`            | `--case <dir>`              | `HANDBOOK_CASE`                                | path                                    | required                    | ケースディレクトリ: edited/ + plan.md + change.diff                                                                                    |
+| `useLlm`          | `--no-llm`                  | `HANDBOOK_USE_LLM`                             | bool                                    | `true`                      | false にすると構造のみを更新し、散文には stale の印が付く                                                                              |
+| `refreshRendered` | `--no-render`               | `HANDBOOK_REFRESH_RENDERED`                    | bool                                    | `true`                      | false にすると <work>/handbook 配下の既にレンダリング済みの出力の更新をスキップ                                                        |
+| `corrections`     | `--corrections <file>`      | `HANDBOOK_CORRECTIONS`                         | path                                    | —                           | エージェントが報告した corrections.jsonl。そこに含まれるファイルが更新対象を広げる                                                     |
+| `cardDetail`      | `--detail <d>`              | `HANDBOOK_RESYNC_CARD_DETAIL` _(スコープ付き)_ | enum (brief\|deep)                      | —                           | 再生成されるカードの深さ。未設定の場合は既存の handbook に合わせる                                                                     |
+| `proseLang`       | `--narrate-lang <l>`        | `HANDBOOK_RESYNC_PROSE_LANG` _(スコープ付き)_  | enum (en\|zh)                           | —                           | 再生成されるカードの散文の言語。未設定の場合は既存の handbook に合わせる                                                               |
+
+## `studio`
+
+| キー              | フラグ                      | 環境変数                                       | 型                                      | デフォルト                  | 説明                                                                                                                                           |
+| ----------------- | --------------------------- | ---------------------------------------------- | --------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel`        | —                           | `HANDBOOK_LOG_LEVEL`                           | enum (debug\|info\|warn\|error\|silent) | `info`                      | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                       |
+| `llmApiKey`       | —                           | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY`       | string                                  | `""` (empty)                | LLM エンドポイントの API キー。キー不要のローカルエンドポイントでは EMPTY を指定。フラグにはならず、設定ファイルでも決して許可されない         |
+| `llmModel`        | `--model <id>`              | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL`           | string                                  | `gpt-4o-mini`               | モデル識別子                                                                                                                                   |
+| `llmBaseUrl`      | `--base-url <url>`          | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL`     | string                                  | `https://api.openai.com/v1` | OpenAI 互換の任意のエンドポイント（ホスト型、vLLM、LiteLLM、プロキシ）                                                                         |
+| `llmMaxTokens`    | `--max-tokens <n>`          | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int                                     | `16000`                     | リクエストあたりの最大出力トークン数                                                                                                           |
+| `llmTimeout`      | `--timeout <sec>`           | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT`       | int                                     | `300`                       | リクエストごとの制限時間（秒）。停止した呼び出しはフェーズを人質に取らせるのではなく再試行される                                               |
+| `llmMaxRetries`   | `--llm-retries <n>`         | `HANDBOOK_LLM_MAX_RETRIES`                     | int                                     | `6`                         | リクエストごとの再試行回数。0 は 1 回だけ試行する意味                                                                                          |
+| `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF`                   | int                                     | `3`                         | 再試行間の基本バックオフ（秒）                                                                                                                 |
+| `llmConcurrency`  | `--llm-concurrency <n>`     | `HANDBOOK_LLM_CONCURRENCY`                     | int                                     | `16`                        | 1 つのクライアントを通る同時リクエスト数の全体上限                                                                                             |
+| `llmExtraBody`    | `--extra-body <json>`       | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json                                    | —                           | すべてのリクエストボディにマージされるベンダー固有フィールド。model/messages/token の各フィールドは上書きできない                              |
+| `port`            | `--port <n>`                | `HANDBOOK_PORT`                                | int                                     | `4860`                      | 待ち受けるポート                                                                                                                               |
+| `host`            | `--host <addr>`             | `HANDBOOK_HOST`                                | string                                  | `127.0.0.1`                 | バインドアドレス。設定しない限りループバックのまま（コンテナでは 0.0.0.0 が必要）。CSRF ガードは引き続きループバックの Host ヘッダーを要求する |
+| `stateDir`        | `--state-dir <dir>`         | `HANDBOOK_STATE_DIR`                           | path                                    | —                           | studio.json と管理対象の作業ディレクトリの置き場所。既定は $HOME/.handbook-studio                                                              |
+
+## `config`
+
+| キー         | フラグ             | 環境変数               | 型                                      | デフォルト | 説明                                                                                                                                                                          |
+| ------------ | ------------------ | ---------------------- | --------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `logLevel`   | —                  | `HANDBOOK_LOG_LEVEL`   | enum (debug\|info\|warn\|error\|silent) | `info`     | ログの詳細度。-v/--verbose と -q/--quiet はそれぞれ debug/error の短縮形                                                                                                      |
+| `forCommand` | `--command <name>` | `HANDBOOK_FOR_COMMAND` | string                                  | —          | このサブコマンドに適用される設定のみを表示。env/ファイル/デフォルトの各レイヤーはここで確認できるが、そのコマンド自身のフラグは確認できない（フラグはコマンド本体に渡すこと） |
+| `json`       | `--json`           | `HANDBOOK_JSON`        | bool                                    | `false`    | 機械可読な出力                                                                                                                                                                |
+| `check`      | `--check`          | `HANDBOOK_CHECK`       | bool                                    | `false`    | 検証のみ行い、不正または欠落があれば非ゼロで終了                                                                                                                              |

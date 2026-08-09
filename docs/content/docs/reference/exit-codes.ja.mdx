@@ -1,0 +1,146 @@
+---
+title: '終了コードと出力'
+description: '各終了コードの意味、stdout と stderr のどちらに何が流れるか、そして両方を前提にスクリプトを書く方法。'
+---
+
+## 終了コード
+
+| コード | 意味                                                                                             | 発生元                                |
+| :----: | ------------------------------------------------------------------------------------------------ | ------------------------------------- |
+|  `0`   | 成功                                                                                             | すべてのコマンド                      |
+|  `1`   | エラー：設定が不正、アーティファクトが見つからない、実行が失敗した、エンドポイントに到達できない | すべてのコマンド                      |
+|  `2`   | **チェック**に失敗した — ツールは正しく動作し、その答えが「いいえ」だった                        | `validate`, `apply`, `config --check` |
+
+`1` と `2` の区別は、スクリプトにおいて重要な意味を持ちます：
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+case $? in
+  0) echo "fresh" ;;
+  2) echo "the handbook has drifted — schedule a resync" ;;
+  *) echo "something is broken" >&2; exit 1 ;;
+esac
+```
+
+### どのコマンドが 2 で終了しうるか
+
+- **`validate`** — SKILL パッケージが構造チェックに失敗したか、ソースのハッシュが変わった。
+- **`apply`** — 1 つ以上の編集が適用されなかった（`no-match`、`ambiguous`、`unsafe-path`
+  など）。`--dry-run` では「この計画はきれいには適用できない」という意味になります。
+- **`config --check`** — 設定が不正か、必須の設定が欠けている。
+
+プランナーが諦めたとき、`plan` は `2` ではなく **`1`** で終了します。途中で放棄された実行
+はエラーであって、否定の答えではないからです。
+
+## stdout と stderr
+
+| ストリーム | 内容                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **stdout** | コマンドの結果を JSON で出力します — 例外は `--out` なしの `plan`（計画そのものを書き出します）と、`--json` なしの `config`（表を書き出します） |
+| **stderr** | すべてのログ、すべての進捗、すべての警告、そしてすべてのエラーメッセージ                                                                        |
+
+この分離があるからこそ、パイプ処理が安全になります：
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env") | .key'
+handbook plan --source ~/code/api --request "…" > plan.md     # logs still visible
+```
+
+エラーには接頭辞が付くので、grep で拾えます：
+
+```text
+handbook: error: invalid configuration:
+  - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml
+```
+
+## ログレベル
+
+| 方法                       | レベル                              |
+| -------------------------- | ----------------------------------- |
+| デフォルト                 | `info`                              |
+| `-v` / `--verbose`         | `debug`                             |
+| `-q` / `--quiet`           | `error` — **`-v` より優先されます** |
+| `HANDBOOK_LOG_LEVEL=debug` | フラグなしで `debug`                |
+
+`HANDBOOK_LOG_LEVEL` は、どの `.env` ファイルとどの設定ファイルが読み込まれたかを報告する
+起動時の 2 行にも影響します — ある値が思いもよらない場所から来ているときに役立ちます。
+
+## 結果の形
+
+```json title="analyze"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+```json title="generate"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```json title="render"
+{
+  "outDir": "work/api/handbook",
+  "nStagePages": 9,
+  "agent": { "...": "…" },
+  "html": { "...": "…" },
+  "htmlSingle": { "...": "…" },
+  "llms": { "...": "…" }
+}
+```
+
+```json title="skill"
+{
+  "outDir": "skills/api",
+  "nStagePages": 9,
+  "references": [
+    "agent/how_to_use.md",
+    "agent/disambiguation.md",
+    "overview.md",
+    "index.md",
+    "registers.md",
+    "coverage.json"
+  ]
+}
+```
+
+```json title="plan (with --out)"
+{
+  "out": "plan.md",
+  "turns": 11,
+  "declarations": { "willModify": ["Uploader.send"], "willAdd": ["Uploader._retry"], "willRemove": [] }
+}
+```
+
+```json title="apply"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+```json title="resync"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["…"]
+}
+```
+
+`validate` は例外です：人間が読める行を stderr に書き出し、終了コードで結果を伝えます。

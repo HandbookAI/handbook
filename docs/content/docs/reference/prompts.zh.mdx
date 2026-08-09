@@ -1,0 +1,39 @@
+---
+title: '提示词目录'
+description: '工具链发出的每一条提示词、它各自要什么，以及当回复不可用时它们分别如何降级。'
+---
+
+工具链里每一处接触 LLM 的地方。所有产出 JSON 的调用都以 temperature 0 运行（对推理型模型会自动去掉这个参数）。中文叙述（`--narrate-lang zh`）会把 JSON 键、枚举值、id 和文件路径保留为英文；变化的只有散文值。
+
+| #   | 提示词（模块）                            | 阶段          | 用途                                                                                                                                                    | 输出契约                                                                     |
+| --- | ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1   | 简要卡片规则（`pipeline/cards.ts`）       | 2a            | 为批次中的每个文件给出 1–2 句大白话用途 + role 枚举值 + lifecycle 提示                                                                                  | `{"purposes":[{file,purpose,role,lifecycle}]}`                               |
+| 2   | 深度卡片规则（`pipeline/cards.ts`）       | 2a            | 整文件走读（120–300 词）+ 以精确 qualname 为键的每函数 purpose / data_flow / relations；图中的事实被声明为权威                                          | adds `description`, `functions[]`                                            |
+| 3   | 分块回退（`pipeline/cards.ts`）           | 2a            | 对超大文件的某一个函数分块套用同样的深度规则                                                                                                            | one `purposes` entry covering the chunk                                      |
+| 4   | 骨架合成（`pipeline/skeleton.ts`）        | 2b            | 由目录汇总 + 入口点得出有序的叙述主干；强制生命周期顺序；横切内容排在主流程之后                                                                         | `{"metadata":{archetype},"stages":[{id,title,description,parent,crosscut}]}` |
+| 5   | 文件分配（`pipeline/assign.ts`）          | 2b            | 从固定菜单里为每个文件选一个主阶段；`also` 取 0–2 个；vendored 或死代码用 `unassigned` 兜底                                                             | `{"assignments":[{file,stage,also}]}`                                        |
+| 6   | doctor 执行者（`pipeline/doctor.ts`）     | 2b            | ≤3 项结构性变更（add_stage / remove_stage / merge_stages / split_stage），按优先级：未分配 → 过载 → 饥饿 → 死阶段                                       | `{"changes":[…],"rationale"}`                                                |
+| 7   | critic 角色（`llm/critic.ts`）            | 2b            | 以角色扮演（engineer / architect / reader / editor）对照基准事实证据评审一份提案；APPROVE 从宽，只有无法修复时才 REJECT                                 | `{"decision","concerns","suggested_revision","rationale"}`                   |
+| 8   | 修订提示词（`llm/critic.ts`）             | 2b            | 执行者针对汇总后的 `[role] concern` 条目做出修订                                                                                                        | same schema as the original proposal                                         |
+| 9   | 阶段编排（`pipeline/organize.ts`）        | 2c            | 每个阶段 2–8 个有序子分组；每个文件恰好出现一次；叙述顺序尊重调用提示                                                                                   | `{"groups":[{title,summary,files}]}`                                         |
+| 10  | 成员分类（`pipeline/member.ts`）          | 2b (member)   | 把单个函数或方法分配到用户手写的阶段上                                                                                                                  | `{"assignments":[{member,stage}]}`                                           |
+| 11  | 阶段汇总（`pipeline/narrate.ts`）         | 3             | 由子概览 + 文件一句话得出 100–200 词、面向非专家的阶段概览                                                                                              | plain prose only (no JSON, no headers)                                       |
+| 12  | 系统汇总（`pipeline/narrate.ts`）         | 3             | 串起各顶层阶段的 200–350 词系统概览                                                                                                                     | plain prose only                                                             |
+| 13  | 寄存器提取（`pipeline/narrate.ts`）       | 3 round 1     | 由阶段概览 + data_model 卡片提取跨阶段的状态寄存器（id + 一行语义 + 涉及的阶段）                                                                        | `{"registers":[{id,semantics,stages}]}`                                      |
+| 14  | 寄存器补漏轮次（`pipeline/narrate.ts`）   | 3 rounds 2+   | 给定已找到的清单，只补出其中缺失的寄存器；空转时返回空数组（连续 2 轮空转后停止循环）                                                                   | same schema, new entries only                                                |
+| 15  | planner 系统提示词（`planner/prompt.ts`） | plan          | 用手册导航 → 读真实源码 → 输出字节精确的 EDIT 块 + declarations JSON；遵循「执行器盲目信任」规则（唯一性、不重叠、最小跨度）                            | markdown plan ending in one `{"will_modify","will_add","will_remove"}` block |
+| 16  | planner 工具协议（`planner/prompt.ts`）   | plan          | 每轮一个 JSON 动作：`list_dir` / `read_file` / `grep` / `finish`                                                                                        | `{"tool": …}` action block                                                   |
+| 17  | resync 演进标签（`studio/server.ts`）     | studio resync | 由被改动文件的用途，写出一句 ≤40 字的话，点明这次改动碰了哪些能力或模块；禁止猜测意图（studio 的 resync 没有 diff）；没有客户端时退回到确定性的文件清单 | plain prose, one line (rendered dimmed + tagged `auto`)                      |
+
+## 这些提示词共有的设计规则
+
+- **事实是注入进去的，从不向模型索取。** 函数清单、行范围和调用关系都来自图，并被标记为基准事实；
+  模型只在它们*周围*写散文，并且被明确要求不要把它们再列一遍。
+- **菜单是封闭的。** 分配和分类类的提示词会枚举出有效的阶段 id，并要求「绝不臆造」；菜单之外的任何
+  东西在解析时都会被强制归为 `unassigned`，所以提示词漂移无法污染产物。
+- **每一份 JSON 契约在消费侧都有一个机械式校验器**（zod 或手写检查）；被丢弃或格式不对的条目会被
+  确定性地回填，并计入覆盖率产物，而不是被悄悄补上。
+- **「只输出 JSON」/「只输出散文」**这样的收尾让解析毫无歧义；JSON 提取器能容忍围栏代码块、也会做
+  括号配对扫描，但提示词仍然只要一个围栏块。
+- **critic 提示词在两个方向上都抵制走过场**：足够正确的提案就批准（不要空洞的 REVISE——那些会被
+  归一化成 APPROVE），但一次坏掉的 critic 调用记作 REJECT，这样基础设施故障永远不会批准变更。

@@ -1,0 +1,158 @@
+---
+title: Variables de entorno
+description: Todas las variables que Handbook lee, la regla de nombres que las genera, la cascada de .env y cuáles no deben entrar nunca en un archivo de configuración.
+---
+
+## La regla de nombres
+
+Cada ajuste tiene **una** clave camelCase en el registro. De ella se derivan tres nombres
+mediante la misma transformación:
+
+| Superficie                         | Desde `readWorkers`     | Acotado a `generate`                                          |
+| ---------------------------------- | ----------------------- | ------------------------------------------------------------- |
+| Bandera                            | `--read-workers <n>`    | —                                                             |
+| Entorno                            | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS`                              |
+| Clave del archivo de configuración | `readWorkers`           | `generateReadWorkers`, o anidada `generate: { readWorkers: }` |
+
+**La forma acotada siempre gana a la plana.** Eso es lo que te permite decir «narra en
+chino, pero solo al generar» sin tocar nada más.
+
+```bash
+export HANDBOOK_NARRATE_LANG=en              # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
+```
+
+Unos pocos ajustes son **solo acotados**, porque su significado cambia según el comando:
+`--out` (`HANDBOOK_RENDER_OUT`, `HANDBOOK_SKILL_OUT`, `HANDBOOK_PLAN_OUT`),
+`--handbook` (`HANDBOOK_SKILL_HANDBOOK`, `HANDBOOK_PLAN_HANDBOOK`),
+el `--lang` de `skill` (`HANDBOOK_SKILL_BODY_LANG`) y el `--detail` /
+`--narrate-lang` de `resync` (`HANDBOOK_RESYNC_CARD_DETAIL`, `HANDBOOK_RESYNC_PROSE_LANG`).
+
+## Alias del proveedor
+
+Seis ajustes aceptan además los nombres que la gente ya tiene exportados:
+
+| Ajuste         | Alias               |
+| -------------- | ------------------- |
+| `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmModel`     | `OPENAI_MODEL`      |
+| `llmBaseUrl`   | `OPENAI_BASE_URL`   |
+| `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
+| `llmTimeout`   | `OPENAI_TIMEOUT`    |
+| `llmExtraBody` | `OPENAI_EXTRA_BODY` |
+
+El orden de búsqueda es: acotado `HANDBOOK_<CMD>_<KEY>` → plano `HANDBOOK_<KEY>` → el alias del proveedor.
+
+## Variables de arranque
+
+Tres ajustes se resuelven **antes** que todo lo demás, porque todo lo demás depende de
+ellos. Ninguno de ellos puede establecerse desde aquello que cargan — una clave `--env`
+dentro de `handbook.config.yaml` no tendría ya nada que la leyera.
+
+| Variable / bandera                        | Qué hace                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `HANDBOOK_ENV` / `--env <name>`           | Selecciona una cascada `.env` por entorno y prefiere `handbook.config.<name>.yaml`                                                                                                                                                                                                                                                                                       |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Carga exactamente ese único archivo, **saltándose la cascada**. Un archivo ausente es un error ruidoso. Prefiere la variable: Node >= 20.6 también se apropia de `--env-file` y lo pre-escanea, así que una ruta ausente muere como `node: <path>: not found` (salida 9) antes de que Handbook se ejecute. La bandera gana a la variable cuando ambas están establecidas |
+| `--config <path>`                         | Nombra un archivo de configuración exacto, saltándose el descubrimiento                                                                                                                                                                                                                                                                                                  |
+
+## La cascada de `.env`
+
+Sin `--env-file`, la CLI carga una cascada de archivos `.env*` desde el **directorio
+actual**, de mayor a menor precedencia:
+
+|  #  | Archivo                  | Quién    | Ámbito             | ¿Con commit?          |
+| :-: | ------------------------ | -------- | ------------------ | --------------------- |
+|  1  | _el entorno de la shell_ | —        | —                  | siempre gana          |
+|  2  | `.env.<name>.local`      | personal | solo este entorno  | no (ignorado por git) |
+|  3  | `.env.<name>`            | equipo   | solo este entorno  | sí                    |
+|  4  | `.env.local`             | personal | todos los entornos | no (ignorado por git) |
+|  5  | `.env`                   | equipo   | línea base         | sí                    |
+
+Las filas 2 y 3 solo se aplican cuando `--env`/`HANDBOOK_ENV` nombra un entorno. **Si no
+hay ninguno establecido, solo se cargan las filas 4 y 5.**
+
+Toda la cascada es «llámala en este orden, el primero que escribe gana», porque cargar un
+archivo nunca sobrescribe una clave que ya está establecida. Esa única regla es lo que
+mantiene a la shell por encima de todos los archivos, sin lógica extra en ninguna parte.
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+# loads .env.prod.local → .env.prod → .env.local → .env
+# and prefers handbook.config.prod.yaml over handbook.config.yaml
+```
+
+<Callout type="warn" title="La cascada es solo del cwd">
+  A diferencia de `handbook.config.yaml` — que se descubre subiendo hasta la raíz del repositorio git — los
+  archivos `.env` se leen desde el directorio en el que ejecutas el comando. `.env` significa «esta máquina,
+  ahora mismo». Ejecuta los comandos respaldados por un LLM desde la raíz del repositorio, o pasa
+  `--env-file`.
+</Callout>
+
+### Qué acepta el parser de `.env`
+
+`KEY=value`, un prefijo `export ` opcional, líneas en blanco, líneas de comentario `#`,
+valores entre comillas simples y dobles (se quitan las comillas) y un comentario en línea
+` #` al final de un valor sin comillas. Funcionan los finales de línea CRLF, LF y CR a
+secas. **Nada de valores multilínea.**
+
+Un **valor vacío se lee como no establecido** — `HANDBOOK_TITLE=` no producirá un handbook
+sin título.
+
+## Secretos
+
+`llmApiKey` / `OPENAI_API_KEY` está marcada como `secret` en el registro, lo que significa
+que:
+
+- **nunca** es una bandera de línea de comandos (las banderas acaban en el historial de la
+  shell y en la salida de `ps`);
+- se **rechaza** si aparece en un archivo de configuración, con un mensaje que dice por
+  qué — los archivos de configuración se suben al repositorio;
+- se **enmascara** en la salida de `handbook config`.
+
+```text
+handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
+— use .env or the shell environment instead
+```
+
+## Docker
+
+La imagen incorpora `HANDBOOK_SOURCE=/src` y `HANDBOOK_WORK=/work`, así que solo montas
+volúmenes:
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+El propio `--env-file` de Docker se superpone **por encima de** la carga de `.env` de la
+cadena de herramientas — ambos se aplican, y una variable `OPENAI_*` pasada de ese modo es
+visible exactamente igual que lo sería un export de la shell. Los archivos `.env*` nunca se
+incorporan a la imagen; consulta `.dockerignore`.
+
+## Ver qué se resolvió realmente
+
+```bash
+handbook config --command generate
+```
+
+imprime el entorno activo, todos los archivos `.env` que cargó la cascada, el archivo de
+configuración que resolvió y una fila por ajuste con su procedencia — `flag`, `env`, `file`
+o `default`.
+
+```bash
+handbook config --check    # exit 2 on the first invalid or missing value
+```
+
+<Callout title="Pon --check en CI">
+  Una variable con una errata antes significaba «se ejecutó silenciosamente con el valor por defecto». Ahora
+  es un fallo con la variable nombrada en el mensaje — mucho más barato de encontrar en CI que a los cuarenta
+  minutos de una ejecución de generación.
+</Callout>
+
+## La lista completa
+
+Todas las variables, con su tipo, valor por defecto y documentación, están en la página de
+[referencia de configuración](/docs/reference/configuration) — que se genera a partir del
+mismo registro que lee la CLI, así que no puede derivar.
+
+`.env.example` en la raíz del repositorio también se genera a partir de ese registro.
+**Todas sus líneas empiezan comentadas**, así que copiar el archivo entero es seguro.

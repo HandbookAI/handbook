@@ -1,0 +1,130 @@
+---
+title: Índice de paquetes
+description: Once paquetes npm, qué exporta cada uno y cuáles funcionan sin ningún LLM.
+---
+
+Handbook es un monorepo de once paquetes. **Cuatro de ellos nunca tocan un LLM** y son
+útiles por sí solos.
+
+| Paquete              | Función                                                              | ¿LLM? | Docs                                                       |
+| -------------------- | -------------------------------------------------------------------- | :---: | ---------------------------------------------------------- |
+| `@handbook/core`     | Modelo de datos, esquemas zod, registro de configuración, utilidades |  ❌   | [README](https://www.npmjs.com/package/@handbook/core)     |
+| `@handbook/analyzer` | Extracción estática del grafo de llamadas multilenguaje              |  ❌   | [README](https://www.npmjs.com/package/@handbook/analyzer) |
+| `@handbook/llm`      | Cliente compatible con OpenAI, caché, actor–crítico, mock            |  ✅   | [README](https://www.npmjs.com/package/@handbook/llm)      |
+| `@handbook/pipeline` | El pipeline de generación, fases 1–3                                 |  ✅   | [README](https://www.npmjs.com/package/@handbook/pipeline) |
+| `@handbook/renderer` | Markdown, HTML, índice para agentes, llms.txt                        |  ❌   | [README](https://www.npmjs.com/package/@handbook/renderer) |
+| `@handbook/skill`    | Empaquetado SKILL, validación, hashes de deriva                      |  ❌   | [README](https://www.npmjs.com/package/@handbook/skill)    |
+| `@handbook/planner`  | Agente de planificación de solo lectura                              |  ✅   | [README](https://www.npmjs.com/package/@handbook/planner)  |
+| `@handbook/patcher`  | Aplicación byte-exacta, copias de seguridad, rollback                |  ❌   | [README](https://www.npmjs.com/package/@handbook/patcher)  |
+| `@handbook/resync`   | Roll-forward incremental                                             |  ✅   | [README](https://www.npmjs.com/package/@handbook/resync)   |
+| `@handbook/studio`   | Interfaz web local                                                   |  ✅   | [README](https://www.npmjs.com/package/@handbook/studio)   |
+| `@handbook/cli`      | El comando `handbook`                                                |   —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+
+## Los tres más útiles por sí solos
+
+### `@handbook/analyzer` — un grafo de llamadas para 18 lenguajes
+
+```ts
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+
+registerBuiltinAdapters();
+const byLanguage = discoverAll('/path/to/repo');
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, '/path/to/repo'));
+}
+const { graph, stats } = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  {
+    sourceRoot: '/path/to/repo',
+    scannedFiles: Object.values(byLanguage).flat(),
+    language: 'multi',
+    defaultExt: '',
+  },
+);
+```
+
+Sin LLM, sin red, sin compilación nativa.
+
+### `@handbook/patcher` — aplicar un plan de edición de forma segura
+
+```ts
+import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+
+const problems = parsePlan(planText).problems; // lint a plan without applying it
+const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
+if (dry.ok) {
+  const result = applyPlan({ sourceRoot, plan: planText });
+  // rollback(result.backupDir!, { expectedSourceRoot: sourceRoot })
+}
+```
+
+El formato del plan está documentado en [Aplicar cambios](/docs/guides/applying-changes). Nada
+obliga a que el plan provenga de `@handbook/planner`: puedes escribir uno a mano.
+
+### `@handbook/renderer` — renderizar cualquier `HandbookModel`
+
+```ts
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+
+renderMarkdownHandbook(model, 'out/');
+renderAgentSite(model, 'out/agent');
+renderLlmsTxt(model, 'out/');
+```
+
+`HandbookModel` es el único contrato. Rellena uno como quieras y el renderizado, el
+empaquetado del skill y la planificación funcionan todos.
+
+## Exportaciones clave de un vistazo
+
+```ts
+// @handbook/core — the vocabulary
+CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
+FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
+HandbookModel · StageTree · coerceRole
+resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
+writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
+
+// @handbook/analyzer — the parser
+registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
+discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
+
+// @handbook/llm — the model seam
+ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
+resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
+
+// @handbook/pipeline — generation
+generateHandbook · loadHandbookModel · runPhase1 · generateCards
+synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
+narrate · extractRegisters · classifyMembers · WorkDir
+
+// @handbook/renderer — presentation
+renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
+renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
+
+// @handbook/skill — packaging
+buildSkill · validateSkill
+
+// @handbook/planner — localization
+runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
+
+// @handbook/patcher — execution
+applyPlan · rollback · listBackups · parsePlan
+
+// @handbook/resync — roll-forward
+resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
+
+// @handbook/studio — the UI
+startStudio · createStudioServer · StateStore · JobRunner
+```
+
+## Instalación
+
+```bash
+pnpm add @handbook/analyzer     # or npm / yarn
+```
+
+Todos los paquetes son solo ESM (`"type": "module"`), incluyen declaraciones de tipos,
+requieren Node ≥ 20.11 y tienen licencia MIT. Las versiones de terceros se fijan una sola
+vez en el catálogo del workspace, así que dos paquetes nunca pueden acabar en dos
+versiones de la misma librería.

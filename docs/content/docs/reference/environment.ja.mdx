@@ -1,0 +1,157 @@
+---
+title: '環境変数'
+description: 'Handbook が読み取るすべての変数、それらを生成する命名規則、.env のカスケード、そして設定ファイルに決して入れてはならないもの。'
+---
+
+## 命名規則
+
+すべての設定は、レジストリに camelCase のキーを**1 つ**だけ持ちます。3 つの名前は、
+同じ変換によってそこから導出されます:
+
+| 表に出る形         | `readWorkers` から      | `generate` にスコープした場合                                        |
+| ------------------ | ----------------------- | -------------------------------------------------------------------- |
+| フラグ             | `--read-workers <n>`    | —                                                                    |
+| 環境変数           | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS`                                     |
+| 設定ファイルのキー | `readWorkers`           | `generateReadWorkers`、またはネストした `generate: { readWorkers: }` |
+
+**スコープ付きの形式は常にフラットな形式に勝ちます。** これがあるからこそ、ほかを
+一切触らずに「ナレーションは中国語で、ただし生成のときだけ」と言えるのです。
+
+```bash
+export HANDBOOK_NARRATE_LANG=en              # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
+```
+
+いくつかの設定は、コマンドごとに意味が変わるため**スコープ付きのみ**です:
+`--out`（`HANDBOOK_RENDER_OUT`、`HANDBOOK_SKILL_OUT`、`HANDBOOK_PLAN_OUT`）、
+`--handbook`（`HANDBOOK_SKILL_HANDBOOK`、`HANDBOOK_PLAN_HANDBOOK`）、
+`skill` の `--lang`（`HANDBOOK_SKILL_BODY_LANG`）、そして `resync` の `--detail` /
+`--narrate-lang`（`HANDBOOK_RESYNC_CARD_DETAIL`、`HANDBOOK_RESYNC_PROSE_LANG`）です。
+
+## ベンダーのエイリアス
+
+6 つの設定は、すでに export 済みであることが多い名前も受け付けます:
+
+| 設定           | エイリアス          |
+| -------------- | ------------------- |
+| `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmModel`     | `OPENAI_MODEL`      |
+| `llmBaseUrl`   | `OPENAI_BASE_URL`   |
+| `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
+| `llmTimeout`   | `OPENAI_TIMEOUT`    |
+| `llmExtraBody` | `OPENAI_EXTRA_BODY` |
+
+参照順は、スコープ付きの `HANDBOOK_<CMD>_<KEY>` → フラットな `HANDBOOK_<KEY>` → ベンダーのエイリアス、です。
+
+## ブートストラップ変数
+
+3 つの設定は、ほかのすべてがそれらに依存しているため、**ほかのすべてより先に**解決
+されます。どれ 1 つとして、自分が読み込む当のものからは設定できません — `handbook.config.yaml`
+の中に書かれた `--env` キーは、それを読む側がもう残っていません。
+
+| 変数 / フラグ                             | 何をするか                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>`           | 環境ごとの `.env` カスケードを選び、`handbook.config.<name>.yaml` を優先します                                                                                                                                                                                                                                                                             |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | ちょうどそのファイル 1 つだけを読み込み、**カスケードをバイパス**します。ファイルが無ければ大きな声でエラーになります。変数のほうを使ってください: Node >= 20.6 も `--env-file` を持っていて事前スキャンするため、存在しないパスは Handbook が動き出す前に `node: <path>: not found`（終了コード 9）で落ちます。両方が設定されている場合はフラグが勝ちます |
+| `--config <path>`                         | 設定ファイルを 1 つ正確に指名し、探索をバイパスします                                                                                                                                                                                                                                                                                                      |
+
+## `.env` のカスケード
+
+`--env-file` が無い場合、CLI は**カレントディレクトリ**から `.env*` ファイルのカス
+ケードを、優先度の高い順に読み込みます:
+
+|  #  | ファイル            | 誰のもの | 適用範囲     | コミットする？           |
+| :-: | ------------------- | -------- | ------------ | ------------------------ |
+|  1  | _シェルの環境_      | —        | —            | 常に勝つ                 |
+|  2  | `.env.<name>.local` | 個人     | この環境のみ | いいえ（gitignore 済み） |
+|  3  | `.env.<name>`       | チーム   | この環境のみ | はい                     |
+|  4  | `.env.local`        | 個人     | すべての環境 | いいえ（gitignore 済み） |
+|  5  | `.env`              | チーム   | ベースライン | はい                     |
+
+2 行目と 3 行目は、`--env`/`HANDBOOK_ENV` が環境を指名しているときにだけ適用されま
+す。**どちらも設定されていなければ、読み込まれるのは 4 行目と 5 行目だけです。**
+
+カスケード全体は「この順で呼び、最初に書いた者が勝つ」です。ファイルの読み込みが、
+すでに設定済みのキーを上書きすることは決してないからです。このルール 1 つだけで、
+どこにも余分なロジックを置かずに、シェルがすべてのファイルより上位に居続けます。
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+# loads .env.prod.local → .env.prod → .env.local → .env
+# and prefers handbook.config.prod.yaml over handbook.config.yaml
+```
+
+<Callout type="warn" title="カスケードはカレントディレクトリのみ">
+  git ルートまで遡って探索される `handbook.config.yaml` とは違い、`.env` ファイルはコマンドを実行した
+  ディレクトリから読まれます。`.env` は「このマシンで、いま」という意味です。LLM を使うコマンドはリポジトリの
+  ルートから実行するか、`--env-file` を渡してください。
+</Callout>
+
+### `.env` パーサが受け付けるもの
+
+`KEY=value`、任意の `export ` プレフィックス、空行、`#` のコメント行、シングル
+クォートおよびダブルクォートで囲まれた値（クォートは取り除かれます）、そしてクォー
+トされていない値の末尾に付く ` #` のインラインコメントです。CRLF、LF、裸の CR のい
+ずれの改行でも動きます。**複数行の値には対応していません。**
+
+**空の値は未設定として読まれます** — `HANDBOOK_TITLE=` でタイトル無しのハンドブック
+ができてしまうことはありません。
+
+## シークレット
+
+`llmApiKey` / `OPENAI_API_KEY` はレジストリで `secret` とマークされています。つまり:
+
+- **決して**コマンドラインフラグにはなりません（フラグはシェル履歴と `ps` の出力に
+  残ります）;
+- 設定ファイルに現れた場合は、理由を述べるメッセージとともに**拒否**されます — 設定
+  ファイルはコミットされるからです;
+- `handbook config` の出力では**マスク**されます。
+
+```text
+handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
+— use .env or the shell environment instead
+```
+
+## Docker
+
+イメージには `HANDBOOK_SOURCE=/src` と `HANDBOOK_WORK=/work` が焼き込まれているの
+で、マウントするのはボリュームだけです:
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Docker 自身の `--env-file` は、ツールチェーンの `.env` 読み込みの**上に**重なります
+— 両方が適用され、その方法で渡された `OPENAI_*` 変数は、シェルの export とまったく
+同じように見えます。`.env*` ファイルがイメージに焼き込まれることはありません。
+`.dockerignore` を参照してください。
+
+## 実際に何が解決されたのかを見る
+
+```bash
+handbook config --command generate
+```
+
+は、有効な環境、カスケードが読み込んだすべての `.env` ファイル、解決された設定ファ
+イル、そして各設定 1 行ずつを、その出どころ — `flag`、`env`、`file`、`default` — と
+ともに表示します。
+
+```bash
+handbook config --check    # exit 2 on the first invalid or missing value
+```
+
+<Callout title="CI には --check を">
+  タイプミスした変数は、かつては「黙ってデフォルト値で走った」を意味していました。いまではそれは失敗であり、
+  メッセージにはその変数名が入ります — 生成の実行が 40 分進んだところで気づくより、CI で見つけるほうが
+  ずっと安上がりです。
+</Callout>
+
+## 完全な一覧
+
+すべての変数について、その型・デフォルト値・ドキュメントは
+[設定リファレンス](/docs/reference/configuration)のページにあります。このページは
+CLI が読むのと同じレジストリから生成されているので、ずれようがありません。
+
+リポジトリルートの `.env.example` も、同じレジストリから生成されています。**その中の
+すべての行はコメントアウトされた状態で始まる**ので、ファイルをまるごとコピーしても
+安全です。

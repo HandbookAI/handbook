@@ -1,0 +1,44 @@
+---
+title: 'プロンプトカタログ'
+description: 'ツールチェーンが送るすべてのプロンプト、それぞれが何を求めるのか、そして返信が使えないときにどう劣化するのか。'
+---
+
+ツールチェーンにおける LLM との接点のすべてです。JSON を生成する呼び出しはすべて temperature 0 で実行されます（推論型のモデルでは自動的に外されます）。中国語のナレーション（`--narrate-lang zh`）では、JSON のキー、列挙値、id、ファイルパスは英語のまま保たれ、変わるのは散文の値だけです。
+
+| #   | プロンプト（モジュール）                          | フェーズ      | 目的                                                                                                                                                                                                        | 出力コントラクト                                                             |
+| --- | ------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1   | 簡易カードルール（`pipeline/cards.ts`）           | 2a            | バッチ内のファイルごとに、1–2 文の平易な用途 + role の列挙値 + lifecycle のヒント                                                                                                                           | `{"purposes":[{file,purpose,role,lifecycle}]}`                               |
+| 2   | 詳細カードルール（`pipeline/cards.ts`）           | 2a            | ファイル全体のウォークスルー（120–300 語）+ 正確な qualname をキーとする関数ごとの purpose / data_flow / relations。グラフの事実は正典と宣言される                                                          | adds `description`, `functions[]`                                            |
+| 3   | チャンクフォールバック（`pipeline/cards.ts`）     | 2a            | 過大なファイルの 1 つの関数チャンクに、同じ詳細ルールを適用する                                                                                                                                             | one `purposes` entry covering the chunk                                      |
+| 4   | スケルトン合成（`pipeline/skeleton.ts`）          | 2b            | ディレクトリのロールアップ + エントリポイントから、順序付きの物語の背骨を作る。ライフサイクル順は必須、横断的な要素は主フローの後                                                                           | `{"metadata":{archetype},"stages":[{id,title,description,parent,crosscut}]}` |
+| 5   | ファイル割り当て（`pipeline/assign.ts`）          | 2b            | 固定メニューから、ファイルごとに主ステージを 1 つ。`also` は 0–2 個。vendor 由来や死んだコードには `unassigned` という逃げ道                                                                                | `{"assignments":[{file,stage,also}]}`                                        |
+| 6   | doctor アクター（`pipeline/doctor.ts`）           | 2b            | ≤3 件の構造変更（add_stage / remove_stage / merge_stages / split_stage）。優先順位は 未割り当て → 過負荷 → 枯渇 → 死んだステージ                                                                            | `{"changes":[…],"rationale"}`                                                |
+| 7   | critic のロール（`llm/critic.ts`）                | 2b            | 提案を根拠となる事実に照らし、ロールを演じて（engineer / architect / reader / editor）レビューする。APPROVE は寛大に、REJECT は修復不能なときだけ                                                           | `{"decision","concerns","suggested_revision","rationale"}`                   |
+| 8   | 修正プロンプト（`llm/critic.ts`）                 | 2b            | 集約された `[role] concern` の箇条書きに応える、アクター側の修正                                                                                                                                            | same schema as the original proposal                                         |
+| 9   | ステージ編成（`pipeline/organize.ts`）            | 2c            | ステージごとに 2–8 個の順序付きサブグループ。各ファイルはちょうど 1 回。呼び出しヒントを尊重した物語順                                                                                                      | `{"groups":[{title,summary,files}]}`                                         |
+| 10  | メンバー分類（`pipeline/member.ts`）              | 2b (member)   | 個々の関数やメソッドを、ユーザーが書いたステージに割り当てる                                                                                                                                                | `{"assignments":[{member,stage}]}`                                           |
+| 11  | ステージロールアップ（`pipeline/narrate.ts`）     | 3             | 子の概要 + ファイルの 1 行説明から、100–200 語の非専門家向けステージ概要                                                                                                                                    | plain prose only (no JSON, no headers)                                       |
+| 12  | システムロールアップ（`pipeline/narrate.ts`）     | 3             | トップレベルのステージを貫く 200–350 語のシステム概要                                                                                                                                                       | plain prose only                                                             |
+| 13  | レジスタ抽出（`pipeline/narrate.ts`）             | 3 round 1     | ステージ概要 + data_model カードから、ステージ横断の状態レジスタ（id + 1 行のセマンティクス + 触れているステージ）を抽出                                                                                    | `{"registers":[{id,semantics,stages}]}`                                      |
+| 14  | レジスタ欠落パス（`pipeline/narrate.ts`）         | 3 rounds 2+   | 見つかった一覧を与えたうえで、欠けているレジスタだけを返す。空振りなら空配列（空振り 2 周でループ停止）                                                                                                     | same schema, new entries only                                                |
+| 15  | planner システムプロンプト（`planner/prompt.ts`） | plan          | ハンドブックで道筋をつけ → 実際のソースを読み → バイト単位で正確な EDIT ブロック + declarations JSON を出す。実行器は盲目的に信頼するというルール（一意性、重なりなし、最小スパン）                         | markdown plan ending in one `{"will_modify","will_add","will_remove"}` block |
+| 16  | planner ツールプロトコル（`planner/prompt.ts`）   | plan          | 1 ターンにつき 1 つの JSON アクション: `list_dir` / `read_file` / `grep` / `finish`                                                                                                                         | `{"tool": …}` action block                                                   |
+| 17  | resync の進化ラベル（`studio/server.ts`）         | studio resync | 触れたファイルの用途から、どの機能やモジュールに変更が及んだかを示す ≤40 文字の 1 文を書く。意図の推測は禁止（studio の resync に diff はない）。クライアントがなければ決定的なファイル一覧にフォールバック | plain prose, one line (rendered dimmed + tagged `auto`)                      |
+
+## プロンプトが共有する設計ルール
+
+- **事実は注入するものであり、尋ねるものではありません。** 関数のインベントリ、行範囲、呼び出し関係は
+  グラフから来ており、正典として印が付けられます。モデルはその*まわり*に散文を書き、それらを再掲
+  しないよう指示されます。
+- **メニューは閉じています。** 割り当てと分類のプロンプトは有効なステージ id を列挙し、「決して捏造
+  しない」よう指示します。メニューの外にあるものはパース時に `unassigned` へ強制されるので、
+  プロンプトのドリフトが成果物を壊すことはありません。
+- **すべての JSON コントラクトには、消費側に機械的なバリデータがあります**（zod または手書きの
+  チェック）。落ちた項目や壊れた項目は決定的に埋め戻され、こっそり修正されるのではなくカバレッジの
+  成果物として数えられます。
+- **JSON のみ出力 / 散文のみ出力**という締めくくりが、パースを曖昧さのないものにします。JSON の
+  抽出器はフェンス付きブロックや波括弧の対応スキャンを許容しますが、それでもプロンプトはフェンス
+  付きブロックを 1 つだけ求めます。
+- **critic のプロンプトは、両方向のなれ合いを押し返します**: 十分に正しい提案は承認し（中身のない
+  REVISE は認めず、それらは APPROVE に正規化されます）、一方で壊れた critic 呼び出しは REJECT として
+  数え、インフラの障害が変更を承認してしまうことは決してありません。

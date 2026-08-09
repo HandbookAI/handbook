@@ -1,0 +1,146 @@
+---
+title: '环境变量'
+description: 'Handbook 读取的每一个变量、生成它们的命名规则、.env 级联，以及哪些绝不能进入配置文件。'
+---
+
+## 命名规则
+
+每个设置在注册表里都只有**一个** camelCase 键。三种名字都由同一套变换从它派生
+而来：
+
+| 呈现形式   | 由 `readWorkers` 派生   | 限定到 `generate`                                              |
+| ---------- | ----------------------- | -------------------------------------------------------------- |
+| 标志       | `--read-workers <n>`    | —                                                              |
+| 环境变量   | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS`                               |
+| 配置文件键 | `readWorkers`           | `generateReadWorkers`，或嵌套写法 `generate: { readWorkers: }` |
+
+**限定形式永远胜过扁平形式。** 正是它让你能说出“叙述用中文，但只在生成时”，而不
+必改动其他任何东西。
+
+```bash
+export HANDBOOK_NARRATE_LANG=en              # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
+```
+
+有几个设置**只支持限定形式**，因为它们的含义随命令而变：
+`--out`（`HANDBOOK_RENDER_OUT`、`HANDBOOK_SKILL_OUT`、`HANDBOOK_PLAN_OUT`）、
+`--handbook`（`HANDBOOK_SKILL_HANDBOOK`、`HANDBOOK_PLAN_HANDBOOK`）、
+`skill` 的 `--lang`（`HANDBOOK_SKILL_BODY_LANG`），以及 `resync` 的 `--detail` /
+`--narrate-lang`（`HANDBOOK_RESYNC_CARD_DETAIL`、`HANDBOOK_RESYNC_PROSE_LANG`）。
+
+## 供应商别名
+
+有六个设置同时接受人们早已导出好的那些名字：
+
+| 设置           | 别名                |
+| -------------- | ------------------- |
+| `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmModel`     | `OPENAI_MODEL`      |
+| `llmBaseUrl`   | `OPENAI_BASE_URL`   |
+| `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
+| `llmTimeout`   | `OPENAI_TIMEOUT`    |
+| `llmExtraBody` | `OPENAI_EXTRA_BODY` |
+
+查找顺序为：限定的 `HANDBOOK_<CMD>_<KEY>` → 扁平的 `HANDBOOK_<KEY>` → 供应商别名。
+
+## 引导变量
+
+有三个设置**先于**其他一切被解析，因为其他一切都依赖它们。它们中没有一个能由它们
+所加载的东西来设置——写在 `handbook.config.yaml` 里的 `--env` 键，将不再有任何东西
+能读到它。
+
+| 变量 / 标志                               | 作用                                                                                                                                                                                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>`           | 选择一套按环境划分的 `.env` 级联，并优先使用 `handbook.config.<name>.yaml`                                                                                                                                                                          |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | 只加载确切的那一个文件，**绕过级联**。文件缺失是一个大声报出的错误。优先用变量：Node >= 20.6 自己也拥有 `--env-file` 并会预先扫描它，所以路径缺失会在 Handbook 跑起来之前就以 `node: <path>: not found`（退出码 9）挂掉。两者都设置时，标志胜过变量 |
+| `--config <path>`                         | 指名一个确切的配置文件，绕过发现过程                                                                                                                                                                                                                |
+
+## `.env` 级联
+
+在没有 `--env-file` 时，CLI 会从**当前目录**加载一串 `.env*` 文件的级联，优先级从
+高到低：
+
+|  #  | 文件                | 属于谁 | 作用范围 | 是否提交？         |
+| :-: | ------------------- | ------ | -------- | ------------------ |
+|  1  | _shell 环境_        | —      | —        | 永远胜出           |
+|  2  | `.env.<name>.local` | 个人   | 仅此环境 | 否（已 gitignore） |
+|  3  | `.env.<name>`       | 团队   | 仅此环境 | 是                 |
+|  4  | `.env.local`        | 个人   | 所有环境 | 否（已 gitignore） |
+|  5  | `.env`              | 团队   | 基线     | 是                 |
+
+第 2 行和第 3 行只在 `--env`/`HANDBOOK_ENV` 指定了某个环境时才适用。**两者都没设置
+时，只有第 4 行和第 5 行会加载。**
+
+整套级联就是“按这个顺序调用，先写入者胜”，因为加载一个文件永远不会覆盖已经设置好
+的键。就这一条规则，让 shell 压过所有文件，而任何地方都不需要额外逻辑。
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+# loads .env.prod.local → .env.prod → .env.local → .env
+# and prefers handbook.config.prod.yaml over handbook.config.yaml
+```
+
+<Callout type="warn" title="级联只看当前工作目录">
+  与 `handbook.config.yaml` 不同——后者是向上走到 git 根目录来发现的——`.env` 文件只从你运行命令的那个目录
+  读取。`.env` 的意思是“这台机器，就现在”。请从仓库根目录运行依赖 LLM 的命令，或者传入 `--env-file`。
+</Callout>
+
+### `.env` 解析器接受什么
+
+`KEY=value`、可选的 `export ` 前缀、空行、`#` 注释行、单引号和双引号包裹的值（引号
+会被剥掉），以及未加引号的值后面那种 ` #` 行尾注释。CRLF、LF 和裸 CR 三种换行都能
+用。**不支持多行值。**
+
+**空值视为未设置**——`HANDBOOK_TITLE=` 不会产出一份无标题的 handbook。
+
+## 密钥
+
+`llmApiKey` / `OPENAI_API_KEY` 在注册表里被标记为 `secret`，这意味着：
+
+- 它**绝不**是命令行标志（标志会落进 shell 历史和 `ps` 输出）；
+- 如果它出现在配置文件里就会被**拒绝**，并附上说明缘由的消息——配置文件是要提交
+  的；
+- 它在 `handbook config` 的输出里会被**掩码**。
+
+```text
+handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
+— use .env or the shell environment instead
+```
+
+## Docker
+
+镜像里烤进了 `HANDBOOK_SOURCE=/src` 和 `HANDBOOK_WORK=/work`，所以你只需要挂载卷：
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Docker 自己的 `--env-file` 叠加在工具链的 `.env` 加载**之上**——两者都会生效，而以
+那种方式传入的 `OPENAI_*` 变量，其可见性与一次 shell 导出完全相同。`.env*` 文件永
+远不会被烤进镜像；参见 `.dockerignore`。
+
+## 看清实际解析出了什么
+
+```bash
+handbook config --command generate
+```
+
+会打印出生效的环境、级联加载过的每一个 `.env` 文件、它解析到的配置文件，以及每个
+设置各一行并附上其来源——`flag`、`env`、`file` 或 `default`。
+
+```bash
+handbook config --check    # exit 2 on the first invalid or missing value
+```
+
+<Callout title="把 --check 放进 CI">
+  一个拼错的变量，过去意味着“悄悄按默认值跑了”。现在它是一次失败，而且消息里点名了那个变量——在 CI
+  里找到它，比在一次生成跑到第四十分钟时才发现要便宜得多。
+</Callout>
+
+## 完整清单
+
+每一个变量，连同它的类型、默认值和文档，都在[配置参考](/docs/reference/configuration)
+页面上——那一页是从 CLI 读取的同一张注册表生成的，所以它不可能漂移。
+
+仓库根目录的 `.env.example` 同样由那张注册表生成。**它的每一行都以注释形式开头**，
+所以整份复制过去是安全的。

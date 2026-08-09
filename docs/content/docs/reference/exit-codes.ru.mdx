@@ -1,0 +1,149 @@
+---
+title: 'Коды возврата и вывод'
+description: 'Что означает каждый код возврата, что попадает в stdout, а что в stderr, и как писать скрипты под то и другое.'
+---
+
+## Коды возврата
+
+| Код | Значение                                                                                              | Кем выдаётся                          |
+| :-: | ----------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `0` | Успех                                                                                                 | каждая команда                        |
+| `1` | Ошибка: неверная конфигурация, отсутствующий артефакт, сорвавшийся запуск, недоступная конечная точка | каждая команда                        |
+| `2` | **Проверка** не прошла — инструмент отработал, и ответ «нет»                                          | `validate`, `apply`, `config --check` |
+
+Различие между `1` и `2` несёт нагрузку в скриптах:
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+case $? in
+  0) echo "fresh" ;;
+  2) echo "the handbook has drifted — schedule a resync" ;;
+  *) echo "something is broken" >&2; exit 1 ;;
+esac
+```
+
+### Какие команды могут вернуть 2
+
+- **`validate`** — SKILL-пакет не прошёл структурную проверку либо хеши исходников
+  сдвинулись.
+- **`apply`** — одна или несколько правок не легли (`no-match`, `ambiguous`,
+  `unsafe-path`, …). В режиме `--dry-run` это означает «этот план не применился бы чисто».
+- **`config --check`** — настройка неверна или отсутствует обязательная.
+
+`plan` возвращает **`1`**, когда планировщик сдался, а не `2`: брошенный запуск — это
+ошибка, а не отрицательный ответ.
+
+## stdout против stderr
+
+| Поток      | Что несёт                                                                                                                           |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **stdout** | Результат команды в виде JSON — кроме `plan` без `--out`, который пишет сам план, и `config` без `--json`, который печатает таблицу |
+| **stderr** | Всё логирование, весь прогресс, все предупреждения и каждое сообщение об ошибке                                                     |
+
+Именно это разделение делает конвейеры безопасными:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env") | .key'
+handbook plan --source ~/code/api --request "…" > plan.md     # logs still visible
+```
+
+Ошибки снабжены префиксом, чтобы их можно было отгрепать:
+
+```text
+handbook: error: invalid configuration:
+  - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml
+```
+
+## Уровни логирования
+
+| Как                        | Уровень                         |
+| -------------------------- | ------------------------------- |
+| по умолчанию               | `info`                          |
+| `-v` / `--verbose`         | `debug`                         |
+| `-q` / `--quiet`           | `error` — **приоритетнее `-v`** |
+| `HANDBOOK_LOG_LEVEL=debug` | `debug`, без флага              |
+
+`HANDBOOK_LOG_LEVEL` влияет и на две строки начальной загрузки, сообщающие, какие файлы
+`.env` и какой файл конфигурации были загружены, — это полезно, когда значение приходит
+откуда-то, откуда вы не ожидали.
+
+## Формы результата
+
+```json title="analyze"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+```json title="generate"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```json title="render"
+{
+  "outDir": "work/api/handbook",
+  "nStagePages": 9,
+  "agent": { "...": "…" },
+  "html": { "...": "…" },
+  "htmlSingle": { "...": "…" },
+  "llms": { "...": "…" }
+}
+```
+
+```json title="skill"
+{
+  "outDir": "skills/api",
+  "nStagePages": 9,
+  "references": [
+    "agent/how_to_use.md",
+    "agent/disambiguation.md",
+    "overview.md",
+    "index.md",
+    "registers.md",
+    "coverage.json"
+  ]
+}
+```
+
+```json title="plan (with --out)"
+{
+  "out": "plan.md",
+  "turns": 11,
+  "declarations": { "willModify": ["Uploader.send"], "willAdd": ["Uploader._retry"], "willRemove": [] }
+}
+```
+
+```json title="apply"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+```json title="resync"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["…"]
+}
+```
+
+`validate` — исключение: она пишет человекочитаемые строки в stderr и сообщает результат
+своим кодом возврата.

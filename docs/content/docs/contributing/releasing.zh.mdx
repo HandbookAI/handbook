@@ -1,0 +1,119 @@
+---
+title: '发布'
+description: 'changesets 驱动版本号和变更日志。在配置好 token 之前发布始终是空操作，所以无论如何账目都是对的。'
+---
+
+## 添加一个 changeset
+
+任何影响已发布包的改动都需要一个：
+
+```bash
+pnpm changeset
+```
+
+它会询问哪些包发生了变化、各自属于 patch、minor 还是 major，然后在 `.changeset/` 下写入一个
+markdown 文件。**请把该文件和代码一起提交。**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+请为 **变更日志的读者** 而不是评审者来写这段描述：从外部看改变了什么，而不是怎么改的。
+
+### 哪些改动需要
+
+| 改动                     | 需要 changeset？ |
+| ------------------------ | ---------------- |
+| 新增功能或标志           | ✅ minor         |
+| 已发布行为中的缺陷修复   | ✅ patch         |
+| 破坏性的 API 或 CLI 改动 | ✅ major         |
+| 新的语言适配器           | ✅ minor         |
+| 文档、测试、CI、内部重构 | ❌               |
+| `docs/` 下的任何内容     | ❌               |
+
+## 发布流程
+
+<Steps>
+
+<Step>
+### 带着 changesets 合并到 `main`
+
+Release 工作流会打开（或更新）一个 **"Version Packages"** 拉取请求。
+
+</Step>
+
+<Step>
+### 评审那个 PR
+
+它会应用每一个待处理的 changeset：提升版本号、写入每个包的 `CHANGELOG.md`，并删除已消费的
+changeset 文件。请阅读变更日志的 diff —— 它就是发布说明。
+
+</Step>
+
+<Step>
+### 合并它
+
+这会发布到 npm。
+
+</Step>
+
+</Steps>
+
+<Callout title="在 NPM_TOKEN 存在之前，发布是空操作">
+  没有配置这个 secret 时，发布步骤是一次空操作。**版本管理和变更日志依然是正确的** ——
+  所以无论这些包是否真的已经在发布，账目都是对的，而且日后开启发布也不需要重写历史。
+</Callout>
+
+## 手动执行
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` 还会运行 `pnpm install --lockfile-only`，因为提升后的 workspace 版本号会改变
+lockfile。
+
+## 发布之前
+
+```bash
+pnpm check:all
+```
+
+它等于 `pnpm check` 加上两道面向发布的关卡：
+
+- **`check:packaging`** —— 对每个包运行 `publint` 和 `@arethetypeswrong/cli`。它能抓出错误的
+  `exports` 映射、缺失的类型声明、双包隐患。
+- **`check:install`** —— 打包全部十一个 tarball，用 **纯 npm** 把它们安装到一个临时目录中，
+  再针对它们驱动 CLI。这是对 `dist` 最强的检查：它检验的是真实的已发布界面，而不是 workspace
+  的符号链接。
+
+它们要打包十一个 tarball，所以它们属于 CI 和发布之前，而不是每一次本地循环。
+
+## Provenance
+
+npm provenance 要求 **每一个** manifest 中都有一个指向公开仓库的 `repository` 字段。既然那是
+十二处编辑，而且每处的 `directory` 都不同：
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+它是幂等的 —— 迁移仓库之后再运行一次即可。它刻意 **没有** 接入 `pnpm check`：在仓库拥有公开
+URL 之前根本没有可校验的对象，而一道在全新克隆上就失败的关卡，只会教会人们忽略关卡。
+
+## 版本策略
+
+标准 semver，有两条约定值得明说：
+
+- **CLI 的标志是公开 API。** 移除或重命名一个标志是一次 major 升级。新增一个则是 minor。
+- **产物 schema 由各自的 `version` 字段单独版本化。** 一次让既有工作目录失效的 schema 改动，
+  对读取它们的包来说是一次 major 升级，并且需要在 changeset 里写明这一点 —— 因为不存在产物
+  迁移机制，所以「删掉工作目录并重新生成」必须是一个可以接受的答案。

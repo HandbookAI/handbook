@@ -1,0 +1,210 @@
+---
+title: '開発'
+description: 'ビルド、ゲート、ツールが強制する規約、そしてテストが API キーを一切必要としない理由。'
+---
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm test
+```
+
+Node ≥ 20.11 と pnpm ≥ 9 が必要です。ネイティブコンパイルはありません。
+
+## 日常のコマンド
+
+```bash
+pnpm build             # tsc -b (composite project references)
+pnpm build:watch
+pnpm test              # build + vitest
+pnpm test:watch
+pnpm check             # the everyday gate — run this before committing
+pnpm check:all         # check + packaging + install + CLI smoke — what CI runs
+pnpm check:cli         # every subcommand and config layer, end to end, offline
+```
+
+`pnpm check` は次の順に実行されます。
+
+1. `typecheck` — まずソース、続いて `tsconfig.tests.json` に対するテスト
+2. `check:workspace` — monorepo の構造的な不変条件
+3. `lint` — リポジトリ全体への eslint、**警告はゼロしか許容しません**
+4. `format:check` — prettier
+5. `test:coverage` — **パッケージごと**のカバレッジ下限を伴う vitest
+
+これは意図的に速い方のゲートです。`pnpm check:all` はより重い 3 つのゲート —
+`check:packaging`（publint + are-the-types-wrong）、`check:install`（11 個の tarball を
+pack し、素の npm でインストールし、CLI を動かす）、そして `check:cli`（後述）— を
+追加します。これらはローカルのループ毎ではなく、CI とリリース前に属するものです。
+
+### `check:cli` がカバーするもの
+
+`scripts/smoke-cli.sh` は同梱のモック LLM を相手に**実際の**バイナリをエンドツーエンドで
+動かし、すべてのサブコマンド、すべての設定レイヤー、そして — 最も重要なこととして —
+拒否の挙動について、終了コードと成果物をアサートします。
+
+- すべての `--help` 画面、および未知のサブコマンドが `1` で終了すること
+- `config` の由来表示、`--json`、そして必須値が欠けているときに `--check` が `2` で終了すること
+- 無効な enum / 整数 / phase の値が、デフォルトへすり抜けるのではなく `1` で終了すること
+- 生成のマトリクス：phase のサブセット、`--resume`、`--detail deep`、`--synth-mode doctor`、
+  `--llm-cache`、`--narrate-lang zh`
+- すべてのレンダリング形式、および空の作業ディレクトリに対する `render` が失敗すること
+- `skill` が自分自身の入力を食べてしまう `--out` を拒否すること、`validate` が `2` で終了すること
+- `apply` が**あいまいな**アンカーと**パスの脱出**を拒否すること、実際の `rollback` が
+  バイト単位で復元すること
+- LLM あり・なしの `resync`、および空の diff がきれいにスキップされること
+- 優先順位：設定ファイルより shell の環境変数、`handbook.config.<name>.yaml` より `.env.<name>`、
+  フラットよりスコープ付き、空文字は未設定と同じ、そして `config` の出力で API キーが**マスク**されること
+- 成果物の健全性：期待されるファイルがすべて存在すること、カードのカバレッジが完全であること、
+  未割り当てのファイルがないこと、トークン使用量が記録されていること
+
+ユニットテストは `generateHandbook` とその周辺をモックするため、正しく解決されたのに
+その後どこにも渡されないフラグ、誤った終了コード、継ぎ目で壊れた成果物の契約を
+捕まえられません。こちらは捕まえられます — しかも完全にオフラインなので、CI でも安全です。
+
+```bash
+pnpm check:cli
+SMOKE_PORT=9123 pnpm check:cli    # if port 8123 is taken
+```
+
+pre-commit フックは**ステージされたファイルのみ**にフォーマッタと linter を実行し、
+`commit-msg` が Conventional Commits を強制します。
+
+## テストの考え方
+
+**すべてオフラインで動きます。API キーを必要とするテストは 1 つもありません。**
+
+- LLM に依存するフローは `MockChatClient` — ルールのリストで、最初に一致したものが勝ちます —
+  に対してテストされ、実クライアントは同梱のモック HTTP エンドポイントに対してテストされます。
+- 決定的なパッケージは直接テストします。アナライザのテストは一時ディレクトリに**本物の**
+  ミニリポジトリを構築し、実際のノードとエッジをアサートします。モックした構文木では
+  文法について何も証明できません。
+- 失敗パスにも正常パスと同じだけの注意を払います：解析できない応答、部分的なバッチ、
+  劣化の段階、実行途中の中断、サンドボックスからの脱出、あいまいなアンカー。
+
+```bash
+pnpm test                                  # everything
+pnpm exec vitest run packages/analyzer     # one package
+pnpm exec vitest run -t "dropped calls"    # one test by name
+pnpm test:coverage
+```
+
+## ツールが強制する 4 つの規約
+
+### バージョンは 1 か所にだけ置く
+
+サードパーティのバージョンはすべて `pnpm-workspace.yaml` の catalog で宣言され、各パッケージは
+`"catalog:"` に依存し、範囲を書き直すことはありません。**マニフェストにリテラルの範囲があると
+`pnpm check:workspace` が失敗します**。使われていない catalog エントリも同様です。
+
+```json
+{ "dependencies": { "zod": "catalog:" } }
+```
+
+pnpm は pack のときに `catalog:` を解決済みの範囲へ書き換えるので、利用者がこのプロトコルを
+目にすることはありません。
+
+### `dist/` が公開される面
+
+ビルド用プロジェクトは `*.test.ts` と `*.test-helper.ts` を除外し、`tsconfig.tests.json` が
+`noEmit` でテストを型チェックします。ソースマップは、決して公開されないソースを指しているため
+tarball から除外されます。**`dist/` 配下のテスト成果物はチェックを失敗させます。**
+
+### カバレッジ下限はパッケージごと
+
+リポジトリ全体でひとつの数字は肝心なところを隠します：全体で 86% のとき、`@handbook/cli` は
+23% でした。各パッケージは `vitest.config.ts` に自分の下限を持ち、実測値のすぐ下に設定されて
+いるため、**ラチェットのように上がっていきます**。
+
+変更によってカバレッジが上がったら、下限も一緒に上げてください。赤くなった実行を通すために
+差を広げてはいけません。
+
+### テストは `@handbook/*` を `dist` ではなくソースへ解決する
+
+そうしないと、パッケージ境界をまたいで使われるもののカバレッジがどこにも計上されません —
+パイプラインが毎回呼んでいるのに `core/src/util/hash.ts` は 0% と計測されていました。
+
+実際の `dist` は `tsc -b` と `pnpm check:install` によって検証されます。後者は pack した
+tarball を素の npm でインストールし、それらに対して CLI を動かします。これはユニットテスト
+よりも `dist` に対する強いチェックです。
+
+## 構造的な不変条件
+
+`scripts/check-workspace.mjs` は 7 つのルールを強制します。どれもこのリポジトリが少なくとも
+一度は破ったものです。
+
+1. TypeScript のプロジェクト参照がワークスペースの依存関係と完全に一致すること。
+2. ワークスペースの依存は `workspace:` プロトコルを使い、実際に存在すること。
+3. ルートのソリューションファイルがすべてのパッケージを参照すること。
+4. ビルド用プロジェクトがテストを除外し、`dist/` にテストが 1 つも含まれないこと。
+5. マニフェストの形が統一されていること — `type`、`description`、`license`、`files`、`engines`、
+   `exports`、`scripts`、`publishConfig`。
+6. 公開されるパッケージがプライベートなパッケージに依存しないこと。
+7. サードパーティのバージョンが catalog にのみ存在し、他のどこにもないこと。
+
+## 生成されるファイル
+
+3 つのファイルが設定レジストリから生成され、ドリフトテストによって**バイト単位で**比較されます。
+
+```bash
+pnpm run config:docs
+# writes .env.example
+#        docs/content/docs/reference/configuration.md
+#        handbook.config.example.yaml
+```
+
+これらのいずれかを手で編集するとビルドが失敗します。代わりにレジストリ
+（`packages/core/src/config/registry.ts`）を変更し、再生成してください。
+
+同じドリフトテストは、両方の README が**登録済みのすべての言語**に言及し、存在しない pnpm
+スクリプトを参照していないこと、そしてそこにあるすべての相対リンクが**git に追跡された**
+ファイルを指していることも確認します。
+
+## ドキュメントサイト
+
+```bash
+cd docs
+pnpm install
+pnpm dev      # → http://localhost:3000
+```
+
+Next.js + Fumadocs、MDX のコンテンツは `docs/content/docs/` 配下にあります。これは pnpm
+ワークスペースの一部では**ありません**。そのためルートの `pnpm install` はこれを完全に
+無視します。
+
+図はリポジトリルートの `assets/` にあり — 両方の README がそこから参照しています —
+ビルド時に `docs/scripts/sync-generated.mjs` によって `docs/public/diagrams/` へ
+コピーされます。手でコピーしないでください。まさにその理由で、コピー先は gitignore
+されています。
+
+## コミットの規約
+
+`commitlint` が強制する Conventional Commits：
+
+```text
+feat(analyzer): add a Kotlin generic-tier spec
+fix(patcher): refuse an anchor that matches zero times
+docs(cli): document the --env cascade
+chore(deps): bump vitest
+```
+
+公開されるパッケージに影響する変更には changeset が必要です。
+
+```bash
+pnpm changeset
+```
+
+そのファイルはコードと一緒にコミットしてください。[リリース](/docs/contributing/releasing)
+を参照してください。
+
+## どこに何があるか
+
+```text
+packages/<name>/src/         source
+packages/<name>/src/*.test.ts  tests, colocated
+scripts/                     repo tooling (workspace checks, doc generation, smoke tests)
+examples/                    the offline demo, the mock LLM server, the fixture project
+assets/                      diagrams referenced by both READMEs
+docs/                        the documentation site (a standalone Next.js app)
+docs/internal/               the engineering journal — specs, plans, review notes
+```

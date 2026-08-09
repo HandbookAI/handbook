@@ -1,0 +1,192 @@
+---
+title: 'Добавление языка'
+description: 'Язык обобщённого уровня — это декларативная спецификация, а не парсер. Язык полного уровня — небольшой интерфейс. Ни тому ни другому не нужна новая зависимость.'
+---
+
+Handbook поддерживает 18 языков через два механизма. Добавление языка в **обобщённый
+уровень** — это обычно один объектный литерал, и ему **не нужна новая зависимость**:
+грамматики уже поставляются с `tree-sitter-wasms`.
+
+## Обобщённый уровень — декларативная спецификация
+
+Добавьте одну запись в `GENERIC_LANGUAGES` в `packages/analyzer/src/generic.ts`:
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+Затем зарегистрируйте его — цикл внизу `packages/analyzer/src/register.ts` автоматически
+подхватывает каждую запись в `GENERIC_LANGUAGES`, поэтому туда добавлять нечего.
+
+<Steps>
+
+<Step>
+### Проверьте, что грамматика поставляется
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+Если её там нет, языку нужна новая зависимость, а это уже разговор посерьёзнее.
+
+</Step>
+
+<Step>
+### Найдите типы узлов
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+Напечатанное s-выражение и есть словарь узлов, под который вы пишете спецификацию.
+
+</Step>
+
+<Step>
+### Напишите спецификацию и тест
+
+Каждый язык получает тест, который строит настоящий мини-репозиторий во временном каталоге
+и проверяет настоящие узлы и рёбра. Скопируйте форму любого существующего теста из
+`packages/analyzer/src/generic.test.ts`.
+
+**Мокнутое дерево разбора не доказывает ничего о грамматике.** Разбирайте настоящий
+исходник.
+
+</Step>
+
+<Step>
+### Объявляйте возможности честно
+
+Обобщённый движок выставляет их за вас:
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+Не раздувайте их. Весь смысл объявления в том, чтобы читатель мог отличить ребро
+обобщённого уровня от ребра питоновского качества. См.
+[Достоверность анализа](/docs/concepts/analysis-fidelity).
+
+</Step>
+
+<Step>
+### Обновите документацию, иначе сборка упадёт
+
+Тест на расхождение проверяет, что **каждый зарегистрированный язык** появляется в обоих
+README. Добавьте отображаемое имя в `DISPLAY` в
+`packages/cli/src/docs-drift.test.ts`, а затем в:
+
+- `README.md` и `README.zh-CN.md` — таблицы языков
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` и его китайский двойник
+
+Этот тест существует потому, что список успел отстать на шесть языков, прежде чем это
+кто-то заметил.
+
+</Step>
+
+</Steps>
+
+## Полный уровень — реализовать адаптер
+
+Оправдано, когда разрешению вызовов в языке действительно нужна информация о типах: типы
+атрибутов, аннотации параметров, наследование.
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+Зарегистрируйте его в `packages/analyzer/src/register.ts`:
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+Это весь контракт. Каждая последующая фаза работает без изменений.
+
+### Правило двух проходов
+
+**Проход 1** собирает объявления и строит индексы типов. **Проход 2** обходит места
+вызовов, уже держа эти индексы в руках.
+
+Разрешить `self.attr.method()` или `param.method()` за один проход невозможно, потому что
+тип `attr` узнаётся из присваивания в конструкторе, которое может встретиться после
+вызова. Каждый адаптер полного уровня следует этой форме.
+
+### Правило разрешения
+
+Вызов, который вы не можете точно определить, становится `unresolved`, и построитель графа
+помещает его в карантин в `dropped-calls.json` с категорией и исходным текстом.
+
+**Никогда не угадывайте.** Угаданное ребро неотличимо от настоящего для всего, что идёт
+дальше, а это разом отравляет группировку, подсказки о совместных изменениях и локаторный
+индекс для агентов.
+
+## Регистрация адаптера снаружи
+
+Реестр публичный, поэтому вы можете добавить язык, не делая форк:
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+Адаптер, который не объявляет возможностей или объявляет чепуху, просто **не попадает в
+метаданные графа**, вместо того чтобы за него выдумали заявление о достоверности.
+
+## Контрольный список
+
+- [ ] Грамматика поставляется с `tree-sitter-wasms`
+- [ ] Спецификация или адаптер написаны
+- [ ] Зарегистрировано в `register.ts` (записи обобщённого уровня подхватываются
+      автоматически)
+- [ ] Тест, разбирающий **настоящий** исходник во временном каталоге
+- [ ] Возможности объявлены честно
+- [ ] Отображаемое имя добавлено в карту `DISPLAY` теста на расхождение
+- [ ] Оба README, README анализатора и справочник языков обновлены
+- [ ] `pnpm check` проходит
+- [ ] Changeset добавлен

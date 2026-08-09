@@ -1,0 +1,423 @@
+---
+title: 'CLI リファレンス'
+description: 'すべてのサブコマンド、すべてのフラグ、その環境変数とデフォルト値 — さらに各コマンドが何を書き出し、どの終了コードで終わるか。'
+---
+
+```bash
+handbook [global options] <command> [command options]
+```
+
+すべてのコマンドは **結果を JSON として stdout に**、**ログを stderr に** 書き出すため、
+パイプは期待どおりに動作します:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+```
+
+<Callout title="`--help` は手書きではなく生成されています">
+  以下のフラグはすべて単一の設定レジストリから導出されているため、`handbook <cmd> --help`
+  は常にフラグ、その環境変数、コマンドごとにスコープされた変数、そしてデフォルト値を
+  一覧表示します。このページと `--help` が食い違った場合は `--help` が正しく、ドリフト
+  テストがビルドを失敗させます。
+</Callout>
+
+## グローバルオプション
+
+| フラグ              | 効果                                                                                                                                                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-V, --version`     | バージョンを表示します                                                                                                                                                                                                |
+| `-v, --verbose`     | デバッグログを出力します                                                                                                                                                                                              |
+| `-q, --quiet`       | エラーのみ — **`-v` より優先されます**                                                                                                                                                                                |
+| `--env <name>`      | 環境を選択します: `.env.local` と `.env` より先に `.env.<name>.local` と `.env.<name>` を読み込み、`handbook.config.<name>.yaml` を優先します。`HANDBOOK_ENV` と同じです                                              |
+| `--env-file <path>` | `.env` のカスケードをバイパスして、このファイルだけを読み込みます。**ファイルが存在しない場合はフォールバックせず、明示的なエラーになります。** `HANDBOOK_ENV_FILE` の利用を推奨します — 下記の警告を参照してください |
+| `--config <path>`   | 最も近い `handbook.config.yaml` を探索する代わりに、この設定ファイルを使用します                                                                                                                                      |
+
+グローバルオプションはサブコマンドの **前** に置きます:
+
+```bash
+handbook --env prod -v generate --source ~/code/api --work work/api
+```
+
+<Callout type="warn" title="`--env-file` は Node のフラグと衝突します">
+  Node >= 20.6 は独自の `--env-file` を持っており、**コマンドライン全体を事前スキャン**
+  します — 実際にはファイルを適用しない、スクリプトパスより後ろの部分も含めてです。
+  存在するパスはそのまま Handbook に渡されますが、存在**しない**パスは、その前に
+  プロセスを終了させます:
+
+```bash
+$ handbook --env-file /gone.env config
+node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+```
+
+つまり、このフラグが大きな声で報告すると約束している唯一のケースこそ、報告できない
+唯一のケースなのです。`HANDBOOK_ENV_FILE` はまったく同じことを行い、横取りされることが
+ありません:
+
+```bash
+$ HANDBOOK_ENV_FILE=/gone.env handbook config
+handbook: error: ENOENT: no such file or directory, open '/gone.env'
+```
+
+ファイルが実際に存在する場合、このフラグは問題なく動作し、両方が設定されている場合は
+環境変数より優先されます。
+
+</Callout>
+
+---
+
+## `analyze`
+
+Phase 1 のみ: 静的なコールグラフを構築します。**LLM 不要、キー不要、無料です。**
+
+```bash
+handbook analyze --source <dir> --work <dir> [--lang <lang>]
+```
+
+| フラグ           | デフォルト | 環境変数                                      |
+| ---------------- | ---------- | --------------------------------------------- |
+| `--source <dir>` | **必須**   | `HANDBOOK_SOURCE` / `HANDBOOK_ANALYZE_SOURCE` |
+| `--work <dir>`   | **必須**   | `HANDBOOK_WORK` / `HANDBOOK_ANALYZE_WORK`     |
+| `--lang <lang>`  | `auto`     | `HANDBOOK_LANG` / `HANDBOOK_ANALYZE_LANG`     |
+
+`--lang` は `auto`、または次のいずれか 1 つを受け付けます: `cpp` `csharp` `dart` `go` `java` `kotlin` `objc`
+`ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift` `typescript` `zig`。
+**`auto` は 1 回のパスですべての言語を検出してマージします**。ほとんどの場合、これが求めているものです。
+
+**出力するファイル**: `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`。
+
+```json title="stdout"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+---
+
+## `generate`
+
+パイプライン全体です。phase 1 より先へ進むには **LLM エンドポイントが必要** です。
+
+```bash
+handbook generate --source <dir> --work <dir> [options]
+```
+
+### パイプラインオプション
+
+| フラグ                    | デフォルト                                          | 内容                                                                                 |
+| ------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `--phase <spec>`          | `all`                                               | `all` · `1` · `2` (=2a+2b+2c) · `2a` · `2b` · `2c` · `3`、またはカンマ区切りのリスト |
+| `--strategy <s>`          | _(作業ディレクトリに記録された値、なければ `file`)_ | `file` または `member`                                                               |
+| `--skeleton <path>`       | —                                                   | 独自の `skeleton.yaml`。`--strategy member` では **必須** です                       |
+| `--detail <d>`            | `brief`                                             | カードの詳細度: `brief` または `deep`                                                |
+| `--synth-mode <m>`        | `oneshot`                                           | `oneshot`、またはアクター・クリティックの修復ループを行う `doctor`                   |
+| `--narrate-lang <l>`      | `en`                                                | `en` または `zh`                                                                     |
+| `--max-doctor-rounds <n>` | `6`                                                 | doctor の収束ラウンド数                                                              |
+| `--resume`                | `false`                                             | 完成したカードが既にあるファイルをスキップします                                     |
+| `--refresh`               | `false`                                             | phase-3 のキャッシュを無視します                                                     |
+| `--llm-cache`             | `false`                                             | LLM の生の応答を `<work>/phase3/cache` にキャッシュします                            |
+
+### スループットオプション
+
+| フラグ                     | デフォルト                    | 内容                                            |
+| -------------------------- | ----------------------------- | ----------------------------------------------- |
+| `--read-workers <n>`       | `12`                          | 同時に処理するカードバッチ数                    |
+| `--read-batch-size <n>`    | _(deep なら 1、brief なら 8)_ | カードバッチあたりのファイル数                  |
+| `--max-chars-per-file <n>` | `0`                           | 各ファイルを n 文字で切り詰めます。`0` は無制限 |
+| `--assign-batch-size <n>`  | `25`                          | 割り当てバッチあたりのカード数                  |
+| `--assign-workers <n>`     | `12`                          | 同時に処理する割り当てバッチ数                  |
+| `--organize-workers <n>`   | `8`                           | 同時に実行するステージ構成の呼び出し数          |
+| `--narrate-workers <n>`    | `8`                           | 同時に実行するナレーション呼び出し数            |
+
+### LLM オプション (`generate`、`plan`、`resync`、`studio` で共通)
+
+| フラグ                      | デフォルト                  | 環境変数エイリアス  |
+| --------------------------- | --------------------------- | ------------------- |
+| `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
+| `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
+| `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
+| `--timeout <sec>`           | `300`                       | `OPENAI_TIMEOUT`    |
+| `--llm-retries <n>`         | `6`                         | —                   |
+| `--llm-retry-backoff <sec>` | `3`                         | —                   |
+| `--llm-concurrency <n>`     | `16`                        | —                   |
+| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
+
+API キーは **決してフラグにはなりません**。環境または `.env` ファイルで `OPENAI_API_KEY`
+(または `HANDBOOK_LLM_API_KEY`) を設定してください。設定ファイルはコミットされるものなので、
+設定ファイル内での指定は拒否されます。
+
+`--extra-body` はベンダー固有のフィールドをすべてのリクエストボディにマージします — たとえば `{"thinking":{"type":"disabled"}}`
+です。model、message、token の各フィールドをこれで上書きすることはできません。
+
+```json title="stdout"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+---
+
+## `render`
+
+作業ディレクトリ → markdown、必要に応じてそれ以上のもの。**LLM 不要です。**
+
+```bash
+handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
+```
+
+| フラグ                    | デフォルト        | 内容                                                                |
+| ------------------------- | ----------------- | ------------------------------------------------------------------- |
+| `--work <dir>`            | **必須**          | レンダリング対象の作業ディレクトリ                                  |
+| `--title <title>`         | `System Handbook` | 出力に使う Handbook のタイトル                                      |
+| `--out <dir>`             | `<work>/handbook` | 書き出し先                                                          |
+| `--html`                  | `false`           | 複数ページの HTML サイトも `<out>/html` の下に出力します            |
+| `--html-single`           | `false`           | 自己完結した `<out>/handbook.html` も出力します                     |
+| `--agent-site`            | `false`           | エージェント用ロケータインデックスも `<out>/agent` の下に出力します |
+| `--llms-txt`              | `false`           | `llms.txt` と `llms-full.txt` も出力します                          |
+| `--source-base-url <url>` | —                 | すべてのファイルカードを `<url>/<relative path>` にリンクします     |
+
+<Callout type="info">
+  `--source-base-url` を指定しない場合、出力には **外部 URL がまったく含まれません**。プライベートな
+  コードベースの handbook を配布する場合には重要な点です。
+</Callout>
+
+`--out` は _スコープ付きのみ_ です: その環境変数はフラットな `HANDBOOK_OUT` ではなく
+`HANDBOOK_RENDER_OUT` です。`--out` は `plan` と `skill` では別の意味を持つためです。
+
+---
+
+## `skill`
+
+レンダリング済みの handbook → エージェント用 SKILL パッケージ。**LLM 不要です。**
+
+```bash
+handbook skill --handbook <dir> --out <dir> --name <slug> [options]
+```
+
+| フラグ              | デフォルト   | 内容                                                                     |
+| ------------------- | ------------ | ------------------------------------------------------------------------ |
+| `--handbook <dir>`  | **必須**     | レンダリング済みの handbook ディレクトリ                                 |
+| `--out <dir>`       | **必須**     | SKILL パッケージの出力先                                                 |
+| `--name <slug>`     | **必須**     | 小文字とハイフンの slug。`<slug>-handbook` を生成します                  |
+| `--project <name>`  | _(`--name`)_ | 文章中で使われる、人間向けのプロジェクト名                               |
+| `--work <dir>`      | —            | phase-2 の割り当てから `coverage.json` を追加します                      |
+| `--source <dir>`    | —            | `--work` と併用すると、**ファイルごとのコンテンツハッシュ** を追加します |
+| `--agent-dir <dir>` | —            | ロケータページを `references/agent/` の下に同梱します                    |
+| `--lang <l>`        | `en`         | SKILL.md の **本文** の言語。フロントマターは英語のままです              |
+
+<Callout type="warn" title="知っておく価値のある 2 つの拒否">
+  `--out` に handbook ディレクトリやその親ディレクトリを指定してはいけません: ビルドは `--out` を消去する
+  ことから始まるため、パッケージ化しようとしているものそのものを削除してしまいます。また `--lang zh` は
+  本文が中国語で、**フロントマターは英語** になります — エージェントランタイムは description のテキストで
+  ルーティングするため、これを翻訳すると skill の選択が静かに壊れてしまいます。
+</Callout>
+
+---
+
+## `validate`
+
+SKILL パッケージを検査します。**LLM 不要。失敗時は `2` で終了します。**
+
+```bash
+handbook validate --skill <dir> [--source <dir>]
+```
+
+| フラグ           | デフォルト | 内容                                             |
+| ---------------- | ---------- | ------------------------------------------------ |
+| `--skill <dir>`  | **必須**   | 検証対象の skill ディレクトリ                    |
+| `--source <dir>` | —          | 実際のソースを再ハッシュしてドリフトを検出します |
+
+構造、フロントマターの契約、インデックス ↔ ステージページの整合性、`coverage.json` の
+スキーマ、ハッシュの鮮度を検査します。エラーと警告は stderr に出力されます。
+
+---
+
+## `plan`
+
+handbook に導かれた変更箇所の特定。**LLM エンドポイントが必要です。読み取り専用です。**
+
+```bash
+handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]
+```
+
+| フラグ             | デフォルト | 内容                                                                         |
+| ------------------ | ---------- | ---------------------------------------------------------------------------- |
+| `--source <dir>`   | **必須**   | 計画の対象となるコードベース (書き込みは一切行いません)                      |
+| `--request <text>` | **必須**   | 自然言語による変更リクエスト                                                 |
+| `--handbook <dir>` | —          | レンダリング済みの handbook または `skills/<x>/references`。強く推奨されます |
+| `--out <file>`     | _(stdout)_ | プランをここに書き出します                                                   |
+| `--max-turns <n>`  | `30`       | エージェントのターン数の予算                                                 |
+
+加えて、共通の LLM オプションが使えます。
+
+プランナーが諦めた場合 — ツールの結果を捏造した、ターンを使い切った、使えるものが何も
+残らなかった — は、スクリプトが `apply` に渡してしまうような謝罪文を書く代わりに、
+**ゼロ以外の終了コードで終了します**。
+
+---
+
+## `apply`
+
+プランの EDIT ブロックを適用します。**LLM 不要。1 つでも適用できなかった場合は `2` で終了します。**
+
+```bash
+handbook apply --source <dir> --plan <file> [--dry-run] [--backup-root <dir>]
+```
+
+| フラグ                | デフォルト                   | 内容                                    |
+| --------------------- | ---------------------------- | --------------------------------------- |
+| `--source <dir>`      | **必須**                     | 編集対象のツリー                        |
+| `--plan <file>`       | **必須**                     | `handbook plan` が出力したプラン        |
+| `--dry-run`           | `false`                      | 検証のみ — **書き込みは一切行いません** |
+| `--backup-root <dir>` | `<source>/.handbook-patches` | バックアップの出力先                    |
+
+```json title="stdout"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+ステータス: `applied` · `created` · `no-match` · `ambiguous` · `file-missing` · `not-a-file`
+· `unsafe-path` · `undecodable` · `skipped`。
+
+---
+
+## `rollback`
+
+パッチのバックアップからソースツリーを復元します。**LLM 不要です。**
+
+```bash
+handbook rollback --backup <dir> [--source <dir>] [--force]
+```
+
+| フラグ           | デフォルト | 内容                                             |
+| ---------------- | ---------- | ------------------------------------------------ |
+| `--backup <dir>` | **必須**   | `manifest.json` を含むバックアップディレクトリ   |
+| `--source <dir>` | —          | 別のツリーに属するバックアップを拒否します       |
+| `--force`        | `false`    | パッチ適用**後**に変更されたファイルも復元します |
+
+`--force` がない場合、現在のハッシュがパッチ適用後のハッシュと一致しないファイルは
+拒否されます — 復元すれば、それ以降に行われた作業を黙って破壊してしまうからです。
+
+---
+
+## `resync`
+
+コードの変更後に handbook を前へ進めます。
+
+```bash
+handbook resync --case <dir> --work <dir> [options]
+```
+
+| フラグ                 | デフォルト                     | 内容                                                                     |
+| ---------------------- | ------------------------------ | ------------------------------------------------------------------------ |
+| `--case <dir>`         | **必須**                       | ケースディレクトリ: `edited/` と、任意の `plan.md`、任意の `change.diff` |
+| `--work <dir>`         | **必須**                       | 前へ進める対象の作業ディレクトリ                                         |
+| `--title <title>`      | `System Handbook`              | 再レンダリング時に使うタイトル                                           |
+| `--no-llm`             | _(既定では LLM を使用)_        | 構造の更新のみ。文章には stale の印が付きます                            |
+| `--no-render`          | _(既定ではレンダリングする)_   | レンダリング済み出力の更新をスキップします                               |
+| `--corrections <file>` | —                              | `corrections.jsonl`。そこに含まれるファイルは更新対象を **広げます**     |
+| `--detail <d>`         | _(既存の handbook に合わせる)_ | 再生成されるカードの `brief` または `deep`                               |
+| `--narrate-lang <l>`   | _(既存の handbook に合わせる)_ | `en` または `zh`                                                         |
+
+加えて、共通の LLM オプションが使えます。
+
+<Callout type="info">
+  `--detail` と `--narrate-lang` を未設定のままにしておくのが正しいデフォルトです: 未設定は *「この handbook
+  が既にそうであるものに合わせる」* という意味なので、resync が deep な handbook を黙って brief へ格下げする
+  ことはありません。
+</Callout>
+
+---
+
+## `studio`
+
+ローカルの Web UI です。`Ctrl-C` を押すまで動き続けます。
+
+```bash
+handbook studio [--port <n>] [--host <addr>] [--state-dir <dir>]
+```
+
+| フラグ              | デフォルト               | 内容                                                |
+| ------------------- | ------------------------ | --------------------------------------------------- |
+| `--port <n>`        | `4860`                   | 待ち受けるポート                                    |
+| `--host <addr>`     | `127.0.0.1`              | バインドアドレス。コンテナでは `0.0.0.0` が必要です |
+| `--state-dir <dir>` | `$HOME/.handbook-studio` | レジストリと、管理下の作業ディレクトリ              |
+
+加えて、共通の LLM オプションが使えます — Studio は他のすべてのコマンドと同じレイヤーから
+それらを解決するため、`--model` も設定ファイルの `llm:` ブロックも、そのジョブに届きます。
+
+<Callout type="warn">
+  `--host 0.0.0.0` を設定しても、実用的な意味で Studio がリモートから到達可能になるわけでは **ありません**:
+  CSRF ガードが `Host` ヘッダーを検査するため、LAN の IP を指定したリクエストは `403` で拒否されます。
+  [Studio](/docs/guides/studio) を参照してください。
+</Callout>
+
+---
+
+## `config`
+
+解決済みの設定と、各値がどこから来たのかを表示します。**LLM 不要です。**
+
+```bash
+handbook config [--command <name>] [--json] [--check]
+```
+
+| フラグ             | デフォルト | 内容                                                           |
+| ------------------ | ---------- | -------------------------------------------------------------- |
+| `--command <name>` | `generate` | このサブコマンドに適用される設定だけを表示します               |
+| `--json`           | `false`    | 機械可読な出力                                                 |
+| `--check`          | `false`    | 検証のみ。無効または不足があれば **終了コード 2** で終了します |
+
+```bash
+handbook config --command generate      # a table, with provenance per row
+handbook config --json | jq '.settings[] | select(.source.kind == "env")'
+handbook config --check                 # put this one in CI
+```
+
+<Callout title="壊れた設定をあえて表示します">
+  他のすべてのコマンドとは異なり、`config` は無効な値があっても中断しません。`--source` が指定されていない
+  場合は、まさにその問題をデバッグするために使うはずのツールを落とすのではなく、目に見える `— unset
+  (required)` の行として表示されます。
+</Callout>
+
+---
+
+## 終了コード
+
+| コード | 意味                                                                                                                          |
+| :----: | ----------------------------------------------------------------------------------------------------------------------------- |
+|  `0`   | 成功                                                                                                                          |
+|  `1`   | エラー — 無効な設定、成果物の欠落、実行の失敗。メッセージは stderr に `handbook: error:` を前置して出力されます               |
+|  `2`   | **チェック** の失敗: `validate` が問題を検出した、`apply` が完全には適用されなかった、`config --check` が無効なものを見つけた |
+
+`2` は _「ツールは動作し、その答えが No だった」_ という意味です。スクリプトは、これを
+`1` とは区別して扱うべきです。
+
+## pnpm のショートカット
+
+クローンしたリポジトリからは、いずれもまずビルドを行い、フラグをそのまま転送します:
+
+```bash
+pnpm analyze  --source ~/code/proj --work work/proj
+pnpm generate --source ~/code/proj --work work/proj
+pnpm render   --work work/proj --html --agent-site --llms-txt
+pnpm skill    --handbook work/proj/handbook --out skills/proj --name proj
+pnpm validate --skill skills/proj --source ~/code/proj
+pnpm plan     --source ~/code/proj --request "…" --out plan.md
+pnpm apply    --source ~/code/proj --plan plan.md --dry-run
+pnpm rollback --backup ~/code/proj/.handbook-patches/<stamp>
+pnpm resync   --case cases/mycase --work work/proj
+pnpm studio
+pnpm config:show --command generate
+pnpm handbook --help
+```

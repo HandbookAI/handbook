@@ -1,0 +1,181 @@
+---
+title: '添加一门语言'
+description: 'generic 层的语言是一份声明式规格，而不是一个解析器。full 层的语言则是一个小接口。两者都不需要新增依赖。'
+---
+
+Handbook 通过两种机制支持 18 门语言。把一门语言加入 **generic 层** 通常只需要一个对象字面量，
+而且 **不需要新增依赖** —— 这些语法已经随 `tree-sitter-wasms` 一起发布。
+
+## Generic 层 —— 一份声明式规格
+
+在 `packages/analyzer/src/generic.ts` 的 `GENERIC_LANGUAGES` 中添加一个条目：
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+然后注册它 —— `packages/analyzer/src/register.ts` 底部的循环会自动拾取 `GENERIC_LANGUAGES`
+中的每一个条目，所以那里无需添加任何东西。
+
+<Steps>
+
+<Step>
+### 确认语法已随包发布
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+如果它不在其中，这门语言就需要一个新依赖，那是另一场更大的讨论。
+
+</Step>
+
+<Step>
+### 找出节点类型
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+打印出来的 s 表达式，就是你编写规格时所面对的节点词汇表。
+
+</Step>
+
+<Step>
+### 编写规格和测试
+
+每门语言都要有一个测试：它在临时目录里构建一个真实的迷你仓库，并对真实的节点和边做断言。
+照搬 `packages/analyzer/src/generic.test.ts` 中已有测试的写法。
+
+**被 mock 的解析树无法证明关于语法的任何事情。** 请解析真实的源码。
+
+</Step>
+
+<Step>
+### 如实声明能力
+
+generic 引擎会替你设置这些：
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+不要夸大它们。这份声明的全部意义在于：读者能够把一条 generic 层的边和一条 Python 级别的边
+区分开来。参见[分析保真度](/docs/concepts/analysis-fidelity)。
+
+</Step>
+
+<Step>
+### 更新文档，否则构建会失败
+
+一个漂移测试会检查 **每一门已注册的语言** 是否都出现在两份 README 中。先把显示名称加到
+`packages/cli/src/docs-drift.test.ts` 的 `DISPLAY` 中，然后加到：
+
+- `README.md` 和 `README.zh-CN.md` —— 语言表格
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` 及其中文版
+
+这个测试之所以存在，是因为在有人注意到之前，那份列表已经漂移落后了六门语言。
+
+</Step>
+
+</Steps>
+
+## Full 层 —— 实现适配器
+
+当一门语言的调用解析确实需要类型信息 —— 属性类型、参数注解、继承 —— 时，才值得这么做。
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+在 `packages/analyzer/src/register.ts` 中注册它：
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+这就是全部的契约。下游的每一个阶段都无需改动即可继续工作。
+
+### 两遍规则
+
+**第一遍** 收集声明并构建类型索引。**第二遍** 在手握这些索引的情况下遍历调用点。
+
+在一遍之内解析 `self.attr.method()` 或 `param.method()` 是不可能的，因为 `attr` 的类型来自一次
+构造函数赋值，而那次赋值可能出现在调用之后。每一个 full 层适配器都遵循这个形态。
+
+### 解析规则
+
+一个你无法确定下来的调用会变成 `unresolved`，图构建器会把它隔离进 `dropped-calls.json`，
+并附上一个类别和它的原始文本。
+
+**绝不猜测。** 对下游的一切来说，一条猜出来的边与一条真实的边无从分辨，这会同时毒化分组、
+协同变更提示和 agent 定位索引。
+
+## 从外部注册适配器
+
+注册表是公开的，所以你无需 fork 就能添加一门语言：
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+一个不声明能力、或者声明了垃圾内容的适配器，会被 **直接排除在图元数据之外**，而不是替它凭空
+编造一个保真度声明。
+
+## 检查清单
+
+- [ ] 语法随 `tree-sitter-wasms` 一起发布
+- [ ] 规格或适配器已编写
+- [ ] 已在 `register.ts` 中注册（generic 层的条目会被自动拾取）
+- [ ] 有一个在临时目录中解析 **真实** 源码的测试
+- [ ] 能力已如实声明
+- [ ] 显示名称已加入漂移测试的 `DISPLAY` 映射
+- [ ] 两份 README、analyzer 的 README 以及语言参考都已更新
+- [ ] `pnpm check` 通过
+- [ ] 已添加一个 changeset

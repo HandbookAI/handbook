@@ -1,0 +1,141 @@
+---
+title: Soporte de lenguajes
+description: 18 lenguajes repartidos en dos niveles de análisis — qué extensiones reclama cada uno, a qué renuncia el nivel generic y las dos salvedades que conviene conocer antes de toparte con ellas.
+---
+
+`--lang auto` (el valor por defecto) detecta y fusiona **todos** los lenguajes en una sola
+pasada. Casi nunca necesitas nombrar uno.
+
+```bash
+handbook analyze --source ~/code/polyglot-repo --work work/poly   # one pass, all languages
+handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
+```
+
+## Nivel full
+
+Adaptadores escritos a mano: resolución de llamadas guiada por tipos, miembros heredados,
+seguimiento de estado por atributo, spans de sentencias.
+
+| Lenguaje                    | Extensiones                                              | Clave del registro |
+| --------------------------- | -------------------------------------------------------- | ------------------ |
+| Python                      | `.py`                                                    | `python`           |
+| TypeScript _(y JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`       |
+| Go                          | `.go`                                                    | `go`               |
+| Rust                        | `.rs`                                                    | `rust`             |
+| Java                        | `.java`                                                  | `java`             |
+| C#                          | `.cs`                                                    | `csharp`           |
+| C/C++                       | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`              |
+| Ruby                        | `.rb` `.rake` `.gemspec`                                 | `ruby`             |
+| PHP                         | `.php` `.phtml`                                          | `php`              |
+| Swift                       | `.swift`                                                 | `swift`            |
+| Dart                        | `.dart`                                                  | `dart`             |
+| Solidity                    | `.sol`                                                   | `solidity`         |
+| Shell                       | `.sh` `.bash`                                            | `shell`            |
+
+<Callout type="info" title="JavaScript no tiene un adaptador propio">
+  Lo cubre el de TypeScript. No hay nada que elegir — `.js`, `.jsx`, `.mjs` y `.cjs` se reclaman
+  automáticamente.
+</Callout>
+
+<Callout type="info" title="Un solo adaptador para la familia C, no dos">
+  La gramática `cpp` también maneja C; la gramática `c` no maneja C++ en absoluto. Así que un único adaptador
+  reclama ambos, y `--lang cpp` es lo correcto para un proyecto de C puro.
+</Callout>
+
+## Nivel generic
+
+Un único motor guiado por configuración, una spec declarativa por lenguaje. **El
+inventario de archivos y funciones es exacto**; las relaciones de llamada son best-effort.
+
+| Lenguaje    | Extensiones    | Clave del registro |
+| ----------- | -------------- | ------------------ |
+| Kotlin      | `.kt` `.kts`   | `kotlin`           |
+| Scala       | `.scala` `.sc` | `scala`            |
+| Zig         | `.zig`         | `zig`              |
+| Objective-C | `.m`           | `objc`             |
+| OCaml       | `.ml`          | `ocaml`            |
+
+Un handbook cuyo análisis mezcla niveles **lo dice en su visión general**. Consulta
+[Fidelidad del análisis](/docs/concepts/analysis-fidelity) para saber exactamente qué se degrada.
+
+## Dos salvedades, expuestas antes de que te topes con ellas
+
+### Swift aborta el proceso en V8 ≥ 13
+
+La gramática de Swift incluida provoca un aborto fatal por falta de memoria en cuanto V8
+sube de nivel el módulo WASM — medido como fatal 5 de 5 veces en Node 24, sin problemas en
+Node 21, y exclusivo de esa única gramática entre diecinueve.
+
+**En un runtime así, el adaptador se rehúsa en la fase de descubrimiento** y nombra el
+remedio, en lugar de tumbar tu ejecución entera:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work work/ios
+```
+
+`--liftoff-only` se salta la compilación de subida de nivel que lo desencadena. La propia
+suite de tests del repositorio pasa esa misma bandera exactamente por esta razón.
+
+### Los scripts de shell que contienen `case` se saltan
+
+El escáner externo de la gramática de bash fijada importa `env.isalpha`, que el enlazador
+dinámico de `web-tree-sitter@0.25.10` no proporciona, así que `parse()` lanza una excepción
+con cualquier sentencia `case` — y deja el parser envenenado, por lo que el adaptador lo
+descarta y sigue adelante.
+
+<Callout type="warn" title="Esto es más grande de lo que suena">
+  `case` es omnipresente en shell. Medido sobre [`nvm`](https://github.com/nvm-sh/nvm): se
+  saltaron **los 6 archivos y las 122 funciones**. Shell figura como nivel full porque el
+  adaptador es de nivel full, pero **trata la cobertura de shell como parcial** hasta que
+  esa gramática se arregle upstream.
+
+El log de escaneo lo dice explícitamente, y nombra el motivo:
+
+```text
+[scan] shell: 5 file(s) the grammar could not parse — the pinned bash grammar throws on
+`case`, which most real scripts use; their functions are absent from this graph, not
+merely unresolved — install.sh, nvm.sh, …
+```
+
+</Callout>
+
+## Qué se salta en todas partes
+
+Todos los adaptadores respetan una única lista de exclusión compartida:
+
+```text
+.git  .hg  .svn  node_modules  vendor  target  build  dist  out
+__pycache__  .mypy_cache  .pytest_cache  .ruff_cache  .tox
+venv  .venv  env  .env  site-packages  .idea  .vscode  .handbook-patches
+```
+
+Si tu salida de build vive en otro sitio, apunta `--source` a la raíz real del código
+fuente en lugar de a la raíz del repositorio.
+
+## Cuando un archivo podría pertenecer a dos lenguajes
+
+El descubrimiento ejecuta los adaptadores en un orden fijo y **el primero que reclama un
+archivo se lo queda**; la coincidencia por extensión prefiere la más larga. En la práctica
+esto solo importa para `.h` (reclamado por el adaptador de C/C++) y `.m` (Objective-C).
+
+## Leer qué se escaneó realmente
+
+```bash
+handbook analyze --source ~/code/repo --work work/x -v
+# [scan] auto root=/Users/me/code/repo
+# [scan] typescript: 284 files
+# [scan] python: 96 files
+# [scan] shell: 12 files
+# [build] functions=3187 kept=9042 dropped=611
+```
+
+```bash
+jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
+jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+```
+
+## Añadir un lenguaje
+
+Añadir un lenguaje de **nivel generic** es una spec declarativa, no un parser — y no
+necesita ninguna dependencia nueva, porque las gramáticas ya vienen incluidas. Consulta
+[Añadir un lenguaje](/docs/contributing/adding-a-language).

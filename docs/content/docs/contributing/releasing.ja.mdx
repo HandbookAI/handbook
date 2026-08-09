@@ -1,0 +1,126 @@
+---
+title: 'リリース'
+description: 'changesets がバージョンと変更履歴を駆動します。トークンが設定されるまで公開は何もしないため、どちらにせよ帳簿は正しいままです。'
+---
+
+## changeset を追加する
+
+公開パッケージに影響する変更にはすべて必要です。
+
+```bash
+pnpm changeset
+```
+
+どのパッケージが変更されたか、それぞれが patch・minor・major のどれかを尋ね、`.changeset/` の
+下に markdown ファイルを書き出します。**そのファイルはコードと一緒にコミットしてください。**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+この説明はレビュアーではなく **変更履歴の読み手** に向けて書いてください。どう変えたかではなく、
+外から見て何が変わったかです。
+
+### 何に必要か
+
+| 変更                                           | changeset は必要か |
+| ---------------------------------------------- | ------------------ |
+| 新しい機能やフラグ                             | ✅ minor           |
+| 出荷済みの挙動のバグ修正                       | ✅ patch           |
+| 破壊的な API または CLI の変更                 | ✅ major           |
+| 新しい言語アダプタ                             | ✅ minor           |
+| ドキュメント、テスト、CI、内部リファクタリング | ❌                 |
+| `docs/` 配下のすべて                           | ❌                 |
+
+## リリースの流れ
+
+<Steps>
+
+<Step>
+### changeset がある状態で `main` にマージする
+
+Release ワークフローが **"Version Packages"** プルリクエストを作成（または更新）します。
+
+</Step>
+
+<Step>
+### その PR をレビューする
+
+保留中のすべての changeset が適用されます。バージョンを上げ、各パッケージの `CHANGELOG.md` を
+書き、消費した changeset ファイルを削除します。変更履歴の diff を読んでください — それが
+リリースノートです。
+
+</Step>
+
+<Step>
+### マージする
+
+これで npm に公開されます。
+
+</Step>
+
+</Steps>
+
+<Callout title="NPM_TOKEN が存在するまで公開は何もしません">
+  シークレットが設定されていなければ、公開ステップは no-op
+  です。**バージョニングと変更履歴は依然として正しいまま** —
+  つまりパッケージが実際に公開されているかどうかに関わらず帳簿は正しく、後から公開を有効にしても
+  履歴の書き換えは不要です。
+</Callout>
+
+## 手作業で行う
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` は `pnpm install --lockfile-only` も実行します。ワークスペースのバージョンが
+上がると lockfile が変わるためです。
+
+## リリースの前に
+
+```bash
+pnpm check:all
+```
+
+これは `pnpm check` に、公開に向けた 2 つのゲートを加えたものです。
+
+- **`check:packaging`** — 各パッケージに対する `publint` と `@arethetypeswrong/cli`。誤った
+  `exports` マップ、欠けた型宣言、デュアルパッケージハザードを捕まえます。
+- **`check:install`** — 11 個のタールボールをすべてパックし、**素の npm** で一時ディレクトリに
+  インストールし、それらに対して CLI を動かします。これは `dist` に対する最も強力なチェックです。
+  ワークスペースのシンボリックリンクではなく、実際に公開される表面を実行するからです。
+
+11 個のタールボールをパックするので、ローカルのループ毎ではなく CI とリリース前に置くのが
+ふさわしいものです。
+
+## Provenance
+
+npm の provenance では、**すべての** マニフェストに公開リポジトリを指す `repository` フィールドが
+必要です。それは `directory` が毎回異なる 12 か所の編集になるため、次を使います。
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+これは冪等です — リポジトリを移動したあとにもう一度実行してください。これは意図的に
+`pnpm check` へ **組み込まれていません**。リポジトリが公開 URL を持つまで照合する相手が存在せず、
+クローンしたてで失敗するゲートは、ゲートを無視することを人々に教えてしまうからです。
+
+## バージョニング方針
+
+標準的な semver ですが、明記しておく価値のある慣習が 2 つあります。
+
+- **CLI のフラグは公開 API です。** フラグの削除や名前変更は major バンプ、追加は minor です。
+- **成果物のスキーマは `version` フィールドで個別にバージョン管理されます。** 既存の作業
+  ディレクトリを無効にするスキーマ変更は、それらを読むパッケージにとって major バンプであり、
+  その旨を changeset に書く必要があります — 成果物のマイグレーション機構は存在しないため、
+  「作業ディレクトリを削除して再生成する」が受け入れ可能な答えでなければなりません。

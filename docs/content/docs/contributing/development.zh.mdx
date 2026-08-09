@@ -1,0 +1,199 @@
+---
+title: '开发'
+description: '构建、门禁、工具链强制执行的约定，以及测试为何从不需要 API key。'
+---
+
+```bash
+git clone <this repo> && cd handbook
+pnpm install
+pnpm build
+pnpm test
+```
+
+需要 Node ≥ 20.11 和 pnpm ≥ 9。无需原生编译。
+
+## 日常命令
+
+```bash
+pnpm build             # tsc -b (composite project references)
+pnpm build:watch
+pnpm test              # build + vitest
+pnpm test:watch
+pnpm check             # the everyday gate — run this before committing
+pnpm check:all         # check + packaging + install + CLI smoke — what CI runs
+pnpm check:cli         # every subcommand and config layer, end to end, offline
+```
+
+`pnpm check` 按以下顺序运行：
+
+1. `typecheck` —— 先是源码，然后用 `tsconfig.tests.json` 检查测试
+2. `check:workspace` —— monorepo 的结构性不变量
+3. `lint` —— 对整个仓库运行 eslint，**零警告容忍**
+4. `format:check` —— prettier
+5. `test:coverage` —— 带**按包**覆盖率下限的 vitest
+
+它刻意是快的那一个。`pnpm check:all` 追加了三道更重的门禁 ——
+`check:packaging`（publint + are-the-types-wrong）、`check:install`（打包十一个 tarball，
+用原生 npm 安装它们，再驱动 CLI）以及 `check:cli`（见下文）—— 它们属于 CI 和发布之前，
+而不是每一次本地循环。
+
+### `check:cli` 覆盖了什么
+
+`scripts/smoke-cli.sh` 以内置的 mock LLM 为对象，端到端地驱动**真实**的二进制文件，
+在每一个子命令、每一个配置层，以及 —— 最重要的 —— 各种拒绝行为上，对退出码和产物做断言。
+
+- 每一个 `--help` 界面，以及未知子命令以 `1` 退出
+- `config` 的来源追溯、`--json`，以及缺少必填值时 `--check` 以 `2` 退出
+- 无效的枚举 / 整数 / phase 值以 `1` 退出，而不是回落到默认值
+- 生成矩阵：phase 子集、`--resume`、`--detail deep`、`--synth-mode doctor`、
+  `--llm-cache`、`--narrate-lang zh`
+- 每一种渲染格式，以及在空工作目录上运行 `render` 会失败
+- `skill` 拒绝会吞掉自身输入的 `--out`；`validate` 以 `2` 退出
+- `apply` 拒绝**有歧义的**锚点和**路径逃逸**；真实的 `rollback`
+  逐字节还原
+- 带 LLM 和不带 LLM 的 `resync`，以及空 diff 干净地跳过
+- 优先级：shell 环境变量高于配置文件、`.env.<name>` 高于 `handbook.config.<name>.yaml`、
+  带作用域高于扁平、空值视为未设置，以及 API key 在 `config` 输出中被**掩码**
+- 产物健全性：每一个预期文件都存在、卡片覆盖率完整、没有未分配的文件、
+  token 用量已记录
+
+单元测试会 mock 掉 `generateHandbook` 及其邻居，因此它们抓不到这些问题：一个标志解析正确
+却从未被继续传递、错误的退出码，或者在接缝处断掉的产物契约。而它可以 —— 并且它完全离线，
+所以在 CI 中是安全的。
+
+```bash
+pnpm check:cli
+SMOKE_PORT=9123 pnpm check:cli    # if port 8123 is taken
+```
+
+一个 pre-commit 钩子只对**已暂存的文件**运行格式化工具和 linter，而 `commit-msg`
+强制执行 Conventional Commits。
+
+## 测试理念
+
+**一切都离线运行。没有任何测试需要 API key。**
+
+- 依赖 LLM 的流程针对 `MockChatClient` 测试 —— 一组规则，先匹配者胜 ——
+  真实客户端则针对内置的 mock HTTP 端点测试。
+- 确定性的包直接测试。分析器测试会在临时目录中构建**真实的**迷你仓库，并对真实的节点
+  和边做断言；mock 出来的解析树对语法而言什么也证明不了。
+- 失败路径与顺利路径获得同等的关注：无法解析的回复、不完整的批次、降级层级、
+  运行中途的中止、沙箱逃逸、有歧义的锚点。
+
+```bash
+pnpm test                                  # everything
+pnpm exec vitest run packages/analyzer     # one package
+pnpm exec vitest run -t "dropped calls"    # one test by name
+pnpm test:coverage
+```
+
+## 工具链强制执行的四条约定
+
+### 版本只住在一个地方
+
+每一个第三方版本都声明在 `pnpm-workspace.yaml` 的 catalog 中；各个包依赖 `"catalog:"`，
+绝不重述某个范围。**清单中出现字面量范围会让 `pnpm check:workspace` 失败**，
+未被使用的 catalog 条目同样如此。
+
+```json
+{ "dependencies": { "zod": "catalog:" } }
+```
+
+打包时 pnpm 会把 `catalog:` 重写为解析后的范围，因此使用者永远看不到这个协议。
+
+### `dist/` 就是发布出去的那一面
+
+构建项目排除 `*.test.ts` 和 `*.test-helper.ts`；`tsconfig.tests.json` 以 `noEmit`
+对测试做类型检查。source map 被排除在 tarball 之外，因为它们指向从不发布的源码。
+**`dist/` 下出现测试产物会让检查失败。**
+
+### 覆盖率下限按包设定
+
+单一的全仓库数字会掩盖真正要紧的东西：整体 86% 时，`@handbook/cli` 只有 23%。
+每个包在 `vitest.config.ts` 中都有自己的下限，设定在实测值略下方，所以它是**棘轮式**的。
+
+如果你的改动提高了覆盖率，就把下限一并提上去。不要为了让飘红的运行变绿而拉大这个差距。
+
+### 测试把 `@handbook/*` 解析到源码，而不是 `dist`
+
+否则，任何跨包边界被使用的东西，其覆盖率都无处归属 ——
+`core/src/util/hash.ts` 测得 0%，而流水线每次运行都在调用它。
+
+真正的 `dist` 由 `tsc -b` 和 `pnpm check:install` 验证，后者用原生 npm 安装打包好的
+tarball，并针对它们驱动 CLI。这对 `dist` 而言是比单元测试更强的检查。
+
+## 结构性不变量
+
+`scripts/check-workspace.mjs` 强制执行七条规则，其中每一条这个仓库都至少违反过一次：
+
+1. TypeScript 项目引用与工作区依赖完全对应。
+2. 工作区依赖使用 `workspace:` 协议，并且确实存在。
+3. 根解决方案文件引用了每一个包。
+4. 构建项目排除测试，且 `dist/` 中不含任何测试。
+5. 清单结构统一 —— `type`、`description`、`license`、`files`、`engines`、
+   `exports`、`scripts`、`publishConfig`。
+6. 可发布的包绝不依赖私有包。
+7. 第三方版本只住在 catalog 里，别无他处。
+
+## 生成的文件
+
+有三个文件从设置注册表生成，并由一个漂移测试**逐字节**比对：
+
+```bash
+pnpm run config:docs
+# writes .env.example
+#        docs/content/docs/reference/configuration.md
+#        handbook.config.example.yaml
+```
+
+手工编辑其中任何一个都会让构建失败。改为修改注册表
+（`packages/core/src/config/registry.ts`）然后重新生成。
+
+同一个漂移测试还会检查：两份 README 都列出了**每一种已注册的语言**、没有引用不存在的
+pnpm 脚本，并且其中每一个相对链接都指向一个**被 git 跟踪的**文件。
+
+## 文档站点
+
+```bash
+cd docs
+pnpm install
+pnpm dev      # → http://localhost:3000
+```
+
+Next.js + Fumadocs，MDX 内容位于 `docs/content/docs/` 下。它**不是** pnpm 工作区的一部分，
+因此根目录的 `pnpm install` 会完全忽略它。
+
+图示住在仓库根目录的 `assets/` 中 —— 两份 README 都从那里引用它们 —— 并在构建时由
+`docs/scripts/sync-generated.mjs` 拷贝到 `docs/public/diagrams/`。
+不要手工拷贝；那份副本正是出于这个原因被 gitignore 了。
+
+## 提交约定
+
+Conventional Commits，由 `commitlint` 强制执行：
+
+```text
+feat(analyzer): add a Kotlin generic-tier spec
+fix(patcher): refuse an anchor that matches zero times
+docs(cli): document the --env cascade
+chore(deps): bump vitest
+```
+
+影响已发布包的改动需要一个 changeset：
+
+```bash
+pnpm changeset
+```
+
+把那个文件和代码一起提交。参见[发布](/docs/contributing/releasing)。
+
+## 各部分住在哪里
+
+```text
+packages/<name>/src/         source
+packages/<name>/src/*.test.ts  tests, colocated
+scripts/                     repo tooling (workspace checks, doc generation, smoke tests)
+examples/                    the offline demo, the mock LLM server, the fixture project
+assets/                      diagrams referenced by both READMEs
+docs/                        the documentation site (a standalone Next.js app)
+docs/internal/               the engineering journal — specs, plans, review notes
+```

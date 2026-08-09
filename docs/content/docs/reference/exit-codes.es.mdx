@@ -1,0 +1,149 @@
+---
+title: Códigos de salida y salida por consola
+description: Qué significa cada código de salida, qué va a stdout frente a stderr y cómo escribir scripts contra ambos.
+---
+
+## Códigos de salida
+
+| Código | Significado                                                                                             | Emitido por                           |
+| :----: | ------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+|  `0`   | Éxito                                                                                                   | todos los comandos                    |
+|  `1`   | Un error: configuración inválida, un artefacto ausente, una ejecución fallida, un endpoint inalcanzable | todos los comandos                    |
+|  `2`   | Falló una **comprobación** — la herramienta funcionó, y la respuesta es no                              | `validate`, `apply`, `config --check` |
+
+La distinción entre `1` y `2` es determinante en los scripts:
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+case $? in
+  0) echo "fresh" ;;
+  2) echo "the handbook has drifted — schedule a resync" ;;
+  *) echo "something is broken" >&2; exit 1 ;;
+esac
+```
+
+### Qué comandos pueden salir con 2
+
+- **`validate`** — el paquete SKILL no pasó una comprobación estructural, o los hashes del
+  código fuente cambiaron.
+- **`apply`** — una o más ediciones no llegaron a aplicarse (`no-match`, `ambiguous`,
+  `unsafe-path`, …). En `--dry-run` esto significa «este plan no se aplicaría limpiamente».
+- **`config --check`** — un ajuste es inválido o falta uno obligatorio.
+
+`plan` sale con **`1`** cuando el planificador se rindió, no con `2`: una ejecución
+abandonada es un error, no una respuesta negativa.
+
+## stdout frente a stderr
+
+| Flujo      | Lleva                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **stdout** | El resultado del comando, como JSON — excepto `plan` sin `--out`, que escribe el plan en sí, y `config` sin `--json`, que escribe una tabla |
+| **stderr** | Todo el registro de logs, todo el progreso, todos los avisos y cada mensaje de error                                                        |
+
+Esa separación es lo que hace segura la redirección por tuberías:
+
+```bash
+handbook analyze --source ~/code/api --work work/api | jq .functions
+handbook config --json | jq '.settings[] | select(.source.kind == "env") | .key'
+handbook plan --source ~/code/api --request "…" > plan.md     # logs still visible
+```
+
+Los errores llevan prefijo para que se puedan buscar con grep:
+
+```text
+handbook: error: invalid configuration:
+  - source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml
+```
+
+## Niveles de log
+
+| Cómo                       | Nivel                     |
+| -------------------------- | ------------------------- |
+| por defecto                | `info`                    |
+| `-v` / `--verbose`         | `debug`                   |
+| `-q` / `--quiet`           | `error` — **gana a `-v`** |
+| `HANDBOOK_LOG_LEVEL=debug` | `debug`, sin bandera      |
+
+`HANDBOOK_LOG_LEVEL` también afecta a las dos líneas de arranque que informan de qué
+archivos `.env` y qué archivo de configuración se cargaron — útil cuando un valor viene de
+un sitio que no esperabas.
+
+## Formas del resultado
+
+```json title="analyze"
+{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+```json title="generate"
+{
+  "phasesRun": ["1", "2a", "2b", "2c", "3"],
+  "nCards": 412,
+  "nStages": 9,
+  "nUnassignedFiles": 0,
+  "nRegisters": 6,
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```json title="render"
+{
+  "outDir": "work/api/handbook",
+  "nStagePages": 9,
+  "agent": { "...": "…" },
+  "html": { "...": "…" },
+  "htmlSingle": { "...": "…" },
+  "llms": { "...": "…" }
+}
+```
+
+```json title="skill"
+{
+  "outDir": "skills/api",
+  "nStagePages": 9,
+  "references": [
+    "agent/how_to_use.md",
+    "agent/disambiguation.md",
+    "overview.md",
+    "index.md",
+    "registers.md",
+    "coverage.json"
+  ]
+}
+```
+
+```json title="plan (with --out)"
+{
+  "out": "plan.md",
+  "turns": 11,
+  "declarations": { "willModify": ["Uploader.send"], "willAdd": ["Uploader._retry"], "willRemove": [] }
+}
+```
+
+```json title="apply"
+{
+  "ok": true,
+  "dryRun": false,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 }
+  ],
+  "changedFiles": ["src/upload.py"],
+  "backupDir": "/repo/.handbook-patches/2026-08-08T14-05-11-204Z",
+  "problems": []
+}
+```
+
+```json title="resync"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["…"]
+}
+```
+
+`validate` es la excepción: escribe líneas legibles por humanos en stderr y se comunica a
+través de su código de salida.

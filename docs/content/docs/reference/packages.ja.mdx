@@ -1,0 +1,131 @@
+---
+title: 'パッケージ索引'
+description: '11 個の npm パッケージ、それぞれが何を export するのか、そしてそのうちどれが LLM 無しでも動くのか。'
+---
+
+Handbook は 11 個のパッケージからなるモノレポです。**そのうち 4 つは LLM に一切触れ
+ず**、単体でも十分に役立ちます。
+
+| パッケージ           | 役割                                                       | LLM? | ドキュメント                                               |
+| -------------------- | ---------------------------------------------------------- | :--: | ---------------------------------------------------------- |
+| `@handbook/core`     | データモデル、zod スキーマ、設定レジストリ、ユーティリティ |  ❌  | [README](https://www.npmjs.com/package/@handbook/core)     |
+| `@handbook/analyzer` | 多言語対応の静的コールグラフ抽出                           |  ❌  | [README](https://www.npmjs.com/package/@handbook/analyzer) |
+| `@handbook/llm`      | OpenAI 互換クライアント、キャッシュ、actor–critic、モック  |  ✅  | [README](https://www.npmjs.com/package/@handbook/llm)      |
+| `@handbook/pipeline` | 生成パイプライン、phases 1–3                               |  ✅  | [README](https://www.npmjs.com/package/@handbook/pipeline) |
+| `@handbook/renderer` | Markdown、HTML、エージェント向けインデックス、llms.txt     |  ❌  | [README](https://www.npmjs.com/package/@handbook/renderer) |
+| `@handbook/skill`    | SKILL のパッケージング、検証、ドリフトハッシュ             |  ❌  | [README](https://www.npmjs.com/package/@handbook/skill)    |
+| `@handbook/planner`  | 読み取り専用のプランニングエージェント                     |  ✅  | [README](https://www.npmjs.com/package/@handbook/planner)  |
+| `@handbook/patcher`  | バイト厳密な適用、バックアップ、ロールバック               |  ❌  | [README](https://www.npmjs.com/package/@handbook/patcher)  |
+| `@handbook/resync`   | 差分ロールフォワード                                       |  ✅  | [README](https://www.npmjs.com/package/@handbook/resync)   |
+| `@handbook/studio`   | ローカル Web UI                                            |  ✅  | [README](https://www.npmjs.com/package/@handbook/studio)   |
+| `@handbook/cli`      | `handbook` コマンド                                        |  —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+
+## 単体でとくに役立つ 3 つ
+
+### `@handbook/analyzer` — 18 言語ぶんのコールグラフ
+
+```ts
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+
+registerBuiltinAdapters();
+const byLanguage = discoverAll('/path/to/repo');
+const analyses = [];
+for (const [lang, files] of Object.entries(byLanguage)) {
+  analyses.push(await getAdapter(lang).analyze(files, '/path/to/repo'));
+}
+const { graph, stats } = buildGraph(
+  { functions: analyses.flatMap((a) => a.functions), edges: analyses.flatMap((a) => a.edges) },
+  {
+    sourceRoot: '/path/to/repo',
+    scannedFiles: Object.values(byLanguage).flat(),
+    language: 'multi',
+    defaultExt: '',
+  },
+);
+```
+
+LLM なし、ネットワークなし、ネイティブコンパイルなし。
+
+### `@handbook/patcher` — 編集プランを安全に適用する
+
+```ts
+import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+
+const problems = parsePlan(planText).problems; // lint a plan without applying it
+const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
+if (dry.ok) {
+  const result = applyPlan({ sourceRoot, plan: planText });
+  // rollback(result.backupDir!, { expectedSourceRoot: sourceRoot })
+}
+```
+
+プランの形式は[適用とロールバック](/docs/guides/applying-changes)に記載しています。
+プランが `@handbook/planner` から来たものである必要はどこにもありません — 手で書い
+ても構いません。
+
+### `@handbook/renderer` — 任意の `HandbookModel` をレンダリングする
+
+```ts
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+
+renderMarkdownHandbook(model, 'out/');
+renderAgentSite(model, 'out/agent');
+renderLlmsTxt(model, 'out/');
+```
+
+唯一の契約は `HandbookModel` です。好きなやり方で 1 つ埋めれば、レンダリングも
+SKILL のパッケージングもプランニングも、すべて動きます。
+
+## 主要な export を一目で
+
+```ts
+// @handbook/core — the vocabulary
+CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
+FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
+HandbookModel · StageTree · coerceRole
+resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
+writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
+
+// @handbook/analyzer — the parser
+registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
+discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
+
+// @handbook/llm — the model seam
+ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
+resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
+
+// @handbook/pipeline — generation
+generateHandbook · loadHandbookModel · runPhase1 · generateCards
+synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
+narrate · extractRegisters · classifyMembers · WorkDir
+
+// @handbook/renderer — presentation
+renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
+renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
+
+// @handbook/skill — packaging
+buildSkill · validateSkill
+
+// @handbook/planner — localization
+runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
+
+// @handbook/patcher — execution
+applyPlan · rollback · listBackups · parsePlan
+
+// @handbook/resync — roll-forward
+resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
+
+// @handbook/studio — the UI
+startStudio · createStudioServer · StateStore · JobRunner
+```
+
+## インストール
+
+```bash
+pnpm add @handbook/analyzer     # or npm / yarn
+```
+
+すべてのパッケージは ESM 専用（`"type": "module"`）で、型宣言を同梱し、Node ≥ 20.11
+を要求し、MIT ライセンスです。サードパーティのバージョンはワークスペースの catalog
+で一度だけピン留めされているので、2 つのパッケージが同じライブラリの別々のバージョ
+ンに行き着くことはありえません。

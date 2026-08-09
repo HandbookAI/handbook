@@ -1,0 +1,5 @@
+{
+  "title": "コントリビュート",
+  "icon": "Heart",
+  "pages": ["development", "adding-a-language", "releasing"]
+}

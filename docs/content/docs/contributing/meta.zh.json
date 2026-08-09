@@ -1,0 +1,5 @@
+{
+  "title": "参与贡献",
+  "icon": "Heart",
+  "pages": ["development", "adding-a-language", "releasing"]
+}
