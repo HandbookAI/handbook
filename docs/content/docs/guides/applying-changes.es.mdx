@@ -1,0 +1,177 @@
+---
+title: 'Aplicar y hacer rollback'
+description: 'Un ejecutor mecánico con cuatro reglas de seguridad, una copia de seguridad que puede probar lo que restaura y un parser que rechaza cualquier ambigüedad.'
+---
+
+```bash
+handbook apply --source <repo> --plan plan.md --dry-run   # verify only
+handbook apply --source <repo> --plan plan.md             # for real
+handbook rollback --backup <dir>                          # undo
+```
+
+**Ningún LLM interviene.** `apply` sustituye texto exacto por texto exacto. Todo lo
+interesante de él es lo que se niega a hacer.
+
+## Haz siempre un dry-run primero
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run
+```
+
+```json
+{
+  "ok": true,
+  "dryRun": true,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 },
+    { "index": 2, "file": "src/upload.py", "where": "Uploader", "status": "applied", "line": 71 }
+  ],
+  "changedFiles": [],
+  "problems": []
+}
+```
+
+`ok: true` significa que todas las anclas se resolvieron. `changedFiles` está vacío porque
+no se escribió nada. **`--dry-run` nunca toca el sistema de archivos.**
+
+## Las cuatro reglas de seguridad
+
+### 1. Verificar todo, luego escribir en dos fases
+
+El plan se resuelve primero contra el contenido actual de los archivos. **Un solo fallo
+aborta la aplicación entera**, antes de que se escriba un byte. La escritura luego prepara
+cada archivo como un archivo temporal y solo renombra una vez que _todo_ el staging tuvo
+éxito — y si un renombrado falla a medio camino, los archivos ya renombrados se restauran
+desde la copia de seguridad tomada momentos antes.
+
+No existe ningún estado en el que la mitad de un plan haya aterrizado.
+
+### 2. `old` debe coincidir byte a byte y de forma única
+
+| Coincidencias | Resultado                                                            |
+| :-----------: | -------------------------------------------------------------------- |
+|       0       | `no-match` — el código siguió adelante desde que se escribió el plan |
+|       1       | aplicado                                                             |
+|      2+       | `ambiguous` — el ancla no identifica un único sitio                  |
+
+Ambos fallos rechazan. **Ninguno elige una.** «Tomar la primera aparición» es exactamente
+como un patch acaba en la función equivocada.
+
+### 3. Cada archivo tocado se respalda con su hash pre-patch
+
+```text
+<source>/.handbook-patches/
+  .gitignore                     written automatically — backups never enter git
+  2026-08-08T14-05-11-204Z/
+    manifest.json                source root, timestamp, per-file pre/post hashes
+    files/…                      the original bytes
+```
+
+El hash es lo que permite al rollback **probar** que está restaurando los bytes que este
+patch reemplazó, en lugar de confiar en un nombre de archivo.
+
+### 4. Ninguna ruta escapa de la raíz del código fuente
+
+`..`, rutas absolutas, rutas absolutas de unidad de Windows — y escapes a través de un
+**directorio padre con symlink** cuando el propio archivo aún no existe. Este último es el
+caso sutil: el realpath se toma sobre el ancestro _existente_ más profundo, así que una
+hoja ausente no puede saltarse la comprobación. Los destinos que son symlinks nunca se
+reemplazan.
+
+## Estados de resultado
+
+| Estado         | Significado                                                |
+| -------------- | ---------------------------------------------------------- |
+| `applied`      | Reemplazado, con la línea (base 1) donde se encontró `old` |
+| `created`      | `old` estaba vacío; el archivo se creó                     |
+| `no-match`     | `old` no está en el archivo                                |
+| `ambiguous`    | `old` aparece más de una vez                               |
+| `file-missing` | `old` no vacío, pero el archivo no existe                  |
+| `not-a-file`   | La ruta es un directorio o un symlink                      |
+| `unsafe-path`  | La ruta escapa de la raíz del código fuente                |
+| `undecodable`  | El archivo no es UTF-8 válido                              |
+| `skipped`      | Un fallo anterior abortó la ejecución                      |
+
+`apply` **sale con código `2`** cuando `ok` es false.
+
+## Hacer rollback
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z \
+                  --source $REPO
+```
+
+- **Rechaza cualquier archivo cambiado después del patch.** Su hash actual ya no coincide
+  con el hash post-patch del manifiesto, lo que significa que alguien lo editó desde
+  entonces — restaurarlo destruiría silenciosamente ese trabajo. `--force` lo anula, de
+  forma deliberadamente explícita.
+- **`--source` protege la otra dirección:** apuntar el rollback a una copia de seguridad
+  tomada de un árbol distinto es un error, no una funcionalidad.
+- **Los modos de archivo, los finales de línea y el salto de línea final se preservan** en
+  todo momento. El patcher no normaliza nada que no se le pidió cambiar.
+- **Los directorios vacíos que el propio rollback creó se limpian.**
+
+```bash
+ls -1t $REPO/.handbook-patches/     # newest first
+```
+
+## Por qué el parser es hostil a la ambigüedad
+
+El seguimiento de fences sigue CommonMark tanto para fences de acento grave como de tilde:
+un bloque abierto con una secuencia de N marcadores solo se cierra en una línea cuya
+secuencia es ≥ N _y_ no lleva info string. Así, un `### EDIT n` dentro de una región con
+fence es **contenido, nunca un encabezado** — un plan que cita una edición de ejemplo no
+puede colar una edición fantasma en la ejecución.
+
+| Rechazado                                                                                                    | El mensaje te dice                                                                                |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Contenido entre los bloques con fence de una edición                                                         | Un fence interno probablemente cerró `old`/`new` antes de tiempo — ábrelos con un fence más largo |
+| Un bloque ``` sin etiqueta                                                                                   | La misma causa; se rechaza esté donde esté, para que un ancla truncada no se cuele como «epílogo» |
+| No exactamente un `old` y un `new`                                                                           | Cuántos de cada uno encontró                                                                      |
+| `new` antes de `old`                                                                                         | Escribe primero el ancla, luego el reemplazo                                                      |
+| `old` idéntico a `new`                                                                                       | Nada que hacer                                                                                    |
+| Línea `- file:` ausente o duplicada                                                                          | Se requiere exactamente una                                                                       |
+| Números de edición fuera de orden o duplicados                                                               | Deben ascender                                                                                    |
+| Una ruta con espacios en blanco, acentos graves, caracteres de control, barras invertidas, `~` o `/` inicial | Qué regla incumplió                                                                               |
+| Un encabezado casi correcto (`## EDIT 1`)                                                                    | Parece un encabezado pero no es `### EDIT <n>`                                                    |
+
+La prosa final y el bloque de declaraciones **después** del último par `old`/`new` son
+salida esperada y se ignoran, no se rechazan.
+
+## Escribir un plan a mano
+
+Nada exige que un plan provenga de `handbook plan`. El formato es lo bastante pequeño como
+para escribirlo directamente, lo que convierte a `apply` en un patcher mecánico útil por
+sí solo:
+
+````markdown
+### EDIT 1
+
+- file: `src/config.py`
+- where: `DEFAULTS` — bump the timeout
+
+```old
+TIMEOUT_SECONDS = 30
+```
+
+```new
+TIMEOUT_SECONDS = 60
+```
+````
+
+Haz lint sin aplicar:
+
+```ts
+import { parsePlan } from '@handbook/patcher';
+console.log(parsePlan(planText).problems);
+```
+
+## Después de que aterrice
+
+El handbook ahora está por detrás del código. Hazlo avanzar:
+
+```bash
+handbook resync --case cases/upload-retry --work work/api
+```
+
+Consulta [Mantenerlo al día](/docs/guides/keeping-current).

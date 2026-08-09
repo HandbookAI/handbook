@@ -1,0 +1,109 @@
+---
+title: 'Studio——Web 界面'
+description: '整个工具链装进一个浏览器标签页，带实时日志和一键回滚。只限 localhost，设计使然。'
+---
+
+```bash
+handbook studio                 # → http://127.0.0.1:4860
+handbook studio --port 5000     # or: pnpm studio --port 5000
+```
+
+与 CLI 相同的代码路径、相同的配置解析、磁盘上相同的工件——只是换了一种驾驶方式。
+
+**零构建步骤。** UI 就是一个手写的 HTML 文件，内联 CSS 加原生 JS。没有打包器、
+没有框架、不从 CDN 拉取任何东西。它瞬间加载，拔掉网线也能用。
+
+## 你能在里面做什么
+
+| 区域                 | 作用                                                 |
+| -------------------- | ---------------------------------------------------- |
+| **Repositories**     | 用一个 URL 安全的名字注册一棵源码树加一个工作目录    |
+| **Generate**         | 完整参数集，日志经 SSE 实时流出，运行中可取消        |
+| **Handbook browser** | 原地阅读渲染好的手册                                 |
+| **Impact graph**     | 一个阶段拥有哪些文件、谁调用进来、它又调用出去到哪里 |
+| **Source viewer**    | 打开任意卡片背后的真实文件，直达引用的那一行         |
+| **Plan**             | 输入请求，看着只读智能体干活，然后读计划             |
+| **Apply / rollback** | 试运行、应用、列出每一份备份、一键回滚               |
+| **Resync**           | 针对活的目录树把手册向前滚——不用组装 case 目录       |
+| **History**          | 逐仓库的演化史：每次运行改了什么、什么时候改的       |
+
+## 作业
+
+生成、规划与 resync 都以**后台作业**运行，日志被捕获后经 Server-Sent Events 提供。
+
+- **每个仓库同一时间只有一个作业。** 流水线的工件承受不了同一工作目录上的并发写入；
+  第二次启动会被拒绝，并给出清晰的提示。
+- **可取消。** 每个作业都有一个 `AbortController`，它的信号能到达在途的 LLM 请求。
+  取消就是取消，而不是“别再给我看日志了”。
+- **状态：** `running` → `succeeded` | `failed` | `cancelled`。完整日志会保留，
+  结束之后你仍然能读到发生了什么。
+
+## 配置
+
+Studio 从**与其他所有命令相同的层级**解析设置——标志、环境变量、`.env` 级联、
+`handbook.config.yaml`、默认值：
+
+```bash
+handbook studio --model gpt-4o --base-url https://my-proxy/v1 --port 5000
+handbook --env prod studio
+```
+
+从 UI 启动的 generate 作业看到的配置文件层与 CLI 完全一致，所以 `detail`、
+`narrateLang`、`readWorkers` 等等都可以从 YAML 里生效。
+
+## 安全模型
+
+Studio 是一个**本地工具**。它没有为暴露到外网做加固，也不假装做了。
+
+- **默认绑定 `127.0.0.1`。**
+- **CSRF 防护检查的是 `Host` 请求头**，而不是套接字。只有回环主机名能通过。
+- **`POST` 要求 `application/json`**，这挡住了经典的跨源 HTML 表单攻击。
+- **仓库名在触碰文件系统之前**先用 `^[A-Za-z0-9][A-Za-z0-9._-]*$` 校验，路径也会做
+  realpath 规范化。
+- **源码与手册文件的伺服被沙箱限制**在已注册的根目录之内。
+
+### 在容器里
+
+```bash
+pnpm run docker:studio    # docker compose up --build studio
+```
+
+容器必须绑定 `0.0.0.0`，发布的端口才可达（`docker-compose.yml` 里的
+`HANDBOOK_STUDIO_HOST=0.0.0.0`）。
+
+<Callout type="warn" title="只有 http://localhost:4860 能用">
+  LAN IP 不行，容器名也不行。从宿主机浏览时发送的仍是 `Host: localhost:4860`，可以通过；写着 LAN IP
+  或容器主机名的请求会被 `403` 拒绝——**这是设计使然**。远程访问是一项刻意未实现的独立
+  特性——它需要一份显式的允许列表——而不是这道防线上的缺口。
+</Callout>
+
+## 状态
+
+```text
+~/.handbook-studio/
+  studio.json        the repository registry (schema-validated on read)
+  work/<name>/       auto-created work dirs for repos that did not bring their own
+```
+
+`--state-dir` 可以挪动它。其余一切——手册工件、演化历史——都住在各仓库自己的
+工作目录里，所以删掉状态目录只会丢掉注册表，不会丢掉任何要紧的东西。
+
+## 用脚本驱动它
+
+UI 只是一个客户端。HTTP API 稳定到可以直接写脚本：
+
+```bash
+curl -s http://localhost:4860/api/repos | jq
+
+curl -s -X POST http://localhost:4860/api/repos \
+  -H 'content-type: application/json' \
+  -d '{"name":"api","sourceRoot":"/Users/me/code/api","workDir":"/Users/me/work/api"}'
+
+curl -s -X POST http://localhost:4860/api/repos/api \
+  -H 'content-type: application/json' \
+  -d '{"action":"analyze"}'
+
+curl -N http://localhost:4860/api/jobs/<job-id>    # SSE log stream
+```
+
+完整路由表见[包的 README](https://www.npmjs.com/package/@handbook/studio)。

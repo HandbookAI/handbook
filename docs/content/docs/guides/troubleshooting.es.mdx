@@ -1,0 +1,286 @@
+---
+title: 'Solución de problemas'
+description: 'Lo que de verdad sale mal, qué significa el mensaje y qué hacer al respecto.'
+---
+
+<Callout title="Empieza aquí, siempre">
+```bash
+handbook config --command <the-command-that-failed>
+```
+Imprime el entorno activo, cada archivo `.env` cargado, el archivo de configuración
+resuelto y una fila por ajuste con **de dónde salió su valor**. La mayoría de los
+problemas de «ignoró mi configuración» los responde esa tabla en diez segundos.
+</Callout>
+
+## Configuración
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+Exactamente lo que dice — y enumera todas las formas de suministrarlo. La obligatoriedad
+se comprueba _después_ de consultar todas las capas, así que esto significa que ninguna lo
+tenía.
+
+### Mi variable de entorno está siendo ignorada
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+La columna `FROM` te dice qué capa ganó realmente. Causas habituales:
+
+- Un **flag** la está anulando. Los flags ganan a todo.
+- Definiste el nombre plano pero existe uno **con ámbito** — `HANDBOOK_GENERATE_DETAIL`
+  gana a `HANDBOOK_DETAIL`.
+- Definiste un valor **vacío**. Vacío se lee como no definido, deliberadamente.
+- Estás ejecutando desde otro directorio: **la cascada de `.env` es solo del cwd**, a
+  diferencia de `handbook.config.yaml`, que se descubre subiendo por el árbol.
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+Muévela a `.env` o al entorno del shell. Este rechazo es deliberado.
+
+### `node: /some/path.env: not found`, y código de salida 9
+
+No es un error de Handbook en absoluto. Node >= 20.6 tiene su propio flag `--env-file` y
+pre-escanea toda la línea de comandos buscándolo, así que muere con una ruta inexistente
+**antes** de que Handbook arranque. Usa en su lugar la variable, que nada puede
+interceptar:
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+El flag funciona bien siempre que el archivo exista de verdad.
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+El archivo se parseó como YAML pero no es un objeto en el nivel superior. Revisa la
+indentación de la primera clave.
+
+## Análisis
+
+### `no analyzable files found under <dir>`
+
+`--source` apunta a algún lugar sin nada que el analizador reconozca. Busca una errata, y
+comprueba que estás apuntando a la raíz del código fuente y no a un directorio de
+artefactos de build.
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### El número de archivos es mucho menor de lo esperado
+
+Ejecuta con `-v` y lee las líneas `[scan]`. Causas probables:
+
+- Falta un lenguaje entero de la lista → consulta
+  [Soporte de lenguajes](/docs/reference/languages).
+- Tu código está bajo un directorio de la lista compartida de omisiones (`vendor`,
+  `build`, `dist`, `out`, `target`, …). Apunta `--source` a la verdadera raíz del código
+  fuente.
+- Swift en Node ≥ 24 → el adaptador se negó en el descubrimiento. Usa
+  `node --liftoff-only`.
+
+### El número de archivos es mucho mayor de lo esperado
+
+Estás escaneando `node_modules`, un árbol vendorizado o código generado. Los directorios
+comunes se omiten automáticamente; cualquier otro necesita un `--source` más estrecho.
+
+### `edgesDropped` es enorme
+
+Normal en lenguajes dinámicos, y **no** es un error — cada llamada descartada se
+categoriza en `phase1/dropped-calls.json` en lugar de adivinarse:
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+Los lenguajes del nivel genérico descartan más por diseño. Consulta
+[Fidelidad del análisis](/docs/concepts/analysis-fidelity).
+
+### Swift mata el proceso
+
+```text
+Fatal process out of memory: Zone
+```
+
+La gramática de Swift incluida aborta en V8 ≥ 13. El adaptador se niega en el
+descubrimiento sobre un runtime así en lugar de dejar que esto ocurra — si ves el aborto
+en sí, estás en una ruta de código que lo esquivó. Ejecuta con:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## Generación
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+No se resolvió ninguna clave de API. Revisa `handbook config --command generate` — la fila
+`llmApiKey` dirá `— unset (required)`. Para un endpoint local sin clave, define
+`OPENAI_API_KEY=EMPTY` explícitamente.
+
+### El endpoint devuelve HTML
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+Un proxy corporativo está interceptando la petición y devolviendo una página de login con
+un `200`. Arregla el proxy, o apunta `--base-url` a algo alcanzable.
+
+### Las fichas vuelven vacías
+
+Mira lo que el modelo dijo realmente:
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+Esas son respuestas que no produjeron ninguna ficha utilizable. Causas comunes: un modelo
+demasiado pequeño para seguir el esquema, un rechazo o un truncamiento. Prueba
+`--detail brief`, un `--read-batch-size` más pequeño o un `--model` más potente.
+
+Qué archivos quedaron sin prosa:
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### Errores de límite de tasa, o una ejecución muy lenta
+
+**Baja** `--llm-concurrency` primero. Reintentar con más fuerza contra un límite de tasa
+gasta los mismos tokens dos veces.
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### Las etapas no tienen sentido
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+El bucle actor–crítico existe exactamente para esto. Si aun así falla, escribe tú mismo un
+`skeleton.yaml` y pásalo con `--skeleton`.
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+Deliberado. Vuelve a ejecutar la Phase 2b para cambiar de estrategia:
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+Un lock. O bien hay una ejecución genuinamente en curso — incluido un trabajo de Studio —
+o una ejecución anterior murió mal. Espera, o elimina el directorio de lock nombrado en el
+mensaje tras confirmar que no hay nada ejecutándose.
+
+## Renderizado y empaquetado
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` debe apuntar al directorio **renderizado** (`<work>/handbook`), no al
+directorio de trabajo.
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+La construcción del skill empieza vaciando `--out`. Apuntarlo al handbook borraría la
+entrada. Usa un directorio separado: `--handbook work/api/handbook --out skills/api`.
+
+### `validate` avisa de hashes obsoletos
+
+Funciona según lo previsto: el código fuente avanzó desde el empaquetado. Haz avanzar el
+handbook:
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## Planificación y aplicación
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+El modelo inventó secciones `## Tool result` — estaba razonando sobre contenidos de
+archivo imaginados. Nada de esa ejecución es fiable. **Usa un modelo más potente.**
+
+### `planner reached the turn limit without producing a plan`
+
+Sube `--max-turns`, o acota la petición. Una petición vaga hace que el planner explore en
+lugar de localizar.
+
+### `apply` dice `no-match`
+
+El código cambió después de escribirse el plan. Vuelve a ejecutar `plan`. **No** edites a
+mano el ancla para que coincida — el ancla es el mecanismo de seguridad.
+
+### `apply` dice `ambiguous`
+
+El texto `old` aparece más de una vez. Vuelve a ejecutar `plan`, o edita a mano el plan
+para incluir más contexto circundante en `old` de modo que sea único.
+
+### `EDIT 1: content between the fenced blocks`
+
+El contenido de `old` o `new` contiene un fence de código que cerró el bloque antes de
+tiempo. Abre esos bloques con un fence **más largo**:
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` rechaza un archivo
+
+Su hash actual no coincide con el hash post-patch — alguien lo editó después del patch, y
+restaurarlo destruiría ese trabajo. Revisa qué cambió, y luego `--force` si estás seguro.
+
+## Studio
+
+### `403` al abrir Studio
+
+No estás usando `localhost`. La guarda CSRF comprueba la cabecera `Host`, así que una IP
+de LAN o un nombre de contenedor se rechaza **por diseño**. Usa `http://localhost:4860`, o
+un túnel SSH:
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+Un trabajo por repositorio a la vez, porque los artefactos no son seguros para escritores
+concurrentes. Espera, o cancela el trabajo en curso desde la interfaz.
+
+## Si sigues atascado
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+```
+
+Si es reproducible, los artefactos de arriba son exactamente lo que necesita un informe de
+bug.

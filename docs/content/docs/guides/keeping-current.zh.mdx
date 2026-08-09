@@ -1,0 +1,161 @@
+---
+title: '让手册保持最新'
+description: 'Resync 把旧调用图与新调用图做差异对比，只重新生成真正变化的部分。改三个文件，就只为三个文件付费。'
+---
+
+```bash
+handbook resync --case <case-dir> --work <workdir>
+```
+
+文档之所以会腐烂，是因为更新它的成本和重写它一样高。Resync 让更新的成本**与改动
+成正比**。
+
+## case 契约
+
+**case** 是一个由你组装的目录。它回答两个问题：_代码现在长什么样_，以及*这次改动
+本来要做什么*。
+
+```text
+cases/upload-retry/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — SHARPENS the scope
+  change.diff   unified diff vs the previous tree   optional — WIDENS the scope
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+git -C $REPO diff HEAD~1 > cases/upload-retry/change.diff
+
+handbook resync --case cases/upload-retry --work work/api
+```
+
+<Callout title="声明与 diff 只能扩大集合">
+  图差异是底线：只要一个文件的字节变了，无论计划有没有提到它，它都会被刷新。**一份低估了自身
+  影响范围的计划，不可能造成过期的页面。**
+</Callout>
+
+**空的** `change.diff` 表示“无事可做”，这次运行会被干净地跳过，而不是被当作
+“一切都变了”。
+
+## 它实际做什么
+
+1. 重新分析编辑后的目录树——一张全新的 Phase 1 图。
+2. 用旧图对比新图 → 变化 / 新增 / 删除的文件。
+3. 为变化和新增的文件重新生成文件卡片。
+4. 给新增文件分配归属、丢弃已删除的文件、调和各个分组。
+5. 为受影响的阶段重建组织——确定性的，不用 LLM。
+6. 重新叙述受影响的阶段与系统总览。有内容哈希缓存在，未受影响的阶段根本不会被
+   重新叙述。
+7. 刷新状态寄存器。
+8. 刷新 `<work>/handbook` 下已渲染的输出（`--no-render` 可跳过）。
+
+```json title="stdout"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["work/api/handbook/overview.md", "work/api/handbook/stage-3.md"]
+}
+```
+
+## 差异对比靠什么捕获变化
+
+| 信号           | 检测的是                                                           |
+| -------------- | ------------------------------------------------------------------ |
+| **内容哈希**   | 行号与签名都没动的就地函数体修改——结构性 diff 会完全漏掉的那种情形 |
+| 函数集合       | 新增、删除或改名的函数                                             |
+| 签名与行号范围 | 被重塑的函数                                                       |
+| 调用边         | 新增或消失的关系，包括进出那些未被触碰文件的                       |
+| 文件集合       | 新增与删除的文件                                                   |
+
+逐文件哈希正是 Phase 1 为此专门盖上的戳。早于这些哈希的旧图会退回到结构对比——
+有所降级，但绝不出错。
+
+## 没有端点也能工作
+
+```bash
+handbook resync --case cases/x --work work/api --no-llm
+```
+
+结构性事实照常刷新——调用图、函数清单、归属、排序——每张受影响卡片的 purpose 会
+被追加上 ` (stale: code changed since narration)`。
+
+**这才是诚实的降级。** 另一种做法——让文字原封不动、不加任何标记——得到的是一本
+悄悄说谎的手册。
+
+## 把纠错反馈回来
+
+```bash
+handbook resync --case cases/x --work work/api \
+  --corrections skills/api/corrections.jsonl
+```
+
+`corrections.jsonl` 里点名的文件会加入刷新集合，**哪怕它们的字节从未变过**——一条
+被源码反驳的断言，本身就足以成为重新描述那个文件的理由。消费过的文件随后会带时间
+戳归档，同一条纠错不会被应用第二次。
+
+格式不合法的行会报告在 `report.corrections.problems` 里，并且绝不致命——某个智能
+体写坏的一行，不能阻塞整次刷新。
+
+## 详略与语言保持不动
+
+`--detail` 与 `--narrate-lang` **默认不设置**，而不设置的含义是*“保持这本手册现在
+的样子”*。resync 绝不会悄悄把一本深度手册降级成简略版，也不会把一本中文手册翻成
+英文。
+
+只有当你确实想改变深度或语言时才显式传入——并且要有心理准备：在每张卡片都重新
+生成之前，手册会是混合状态。
+
+## 什么时候该改用重新生成
+
+Resync 向前滚动的是**派生**层。当*结构*本身应该变化时，请重新生成：
+
+| 情况                       | 做法                                           |
+| -------------------------- | ---------------------------------------------- |
+| 改了几个文件               | `resync`                                       |
+| 一次重构在模块之间搬了代码 | `resync`——图差异能处理                         |
+| 新增了一整个子系统         | 先 `resync`，再检查骨架是否还合身              |
+| 骨架已经描述不了这个系统   | `generate --phase 2b,2c,3 --synth-mode doctor` |
+| 你改了叙述语言或详略深度   | `generate --phase 2a` / `--phase 3 --refresh`  |
+| 半个仓库被重写             | 从头 `generate`——比一次巨型 resync 更便宜      |
+
+## 自动化
+
+```yaml title=".github/workflows/handbook-resync.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - run: |
+          mkdir -p case
+          cp -R . case/edited
+          git diff HEAD~1 > case/change.diff
+      - run: handbook resync --case case --work work/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - run: handbook validate --skill skills/api --source .
+```
+
+当你以编程方式驱动 resync 时，`edited/` 也可以完全省掉：`editedRoot` 选项直接指向
+一棵活的目录树——Studio 就是这样原地运行它的，不用复制仓库。
+
+## 安全性
+
+- **与 `generate` 相同的目录锁**，所以 resync 绝不会与同一批工件上的并发生成交错
+  执行。
+- **Phase 1 暂存区总会被清理**——`<case>/.resync-phase1` 绝不会在调用结束后残留，
+  成功失败都一样。
+- **已删除文件的卡片会被移除**，被删掉的文件不可能在手册里阴魂不散。
+- **可取消**——每个步骤之间都会检查 `AbortSignal`，并把它传入每一次 LLM 调用。

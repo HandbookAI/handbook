@@ -1,0 +1,294 @@
+---
+title: 'Fehlerbehebung'
+description: 'Die Dinge, die tatsächlich schiefgehen, was die Meldung bedeutet, und was dagegen zu tun ist.'
+---
+
+<Callout title="Fangen Sie hier an, jedes Mal">
+```bash
+handbook config --command <the-command-that-failed>
+```
+Es druckt die aktive Umgebung, jede geladene `.env`-Datei, die aufgelöste
+Konfigurationsdatei und eine Zeile pro Einstellung mit der Angabe, **woher ihr Wert
+kam**. Die meisten „meine Einstellung wurde ignoriert"-Probleme beantwortet diese Tabelle
+in zehn Sekunden.
+</Callout>
+
+## Konfiguration
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+Genau, was da steht — und die Meldung listet jeden Weg auf, den Wert zu liefern. Die
+Pflicht wird _nach_ Konsultation aller Schichten geprüft, das heißt also: Keine von ihnen
+hatte ihn.
+
+### Meine Umgebungsvariable wird ignoriert
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+Die Spalte `FROM` sagt Ihnen, welche Schicht tatsächlich gewonnen hat. Übliche Ursachen:
+
+- Ein **Flag** überschreibt sie. Flags schlagen alles.
+- Sie haben den flachen Namen gesetzt, aber es existiert ein **gescopter** —
+  `HANDBOOK_GENERATE_DETAIL` schlägt `HANDBOOK_DETAIL`.
+- Sie haben einen **leeren** Wert gesetzt. Leer liest sich als nicht gesetzt, mit
+  Absicht.
+- Sie arbeiten aus einem anderen Verzeichnis: **Die `.env`-Kaskade ist rein
+  cwd-bezogen**, anders als `handbook.config.yaml`, das durch Aufwärtslaufen gefunden
+  wird.
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+Verschieben Sie ihn in `.env` oder die Shell-Umgebung. Diese Verweigerung ist Absicht.
+
+### `node: /some/path.env: not found`, und Exit-Code 9
+
+Gar kein Handbook-Fehler. Node >= 20.6 hat ein eigenes `--env-file`-Flag und scannt die
+gesamte Kommandozeile vorab danach, es stirbt also an einem fehlenden Pfad, **bevor**
+Handbook überhaupt startet. Verwenden Sie stattdessen die Variable, die nichts abfangen
+kann:
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+Das Flag ist unproblematisch, sobald die Datei tatsächlich existiert.
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+Die Datei ließ sich als YAML parsen, ist aber auf oberster Ebene kein Objekt. Prüfen Sie
+die Einrückung des ersten Schlüssels.
+
+## Analyse
+
+### `no analyzable files found under <dir>`
+
+`--source` zeigt irgendwohin, wo nichts liegt, das der Analyzer erkennt. Prüfen Sie auf
+einen Tippfehler, und prüfen Sie, ob Sie auf das Quellwurzelverzeichnis zeigen und nicht
+auf ein Verzeichnis mit Build-Ausgaben.
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### Die Dateianzahl ist weit niedriger als erwartet
+
+Führen Sie mit `-v` aus und lesen Sie die `[scan]`-Zeilen. Wahrscheinliche Ursachen:
+
+- Eine ganze Sprache fehlt in der Liste → siehe
+  [Sprachunterstützung](/docs/reference/languages).
+- Ihr Code liegt unter einem Verzeichnis der gemeinsamen Skip-Liste (`vendor`, `build`,
+  `dist`, `out`, `target`, …). Richten Sie `--source` auf das echte Quellwurzelverzeichnis.
+- Swift auf Node ≥ 24 → der Adapter hat bei der Erkennung verweigert. Verwenden Sie
+  `node --liftoff-only`.
+
+### Die Dateianzahl ist weit höher als erwartet
+
+Sie scannen `node_modules`, einen vendored Baum oder generierten Code. Die üblichen
+Verzeichnisse werden automatisch übersprungen; alles andere braucht ein engeres
+`--source`.
+
+### `edgesDropped` ist enorm
+
+Normal für dynamische Sprachen und **kein** Fehler — jeder verworfene Aufruf wird in
+`phase1/dropped-calls.json` kategorisiert statt geraten:
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+Sprachen der generischen Stufe verwerfen konstruktionsbedingt mehr. Siehe
+[Analysetreue](/docs/concepts/analysis-fidelity).
+
+### Swift bringt den Prozess um
+
+```text
+Fatal process out of memory: Zone
+```
+
+Die gebündelte Swift-Grammatik bricht auf V8 ≥ 13 ab. Der Adapter verweigert auf einer
+solchen Laufzeitumgebung bei der Erkennung, statt es dazu kommen zu lassen — sehen Sie
+den Abbruch selbst, sind Sie auf einem Codepfad, der daran vorbeigelaufen ist. Führen Sie
+aus mit:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## Generierung
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+Kein API-Schlüssel aufgelöst. Prüfen Sie `handbook config --command generate` — die Zeile
+`llmApiKey` wird `— unset (required)` sagen. Für einen schlüssellosen lokalen Endpoint
+setzen Sie explizit `OPENAI_API_KEY=EMPTY`.
+
+### Der Endpoint liefert HTML zurück
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+Ein Unternehmens-Proxy fängt die Anfrage ab und liefert eine Login-Seite mit `200`.
+Reparieren Sie den Proxy, oder richten Sie `--base-url` auf etwas Erreichbares.
+
+### Karten kommen leer zurück
+
+Sehen Sie nach, was das Modell tatsächlich gesagt hat:
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+Das sind Antworten, aus denen keine brauchbare Karte entstand. Häufige Ursachen: ein
+Modell, das zu klein ist, um dem Schema zu folgen, eine Verweigerung oder Abschneiden.
+Versuchen Sie `--detail brief`, ein kleineres `--read-batch-size` oder ein stärkeres
+`--model`.
+
+Welche Dateien ohne Prosa geblieben sind:
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### Rate-Limit-Fehler oder ein sehr langsamer Lauf
+
+**Senken** Sie zuerst `--llm-concurrency`. Härter gegen ein Rate-Limit anzurennen gibt
+dieselben Tokens zweimal aus.
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### Die Etappen ergeben keinen Sinn
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+Die Actor-Critic-Schleife existiert genau dafür. Schlägt auch das fehl, verfassen Sie
+selbst eine `skeleton.yaml` und übergeben Sie `--skeleton`.
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+Absicht. Führen Sie Phase 2b erneut aus, um die Strategie zu wechseln:
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+Eine Sperre. Entweder läuft wirklich gerade ein Lauf — einschließlich eines Studio-Jobs —
+oder ein früherer Lauf ist hart gestorben. Warten Sie, oder entfernen Sie das in der
+Meldung genannte Sperrverzeichnis, nachdem Sie bestätigt haben, dass nichts läuft.
+
+## Rendern und Paketieren
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` muss auf das **gerenderte** Verzeichnis (`<work>/handbook`) zeigen, nicht
+auf das Arbeitsverzeichnis.
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+Der Skill-Build beginnt damit, `--out` zu leeren. Es auf das Handbook zu richten würde
+die Eingabe löschen. Verwenden Sie ein separates Verzeichnis:
+`--handbook work/api/handbook --out skills/api`.
+
+### `validate` warnt vor veralteten Hashes
+
+Funktioniert wie beabsichtigt: Die Quelle hat sich seit dem Paketieren weiterbewegt.
+Rollen Sie das Handbook nach vorn:
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## Planen und Anwenden
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+Das Modell hat `## Tool result`-Abschnitte erfunden — es hat auf eingebildeten
+Dateiinhalten weitergedacht. Nichts aus diesem Lauf ist vertrauenswürdig. **Verwenden Sie
+ein stärkeres Modell.**
+
+### `planner reached the turn limit without producing a plan`
+
+Erhöhen Sie `--max-turns`, oder grenzen Sie die Anfrage ein. Eine vage Anfrage bringt den
+Planner zum Explorieren statt zum Lokalisieren.
+
+### `apply` sagt `no-match`
+
+Der Code hat sich geändert, nachdem der Plan geschrieben wurde. Führen Sie `plan` erneut
+aus. Bearbeiten Sie den Anker **nicht** von Hand, damit er passt — der Anker ist der
+Sicherheitsmechanismus.
+
+### `apply` sagt `ambiguous`
+
+Der `old`-Text kommt mehr als einmal vor. Führen Sie `plan` erneut aus, oder erweitern
+Sie den Plan von Hand um mehr umgebenden Kontext in `old`, sodass er eindeutig wird.
+
+### `EDIT 1: content between the fenced blocks`
+
+Der Inhalt von `old` oder `new` enthält einen Code-Fence, der den Block zu früh
+geschlossen hat. Öffnen Sie diese Blöcke mit einem **längeren** Fence:
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` verweigert eine Datei
+
+Ihr aktueller Hash stimmt nicht mit dem Nach-Patch-Hash überein — jemand hat sie nach dem
+Patch bearbeitet, und Wiederherstellen würde diese Arbeit zerstören. Prüfen Sie, was sich
+geändert hat, dann `--force`, wenn Sie sicher sind.
+
+## Studio
+
+### `403` beim Öffnen von Studio
+
+Sie verwenden nicht `localhost`. Der CSRF-Schutz prüft den `Host`-Header, eine LAN-IP
+oder ein Containername wird also **mit Absicht** abgewiesen. Verwenden Sie
+`http://localhost:4860` oder einen SSH-Tunnel:
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+Ein Job pro Repository zur gleichen Zeit, weil die Artefakte nicht sicher für
+nebenläufige Schreiber sind. Warten Sie, oder brechen Sie den laufenden Job in der UI ab.
+
+## Immer noch festgefahren
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+```
+
+Ist es reproduzierbar, sind die Artefakte oben genau das, was ein Bug-Report braucht.

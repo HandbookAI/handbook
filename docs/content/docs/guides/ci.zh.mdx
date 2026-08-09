@@ -1,0 +1,199 @@
+---
+title: 'CI 集成'
+description: '哪些命令便宜到可以每次提交都跑、哪些需要密钥，以及如何在手册漂移时让构建失败。'
+---
+
+## 各命令的成本
+
+| 命令                 | 需要密钥？ | 确定性？ | 什么时候跑…            |
+| -------------------- | :--------: | :------: | ---------------------- |
+| `analyze`            |     ❌     |    ✅    | 每次提交               |
+| `render`             |     ❌     |    ✅    | 每次提交               |
+| `skill`              |     ❌     |    ✅    | 每次提交               |
+| `validate`           |     ❌     |    ✅    | 每次提交               |
+| `config --check`     |     ❌     |    ✅    | 每次提交               |
+| `apply` / `rollback` |     ❌     |    ✅    | 按需                   |
+| `generate`           |     ✅     |    ❌    | 在 `main` 上，或按计划 |
+| `resync`             |     ✅     |    ❌    | 在 `main` 上           |
+| `plan`               |     ✅     |    ❌    | 按需                   |
+
+**其中五个是免费的。** 一个在每个 pull request 上跑它们的工作流分文不花，却能抓住
+真问题。
+
+## 免费的 pull request 作业
+
+```yaml title=".github/workflows/handbook-check.yml"
+name: handbook check
+
+on: [pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # 1. Configuration is valid — catches a typo'd variable before it costs a run.
+      - run: node packages/cli/dist/main.js config --check --command generate
+
+      # 2. The call graph still builds, and the file count has not collapsed.
+      - name: analyze
+        run: |
+          node packages/cli/dist/main.js analyze --source . --work work/self > stats.json
+          cat stats.json
+          test "$(jq .files stats.json)" -gt 10
+
+      # 3. The committed SKILL package is still structurally valid, and still fresh.
+      - name: validate the skill
+        run: node packages/cli/dist/main.js validate --skill skills/self --source .
+```
+
+当 skill 包已经漂移时，`validate` **以退出码 `2` 退出**。由你决定它应该让构建失败，
+还是只发出警告：
+
+```yaml
+- run: node packages/cli/dist/main.js validate --skill skills/self --source .
+  continue-on-error: true # warn; schedule a resync instead of blocking the PR
+```
+
+## 在 `main` 上重新生成
+
+```yaml title=".github/workflows/handbook-resync.yml"
+name: handbook resync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: handbook-resync
+  cancel-in-progress: false # never interleave two runs on the same work dir
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: assemble the resync case
+        run: |
+          mkdir -p case
+          rsync -a --exclude .git --exclude node_modules --exclude work ./ case/edited/
+          git diff HEAD~1 > case/change.diff
+
+      - name: resync
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node packages/cli/dist/main.js resync --case case --work work/self
+
+      - name: repackage and validate
+        run: |
+          node packages/cli/dist/main.js skill \
+            --handbook work/self/handbook --out skills/self --name self \
+            --work work/self --source . --agent-dir work/self/handbook/agent
+          node packages/cli/dist/main.js validate --skill skills/self --source .
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/handbook-resync
+          title: 'docs: roll the handbook forward'
+          commit-message: 'docs: roll the handbook forward'
+```
+
+两个要紧的细节：
+
+- **`concurrency` 配上 `cancel-in-progress: false`。** 每个工作目录同一时间只允许
+  一次运行，由锁强制执行；两次重叠的 CI 运行只会让其中一次失败。
+- **开 PR，而不是直接推送。** 重新生成的手册是一份值得阅读的 diff。
+
+## 发布 HTML 站点
+
+```yaml title=".github/workflows/handbook-pages.yml"
+name: publish handbook
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - run: |
+          node packages/cli/dist/main.js render \
+            --work work/self --title "Self Handbook" \
+            --html --html-single --agent-site --llms-txt \
+            --source-base-url https://github.com/${{ github.repository }}/blob/${{ github.sha }}
+
+      - run: cp work/self/handbook/llms*.txt work/self/handbook/html/
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: work/self/handbook/html }
+      - uses: actions/deploy-pages@v4
+```
+
+渲染免费且确定，所以它可以在每次推送时运行。让 `--source-base-url` 指向
+`${{ github.sha }}` 而不是 `main`，可以让发布出来的手册里每一条链接都指向渲染时
+所依据的那份确切代码。
+
+## 提交工作目录
+
+它就是普通的 JSON 和 YAML，所以把它提交进仓库是一个正当的选择：
+
+**赞成**——一次重新生成的 diff 是可评审的，`render` 在 CI 里不需要密钥，`validate`
+也有了可以对照的东西。
+
+**反对**——在大仓库上 `phase2/cards/` 很大，而且卡片文字会随模型版本更迭而波动。
+
+一个不错的折中：提交 `skills/<name>/`（体积小，而且是智能体真正消费的东西），把
+`work/` 加进 gitignore（体积大，而且可以再生）。
+
+## 在多次运行之间缓存
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: work/self/phase3/cache
+    key: handbook-cache-${{ hashFiles('**/*.ts', '**/*.py') }}
+    restore-keys: handbook-cache-
+```
+
+Phase 3 的缓存以内容哈希为键，所以恢复一份过期缓存是安全的——它只是不命中而已。
+当每次运行只有少数文件变化时，缓存 `phase2/cards/` 再配合 `--resume` 效果更好。
+
+## 有意地在漂移时失败
+
+```bash
+handbook validate --skill skills/api --source .
+case $? in
+  0) echo "handbook is fresh" ;;
+  2) echo "::warning::handbook has drifted — a resync is due" ;;
+  *) exit 1 ;;
+esac
+```
+
+把 `2` 当作一个调度信号，而不是构建中断。过期的手册是一项维护任务；*坏掉的*手册
+（退出码 `1`）才是 bug。

@@ -1,0 +1,137 @@
+---
+title: 'Docker'
+description: '不装本地 Node 也能跑整个工具链——包括 Studio，并且一个镜像通吃所有环境。'
+---
+
+镜像是 Node 22（刻意**不是** 24——见 Dockerfile）加上构建好的各个包。
+
+```bash
+pnpm run docker:build      # docker build -t handbook:local .
+```
+
+## 运行命令
+
+`HANDBOOK_SOURCE=/src` 和 `HANDBOOK_WORK=/work` 已经烘焙进镜像，所以你只需要挂载
+卷——不需要 `--source` 或 `--work`：
+
+```bash
+# free, no key
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+
+# with an endpoint
+docker run --rm --env-file .env \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate --detail deep
+
+# render, then get the output back out
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local render --html --agent-site --llms-txt
+docker run --rm -v handbook-work:/work -v "$PWD/out:/out" \
+  --entrypoint cp handbook:local -R /work/handbook /out/
+```
+
+把源码以**只读**方式挂载（`:ro`）是个好习惯——除了 `apply` 之外的一切场景都适用。
+
+## 环境变量
+
+Docker 自己的 `--env-file` 是**叠加在**工具链的 `.env` 加载之上的——两者都生效，
+以这种方式传入的 `OPENAI_*` 变量，可见性与 shell export 完全一样。
+
+```bash
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+### 一个镜像，所有环境
+
+`.env*` 文件**绝不烘焙进镜像**——见 `.dockerignore`。在运行时选择环境：
+
+```bash
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+或者挂载一个配置文件：
+
+```bash
+docker run --rm \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  -v "$PWD/handbook.config.prod.yaml:/cfg.yaml:ro" \
+  handbook:local --config /cfg.yaml generate
+```
+
+## Studio
+
+```bash
+pnpm run docker:studio     # docker compose up --build studio
+```
+
+然后打开 **`http://localhost:4860`**。
+
+<Callout type="warn" title="只有 localhost 能用——LAN IP 不行，容器名也不行">
+  Studio 的 CSRF 防线检查的是 `Host` **请求头**，而不是套接字。容器必须绑定
+  `0.0.0.0`，发布的端口才可达（compose 文件里的 `HANDBOOK_STUDIO_HOST=0.0.0.0`），
+  **但这并没有放宽谁可以与它对话。** 从宿主机浏览时发送的仍然是
+  `Host: localhost:4860`，可以通过；而写着 LAN IP 或 `studio` 容器主机名的请求会被
+  `403` 拒绝——这是设计使然。
+
+远程访问是一项刻意未实现的独立特性——它需要一份显式的允许列表——而不是这道防线
+的 bug。
+
+</Callout>
+
+```yaml title="docker-compose.yml (excerpt)"
+services:
+  studio:
+    build: .
+    command: studio
+    environment:
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:4860:4860'
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+```
+
+把端口发布为 `127.0.0.1:4860:4860` 而不是 `4860:4860`，还能把它挡在你的 LAN 网卡
+之外——在 Host 头检查之上再加一道保险。
+
+## 卷
+
+| 路径    | 内容       | 建议                             |
+| ------- | ---------- | -------------------------------- |
+| `/src`  | 你的源码树 | 除 `apply` 外一律挂载为 `:ro`    |
+| `/work` | 手册工件   | 用命名卷，让它在多次运行之间存活 |
+
+## 在 CI 中
+
+```yaml title=".github/workflows/handbook.yml"
+jobs:
+  handbook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t handbook:ci .
+      - run: |
+          docker run --rm \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci generate --detail brief
+      - run: |
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci render --html --agent-site --llms-txt
+      - uses: actions/upload-artifact@v4
+        with: { name: handbook, path: work/handbook }
+```
+
+`analyze`、`render`、`skill` 和 `validate` 完全不需要密钥，所以一个对 fork 安全的
+工作流可以在每个 pull request 上跑这些，把 `generate` 留给 `main`。
+
+## 为什么是 Node 22 而不是 24
+
+捆绑的 tree-sitter 语法里有一个（Swift）在 V8 ≥ 13 上会让进程中止。Node 22 位于
+这条边界之下，所以镜像不需要任何特殊标志。在 Node 24 上，适配器会在发现阶段拒绝，
+并提示你传 `--liftoff-only`；把镜像钉在 22 则把这个问题整个绕开了。见
+[语言支持](/docs/reference/languages)。
