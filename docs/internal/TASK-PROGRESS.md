@@ -407,9 +407,20 @@ requests 阶段页、express mock 总览——排版、编号、芯片、目录�
   - hi 有 0 → 全缺（12 + meta）
 - **C 批 reference（8）+ contributing（3）+ 2 个 meta：7 语种全部未开始**
 
+### 进度更新（同日晚些时候）
+- Studio 服务端 + UI 全部完成并提交（6b49cd2）：registry 驱动表单、render/skill/validate、
+  8 语言选择器、per-locale 词典文件 /i18n.<loc>.js（en/zh 已全，hi/es/pt/ru/ja/de 由
+  agent 在写）。59 studio 测试绿，全仓 1391 绿。
+- README ×2 重做为「两本手册」故事并提交（50ecab5）；docs 首页 8 语种 hero 同步（52206c2）。
+- guides：hi/ru/ja 完成；zh 缺 7、es 缺 2、pt 缺 6、de 缺 8 —— wave 3 agent 在补。
+- 28 个翻译页已改指 /diagrams/<name>.<loc>.svg；docs build 358/358 绿。
+- CJK 搜索实测可用（zh 配置/骨架、ja ステージ、ru этап 都有正确命中）；
+  回退横幅只在未翻译页出现（验证过正反两向）。
+
 ### 待办（按序）
-1. 补 B 批缺口（按上面精确清单发 agent，每语种一个）
-2. C 批 × 7（reference 里 cli.mdx 21KB、configuration.md 23KB 最大，必要时拆两个 agent）
+1. wave 3 收尾确认：guides zh/es/pt/de 补齐 + studio 词典 6 语种落盘
+2. C 批 × 7（reference 8 页 + contributing 3 页 + 2 meta；cli.mdx 21KB、
+   configuration.md 23KB 最大，语种内可拆 2 个 agent）
 3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
    README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
 4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +
