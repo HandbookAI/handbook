@@ -1,0 +1,126 @@
+---
+title: 'Release करना'
+description: 'Changesets संस्करण और changelogs चलाते हैं। जब तक token कॉन्फ़िगर न हो प्रकाशन निष्क्रिय रहता है, इसलिए हिसाब-किताब दोनों ही हाल में सही रहता है।'
+---
+
+## एक changeset जोड़ना
+
+जो भी बदलाव किसी प्रकाशित पैकेज को प्रभावित करता है उसे एक चाहिए:
+
+```bash
+pnpm changeset
+```
+
+यह पूछता है कि कौन-से पैकेज बदले और हर एक patch, minor या major है, फिर `.changeset/` के
+नीचे एक markdown फ़ाइल लिखता है। **उस फ़ाइल को कोड के साथ commit करें।**
+
+```markdown title=".changeset/quick-pandas-shave.md"
+---
+'@handbook/analyzer': minor
+'@handbook/cli': patch
+---
+
+Add a generic-tier Elixir spec and surface it in `--lang`.
+```
+
+विवरण **changelog पढ़ने वाले** के लिए लिखें, समीक्षक के लिए नहीं: बाहर से क्या बदला, यह
+नहीं कि कैसे।
+
+### किसे इसकी ज़रूरत है
+
+| बदलाव                                  | Changeset? |
+| -------------------------------------- | ---------- |
+| कोई नई सुविधा या flag                  | ✅ minor   |
+| भेजे जा चुके व्यवहार में bug सुधार     | ✅ patch   |
+| तोड़ने वाला API या CLI बदलाव           | ✅ major   |
+| कोई नया भाषा adapter                   | ✅ minor   |
+| दस्तावेज़, tests, CI, आंतरिक refactors | ❌         |
+| `docs/` के नीचे कुछ भी                 | ❌         |
+
+## Release का प्रवाह
+
+<Steps>
+
+<Step>
+### Changesets मौजूद रहते हुए `main` में merge करें
+
+Release workflow एक **«Version Packages»** pull request खोलता (या अपडेट करता) है।
+
+</Step>
+
+<Step>
+### उस PR की समीक्षा करें
+
+वह हर लंबित changeset लागू करता है: संस्करण बढ़ाता है, हर पैकेज की `CHANGELOG.md` लिखता है,
+और खप चुकी changeset फ़ाइलें हटा देता है। Changelog का diff पढ़ें — वही release notes हैं।
+
+</Step>
+
+<Step>
+### उसे merge करें
+
+इससे npm पर प्रकाशन हो जाता है।
+
+</Step>
+
+</Steps>
+
+<Callout title="जब तक NPM_TOKEN नहीं है प्रकाशन निष्क्रिय है">
+  Secret कॉन्फ़िगर न हो तो publish चरण कुछ नहीं करता। **संस्करण और changelogs फिर भी सही रहते हैं** — इसलिए
+  हिसाब-किताब चाहे पैकेज सचमुच प्रकाशित हो रहे हों या नहीं, सही ही रहता है, और बाद में प्रकाशन चालू करने के
+  लिए इतिहास दोबारा लिखने की ज़रूरत नहीं पड़ती।
+</Callout>
+
+## हाथ से करना
+
+```bash
+pnpm release:status      # what is pending
+pnpm release:version     # apply changesets, bump, write changelogs
+pnpm release:publish     # build, then changeset publish
+```
+
+`release:version` `pnpm install --lockfile-only` भी चलाता है, क्योंकि बढ़े हुए workspace
+संस्करण lockfile बदल देते हैं।
+
+## Release से पहले
+
+```bash
+pnpm check:all
+```
+
+यह `pnpm check` है, साथ में प्रकाशन की ओर देखने वाले दो gates:
+
+- **`check:packaging`** — हर पैकेज पर `publint` और `@arethetypeswrong/cli`। ग़लत `exports`
+  map, गायब type declaration, dual-package ख़तरा — इन्हें पकड़ता है।
+- **`check:install`** — सभी ग्यारह tarballs पैक करता है, उन्हें **सादे npm** से एक अस्थायी
+  directory में इंस्टॉल करता है, और उनके विरुद्ध CLI चलाता है। `dist` पर यही सबसे मज़बूत
+  जाँच है: यह असली प्रकाशित सतह को आज़माती है, workspace symlinks को नहीं।
+
+ये ग्यारह tarballs पैक करते हैं, इसलिए इनकी जगह CI में और release से पहले है, हर स्थानीय
+चक्कर में नहीं।
+
+## Provenance
+
+npm provenance को **हर** manifest में एक `repository` फ़ील्ड चाहिए जो सार्वजनिक repository
+पर इंगित करे। चूँकि यह बारह संपादन हैं जहाँ `directory` हर बार अलग होती है:
+
+```bash
+node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+node scripts/set-repo-url.mjs --check
+```
+
+यह idempotent है — repository हटाने-बदलने के बाद इसे फिर चला दें। इसे जान-बूझकर
+`pnpm check` से **नहीं** जोड़ा गया है: जब तक repository का सार्वजनिक URL न हो तब तक जाँचने
+को कुछ है ही नहीं, और जो gate ताज़े clone पर विफल हो वह लोगों को gates अनदेखा करना सिखाता
+है।
+
+## संस्करण नीति
+
+मानक semver, दो परंपराओं के साथ जिन्हें कह देना ठीक है:
+
+- **CLI के flags सार्वजनिक API हैं।** किसी flag को हटाना या उसका नाम बदलना major है। कोई
+  नया जोड़ना minor है।
+- **Artifact schemas अलग से संस्करणित होते हैं** अपने `version` फ़ील्ड से। ऐसा schema बदलाव
+  जो मौजूदा work directories को अमान्य कर दे, उन्हें पढ़ने वाले पैकेजों के लिए major है, और
+  changeset में यह कहती एक टिप्पणी चाहिए — artifact माइग्रेशन का कोई तंत्र नहीं है, इसलिए
+  «work directory हटाकर दोबारा जनरेट करें» एक स्वीकार्य उत्तर होना ही चाहिए।

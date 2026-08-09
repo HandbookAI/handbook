@@ -1,0 +1,296 @@
+---
+title: 'Artefakt-Formate'
+description: 'Jede Datei, die die Pipeline schreibt, ihr Schema und was sie beim Lesen validiert.'
+---
+
+Jedes Artefakt, das die Werkzeugkette liest oder schreibt, in Pipeline-Reihenfolge. Alle
+JSON-/YAML-Artefakte tragen ein `version`-Feld und werden beim Lesen mit zod-Schemata aus
+`@handbook/core` validiert. Pfade sind POSIX-relativ zur analysierten Quell-Wurzel,
+sofern nicht anders angegeben.
+
+## Aufbau des Arbeitsverzeichnisses
+
+```
+<work>/
+  phase1/
+    graph.json            the call graph (nodes + edges + selfAttrs + metadata)
+    functions.csv         one row per internal function
+    graph.dot             Graphviz view (files as clusters; await edges colored)
+    dropped-calls.json    unresolved calls, categorized
+  phase2/
+    cards/<rel>.json      one card per source file (tree-mirrored paths)
+    cards/_coverage.json  {nFiles, nDescribed, missing[]}
+    skeleton.yaml         the stage skeleton
+    assignment.json       file → stage
+    organization.yaml     intra-stage groups + reading order
+    members.json          (member strategy only) function → stage
+  phase3/
+    narration.json        stage + system prose
+    registers.json        cross-stage state registers
+    cache/                content-hash caches (safe to delete; costs a re-generation)
+```
+
+## phase1/graph.json
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "2026-08-02T10:00:00.000Z",
+    "language": "python | typescript | go | rust | shell | multi",
+    "sourceRoot": "/abs/path",
+    "scannedFiles": ["app/main.py", "…"],
+    "nInternalFunctions": 316,
+    "nBoundaryNodes": 45,
+    "nEdges": 903,
+    "policy": "Edges are emitted only when the callee resolves …",
+  },
+  "nodes": {
+    "app.main.main": {
+      // internal node (kind: "internal")
+      "id": "app.main.main",
+      "name": "main",
+      "qualname": "main",
+      "file": "app/main.py",
+      "lineStart": 4,
+      "lineEnd": 9,
+      "signature": "def main()",
+      "isAsync": false,
+      "isMethod": false,
+      "className": null,
+      "decorators": [],
+      "kind": "internal",
+      "synthetic": false, // true = implied node (e.g. implicit constructor)
+      "selfAttrsRead": [],
+      "selfAttrsWritten": [],
+      "paramTypes": {},
+      "nCallees": 3,
+      "nCallers": 0,
+    },
+    "boundary:os.getpid": {
+      // boundary node (kind: "boundary")
+      "id": "boundary:os.getpid",
+      "name": "getpid",
+      "qualname": "os.getpid",
+      "module": "os",
+      "className": "",
+      "kind": "boundary",
+      "nCallees": 0,
+      "nCallers": 1,
+    },
+  },
+  "edges": [
+    {
+      "callerId": "app.main.main",
+      "calleeId": "app.queue.TaskQueue.__init__",
+      "isAwait": false,
+      "callType": "internal_constructor",
+      "line": 6,
+      "raw": "TaskQueue",
+    },
+  ],
+  "selfAttrs": { "TaskQueue": { "items": { "readIn": ["…"], "writtenIn": ["…"] } } },
+}
+```
+
+`callType` ∈ `self_method · self_attr_method · param_method · internal_func ·
+internal_constructor · boundary · boundary_constructor` (nie `unresolved` — die leben in
+dropped-calls.json).
+
+## phase1/dropped-calls.json
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "…",
+    "totalDropped": 12,
+    "byCategory": { "builtin": 7, "bare_name": 3, "local_var_method": 2 },
+  },
+  "edgesByCategory": {
+    "builtin": [
+      { "caller": "app.main.main", "calleeRaw": "print", "isAwait": false, "line": 9, "raw": "print" },
+    ],
+  },
+}
+```
+
+Kategorien: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `builtin`,
+`local_var_method`, `bare_name`.
+
+## `phase2/cards/<rel>.json` — FileCard
+
+```jsonc
+{
+  "version": 1,
+  "file": "app/worker.py",
+  "purpose": "Drains the queue and executes each task.", // "" = generation failed (backfilled)
+  "role": "domain_logic", // entrypoint|orchestration|domain_logic|io_transport|data_model|config|util|test|generated|other
+  "lifecycle": "main loop", // free-form short hint; "none" when not meaningful
+  "description": "…120-300 words…", // deep mode only
+  "functions": [
+    // deep mode only; facts from the graph, prose from the LLM
+    {
+      "id": "app.worker.Worker.run",
+      "qualname": "Worker.run",
+      "name": "run",
+      "className": "Worker",
+      "lineRange": [10, 13],
+      "signature": "def run(self)",
+      "calls": ["app.queue.TaskQueue.pop"],
+      "calledBy": ["app.main.main"],
+      "extCalls": [],
+      "nCalls": 3,
+      "nCalledBy": 1,
+      "nExtCalls": 0,
+      "purpose": "…",
+      "dataFlow": "…",
+      "relations": "…", // may be empty; facts never are
+    },
+  ],
+}
+```
+
+## phase2/skeleton.yaml — Skeleton
+
+```yaml
+metadata:
+  version: 1
+  archetype: demo task runner # one-phrase system shape
+  draftedBy: skeleton-synth # skeleton-synth | skeleton-doctor | user
+stages:
+  - id:
+      stage-1 # any filename-safe id (^[A-Za-z0-9][A-Za-z0-9._-]*$);
+      # conventionally stage-N / stage-N.M / crosscut-N.
+      # Reserved page names (overview, index, register(s), …)
+      # are auto-suffixed by the normalizer.
+    title: Startup
+    description: Entry point wiring…
+    parent: null # substages point at their parent id
+    children: [stage-1.1] # derived; always rebuilt from parent on load
+    crosscut: false # true = cross-cutting infrastructure
+```
+
+Genau dieses Schema verfasst man von Hand für `--strategy member` / `--skeleton`.
+`children` darf fehlen oder veraltet sein — es wird beim Laden normalisiert.
+
+## phase2/assignment.json — Assignment
+
+```jsonc
+{
+  "version": 1,
+  "fileStage": { "app/main.py": { "stage": "stage-1", "also": [] } }, // "unassigned" allowed
+  "buckets": { "stage-1": ["app/main.py"] }, // primary stage only; disjoint
+  "coverage": { "nFiles": 5, "nAssigned": 5, "unassigned": [] },
+}
+```
+
+## phase2/organization.yaml — Organization
+
+```yaml
+metadata: { version: 1, nStages: 4 }
+stages:
+  stage-2:
+    title: Task execution
+    groups:
+      - title: Core flow
+        summary: Everything this stage owns, in execution order.
+        files:
+          - { file: app/queue.py, purpose: '…', role: domain_logic, nFunctions: 4 }
+    orderedFiles: [app/queue.py, app/worker.py] # flat reading order across groups
+coverage: { nFiles: 5, nOrganized: 5 }
+```
+
+## phase3/narration.json — Narration
+
+```jsonc
+{
+  "version": 1,
+  "lang": "en", // en | zh
+  "systemOverview": "…200-350 words…",
+  "stageSummaries": { "stage-1": "…100-200 words…" },
+}
+```
+
+## phase3/registers.json — Registers
+
+```jsonc
+{
+  "version": 1,
+  "registers": [
+    {
+      "id": "reg-task-queue", // ^reg-[a-z0-9-]+$
+      "semantics": "The FIFO list of pending tasks…",
+      "stages": ["stage-1", "stage-2"],
+    }, // only real stage ids
+  ],
+}
+```
+
+## Gerendertes Handbuch (`handbook render`)
+
+```
+<out>/
+  overview.md          H1 title + 🗺️ system overview + see-also links
+  index.md             recursive stage index (heading depth = tree depth)
+  register.md          | State register | Semantics | Stages touched |  (only when registers exist)
+  <sid>.md             one page per content-bearing stage (summary, sub-stages,
+                       organization groups, per-file cards with function details,
+                       📊 state-registers section when touched)
+  agent/               (--agent-site) how_to_use.md · index.md · disambiguation.md · <sid>.md
+  html/                (--html) self-contained multi-page site (no external requests)
+  handbook.html        (--html-single) one self-contained page
+```
+
+## SKILL-Paket (`handbook skill`)
+
+```
+<out>/
+  SKILL.md                       frontmatter: name (<slug>-handbook) + description
+                                 ("Use when … Do not use …"); body = routing protocol
+  references/
+    overview.md  index.md  registers.md
+    stages/<sid>.md
+    coverage.json                (optional) {schemaVersion, summary, files:[{path,stage,sha256}]}
+```
+
+Validierungsvertrag (`handbook validate`): das Frontmatter hat genau `name` +
+`description`; die Beschreibung nennt Einsatz UND Nicht-Einsatz; der Rumpf verweist auf
+`references/index.md` und leitet zur tatsächlichen Quelle; overview/index/registers/stages
+sind vorhanden; der Index verlinkt jede Etappenseite; keine doppelten Abdeckungspfade; mit
+`--source` müssen die Hashes zum lebenden Baum passen.
+
+## Planer-Ausgabe (`handbook plan`)
+
+Ein Markdown-Plan: Fließtext-Zusammenfassung → EDIT-Blöcke → ein Deklarations-JSON-Block.
+
+````markdown
+### EDIT 1
+
+- file: `app/engine.py`
+- where: `Engine.spin (~5)` — add retry
+
+```old
+<byte-exact current text, ≥3 context lines each side, unique in the file>
+```
+
+```new
+<replacement text>
+```
+
+```json
+{ "will_modify": ["Engine.spin"], "will_add": [], "will_remove": [] }
+```
+````
+
+## Resync-Fallverzeichnis (`handbook resync --case`)
+
+````
+<case>/
+  edited/               the changed source tree            (required)
+  plan.md               change description; its ```json declarations block
+                        (will_modify/will_add/will_remove) sharpens scope (optional)
+  change.diff           unified diff; PRESENT AND EMPTY = "nothing to resync" (optional)
+  resync-report.json    written by resync: {skipped, changedFiles, addedFiles,
+                        deletedFiles, affectedStages, cardsRegenerated, narrated}
+````

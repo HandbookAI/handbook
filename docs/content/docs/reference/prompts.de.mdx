@@ -1,0 +1,50 @@
+---
+title: 'Prompt-Katalog'
+description: 'Jeder Prompt, den die Werkzeugkette sendet, worum er bittet und wie jeder einzelne degradiert, wenn die Antwort unbrauchbar ist.'
+---
+
+Jeder LLM-Berührungspunkt in der Werkzeugkette. Alle JSON-erzeugenden Aufrufe laufen bei
+temperature 0 (bei Reasoning-Modellen automatisch weggelassen). Chinesischer Erzähltext
+(`--narrate-lang zh`) hält JSON-Schlüssel, Enum-Werte, Ids und Dateipfade englisch; nur die
+Fließtext-Werte ändern sich.
+
+| #   | Prompt (Modul)                                      | Phase         | Zweck                                                                                                                                                                                                                                                              | Ausgabevertrag                                                                     |
+| --- | --------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| 1   | Regeln für knappe Karten (`pipeline/cards.ts`)      | 2a            | Zweck in 1–2 Sätzen in einfacher Sprache + Rollen-Enum + Lebenszyklus-Hinweis je gestapelter Datei                                                                                                                                                                 | `{"purposes":[{file,purpose,role,lifecycle}]}`                                     |
+| 2   | Regeln für tiefe Karten (`pipeline/cards.ts`)       | 2a            | Durchgang durch die ganze Datei (120–300 Wörter) + Zweck / data_flow / relations je Funktion, verschlüsselt über den exakten qualname; Graph-Fakten für maßgeblich erklärt                                                                                         | ergänzt `description`, `functions[]`                                               |
+| 3   | Chunk-Rückfall (`pipeline/cards.ts`)                | 2a            | dieselben tiefen Regeln über einen Funktions-Chunk einer übergroßen Datei                                                                                                                                                                                          | ein `purposes`-Eintrag, der den Chunk abdeckt                                      |
+| 4   | Skelett-Synthese (`pipeline/skeleton.ts`)           | 2b            | geordnetes erzählerisches Rückgrat aus Verzeichnis-Rollups + Einstiegspunkten; Lebenszyklus-Reihenfolge vorgeschrieben; Querschnitte nach dem Hauptfluss                                                                                                           | `{"metadata":{archetype},"stages":[{id,title,description,parent,crosscut}]}`       |
+| 5   | Dateizuordnung (`pipeline/assign.ts`)               | 2b            | eine primäre Etappe je Datei aus einem festen Menü; `also` 0–2; `unassigned` als Notausgang für eingebundenen/toten Code                                                                                                                                           | `{"assignments":[{file,stage,also}]}`                                              |
+| 6   | Doctor-Akteur (`pipeline/doctor.ts`)                | 2b            | ≤3 strukturelle Änderungen (add_stage / remove_stage / merge_stages / split_stage), priorisiert: unassigned → Überlast → Aushungerung → tot                                                                                                                        | `{"changes":[…],"rationale"}`                                                      |
+| 7   | Kritiker-Rollen (`llm/critic.ts`)                   | 2b            | rollengespielte Prüfung (Ingenieur / Architekt / Leser / Lektor) eines Vorschlags anhand belegter Fakten; APPROVE großzügig, REJECT nur wenn nicht reparierbar                                                                                                     | `{"decision","concerns","suggested_revision","rationale"}`                         |
+| 8   | Überarbeitungs-Prompt (`llm/critic.ts`)             | 2b            | Akteur-Überarbeitung, die die gesammelten `[role] concern`-Punkte adressiert                                                                                                                                                                                       | dasselbe Schema wie der ursprüngliche Vorschlag                                    |
+| 9   | Etappen-Organisation (`pipeline/organize.ts`)       | 2c            | 2–8 geordnete Untergruppen je Etappe; jede Datei genau einmal; erzählerische Reihenfolge unter Beachtung der Aufruf-Hinweise                                                                                                                                       | `{"groups":[{title,summary,files}]}`                                               |
+| 10  | Member-Klassifikation (`pipeline/member.ts`)        | 2b (member)   | einzelne Funktionen/Methoden den selbst verfassten Etappen zuordnen                                                                                                                                                                                                | `{"assignments":[{member,stage}]}`                                                 |
+| 11  | Etappen-Rollup (`pipeline/narrate.ts`)              | 3             | Etappenübersicht in 100–200 Wörtern für Nicht-Fachleute, aus Kind-Übersichten + Datei-Einzeilern                                                                                                                                                                   | nur schlichter Fließtext (kein JSON, keine Überschriften)                          |
+| 12  | System-Rollup (`pipeline/narrate.ts`)               | 3             | Systemübersicht in 200–350 Wörtern, die die Etappen der obersten Ebene aufreiht                                                                                                                                                                                    | nur schlichter Fließtext                                                           |
+| 13  | Register-Extraktion (`pipeline/narrate.ts`)         | 3, Runde 1    | etappenübergreifende Zustandsregister (id + einzeilige Semantik + berührte Etappen) aus Etappenübersichten + data_model-Karten                                                                                                                                     | `{"registers":[{id,semantics,stages}]}`                                            |
+| 14  | Register-Lückendurchgang (`pipeline/narrate.ts`)    | 3, Runden 2+  | NUR die fehlenden Register angesichts der gefundenen Liste; leeres Array, wenn trocken (die Schleife stoppt nach 2 trockenen Runden)                                                                                                                               | dasselbe Schema, nur neue Einträge                                                 |
+| 15  | System-Prompt des Planers (`planner/prompt.ts`)     | plan          | mit dem Handbuch routen → echte Quelle lesen → byte-genaue EDIT-Blöcke + Deklarations-JSON ausgeben; Regeln nach dem Prinzip „der Ausführende vertraut blind“ (Eindeutigkeit, keine Überlappung, kleinstmögliche Spanne)                                           | Markdown-Plan, der in einem `{"will_modify","will_add","will_remove"}`-Block endet |
+| 16  | Werkzeugprotokoll des Planers (`planner/prompt.ts`) | plan          | eine JSON-Aktion pro Zug: `list_dir` / `read_file` / `grep` / `finish`                                                                                                                                                                                             | `{"tool": …}`-Aktionsblock                                                         |
+| 17  | Resync-Evolutionslabel (`studio/server.ts`)         | studio resync | ein Satz mit ≤40 Zeichen, der benennt, WELCHE Fähigkeiten/Module eine Änderung berührt hat, aus den Zwecken der berührten Dateien; Absichten zu erraten ist verboten (Studios Resync hat kein Diff); fällt ohne Client auf eine deterministische Dateiliste zurück | schlichter Fließtext, eine Zeile (gedimmt gerendert + mit `auto` markiert)         |
+
+## Entwurfsregeln, die alle Prompts teilen
+
+- **Fakten werden eingespeist, nie erfragt.** Funktionsinventare, Zeilenbereiche und
+  Aufrufbeziehungen kommen aus dem Graphen und sind als belegte Wahrheit markiert; das
+  Modell schreibt Fließtext _um_ sie herum und wird angewiesen, sie nicht erneut
+  aufzulisten.
+- **Menüs sind geschlossen.** Zuordnungs- und Klassifikations-Prompts zählen gültige
+  Etappen-Ids auf und weisen an „nie erfinden“; alles außerhalb des Menüs wird beim Parsen
+  zu `unassigned` gezwungen, sodass Prompt-Drift keine Artefakte verderben kann.
+- **Jeder JSON-Vertrag hat einen mechanischen Validator** auf der konsumierenden Seite (zod
+  oder handgeschriebene Prüfungen); verworfene oder fehlerhafte Einträge werden
+  deterministisch nachgetragen und in den Abdeckungs-Artefakten gezählt, statt still
+  geflickt zu werden.
+- **Endungen der Form „nur JSON ausgeben“ / „nur Fließtext ausgeben“** halten das Parsen
+  eindeutig; der JSON-Extraktor toleriert eingezäunte Blöcke und Scans über ausgeglichene
+  Klammern, aber die Prompts bitten trotzdem um einen einzelnen eingezäunten Block.
+- **Kritiker-Prompts wehren sich in beide Richtungen gegen Abnicken**: hinreichend richtige
+  Vorschläge werden genehmigt (kein leeres REVISE — solche werden zu APPROVE normalisiert),
+  aber ein gescheiterter Kritiker-Aufruf zählt als REJECT, damit Infrastrukturfehler nie
+  Änderungen genehmigen.

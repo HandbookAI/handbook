@@ -1,0 +1,48 @@
+---
+title: 'Prompt सूची'
+description: 'toolchain जो भी prompt भेजती है, वह क्या माँगता है, और उत्तर बेकार निकलने पर हर एक कैसे घटता है।'
+---
+
+Toolchain का हर LLM स्पर्श-बिंदु। JSON बनाने वाले सभी कॉल temperature 0 पर चलते हैं
+(reasoning-शैली के models के लिए यह अपने आप हटा दिया जाता है)। चीनी narration
+(`--narrate-lang zh`) JSON keys, enum मान, ids और फ़ाइल रास्ते अंग्रेज़ी में ही रखता है;
+केवल गद्य मान बदलते हैं।
+
+| #   | Prompt (मॉड्यूल)                            | Phase         | उद्देश्य                                                                                                                                                                                                                          | आउटपुट अनुबंध                                                                   |
+| --- | ------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 1   | brief card नियम (`pipeline/cards.ts`)       | 2a            | प्रति बैच फ़ाइल 1–2 वाक्यों में सरल भाषा में उद्देश्य + role enum + lifecycle संकेत                                                                                                                                               | `{"purposes":[{file,purpose,role,lifecycle}]}`                                  |
+| 2   | deep card नियम (`pipeline/cards.ts`)        | 2a            | पूरी फ़ाइल का चक्कर (120–300 शब्द) + ठीक qualname से कुंजीबद्ध प्रति-function purpose / data_flow / relations; graph तथ्य आधिकारिक घोषित                                                                                          | `description`, `functions[]` जोड़ता है                                          |
+| 3   | chunk fallback (`pipeline/cards.ts`)        | 2a            | बहुत बड़ी फ़ाइल के एक function-chunk पर वही deep नियम                                                                                                                                                                             | chunk को समेटती एक `purposes` प्रविष्टि                                         |
+| 4   | skeleton संश्लेषण (`pipeline/skeleton.ts`)  | 2b            | directory rollups + entry points से क्रमबद्ध कथात्मक रीढ़; lifecycle क्रम अनिवार्य; crosscuts मुख्य प्रवाह के बाद                                                                                                                 | `{"metadata":{archetype},"stages":[{id,title,description,parent,crosscut}]}`    |
+| 5   | फ़ाइल assignment (`pipeline/assign.ts`)     | 2b            | तय मेन्यू से प्रति फ़ाइल एक प्राथमिक stage; `also` 0–2; vendored/मृत कोड के लिए `unassigned` निकास                                                                                                                                | `{"assignments":[{file,stage,also}]}`                                           |
+| 6   | doctor actor (`pipeline/doctor.ts`)         | 2b            | ≤3 संरचनात्मक बदलाव (add_stage / remove_stage / merge_stages / split_stage), प्राथमिकता क्रम: unassigned → अतिभार → भुखमरी → मृत                                                                                                  | `{"changes":[…],"rationale"}`                                                   |
+| 7   | critic भूमिकाएँ (`llm/critic.ts`)           | 2b            | प्रमाणित तथ्यों के सामने किसी प्रस्ताव की भूमिका-आधारित समीक्षा (इंजीनियर / आर्किटेक्ट / पाठक / संपादक); APPROVE उदारता से, REJECT केवल तब जब सुधार असंभव हो                                                                      | `{"decision","concerns","suggested_revision","rationale"}`                      |
+| 8   | revise prompt (`llm/critic.ts`)             | 2b            | जुटाए गए `[role] concern` बिंदुओं का जवाब देती actor की पुनरीक्षा                                                                                                                                                                 | मूल प्रस्ताव जैसी ही schema                                                     |
+| 9   | stage संगठन (`pipeline/organize.ts`)        | 2c            | प्रति stage 2–8 क्रमबद्ध उप-समूह; हर फ़ाइल ठीक एक बार; call संकेतों का ध्यान रखता कथात्मक क्रम                                                                                                                                    | `{"groups":[{title,summary,files}]}`                                            |
+| 10  | member वर्गीकरण (`pipeline/member.ts`)      | 2b (member)   | अलग-अलग functions/methods को उपयोगकर्ता के लिखे stages में बाँटना                                                                                                                                                                 | `{"assignments":[{member,stage}]}`                                              |
+| 11  | stage rollup (`pipeline/narrate.ts`)        | 3             | संतान overviews + फ़ाइल एक-पंक्तियों से 100–200 शब्दों का गैर-विशेषज्ञ stage overview                                                                                                                                             | केवल सादा गद्य (कोई JSON नहीं, कोई शीर्षक नहीं)                                 |
+| 12  | system rollup (`pipeline/narrate.ts`)       | 3             | शीर्ष-स्तरीय stages को पिरोता 200–350 शब्दों का system overview                                                                                                                                                                   | केवल सादा गद्य                                                                  |
+| 13  | register निष्कर्षण (`pipeline/narrate.ts`)  | 3 राउंड 1     | stage overviews + data_model cards से cross-stage state registers (id + एक-पंक्ति अर्थ + छुए गए stages)                                                                                                                           | `{"registers":[{id,semantics,stages}]}`                                         |
+| 14  | register अंतराल पास (`pipeline/narrate.ts`) | 3 राउंड 2+    | मिली सूची को देखते हुए केवल छूटे हुए registers; कुछ न मिले तो खाली array (2 सूखे राउंड के बाद लूप रुक जाता है)                                                                                                                    | वही schema, केवल नई प्रविष्टियाँ                                                |
+| 15  | planner system prompt (`planner/prompt.ts`) | plan          | handbook से रूट करो → असली स्रोत पढ़ो → byte-सटीक EDIT ब्लॉक + declarations JSON दो; «executor आँख मूँदकर भरोसा करता है» वाले नियम (अद्वितीयता, कोई ओवरलैप नहीं, सबसे छोटा दायरा)                                                 | एक `{"will_modify","will_add","will_remove"}` ब्लॉक पर खत्म होती markdown योजना |
+| 16  | planner tool protocol (`planner/prompt.ts`) | plan          | प्रति turn एक JSON क्रिया: `list_dir` / `read_file` / `grep` / `finish`                                                                                                                                                           | `{"tool": …}` क्रिया ब्लॉक                                                      |
+| 17  | resync evolution label (`studio/server.ts`) | studio resync | छुई गई फ़ाइलों के purposes से ≤40 अक्षरों का एक वाक्य, जो बताए कि बदलाव ने कौन-सी क्षमताएँ/मॉड्यूल छुए; मंशा का अनुमान लगाना वर्जित है (studio के resync के पास diff नहीं है); client न हो तो नियतात्मक फ़ाइल सूची पर लौट जाता है | सादा गद्य, एक पंक्ति (धुँधला रेंडर + `auto` टैग के साथ)                         |
+
+## सभी prompts में साझा डिज़ाइन नियम
+
+- **तथ्य डाले जाते हैं, माँगे नहीं जाते।** Function सूचियाँ, पंक्ति-श्रेणियाँ और call संबंध
+  graph से आते हैं और आधारभूत सत्य के रूप में चिह्नित होते हैं; model उनके _इर्द-गिर्द_ गद्य
+  लिखता है और उसे कहा जाता है कि उन्हें दोबारा न गिनाए।
+- **मेन्यू बंद हैं।** Assignment और वर्गीकरण prompts वैध stage ids गिनाते हैं और निर्देश
+  देते हैं «कभी मत गढ़ो»; मेन्यू से बाहर की हर चीज़ पार्स के समय `unassigned` में बदल दी जाती
+  है, इसलिए prompt का खिसकना artifacts को बिगाड़ नहीं सकता।
+- **हर JSON अनुबंध का उपभोक्ता पक्ष पर एक यांत्रिक validator है** (zod या हाथ से लिखी
+  जाँचें); छूटी या बिगड़ी प्रविष्टियाँ नियतात्मक ढंग से भरी जाती हैं और coverage artifacts में
+  गिनी जाती हैं, चुपचाप पैबंद नहीं लगाया जाता।
+- **«केवल JSON दो» / «केवल गद्य दो» वाले अंत** पार्सिंग को असंदिग्ध रखते हैं; JSON निकालने
+  वाला fenced ब्लॉक और संतुलित-कोष्ठक स्कैन दोनों सह लेता है, फिर भी prompts एक ही fenced
+  ब्लॉक माँगते हैं।
+- **Critic prompts दोनों दिशाओं में मुहर लगाने का विरोध करते हैं**: पर्याप्त रूप से सही
+  प्रस्तावों को मंज़ूरी दें (कोई खोखला REVISE नहीं — वे APPROVE में सामान्यीकृत हो जाते हैं),
+  पर टूटा हुआ critic कॉल REJECT गिना जाता है ताकि ढाँचागत विफलताएँ कभी बदलावों को मंज़ूरी न
+  दें।

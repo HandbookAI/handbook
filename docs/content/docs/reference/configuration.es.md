@@ -3,7 +3,7 @@ title: Referencia de configuración
 description: Todos los ajustes de Handbook, con su flag, variable de entorno, clave del archivo de configuración, tipo y valor por defecto — generado a partir del registro.
 ---
 
-Generado por `pnpm run config:docs` a partir del registro de ajustes — no lo edites a mano; packages/cli/src/docs-drift.test.ts hace fallar la compilación si esto se desvía de `SETTINGS`.
+Esta página es la **traducción de una página generada**. El original en inglés lo genera `pnpm run config:docs` a partir del registro de ajustes y está protegido por una prueba de deriva; esta traducción se mantiene a mano: cuando cambie el original, actualízala también.
 
 ## Precedencia
 

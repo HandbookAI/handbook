@@ -1,0 +1,152 @@
+---
+title: 'Environment variables'
+description: 'Handbook जो भी variable पढ़ता है, उन्हें बनाने वाला नामकरण नियम, .env cascade, और वे जिन्हें कभी config फ़ाइल में नहीं जाना चाहिए।'
+---
+
+## नामकरण नियम
+
+हर setting की registry में **एक** camelCase key होती है। उसी एक रूपांतरण से तीन नाम निकलते
+हैं:
+
+| सतह              | `readWorkers` से        | `generate` तक scoped                                          |
+| ---------------- | ----------------------- | ------------------------------------------------------------- |
+| Flag             | `--read-workers <n>`    | —                                                             |
+| Environment      | `HANDBOOK_READ_WORKERS` | `HANDBOOK_GENERATE_READ_WORKERS`                              |
+| Config-फ़ाइल key | `readWorkers`           | `generateReadWorkers`, या nested `generate: { readWorkers: }` |
+
+**Scoped रूप हमेशा सपाट रूप पर भारी पड़ता है।** यही आपको यह कहने देता है कि «चीनी में
+narration करो, पर केवल generate करते समय», बिना और कुछ छुए।
+
+```bash
+export HANDBOOK_NARRATE_LANG=en              # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
+```
+
+कुछ settings **केवल scoped** हैं, क्योंकि उनका अर्थ हर कमांड पर बदलता है: `--out`
+(`HANDBOOK_RENDER_OUT`, `HANDBOOK_SKILL_OUT`, `HANDBOOK_PLAN_OUT`), `--handbook`
+(`HANDBOOK_SKILL_HANDBOOK`, `HANDBOOK_PLAN_HANDBOOK`), `skill` का `--lang`
+(`HANDBOOK_SKILL_BODY_LANG`), और `resync` के `--detail` / `--narrate-lang`
+(`HANDBOOK_RESYNC_CARD_DETAIL`, `HANDBOOK_RESYNC_PROSE_LANG`)।
+
+## Vendor उपनाम
+
+छह settings वे नाम भी स्वीकार करती हैं जो लोगों ने पहले से export कर रखे हैं:
+
+| Setting        | उपनाम               |
+| -------------- | ------------------- |
+| `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmModel`     | `OPENAI_MODEL`      |
+| `llmBaseUrl`   | `OPENAI_BASE_URL`   |
+| `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
+| `llmTimeout`   | `OPENAI_TIMEOUT`    |
+| `llmExtraBody` | `OPENAI_EXTRA_BODY` |
+
+खोज का क्रम है: scoped `HANDBOOK_<CMD>_<KEY>` → सपाट `HANDBOOK_<KEY>` → vendor उपनाम।
+
+## Bootstrap variables
+
+तीन settings बाकी सबसे **पहले** हल होती हैं, क्योंकि बाकी सब उन्हीं पर निर्भर है। इनमें से
+कोई भी उसी चीज़ से सेट नहीं की जा सकती जिसे वह लोड करती है — `handbook.config.yaml` के भीतर
+पड़ी `--env` key को पढ़ने वाला कोई बचता ही नहीं।
+
+| Variable / flag                           | यह क्या करता है                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>`           | प्रति-environment `.env` cascade चुनता है और `handbook.config.<name>.yaml` को प्राथमिकता देता है                                                                                                                                                                                                                                                     |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | ठीक वही एक फ़ाइल लोड करता है, **cascade को छोड़कर**। गायब फ़ाइल एक ज़ोरदार त्रुटि है। variable को प्राथमिकता दें: Node >= 20.6 का अपना `--env-file` भी है और वह उसके लिए पहले से स्कैन करता है, इसलिए गायब रास्ता Handbook चलने से पहले ही `node: <path>: not found` (exit 9) के रूप में मर जाता है। दोनों सेट हों तो flag variable पर भारी पड़ता है |
+| `--config <path>`                         | ठीक एक config फ़ाइल का नाम लेता है, खोज को छोड़कर                                                                                                                                                                                                                                                                                                    |
+
+## `.env` cascade
+
+`--env-file` न हो तो CLI **मौजूदा directory** से `.env*` फ़ाइलों की cascade लोड करती है,
+सबसे ऊँची प्राथमिकता पहले:
+
+|  #  | फ़ाइल               | कौन  | दायरा               | Committed?        |
+| :-: | ------------------- | ---- | ------------------- | ----------------- |
+|  1  | _shell environment_ | —    | —                   | हमेशा जीतता है    |
+|  2  | `.env.<name>.local` | निजी | केवल यह environment | नहीं (gitignored) |
+|  3  | `.env.<name>`       | टीम  | केवल यह environment | हाँ               |
+|  4  | `.env.local`        | निजी | हर environment      | नहीं (gitignored) |
+|  5  | `.env`              | टीम  | आधार रेखा           | हाँ               |
+
+पंक्ति 2 और 3 तभी लागू होती हैं जब `--env`/`HANDBOOK_ENV` किसी environment का नाम ले।
+**दोनों में से कोई सेट न हो तो केवल पंक्ति 4 और 5 लोड होती हैं।**
+
+पूरी cascade बस इतनी है कि «इन्हें इसी क्रम में बुलाओ, पहला लिखने वाला जीतता है», क्योंकि
+कोई फ़ाइल लोड होने पर पहले से सेट key को कभी override नहीं करती। वही एक नियम shell को हर
+फ़ाइल से ऊपर रखता है, कहीं भी कोई अतिरिक्त तर्क लगाए बिना।
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+# loads .env.prod.local → .env.prod → .env.local → .env
+# and prefers handbook.config.prod.yaml over handbook.config.yaml
+```
+
+<Callout type="warn" title="Cascade केवल मौजूदा directory में चलती है">
+  `handbook.config.yaml` के उलट — जो git मूल तक ऊपर चलकर खोजी जाती है — `.env` फ़ाइलें उसी directory से पढ़ी
+  जाती हैं जिसमें आप कमांड चलाते हैं। `.env` का मतलब है «यह मशीन, अभी»। LLM वाली कमांड repo मूल से चलाएँ, या
+  `--env-file` दें।
+</Callout>
+
+### `.env` parser क्या स्वीकार करता है
+
+`KEY=value`, वैकल्पिक `export ` उपसर्ग, खाली पंक्तियाँ, `#` टिप्पणी पंक्तियाँ, इकहरे और दोहरे
+उद्धरण वाले मान (उद्धरण हटा दिए जाते हैं), और बिना उद्धरण वाले मान पर अंत में ` #` इनलाइन
+टिप्पणी। CRLF, LF और अकेला CR — तीनों पंक्ति-अंत काम करते हैं। **कोई बहुपंक्ति मान नहीं।**
+
+**खाली मान अनसेट के रूप में पढ़ा जाता है** — `HANDBOOK_TITLE=` से बिना शीर्षक वाला handbook
+नहीं बनेगा।
+
+## रहस्य
+
+`llmApiKey` / `OPENAI_API_KEY` registry में `secret` चिह्नित है, जिसका मतलब है:
+
+- यह **कभी** command-line flag नहीं होती (flags shell इतिहास और `ps` आउटपुट में उतर जाते
+  हैं);
+- अगर यह किसी config फ़ाइल में दिखे तो **अस्वीकार** कर दी जाती है, कारण बताते संदेश के साथ —
+  config फ़ाइलें commit होती हैं;
+- `handbook config` के आउटपुट में यह **छिपा** दी जाती है।
+
+```text
+handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
+— use .env or the shell environment instead
+```
+
+## Docker
+
+Image में `HANDBOOK_SOURCE=/src` और `HANDBOOK_WORK=/work` पहले से पके हैं, इसलिए आपको केवल
+volumes माउंट करने हैं:
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+```
+
+Docker का अपना `--env-file` toolchain की `.env` लोडिंग के **ऊपर** परत बनाता है — दोनों लागू
+होते हैं, और उस तरह भेजा गया `OPENAI_*` variable ठीक वैसे ही दिखता है जैसे shell export
+दिखता। `.env*` फ़ाइलें कभी image में नहीं पकाई जातीं; `.dockerignore` देखें।
+
+## असल में क्या हल हुआ, यह देखना
+
+```bash
+handbook config --command generate
+```
+
+सक्रिय environment, cascade ने जो भी `.env` फ़ाइल लोड की, जो config फ़ाइल हल हुई, और हर
+setting के लिए उसके स्रोत के साथ एक पंक्ति छापता है — `flag`, `env`, `file` या `default`।
+
+```bash
+handbook config --check    # exit 2 on the first invalid or missing value
+```
+
+<Callout title="--check को CI में डालें">
+  गलत वर्तनी वाले variable का मतलब पहले होता था «चुपचाप डिफ़ॉल्ट पर चल गया»। अब यह एक विफलता है और संदेश में
+  variable का नाम होता है — जिसे CI में ढूँढना किसी generation रन के चालीस मिनट भीतर ढूँढने से कहीं सस्ता है।
+</Callout>
+
+## पूरी सूची
+
+हर variable, उसके प्रकार, डिफ़ॉल्ट और दस्तावेज़ीकरण के साथ,
+[Configuration संदर्भ](/docs/reference/configuration) पृष्ठ पर है — जो उसी registry से
+जनरेट होता है जिसे CLI पढ़ती है, इसलिए वह हट नहीं सकता।
+
+Repo मूल में पड़ी `.env.example` भी उसी registry से जनरेट होती है। **उसकी हर पंक्ति
+टिप्पणी की हुई शुरू होती है**, इसलिए पूरी फ़ाइल कॉपी करना सुरक्षित है।

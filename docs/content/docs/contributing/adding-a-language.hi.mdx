@@ -1,0 +1,188 @@
+---
+title: 'एक भाषा जोड़ना'
+description: 'Generic स्तर की भाषा एक घोषणात्मक spec है, parser नहीं। पूर्ण स्तर की भाषा एक छोटा interface है। दोनों को कोई नई निर्भरता नहीं चाहिए।'
+---
+
+Handbook दो तंत्रों से 18 भाषाओं का समर्थन करता है। **Generic स्तर** में एक भाषा जोड़ना
+आमतौर पर एक ही object literal होता है, और उसके लिए **कोई नई निर्भरता नहीं** चाहिए —
+grammars पहले से `tree-sitter-wasms` के साथ आती हैं।
+
+## Generic स्तर — एक घोषणात्मक spec
+
+`packages/analyzer/src/generic.ts` में `GENERIC_LANGUAGES` में एक प्रविष्टि जोड़ें:
+
+```ts
+{
+  name: 'elixir',
+  grammar: 'elixir',                       // the tree-sitter-wasms grammar name
+  extensions: ['.ex', '.exs'],
+  functionNodes: ['call'],                 // node types that define a function
+  classNodes: ['module'],                  // node types that define a container
+  callNodes: ['call'],                     // node types that are a call site
+  nameField: 'target',                     // where the name lives on those nodes
+  // …plus whatever the spec type asks for
+}
+```
+
+फिर उसे पंजीकृत करें — `packages/analyzer/src/register.ts` के नीचे वाला लूप
+`GENERIC_LANGUAGES` की हर प्रविष्टि अपने आप उठा लेता है, इसलिए वहाँ कुछ जोड़ना नहीं है।
+
+<Steps>
+
+<Step>
+### जाँचें कि grammar साथ आती है
+
+```bash
+ls node_modules/tree-sitter-wasms/out/ | grep elixir
+```
+
+अगर वह वहाँ नहीं है, तो उस भाषा को एक नई निर्भरता चाहिए, और वह एक बड़ी बातचीत है।
+
+</Step>
+
+<Step>
+### Node प्रकार ढूँढें
+
+```bash
+node -e "
+import('web-tree-sitter').then(async ({Parser, Language}) => {
+  await Parser.init();
+  const lang = await Language.load(require('fs').readFileSync(
+    require.resolve('tree-sitter-wasms/out/tree-sitter-elixir.wasm')));
+  const p = new Parser(); p.setLanguage(lang);
+  console.log(p.parse('defmodule Foo do\n  def bar(x), do: x\nend').rootNode.toString());
+});
+"
+```
+
+छपा हुआ s-expression ही वह node शब्दावली है जिसके विरुद्ध आप spec लिख रहे हैं।
+
+</Step>
+
+<Step>
+### Spec और एक test लिखें
+
+हर भाषा को एक test मिलता है जो अस्थायी directory में असली मिनी-repo बनाता है और असली nodes
+व edges जाँचता है। `packages/analyzer/src/generic.test.ts` में मौजूद किसी test का ढाँचा
+नकल करें।
+
+**Mock किया parse tree किसी grammar के बारे में कुछ सिद्ध नहीं करता।** असली स्रोत parse
+करें।
+
+</Step>
+
+<Step>
+### ईमानदार क्षमताएँ घोषित करें
+
+Generic इंजन ये आपके लिए सेट कर देता है:
+
+```ts
+{ tier: 'generic', callTypes: GENERIC_CALL_TYPES, selfAttrs: false, statementSpans: false }
+```
+
+इन्हें फुलाएँ नहीं। घोषणा का पूरा मतलब ही यह है कि कोई पाठक generic स्तर के edge को
+Python-स्तर के edge से अलग पहचान सके। देखें
+[Analysis fidelity](/docs/concepts/analysis-fidelity)।
+
+</Step>
+
+<Step>
+### दस्तावेज़ अपडेट करें, वरना build विफल होगा
+
+एक drift test जाँचता है कि **हर पंजीकृत भाषा** दोनों READMEs में दिखे।
+`packages/cli/src/docs-drift.test.ts` में `DISPLAY` में प्रदर्शन नाम जोड़ें, फिर इनमें:
+
+- `README.md` और `README.zh-CN.md` — भाषा तालिकाएँ
+- `docs/content/docs/reference/languages.mdx`
+- `packages/analyzer/README.md` और उसका चीनी जुड़वाँ
+
+यह test इसलिए है क्योंकि किसी के ध्यान देने से पहले ही सूची छह भाषाएँ पीछे रह चुकी थी।
+
+</Step>
+
+</Steps>
+
+## पूर्ण स्तर — adapter लागू करें
+
+तब सार्थक है जब किसी भाषा के call resolution को सचमुच प्रकार की जानकारी चाहिए: attribute
+प्रकार, parameter annotations, विरासत।
+
+```ts
+export class ElixirAdapter implements LanguageAdapter {
+  readonly name = 'elixir';
+  readonly extensions = ['.ex', '.exs'] as const;
+
+  readonly capabilities: AdapterCapabilities = {
+    tier: 'full',
+    callTypes: ['self_method', 'internal_func', 'boundary', 'unresolved'],
+    selfAttrs: false,
+    statementSpans: true,
+  };
+
+  discover(sourceRoot: string): string[] {
+    return discoverByExtension(sourceRoot, this.extensions);
+  }
+
+  async analyze(files: readonly string[], sourceRoot: string, options?: { logger?: Logger }) {
+    // pass 1: declarations, imports, containers, per-function facts
+    // pass 2: resolve every call site into a typed edge
+    return { functions, edges };
+  }
+
+  async statementSpans(filePath: string, qualname: string) {
+    // 1-based inclusive spans — legal snap boundaries for resync
+  }
+}
+```
+
+उसे `packages/analyzer/src/register.ts` में पंजीकृत करें:
+
+```ts
+registerAdapter('elixir', () => new ElixirAdapter());
+```
+
+पूरा अनुबंध बस इतना है। आगे का हर phase बिना बदले काम करता है।
+
+### दो-पास नियम
+
+**पास 1** घोषणाएँ इकट्ठी करता है और प्रकार सूचकांक बनाता है। **पास 2** उन सूचकांकों को हाथ
+में लेकर call स्थलों पर चलता है।
+
+`self.attr.method()` या `param.method()` को एक ही पास में हल करना असंभव है, क्योंकि `attr`
+का प्रकार किसी constructor असाइनमेंट से पता चलता है जो call के बाद भी आ सकता है। पूर्ण स्तर
+का हर adapter इसी ढाँचे का पालन करता है।
+
+### Resolution नियम
+
+जिस call को आप पक्का न कर सकें वह `unresolved` बन जाता है, और graph builder उसे श्रेणी और
+कच्चे पाठ के साथ `dropped-calls.json` में अलग कर देता है।
+
+**कभी अनुमान न लगाएँ।** आगे की हर चीज़ के लिए अनुमान लगाया edge असली edge से अलग नहीं दिखता,
+जो समूहन, co-change संकेतों और agent locator index — तीनों को एक साथ विषाक्त कर देता है।
+
+## बाहर से adapter पंजीकृत करना
+
+Registry सार्वजनिक है, इसलिए आप बिना fork किए एक भाषा जोड़ सकते हैं:
+
+```ts
+import { registerAdapter, registerBuiltinAdapters } from '@handbook/analyzer';
+import { MyAdapter } from './my-adapter.js';
+
+registerBuiltinAdapters();
+registerAdapter('mylang', () => new MyAdapter());
+```
+
+जो adapter कोई क्षमता घोषित नहीं करता, या बकवास घोषित करता है, उसे graph metadata से बस
+**बाहर छोड़ दिया जाता है**, बजाय उसके लिए कोई fidelity दावा गढ़ने के।
+
+## जाँच-सूची
+
+- [ ] Grammar `tree-sitter-wasms` के साथ आती है
+- [ ] Spec या adapter लिखा गया
+- [ ] `register.ts` में पंजीकृत (generic स्तर की प्रविष्टियाँ अपने आप उठ जाती हैं)
+- [ ] एक test जो अस्थायी directory में **असली** स्रोत parse करता है
+- [ ] क्षमताएँ ईमानदारी से घोषित
+- [ ] Drift test के `DISPLAY` map में प्रदर्शन नाम जोड़ा गया
+- [ ] दोनों READMEs, analyzer के READMEs और भाषा संदर्भ अपडेट किए गए
+- [ ] `pnpm check` पास होता है
+- [ ] एक changeset जोड़ा गया

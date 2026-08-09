@@ -3,7 +3,7 @@ title: '配置参考'
 description: 'Handbook 的每一项设置，连同它的命令行参数、环境变量、配置文件键、类型与默认值——由注册表生成。'
 ---
 
-由 `pnpm run config:docs` 从设置注册表生成——请勿手工编辑；一旦本文件与 `SETTINGS` 发生漂移，packages/cli/src/docs-drift.test.ts 会让构建失败。
+本页是**生成页面的译文**。英文原文由 `pnpm run config:docs` 从设置注册表生成并受漂移测试保护；本译文由人工维护——英文原文变更时，请同步更新这里。
 
 ## 优先级
 
