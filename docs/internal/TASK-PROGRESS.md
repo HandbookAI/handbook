@@ -514,6 +514,51 @@ environment、exit-codes、languages、packages、prompts）+ `contributing/`
 docs build 358/358、三个浏览器套件全绿（docs-site 15/15、handbook-html 32/32、
 studio-ui 14/14）。
 
+## 用户报的三件事（2026-08-09 晚）
+
+### 1. critic 把 REVISE 当成不可解析 —— 真 bug，已修 ✅
+
+用户日志里三个 critic 全部 `unparseable verdict (keys: decision, concerns,
+suggested_revision, rationale) — treating as REJECT`，然后
+`[doctor] round 1/2: applied=0 rejected=0 unassigned=33` → `stuck`。
+
+**根因**：`parseVerdict` 里 `if (suggested !== null && typeof suggested !== 'object')
+return undefined;` —— 模型经常把 `suggested_revision` 写成一句散文，于是**整条裁决被丢弃**。
+而文档写着「读不出来的裁决算 REJECT」，所以合议庭永远不通过 → `runDoctorRound`
+在 `!result.accepted` 时直接返回全零 → 和用户看到的 `applied=0 rejected=0` 完全吻合。
+**doctor 模式只要模型用句子写建议就是废的。**
+
+**修法**：裁决保留，不可用的 revision 丢掉，散文**折进 concerns**（不丢信息）。
+数组同样处理——`typeof [] === 'object'` 以前会让它混过去，但 actor 根本没法应用。
+另有一条既有断言正好要求旧行为，那条断言本身就是 bug，已改成相反并写明原因。
+
+### 2. 点击校验技能报错 —— 真 bug，已修 ✅
+
+Validate 按钮只按「有没有 handbook」置灰，但它消费的是 **SKILL 包**。
+生成了手册但没打包就点，必然吃 409。现在 `repoStatus` 报 `outputs.skill`，
+按钮按它置灰并带提示（8 语言都有）。
+
+### 3. 叙述语言只有 en/zh —— 进行中 🚧
+
+**已完成**：
+- `packages/core/src/model.ts`：`NARRATE_LANGUAGES` 8 语言表（code/english/native）
+  + `narrateLanguage()` + `languageDirective()`。`NARRATE_LANGS` 由它派生。
+- 注册表的 `narrateLang`/`bodyLang`/`proseLang` 本来就引用 `NARRATE_LANGS`，
+  **自动变成 8 选项**，无需改注册表。
+- `packages/pipeline/src/prompt-lang.ts`（新）：`rulesFor(lang, en, zh)` /
+  `closingLine(...)`。**设计取舍**：规则块是给模型的指令、读者永远看不到，
+  所以不必逐语言翻译；en/zh 保留既有手写块，其余语言用英文块 + 明确的输出语言指令。
+  加第 9 种语言 = 表里加一行，而不是再写 6 份 prompt。
+- pipeline 的 6 处语言分支（cards / narrate ×4 / organize / skeleton）已全部改走它。
+
+**待完成**：
+- 6 个 `Record<NarrateLang, …>` 标签表要补 6 种语言（agent 在做）：
+  renderer 的 html.ts / markdown.ts / file-card.ts / agent-site.ts / llms-txt.ts
+  + skill/build.ts。**故意让它变成编译错误**——缺翻译必须是编译失败，
+  而不是日语手册里冒出英文标签。
+- 标签表补完后必须 `pnpm run config:docs` 重新生成三个生成物（现在因编译错误跑不了）。
+- 然后 `pnpm check` + `pnpm check:cli`。
+
 ### 仍可继续（非阻塞）
 - `logLevel: debug` 目前几乎无输出——若要它有用，需要在 pipeline 里补 `.debug()` 调用点。
 - Studio UI 的 render/skill 对话框尚未做真浏览器点击测试（API 层已有 62 个测试覆盖）。

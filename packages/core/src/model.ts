@@ -9,8 +9,61 @@
 import { z } from 'zod';
 
 /** Narration language for all handbook-bound prose. */
-export const NARRATE_LANGS = ['en', 'zh'] as const;
-export type NarrateLang = (typeof NARRATE_LANGS)[number];
+/**
+ * Languages the generated prose can be written in, ordered by the size of each
+ * language's developer population — the same order and set the documentation
+ * site and Studio offer, so "which languages does this support" has one answer
+ * across the whole product.
+ *
+ * Adding one is a single entry here: the prompts carry an explicit output-
+ * language directive rather than a hand-translated copy per language (see
+ * `languageDirective`), and the renderers' label tables are keyed on this type,
+ * so a missing translation is a compile error rather than an English label
+ * appearing in a Japanese handbook.
+ */
+export const NARRATE_LANGUAGES = [
+  { code: 'en', english: 'English', native: 'English' },
+  { code: 'zh', english: 'Simplified Chinese', native: '简体中文' },
+  { code: 'hi', english: 'Hindi', native: 'हिन्दी' },
+  { code: 'es', english: 'Spanish', native: 'Español' },
+  { code: 'pt', english: 'Brazilian Portuguese', native: 'Português (Brasil)' },
+  { code: 'ru', english: 'Russian', native: 'Русский' },
+  { code: 'ja', english: 'Japanese', native: '日本語' },
+  { code: 'de', english: 'German', native: 'Deutsch' },
+] as const;
+
+export const NARRATE_LANGS = NARRATE_LANGUAGES.map((l) => l.code) as unknown as [
+  'en',
+  'zh',
+  'hi',
+  'es',
+  'pt',
+  'ru',
+  'ja',
+  'de',
+];
+export type NarrateLang = (typeof NARRATE_LANGUAGES)[number]['code'];
+
+/** The English and native names of a prose language, for prompts and labels. */
+export function narrateLanguage(lang: NarrateLang): { english: string; native: string } {
+  const hit = NARRATE_LANGUAGES.find((l) => l.code === lang);
+  return hit ? { english: hit.english, native: hit.native } : { english: 'English', native: 'English' };
+}
+
+/**
+ * The one line appended to every prose prompt that names the output language.
+ *
+ * Hand-translating each rule block per language does not scale past two — and
+ * the rules are instructions TO the model, not text a reader ever sees, so they
+ * do not need translating. What must be unambiguous is which language the
+ * ANSWER is written in, stated in both English and the target language so the
+ * instruction survives a model that skims.
+ */
+export function languageDirective(lang: NarrateLang): string {
+  const { english, native } = narrateLanguage(lang);
+  if (lang === 'en') return 'Write every piece of prose in English.';
+  return `Write every piece of prose in ${english} (${native}). This is not optional: field names, ids, file paths, code and identifiers stay exactly as given, but every sentence you write must be in ${english}.`;
+}
 
 /** Constrained role vocabulary for a source file. Invalid answers coerce to `other`. */
 export const FILE_ROLES = [

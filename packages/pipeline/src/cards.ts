@@ -32,6 +32,7 @@ import {
 } from '@handbook/core';
 import { buildInventory } from './inventory.js';
 import type { WorkDir } from './workdir.js';
+import { rulesFor as rulesForLang } from './prompt-lang.js';
 
 export type CardDetail = 'brief' | 'deep';
 
@@ -132,8 +133,9 @@ ${ROLE_GLOSS}
 只输出一个 JSON 块（schema 同英文版）。`;
 
 function rulesFor(detail: CardDetail, lang: NarrateLang): string {
-  if (detail === 'deep') return lang === 'zh' ? DEEP_RULES_ZH : DEEP_RULES_EN;
-  return lang === 'zh' ? BRIEF_RULES_ZH : BRIEF_RULES_EN;
+  return detail === 'deep'
+    ? rulesForLang(lang, DEEP_RULES_EN, DEEP_RULES_ZH)
+    : rulesForLang(lang, BRIEF_RULES_EN, BRIEF_RULES_ZH);
 }
 
 function fileBlock(

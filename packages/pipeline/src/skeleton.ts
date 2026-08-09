@@ -7,6 +7,7 @@ import type { NavPack } from '@handbook/analyzer';
 import type { ChatClient } from '@handbook/llm';
 import { describeJsonShape, extractEntryList, replyExcerpt } from '@handbook/core';
 import type { FileCard, NarrateLang, Skeleton, Stage } from '@handbook/core';
+import { rulesFor as rulesForLang } from './prompt-lang.js';
 
 export interface DirRollup {
   dir: string;
@@ -79,7 +80,7 @@ const SYNTH_RULES_ZH = `你在为一个代码库划分系统手册的"阶段"（
 JSON key、id、布尔值用英文；title 与 description 用中文。只输出一个 JSON 块（schema 同英文版）。`;
 
 export function buildSynthPrompt(nav: NavPack, rollups: DirRollup[], lang: NarrateLang): string {
-  const rules = lang === 'zh' ? SYNTH_RULES_ZH : SYNTH_RULES_EN;
+  const rules = rulesForLang(lang, SYNTH_RULES_EN, SYNTH_RULES_ZH);
   const lines: string[] = [rules];
   lines.push(
     `## System: language=${nav.language} files=${nav.totals.nFiles} functions=${nav.totals.nFunctions} dirs=${nav.totals.nDirs}`,
