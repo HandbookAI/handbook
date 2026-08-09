@@ -241,6 +241,11 @@ function repoStatus(repo: RepoEntry, jobs?: JobRunner): Record<string, unknown> 
       html: fileExists(join(handbookDir, 'html', 'overview.html')),
       single: fileExists(join(handbookDir, 'handbook.html')),
       agent: fileExists(join(handbookDir, 'agent', 'how_to_use.md')),
+      // Whether a SKILL package has been built. Without this the UI cannot
+      // tell a "validate" that is ready to run from one that will come back
+      // 409, so the button was offered whenever a handbook existed and the
+      // refusal read as a malfunction instead of "package it first".
+      skill: fileExists(join(repo.workDir, 'skill', 'SKILL.md')),
     },
     strategy: work.loadStrategy(),
     chapters,

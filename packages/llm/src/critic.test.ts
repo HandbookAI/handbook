@@ -15,9 +15,18 @@ describe('parseVerdict', () => {
     expect(v?.decision).toBe('APPROVE');
   });
 
-  it('rejects unknown decisions and non-object revisions', () => {
+  it('rejects an unknown decision — that really is an unreadable verdict', () => {
     expect(parseVerdict({ decision: 'MAYBE' })).toBeUndefined();
-    expect(parseVerdict({ decision: 'APPROVE', suggested_revision: 'yes' })).toBeUndefined();
+  });
+
+  it('does NOT reject a readable decision over the shape of suggested_revision', () => {
+    // This assertion used to require `undefined` here, and that expectation was
+    // the bug: the decision is perfectly readable, so voiding the review (which
+    // counts as REJECT) throws away a real critic over a field the actor can
+    // simply ignore. See the regression block at the end of this file.
+    const verdict = parseVerdict({ decision: 'APPROVE', suggested_revision: 'yes' });
+    expect(verdict?.decision).toBe('APPROVE');
+    expect(verdict?.suggestedRevision).toBeNull();
   });
 });
 
@@ -160,5 +169,51 @@ describe('parseVerdict shape tolerance', () => {
     expect(parseVerdict(undefined, 'APPROVE the first part but REJECT the second')).toBeUndefined();
     expect(parseVerdict(undefined, 'Looks fine to me')).toBeUndefined();
     expect(parseVerdict(undefined, '')).toBeUndefined();
+  });
+});
+
+describe('parseVerdict — an unusable suggested_revision must not void the review', () => {
+  /**
+   * Observed against a real endpoint: all three critics answered
+   * `{decision:"REVISE", concerns:[…real…], suggested_revision:"<prose>", rationale}`
+   * and every one was logged as "unparseable verdict … treating as REJECT".
+   * The panel therefore never accepted anything, `runDoctorRound` returned all
+   * zeros, and the doctor loop reported `applied=0 rejected=0` twice and gave
+   * up with all 33 files still unassigned. The verdict was fine; only the
+   * revision field was the wrong shape.
+   */
+  it('keeps a REVISE whose suggested_revision is prose, and preserves the prose', () => {
+    const verdict = parseVerdict({
+      decision: 'REVISE',
+      concerns: ['barrel files are not tests'],
+      suggested_revision: 'move analyzer/src/index.ts out of test_suites',
+      rationale: 'r',
+    });
+    expect(verdict?.decision).toBe('REVISE');
+    expect(verdict?.suggestedRevision).toBeNull();
+    // Nothing the critic said is dropped — the prose becomes a concern.
+    expect(verdict?.concerns).toEqual([
+      'barrel files are not tests',
+      'move analyzer/src/index.ts out of test_suites',
+    ]);
+  });
+
+  it('keeps a verdict whose suggested_revision is a number or an array', () => {
+    for (const suggested of [0, [{ a: 1 }], true]) {
+      const verdict = parseVerdict({ decision: 'REVISE', concerns: ['c'], suggested_revision: suggested });
+      expect(verdict?.decision, JSON.stringify(suggested)).toBe('REVISE');
+      // An array is not an applicable revision either, even though
+      // `typeof [] === 'object'` used to let it through.
+      expect(verdict?.suggestedRevision, JSON.stringify(suggested)).toBeNull();
+    }
+  });
+
+  it('still uses a genuine object revision', () => {
+    const verdict = parseVerdict({
+      decision: 'REVISE',
+      concerns: ['c'],
+      suggested_revision: { changes: [] },
+    });
+    expect(verdict?.suggestedRevision).toEqual({ changes: [] });
   });
 });

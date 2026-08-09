@@ -191,6 +191,7 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       ],
     },
     ov: {
+      needSkill: 'Primero empaqueta un SKILL',
       status: 'ESTADO',
       chapters: 'CAPÍTULOS',
       coverage: 'COBERTURA',

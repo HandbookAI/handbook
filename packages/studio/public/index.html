@@ -1023,7 +1023,9 @@ async function renderOverview(c, tok, repo) {
       '<div class="row" style="margin-top:6px">' +
       '<button class="sm" data-act="render-open"' + hbDis + '>' + esc(t('ov.render')) + '</button>' +
       '<button class="sm" data-act="skill-open"' + hbDis + '>' + esc(t('ov.skill')) + '</button>' +
-      '<button class="sm" data-act="validate-run"' + hbDis + '>' + esc(t('ov.validate')) + '</button></div>' +
+      // Validate consumes a SKILL package, not the handbook: gating it on the
+      // handbook offered a button whose only possible answer was a 409.
+      '<button class="sm" data-act="validate-run"' + (repo.outputs && repo.outputs.skill ? '' : ' disabled title="' + esc(t('ov.needSkill')) + '"') + '>' + esc(t('ov.validate')) + '</button></div>' +
       '<p class="hint">' + esc(t('ov.actHint')) + '</p></div></div>';
   h += '<div id="ovBody"><div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div></div>';
   c.innerHTML = h;
