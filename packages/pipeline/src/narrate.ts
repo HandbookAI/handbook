@@ -33,6 +33,7 @@ import {
   pickString,
 } from '@handbook/core';
 import { readFileSync } from 'node:fs';
+import { closingLine, rulesFor as rulesForLang } from './prompt-lang.js';
 
 const PROMPT_VERSION = 'phase3-rollup-v1';
 const REGISTERS_VERSION = 'phase3-registers-v1';
@@ -126,7 +127,7 @@ export async function narrate(
   } = options;
   const logger = options.logger ?? silentLogger;
   const tree = new StageTree(inputs.skeleton);
-  const rules = lang === 'zh' ? STAGE_RULES_ZH : STAGE_RULES_EN;
+  const rules = rulesForLang(lang, STAGE_RULES_EN, STAGE_RULES_ZH);
 
   const hasContent = (sid: string): boolean =>
     tree.children(sid).length > 0 || (inputs.assignment.buckets[sid]?.length ?? 0) > 0;
@@ -166,7 +167,7 @@ export async function narrate(
         })
         .join('\n');
       if (fileLines) parts.push(`## Source files assigned directly to this stage\n${fileLines}`);
-      parts.push(lang === 'zh' ? '现在用中文输出本阶段的概述：' : "Now output this stage's overview:");
+      parts.push(closingLine(lang, "Now output this stage's overview:", '现在用中文输出本阶段的概述：'));
       const prompt = parts.join('\n\n');
       const key = `${sid.replaceAll(/[^a-zA-Z0-9_.-]/g, '_')}_${shortHash(`${PROMPT_VERSION}|${lang}|stage|${sid}|${prompt}`)}`;
       summaries[sid] = await cachedCall(
@@ -187,7 +188,7 @@ export async function narrate(
     .filter((sid) => summaries[sid])
     .map((sid) => `### ${tree.title(sid)}\n${summaries[sid]}`);
   const systemPrompt = [
-    lang === 'zh' ? SYSTEM_RULES_ZH : SYSTEM_RULES_EN,
+    rulesForLang(lang, SYSTEM_RULES_EN, SYSTEM_RULES_ZH),
     archetype ? `## System shape: ${archetype}` : '',
     `## Top-level stages (in execution order, with their overviews)\n${topBlocks.join('\n\n')}`,
   ]
@@ -358,12 +359,8 @@ export async function extractRegisters(
     signal?.throwIfAborted(); // cooperative checkpoint between extraction rounds
     const rules =
       round === 1
-        ? lang === 'zh'
-          ? REGISTER_RULES_ZH
-          : REGISTER_RULES_EN
-        : lang === 'zh'
-          ? REGISTER_GAP_RULES_ZH
-          : REGISTER_GAP_RULES_EN;
+        ? rulesForLang(lang, REGISTER_RULES_EN, REGISTER_RULES_ZH)
+        : rulesForLang(lang, REGISTER_GAP_RULES_EN, REGISTER_GAP_RULES_ZH);
     const alreadyBlock =
       round === 1
         ? ''
@@ -460,9 +457,11 @@ export async function extractRegisters(
   if (needy.length > 0) {
     const menu = skeleton.stages.map((s) => `- ${s.id} — ${s.title}`).join('\n');
     const list = needy.map((r) => `- ${r.id}: ${r.semantics}`).join('\n');
-    const fillPrompt = `${
-      lang === 'zh' ? REGISTER_FILL_RULES_ZH : REGISTER_FILL_RULES_EN
-    }\n\n## Stage menu (valid IDs)\n${menu}\n\n## Registers to map\n${list}`;
+    const fillPrompt = `${rulesForLang(
+      lang,
+      REGISTER_FILL_RULES_EN,
+      REGISTER_FILL_RULES_ZH,
+    )}\n\n## Stage menu (valid IDs)\n${menu}\n\n## Registers to map\n${list}`;
     try {
       const response = await client.complete(fillPrompt, { temperature: 0, signal });
       const entries = extractEntryList(response.json, ['assignments', 'registers'], {

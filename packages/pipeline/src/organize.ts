@@ -5,6 +5,7 @@
  * flat group — a stage's files are never dropped.
  */
 import type { ChatClient } from '@handbook/llm';
+import { rulesFor as rulesForLang } from './prompt-lang.js';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -195,7 +196,7 @@ async function organizeOneStage(
     return `- ${file}${meta}\n    ${card?.purpose ?? ''}${calls}`;
   });
   const prompt = [
-    lang === 'zh' ? ORGANIZE_RULES_ZH : ORGANIZE_RULES_EN,
+    rulesForLang(lang, ORGANIZE_RULES_EN, ORGANIZE_RULES_ZH),
     `## Stage: ${stageId} — ${title}`,
     description,
     `## Files in this stage (${orderedInput.length}, suggested execution order)`,
