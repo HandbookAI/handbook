@@ -460,11 +460,34 @@ environment、exit-codes、languages、packages、prompts）+ `contributing/`
    而 `fetch` 会静默丢弃它（本会话第二次踩这个坑）。改用 `node:http` 重测，
    所有路由（含两个新路由）非回环 Host 一律 403、回环 200。全部加了回归测试。
 
+### C 批状态（reference 9 + contributing 4 = 13/语种）
+
+- **zh / ja / es / pt / ru：13/13 完成 ✅**
+- **de：1/13**（只有 reference 一个文件）—— 缺 reference 8 + contributing 4
+- **hi：0/13** —— 全缺
+
+共 216 个翻译页在库。补 de/hi 时用同样的 prompt 模板（见上文 C 批那段），
+注意 `cli.mdx` 21KB、`configuration.md` 23KB 要单独处理、不能截断。
+
+### 对抗轮次
+
+- **第 1 轮（Studio 新端点）✅** —— 2 个真 bug 已修（前置校验、lang 动态枚举），
+  1 个假警报（`fetch` 丢 Host 头）。回归测试已加，61 studio 测试绿。
+- **第 2 轮（Studio 八语言 UI）✅** —— 真 Chrome 逐语种切换 14/14；
+  八种语言确认是八种不同文案而非回退英文。套件已入库 `scripts/browser/studio-ui.mjs`
+  并接入 CI。
+- **第 3 轮（翻译完整性）✅** —— 新增 `docs/scripts/check-translations.mjs`：
+  逐页比对代码块数量与**内容字节**、每种 JSX 组件计数、所有链接目标、frontmatter 键。
+  215 页全过。**并用「故意破坏 4 种」验证过它不是空测试**——
+  第一次验证时选了个没有 JSX 也没有链接的页面，两个变异是空操作，
+  差点把假绿当成证据。
+- 还发现并修掉一个英文源 bug：环境变量别名表写「Five settings」而表里有 6 行
+  （注册表 ground truth 也是 6），5 个已翻译语种一并修正。
+
 ### 待办（按序）
-1. C 批翻译 × 7（reference 8 + contributing 3 + 2 meta）—— 3 个 agent 在跑
-2. C 批落地后：把翻译页的 `/diagrams/*.svg` 再跑一次本地化替换脚本
-3. 对抗第 2–5 轮（第 2 轮已实质完成：Studio 八语言真浏览器验证）
-4. 收尾：`pnpm check` + `pnpm check:cli` + docs build + 三个浏览器套件
+1. 补 de（12 个）与 hi（13 个）的 C 批
+2. 对抗第 4、5 轮
+3. 收尾：`pnpm check` + `pnpm check:cli` + docs build + 三个浏览器套件
 3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
    README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
 4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +
