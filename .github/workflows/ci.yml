@@ -260,6 +260,19 @@ jobs:
             examples/work/demo/handbook/html \
             examples/work/demo/handbook/handbook.html
 
+      # Studio's UI is one hand-written HTML file with no framework and no
+      # build step: nothing type-checks it, and only a browser renders it.
+      - name: Browser-test the Studio UI
+        run: |
+          set -euo pipefail
+          node packages/cli/dist/main.js studio --port 4860 --state-dir "$(mktemp -d)" \
+            > /tmp/studio.log 2>&1 &
+          for _ in $(seq 1 40); do
+            if curl -fsS -o /dev/null http://127.0.0.1:4860/; then break; fi
+            sleep 1
+          done
+          node scripts/browser/studio-ui.mjs http://127.0.0.1:4860
+
       - name: Upload the generated handbook
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
