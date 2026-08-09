@@ -65,6 +65,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | --- | --- | --- | --- | --- | --- |
 | `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
+| `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
@@ -136,6 +137,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | --- | --- | --- | --- | --- | --- |
 | `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
+| `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
@@ -175,6 +177,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | --- | --- | --- | --- | --- | --- |
 | `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
+| `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
@@ -198,6 +201,7 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | --- | --- | --- | --- | --- | --- |
 | `logLevel` | — | `HANDBOOK_LOG_LEVEL` | enum (debug\|info\|warn\|error\|silent) | `info` | log verbosity; -v/--verbose and -q/--quiet are shorthand for debug/error |
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
+| `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
 | `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |

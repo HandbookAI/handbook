@@ -27,7 +27,13 @@ import {
   type ProgressEvent,
   type Setting,
 } from '@handbook/core';
-import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
+import {
+  CachedChatClient,
+  OpenAiChatClient,
+  llmConfigFromValues,
+  providerFromValues,
+  type ChatClient,
+} from '@handbook/llm';
 import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
 import { isInternalNode } from '@handbook/core';
@@ -1570,6 +1576,7 @@ export function createStudioServer(options: StudioOptions): Server {
           file: options.configFile,
         });
         return new OpenAiChatClient({
+          provider: providerFromValues(values),
           config: llmConfigFromValues(values),
           concurrency: values.llmConcurrency as number | undefined,
           logger,

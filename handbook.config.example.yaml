@@ -22,6 +22,8 @@ lang: auto
 title: "System Handbook"
 
 llm:
+  # LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them)
+  provider: openai
   # model identifier
   model: gpt-4o-mini
   # any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy)
