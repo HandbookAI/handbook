@@ -165,6 +165,235 @@ ${CORRECTION_EXAMPLE}
 只刷新被点名的文件。在此期间继续以真实源码为准。`,
     noRegisters: '# 状态寄存器\n\n_本代码库未识别出跨阶段的状态寄存器。_\n',
   },
+  hi: {
+    header: (project) => `# ${project} Handbook — इस्तेमाल कैसे करें
+
+यह handbook ${project} कोडबेस का एक **लोकेशन इंडेक्स** है, कोड का विवरण नहीं।
+इससे तय कीजिए कि किसी बदलाव को कौन-सी फ़ाइलें, फ़ंक्शन और state छूने होंगे — फिर असली सोर्स पढ़िए।`,
+    steps: {
+      overview: 'सिस्टम का आकार समझने के लिए `references/overview.md` पढ़िए।',
+      index: '`references/index.md` से रूट कीजिए — stage इंडेक्स हर सबसिस्टम को उसकी फ़ाइलों से जोड़ता है।',
+      stages: 'सिर्फ़ ज़रूरी `references/stages/<id>.md` पेज खोलिए।',
+      registers:
+        'क्रॉसकट state के लिए `references/registers.md` देखिए — बिखरे हुए बदलावों में यह सबसे काम का है।',
+      agent:
+        'जब कोई शब्द अस्पष्ट हो या खोज कई stages पर पहुँचे, तो `references/agent/disambiguation.md` देखिए; `references/agent/how_to_use.md` में agent-पक्ष की पूरी खोज-प्रणाली लिखी है।',
+      source: 'कोई भी बदलाव प्रस्तावित करने या करने से पहले हर उद्धृत पथ का असली सोर्स `read_file` कीजिए।',
+    },
+    coverage: `अगर \`references/coverage.json\` मौजूद है, तो उसके content हैश को ताज़गी के संकेत की तरह लीजिए: पुराना
+हैश यानी पेज कोड से पीछे हो सकता है। Handbook की भाषा को कोड टेक्स्ट का प्रमाण मत मानिए — कोई भी
+शब्दशः बदलाव देने से पहले असली सोर्स से मिलान कीजिए।`,
+    corrections: `## सुधार (Corrections)
+
+जब handbook का कोई दावा असली सोर्स से टकराए ("handbook कहता है X फ़ाइल A में है; असल में वह B में है"),
+तो उसे दर्ज कीजिए: skill की जड़ में मौजूद \`corrections.jsonl\` में JSON की एक पंक्ति जोड़िए (इसी
+SKILL.md के बग़ल में — कभी \`references/\` के भीतर नहीं, जिसे planner सिर्फ़ पढ़ने के लिए माउंट करते हैं)।
+पहली बार लिखते समय फ़ाइल बना लीजिए। हर पंक्ति में एक ऑब्जेक्ट:
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` रिपॉज़िटरी-सापेक्ष सोर्स पथ है (अनिवार्य); \`page\` वह references/ पेज है जिस पर दावा था;
+\`claim\`/\`actual\` विरोधाभास बताते हैं; \`notedAt\` एक ISO टाइमस्टैम्प है — बाक़ी सब वैकल्पिक।
+\`references/\` के नीचे कुछ भी ख़ुद मत बदलिए: बाद का resync \`corrections.jsonl\` को पढ़कर ठीक उन्हीं
+फ़ाइलों को ताज़ा करता है। तब तक असली सोर्स से ही काम करते रहिए।`,
+    noRegisters:
+      '# State registers\n\n_इस कोडबेस में stages के आर-पार जाने वाला कोई state register नहीं मिला।_\n',
+  },
+  es: {
+    header: (project) => `# ${project} Handbook — cómo usarlo
+
+Este handbook es un **índice de ubicación** del código de ${project}, no una descripción del código.
+Úsalo para decidir QUÉ archivos, funciones y estado debe tocar un cambio — luego lee el código real.`,
+    steps: {
+      overview: 'Lee `references/overview.md` para ver la forma del sistema.',
+      index:
+        'Enruta por `references/index.md` — el índice de etapas conecta cada subsistema con sus archivos.',
+      stages: 'Abre solo las páginas `references/stages/<id>.md` relevantes.',
+      registers:
+        'Consulta `references/registers.md` para el estado transversal — es valiosísimo en cambios de mucho alcance.',
+      agent:
+        'Cuando un término sea ambiguo o una búsqueda toque muchas etapas, consulta `references/agent/disambiguation.md`; `references/agent/how_to_use.md` documenta el protocolo de búsqueda del lado del agente.',
+      source: 'Haz `read_file` del código real en cada ruta citada antes de proponer o hacer cambios.',
+    },
+    coverage: `Si existe \`references/coverage.json\`, trata sus hashes de contenido como señales de frescura: un hash
+obsoleto significa que la página puede ir por detrás del código. NO tomes la prosa del handbook como
+verdad para el texto del código — confirma siempre contra el código real antes de emitir una edición
+literal.`,
+    corrections: `## Correcciones
+
+Cuando una afirmación del handbook contradiga el código real ("el handbook dice que X está en el archivo
+A; en realidad está en B"), repórtalo: añade UNA línea de JSON a \`corrections.jsonl\` en la raíz del skill
+(junto a este SKILL.md — nunca bajo \`references/\`, que los planificadores montan en solo lectura). Crea
+el archivo en la primera escritura. Un objeto por línea:
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` es la ruta del código relativa al repositorio (obligatoria); \`page\` es la página de references/
+que contenía la afirmación; \`claim\`/\`actual\` describen la contradicción; \`notedAt\` es una marca de
+tiempo ISO — todos opcionales. Nunca edites nada bajo \`references/\` por tu cuenta: un resync posterior
+consume \`corrections.jsonl\` y refresca exactamente los archivos nombrados. Sigue trabajando desde el
+código real.`,
+    noRegisters:
+      '# Registros de estado\n\n_No se identificó ningún registro de estado entre etapas para este código._\n',
+  },
+  pt: {
+    header: (project) => `# ${project} Handbook — como usar
+
+Este handbook é um **índice de localização** da base de código do ${project}, não uma descrição do código.
+Use-o para decidir QUAIS arquivos, funções e estado uma mudança precisa tocar — depois leia o código real.`,
+    steps: {
+      overview: 'Leia `references/overview.md` para ver o formato do sistema.',
+      index:
+        'Roteie por `references/index.md` — o índice de etapas mapeia cada subsistema para os seus arquivos.',
+      stages: 'Abra apenas as páginas `references/stages/<id>.md` relevantes.',
+      registers:
+        'Consulte `references/registers.md` para o estado transversal — é valiosíssimo em mudanças de grande alcance.',
+      agent:
+        'Quando um termo for ambíguo ou uma busca cair em várias etapas, consulte `references/agent/disambiguation.md`; `references/agent/how_to_use.md` documenta o protocolo de busca do lado do agente.',
+      source: 'Faça `read_file` do código real em cada caminho citado antes de propor ou fazer mudanças.',
+    },
+    coverage: `Se \`references/coverage.json\` existir, trate os seus hashes de conteúdo como sinais de atualidade: um
+hash desatualizado significa que a página pode estar atrás do código. NÃO trate a prosa do handbook como
+verdade sobre o texto do código — confirme sempre no código real antes de emitir uma edição literal.`,
+    corrections: `## Correções
+
+Quando uma afirmação do handbook contradisser o código real ("o handbook diz que X está no arquivo A; na
+verdade está em B"), reporte: acrescente UMA linha de JSON a \`corrections.jsonl\` na raiz do skill (ao
+lado deste SKILL.md — nunca sob \`references/\`, que os planejadores montam somente para leitura). Crie o
+arquivo na primeira escrita. Um objeto por linha:
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` é o caminho do fonte relativo ao repositório (obrigatório); \`page\` é a página de references/ que
+carregava a afirmação; \`claim\`/\`actual\` declaram a contradição; \`notedAt\` é um timestamp ISO — todos
+opcionais. Nunca edite nada sob \`references/\` por conta própria: um resync posterior consome
+\`corrections.jsonl\` e atualiza exatamente os arquivos citados. Continue trabalhando a partir do código
+real.`,
+    noRegisters:
+      '# Registradores de estado\n\n_Nenhum registrador de estado entre etapas foi identificado para esta base de código._\n',
+  },
+  ru: {
+    header: (project) => `# ${project} Handbook — как им пользоваться
+
+Этот handbook — **указатель мест** в кодовой базе ${project}, а не описание кода.
+По нему решайте, КАКИЕ файлы, функции и состояние затронет изменение, — а затем читайте настоящий исходник.`,
+    steps: {
+      overview: 'Прочитайте `references/overview.md`, чтобы увидеть форму системы.',
+      index:
+        'Ориентируйтесь по `references/index.md` — указатель этапов связывает каждую подсистему с её файлами.',
+      stages: 'Открывайте только нужные страницы `references/stages/<id>.md`.',
+      registers:
+        'Смотрите `references/registers.md` для сквозного состояния — незаменимо при изменениях с широким охватом.',
+      agent:
+        'Если термин неоднозначен или поиск попадает в несколько этапов, загляните в `references/agent/disambiguation.md`; `references/agent/how_to_use.md` описывает поисковый протокол на стороне агента.',
+      source:
+        'Прежде чем предлагать или вносить изменения, сделайте `read_file` настоящего исходника по каждому упомянутому пути.',
+    },
+    coverage: `Если \`references/coverage.json\` существует, считайте его хеши содержимого сигналами свежести:
+устаревший хеш означает, что страница может отставать от кода. НЕ считайте текст handbook источником
+истины о коде — перед выдачей дословной правки всегда сверяйтесь с настоящим исходником.`,
+    corrections: `## Исправления (Corrections)
+
+Когда утверждение handbook противоречит настоящему исходнику («handbook говорит, что X находится в файле
+A; на самом деле — в B»), сообщите об этом: допишите ОДНУ строку JSON в \`corrections.jsonl\` в корне
+skill (рядом с этим SKILL.md — никогда внутрь \`references/\`, которую планировщики монтируют только для
+чтения). При первой записи создайте файл. По одному объекту на строку:
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` — путь к исходнику относительно репозитория (обязателен); \`page\` — страница references/, на
+которой было утверждение; \`claim\`/\`actual\` описывают противоречие; \`notedAt\` — метка времени ISO —
+всё остальное необязательно. Никогда не правьте ничего под \`references/\` сами: последующий resync
+читает \`corrections.jsonl\` и обновляет ровно названные файлы. Продолжайте работать с настоящим
+исходником.`,
+    noRegisters:
+      '# Регистры состояния\n\n_Для этой кодовой базы межэтапные регистры состояния не выявлены._\n',
+  },
+  ja: {
+    header: (project) => `# ${project} Handbook — 使い方
+
+この handbook は ${project} コードベースの**場所の索引**であり、コードの説明ではありません。
+変更がどのファイル・関数・状態に触れるべきかを決めるために使い、そのうえで実際のソースを読んでください。`,
+    steps: {
+      overview: 'システムの形をつかむために `references/overview.md` を読んでください。',
+      index:
+        '`references/index.md` を経由して辿ってください — ステージ索引が各サブシステムをそのファイルに対応づけます。',
+      stages: '関係する `references/stages/<id>.md` のページだけを開いてください。',
+      registers:
+        '横断的な状態は `references/registers.md` で確認してください — 影響が広がる変更ではとくに有用です。',
+      agent:
+        '用語が曖昧なとき、あるいは検索が多くのステージに当たるときは `references/agent/disambiguation.md` を確認してください。`references/agent/how_to_use.md` にエージェント側の検索手順が書かれています。',
+      source: '変更を提案・実施する前に、引用された各パスの実際のソースを `read_file` してください。',
+    },
+    coverage: `\`references/coverage.json\` があれば、その内容ハッシュを鮮度の指標として扱ってください。ハッシュが
+古い場合、ページはコードに遅れている可能性があります。handbook の文章をコード本文の根拠にしては
+いけません — 逐語的な編集を出す前に、必ず実際のソースで確認してください。`,
+    corrections: `## 訂正（Corrections）
+
+handbook の記述が実際のソースと矛盾する場合（「handbook は X がファイル A にあると言うが、実際は B に
+ある」）、報告してください。skill のルート（この SKILL.md と同じ階層 — planner が読み取り専用でマウント
+する \`references/\` の下には決して置かない）にある \`corrections.jsonl\` に JSON を 1 行追記します。初回は
+ファイルを作成してください。1 行につき 1 オブジェクトです：
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` はリポジトリ相対のソースパス（必須）、\`page\` はその記述を載せていた references/ のページ、
+\`claim\`/\`actual\` は矛盾の内容、\`notedAt\` は ISO タイムスタンプ — \`file\` 以外は任意です。
+\`references/\` の下を自分で書き換えないでください：のちの resync が \`corrections.jsonl\` を読み、名指し
+されたファイルだけを更新します。それまでは実際のソースを基準に作業を続けてください。`,
+    noRegisters:
+      '# 状態レジスタ\n\n_このコードベースではステージをまたぐ状態レジスタは特定されませんでした。_\n',
+  },
+  de: {
+    header: (project) => `# ${project} Handbook — so wird es benutzt
+
+Dieses Handbook ist ein **Ortsverzeichnis** der ${project}-Codebasis, keine Beschreibung des Codes.
+Entscheide damit, WELCHE Dateien, Funktionen und welchen Zustand eine Änderung berühren muss — und lies
+dann den echten Quellcode.`,
+    steps: {
+      overview: 'Lies `references/overview.md`, um die Form des Systems zu sehen.',
+      index:
+        'Navigiere über `references/index.md` — der Etappenindex ordnet jedem Subsystem seine Dateien zu.',
+      stages: 'Öffne nur die relevanten Seiten `references/stages/<id>.md`.',
+      registers:
+        'Prüfe `references/registers.md` auf querschnittlichen Zustand — unbezahlbar bei weitreichenden Änderungen.',
+      agent:
+        'Wenn ein Begriff mehrdeutig ist oder eine Suche viele Etappen trifft, sieh in `references/agent/disambiguation.md` nach; `references/agent/how_to_use.md` dokumentiert das Suchprotokoll auf Agentenseite.',
+      source:
+        'Führe an jedem zitierten Pfad `read_file` auf den echten Quellcode aus, bevor du Änderungen vorschlägst oder vornimmst.',
+    },
+    coverage: `Wenn \`references/coverage.json\` existiert, behandle die Inhalts-Hashes als Frischesignale: ein
+veralteter Hash heißt, die Seite kann dem Code hinterherhinken. Nimm den Fließtext des Handbooks NICHT
+als Wahrheit für Codetext — bestätige immer am echten Quellcode, bevor du eine wörtliche Änderung
+ausgibst.`,
+    corrections: `## Korrekturen
+
+Wenn eine Aussage des Handbooks dem echten Quellcode widerspricht ("das Handbook sagt, X liegt in Datei
+A; tatsächlich liegt es in B"), melde es: hänge EINE Zeile JSON an \`corrections.jsonl\` im Wurzelverzeichnis
+des Skills an (neben dieser SKILL.md — niemals unter \`references/\`, das Planer nur lesend einhängen).
+Lege die Datei beim ersten Schreiben an. Ein Objekt pro Zeile:
+
+\`\`\`json
+${CORRECTION_EXAMPLE}
+\`\`\`
+
+\`file\` ist der repo-relative Quellpfad (erforderlich); \`page\` ist die references/-Seite, die die Aussage
+trug; \`claim\`/\`actual\` benennen den Widerspruch; \`notedAt\` ist ein ISO-Zeitstempel — alle optional.
+Bearbeite niemals selbst etwas unter \`references/\`: ein späterer resync verarbeitet \`corrections.jsonl\`
+und frischt genau die genannten Dateien auf. Arbeite weiter am echten Quellcode.`,
+    noRegisters:
+      '# Zustandsregister\n\n_Für diese Codebasis wurden keine etappenübergreifenden Zustandsregister ermittelt._\n',
+  },
 };
 
 function skillMd(name: string, project: string, lang: NarrateLang, withAgentPages: boolean): string {

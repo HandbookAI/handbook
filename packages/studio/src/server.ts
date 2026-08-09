@@ -12,6 +12,7 @@ import { readFileSync, realpathSync, rmSync, statSync, readdirSync, existsSync }
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  NARRATE_LANGUAGES,
   ensureDir,
   fileExists,
   readJsonFile,
@@ -1193,6 +1194,15 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   // which is how six of generate's parameters came to be silently discarded.
   if (path === '/api/settings' && method === 'GET') {
     json(res, 200, settingsPayload());
+    return;
+  }
+
+  // The prose languages, with the native name each should be offered under.
+  // Served rather than hand-listed for the same reason `/api/languages` is:
+  // the generate dialog's picker had drifted to two options against eight
+  // registered languages, which is the exact failure that endpoint exists for.
+  if (path === '/api/narrate-languages' && method === 'GET') {
+    json(res, 200, { languages: NARRATE_LANGUAGES.map((l) => ({ code: l.code, name: l.native })) });
     return;
   }
 

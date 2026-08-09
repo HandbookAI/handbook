@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { NARRATE_LANGS, settingByKey } from '@handbook/core';
+import { settingByKey } from '@handbook/core';
 
 const html = readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url)), 'utf8');
 
@@ -49,8 +49,13 @@ describe('studio UI choice lists match the config registry', () => {
     );
   });
 
-  it('gLang matches the narrate-language choices', () => {
-    expect(selectOptionValues('gLang').sort()).toEqual([...NARRATE_LANGS].sort());
+  it('gLang is served from /api/narrate-languages, not hand-maintained', () => {
+    // Regression: this select hard-coded `zh` and `en` while the registry grew
+    // to eight prose languages. A hand-written list is a list that goes stale;
+    // this one is rendered from the endpoint, under each language's own name.
+    expect(html).toContain("keep('gLang', state.narrateLanguages.map(");
+    expect(html).toContain('<select id="gLang"></select>');
+    expect(selectOptionValues('gLang')).toEqual([]);
   });
 
   it('gSrcLang is served from /api/languages, not hand-maintained', () => {
