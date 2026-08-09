@@ -115,15 +115,33 @@ export async function completeInLanguage(
     return first;
   }
 
-  // Layer 3: show it what it did, and name the language again. Stating the
-  // requirement AFTER the evidence is deliberate — the last instruction in a
-  // prompt is the one a model is most likely to follow.
+  // Layer 3: ask it to TRANSLATE what it just produced, rather than re-sending
+  // the original prompt with a correction appended.
+  //
+  // Measured against a real endpoint, appending a correction recovered 1 case
+  // in 4. The reason is structural: the original prompt is still in the
+  // message, and anything in it that biases the language — an instruction, an
+  // English code sample, English field names — competes with the correction.
+  // Re-deriving the answer is also the harder task, so the model has more room
+  // to drift again.
+  //
+  // Translating a text that is already correct in substance removes the
+  // conflict entirely and is a task models are reliably good at. The original
+  // prompt is deliberately NOT included.
   const correction = [
-    prompt,
+    `Translate the text below into ${name}. Output ONLY the translation.`,
     '',
-    '## Your previous answer was rejected',
-    `It was not written in ${name}. ${verdict.detail}.`,
-    `Produce the same answer again, with identical structure, ids, field names, file paths and code — but with every sentence written in ${name}.`,
+    'Rules:',
+    `- Every sentence must be in ${name}.`,
+    '- Keep the structure exactly: same JSON shape and key names if it is JSON, same markdown, same line breaks.',
+    '- Do NOT translate: code, identifiers, file paths, URLs, flags, or field names.',
+    '- Do not add a preface, a note, or quotes around the result.',
+    '',
+    '--- TEXT TO TRANSLATE ---',
+    first.text,
+    '--- END ---',
+    '',
+    `Output the ${name} version now.`,
   ].join('\n');
   const second = await client.complete(correction, chat);
   const secondVerdict = checkLanguage(proseOf(second), lang);
