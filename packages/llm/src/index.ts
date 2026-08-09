@@ -1,4 +1,5 @@
 export * from './client.js';
+export * from './providers.js';
 export * from './cache.js';
 export * from './mock.js';
 export * from './critic.js';

@@ -41,7 +41,13 @@ import {
   type LogLevel,
 } from '@handbook/core';
 import { renderConfigJson, renderConfigTable } from './config-command.js';
-import { CachedChatClient, OpenAiChatClient, llmConfigFromValues, type ChatClient } from '@handbook/llm';
+import {
+  CachedChatClient,
+  OpenAiChatClient,
+  llmConfigFromValues,
+  providerFromValues,
+  type ChatClient,
+} from '@handbook/llm';
 import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbook/pipeline';
 import {
   renderAgentSite,
@@ -167,6 +173,7 @@ function logger(cfg?: Record<string, unknown>): ReturnType<typeof createLogger> 
 /** LLM settings come from the resolved config, so --model/--base-url/etc reach the client. */
 function llmClient(cfg: Record<string, unknown>): ChatClient {
   return new OpenAiChatClient({
+    provider: providerFromValues(cfg),
     config: llmConfigFromValues(cfg),
     concurrency: cfg.llmConcurrency as number | undefined,
     logger: logger(cfg),
@@ -446,6 +453,7 @@ addSettings(
     // the launch configuration; the API key never does — studio rejects it.
     clientFactory: (jobLogger, llmOverrides) =>
       new OpenAiChatClient({
+        provider: providerFromValues({ ...cfg, ...llmOverrides }),
         config: llmConfigFromValues({ ...cfg, ...llmOverrides }),
         concurrency: (llmOverrides?.llmConcurrency ?? cfg.llmConcurrency) as number | undefined,
         logger: jobLogger,

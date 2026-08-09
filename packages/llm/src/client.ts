@@ -6,6 +6,7 @@
  * (see mock.ts) and any OpenAI-compatible endpoint (hosted, vLLM, a proxy…)
  * works in production via {@link OpenAiChatClient}.
  */
+import { PROVIDERS, PROVIDER_BASE_URLS, type Provider } from './providers.js';
 import {
   ConfigError,
   PermanentError,
@@ -138,6 +139,15 @@ export function resolveLlmEnv(env: NodeJS.ProcessEnv = process.env): LlmEnvConfi
  * registry bug, not a value this function owns); that is not a restatement of
  * any setting's actual default.
  */
+/**
+ * The provider a resolved config selects, or `undefined` for OpenAI-compatible
+ * (the default, and the path that predates providers).
+ */
+export function providerFromValues(values: Record<string, unknown>): Provider | undefined {
+  const id = typeof values.llmProvider === 'string' ? values.llmProvider : 'openai';
+  return PROVIDERS[id];
+}
+
 export function llmConfigFromValues(values: Record<string, unknown>): Partial<LlmEnvConfig> {
   const registryDefault = (key: string): unknown => settingByKey(key)?.default;
   const resolved = (key: string): unknown => (values[key] !== undefined ? values[key] : registryDefault(key));
@@ -159,7 +169,16 @@ export function llmConfigFromValues(values: Record<string, unknown>): Partial<Ll
   return {
     apiKey: str('llmApiKey'),
     model: str('llmModel'),
-    baseUrl: str('llmBaseUrl').replace(/\/+$/, ''),
+    // A provider whose endpoint was not set explicitly gets its own default.
+    // Otherwise selecting `--provider anthropic` would POST Anthropic's body
+    // shape at OpenAI's URL, which fails in a way that reads as a key problem.
+    baseUrl: (() => {
+      const explicit = str('llmBaseUrl').replace(/\/+$/, '');
+      const providerId = typeof values.llmProvider === 'string' ? values.llmProvider : 'openai';
+      const openAiDefault = String(settingByKey('llmBaseUrl')?.default ?? '').replace(/\/+$/, '');
+      const untouched = explicit === '' || (providerId !== 'openai' && explicit === openAiDefault);
+      return untouched ? (PROVIDER_BASE_URLS[providerId] ?? explicit) : explicit;
+    })(),
     maxTokens: num('llmMaxTokens'),
     maxRetries: Math.max(1, maxRetries),
     retryBackoffMs: Math.round(backoffSec * 1000),
@@ -185,6 +204,13 @@ export interface OpenAiChatClientOptions {
   timeoutMs?: number;
   /** Injectable fetch for tests. */
   fetchImpl?: typeof fetch;
+  /**
+   * A non-OpenAI wire format (`anthropicProvider`, `geminiProvider`). Omit for
+   * any OpenAI-compatible endpoint, which is most of them. Only the request and
+   * response shapes change — retries, deadlines, cancellation and metering are
+   * shared, so a provider cannot have its own retry bug.
+   */
+  provider?: Provider;
 }
 
 /** Per-call retry state: whether this call's retries should ask for more room. */
@@ -231,6 +257,11 @@ export class OpenAiChatClient implements ChatClient {
   private readonly logger: Logger;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  /**
+   * The wire format. Absent = OpenAI-compatible, which is the default and the
+   * only path that existed before providers, so nothing about it changed.
+   */
+  private readonly provider?: Provider;
   private readonly stats: LlmUsageStats = {
     calls: 0,
     failures: 0,
@@ -258,6 +289,7 @@ export class OpenAiChatClient implements ChatClient {
     this.logger = options.logger ?? silentLogger;
     this.timeoutMs = options.timeoutMs ?? this.config.timeoutMs;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.provider = options.provider;
   }
 
   usage(): Readonly<LlmUsageStats> {
@@ -300,31 +332,44 @@ export class OpenAiChatClient implements ChatClient {
     attempt = 1,
     call: CallState = { grow: false },
   ): Promise<string> {
-    const body: Record<string, unknown> = {
-      model: this.model,
-      messages: [{ role: 'user', content: prompt }],
-    };
+    // A provider supplies only the wire format; everything below — retry,
+    // deadline, cancellation, permanent-vs-retryable, gateway detection, budget
+    // learning, usage metering — is shared, because that is where the bugs are.
+    const provider = this.provider;
     // A reasoning endpoint spends part of the budget thinking, and a truncated
     // reply needed more room, so grow the budget for THIS call's retries —
     // never past a ceiling the endpoint has already rejected.
     const base = options.maxTokens ?? this.config.maxTokens;
     const growth = call.grow ? Math.min(2, attempt) : 1;
     const maxTokens = Math.max(1, Math.min(base * growth, this.budgetCeiling));
-    if (REASONING_MODEL_RE.test(this.model)) {
-      body.max_completion_tokens = maxTokens; // reasoning models also reject `temperature`
+
+    let url: string;
+    let headers: Record<string, string>;
+    let body: Record<string, unknown>;
+    if (provider) {
+      ({ url, headers, body } = provider.request({
+        config: this.config,
+        model: this.model,
+        prompt,
+        maxTokens,
+        temperature: options.temperature,
+      }));
     } else {
-      body.max_tokens = maxTokens;
-      if (options.temperature !== undefined) body.temperature = options.temperature;
+      body = { model: this.model, messages: [{ role: 'user', content: prompt }] };
+      if (REASONING_MODEL_RE.test(this.model)) {
+        body.max_completion_tokens = maxTokens; // reasoning models also reject `temperature`
+      } else {
+        body.max_tokens = maxTokens;
+        if (options.temperature !== undefined) body.temperature = options.temperature;
+      }
+      Object.assign(body, this.config.extraBody);
+      url = `${this.config.baseUrl}/chat/completions`;
+      headers = { 'content-type': 'application/json', authorization: `Bearer ${this.config.apiKey}` };
     }
 
-    Object.assign(body, this.config.extraBody);
-
-    const response = await this.fetchImpl(`${this.config.baseUrl}/chat/completions`, {
+    const response = await this.fetchImpl(url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this.config.apiKey}`,
-      },
+      headers,
       body: JSON.stringify(body),
       // The caller's signal rides along with the per-request deadline, so a
       // cancelled run tears down its in-flight requests instead of waiting
@@ -359,6 +404,34 @@ export class OpenAiChatClient implements ChatClient {
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
+    if (provider) {
+      const reply = provider.reply(payload);
+      // Metered on EVERY response, including one that is about to be rejected:
+      // a blank or truncated answer still burned tokens, and the meter reports
+      // cost, not accepted answers.
+      this.stats.promptTokens += reply.promptTokens;
+      this.stats.completionTokens += reply.completionTokens;
+      if (reply.truncated && reply.text.trim() !== '') {
+        const structureWanted = /[{[]/.test(reply.text);
+        if (structureWanted && extractJsonBlock(reply.text) === undefined) {
+          call.grow = true;
+          throw new Error(
+            `LLM response was truncated mid-structure (max tokens=${maxTokens}, ${reply.text.length} chars)`,
+          );
+        }
+        this.logger.warn(
+          `LLM response hit the token limit (max tokens=${maxTokens}); using the ${reply.text.length} characters returned`,
+        );
+      }
+      if (reply.text.trim() === '') {
+        // Empty is a FAILURE, not an empty answer — the same rule the
+        // OpenAI path enforces. For Gemini this is also how a safety refusal
+        // arrives, and treating it as an answer would blank a card silently.
+        if (reply.truncated) call.grow = true;
+        throw new Error(`LLM returned an empty completion (${provider.id})`);
+      }
+      return reply.text;
+    }
     const usage = (payload.usage ?? {}) as Record<string, any>;
     // Token spend is metered HERE, on every response the endpoint produced —
     // a blank or truncated reply that gets rejected and retried still burned

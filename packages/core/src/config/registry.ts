@@ -50,6 +50,16 @@ export const SETTINGS: readonly Setting[] = [
     doc: 'API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file',
   },
   {
+    key: 'llmProvider',
+    type: 'enum',
+    choices: ['openai', 'anthropic', 'gemini'],
+    default: 'openai',
+    flag: '--provider <name>',
+    envAliases: ['OPENAI_PROVIDER'],
+    commands: LLM_COMMANDS,
+    doc: "LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them)",
+  },
+  {
     key: 'llmModel',
     type: 'string',
     flag: '--model <id>',
