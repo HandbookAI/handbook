@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -530,6 +531,48 @@ describe('studio server (integration, mock LLM)', () => {
     const verdict = await api('/api/repos/demo/validate', { method: 'POST', body: '{}' });
     expect(verdict.ok).toBe(true);
     expect(verdict.errors).toEqual([]);
+  });
+
+  it('carries the advanced generate settings all the way through, cache included', async () => {
+    // Adversarial round 5. Six of these were accepted, validated and then
+    // silently dropped before reaching `generateHandbook`, and `llmCache` was
+    // never honoured at all — studio never wrapped the client the way the CLI
+    // does. A 202 followed by a green job proved nothing about either.
+    //
+    // Its OWN repo and source tree: the shared `demo` fixture accumulates
+    // artifacts across the tests above, and a cache assertion that depends on
+    // how much work a run still had left to do is a test that passes or fails
+    // by position in the file.
+    const own = mkdtempSync(join(tmpdir(), 'hb-studio-cache-'));
+    writeFixtureRepo(own);
+    await api('/api/repos', { method: 'POST', body: JSON.stringify({ name: 'cached', sourceRoot: own }) });
+    const job = await api('/api/repos/cached/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        narrateLang: 'en',
+        readWorkers: 2,
+        readBatchSize: 3,
+        maxCharsPerFile: 4000,
+        assignBatchSize: 5,
+        assignWorkers: 2,
+        organizeWorkers: 2,
+        narrateWorkers: 2,
+        llmCache: true,
+        title: 'Cache Check',
+      }),
+    });
+    const done = await waitJob(job.id);
+    expect(done.status, done.error).toBe('succeeded');
+
+    const repo = await api('/api/repos/cached');
+    const cacheDir = join(repo.workDir as string, 'phase3', 'cache');
+    expect(existsSync(cacheDir), `expected a reply cache at ${cacheDir}`).toBe(true);
+    expect(readdirSync(cacheDir).length).toBeGreaterThan(0);
+    expect(repo.lastParams?.generate?.readBatchSize).toBe(3);
+
+    // Leave the registry as we found it: a later test asserts the list is
+    // empty once the shared fixture repo is removed.
+    await api('/api/repos/cached', { method: 'DELETE' });
   });
 
   it('remembers the last-used params per job kind, so the UI can pre-fill', async () => {
