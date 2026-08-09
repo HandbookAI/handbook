@@ -140,6 +140,21 @@ describe('studio server (integration, mock LLM)', () => {
     expect(await res.text()).toContain('Handbook Studio');
   });
 
+  it('serves the locale dictionaries from a fixed allowlist', async () => {
+    const en = await fetch(`${base}/i18n.en.js`);
+    expect(en.status).toBe(200);
+    expect(en.headers.get('content-type')).toBe('text/javascript; charset=utf-8');
+    expect(await en.text()).toContain('window.HB_DICT');
+    // A locale whose dictionary has not landed yet is a harmless no-op script,
+    // not a 404 — the UI then falls back to English key by key.
+    const hi = await fetch(`${base}/i18n.hi.js`);
+    expect(hi.status).toBe(200);
+    expect(await hi.text()).toContain('not translated yet');
+    // Off the allowlist nothing is served: the file name is never joined from input.
+    expect((await fetch(`${base}/i18n.xx.js`)).status).toBe(404);
+    expect((await fetch(`${base}/i18n.%2e%2e.js`)).status).toBe(404);
+  });
+
   it('registers a repo and reports empty status', async () => {
     const repo = await api('/api/repos', {
       method: 'POST',

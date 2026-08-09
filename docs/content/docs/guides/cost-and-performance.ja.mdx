@@ -1,0 +1,206 @@
+---
+title: 'コストとパフォーマンス'
+description: 'トークンが実際にどこへ行くのか、どのノブが効くのか、そして支払う前に見積もる方法。'
+---
+
+## 支払う前に把握する
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**無料です。** コストを左右するのは `files` の数です。最も高価なフェーズである Phase 2a は、
+おおよそこれに線形だからです。
+
+## トークンはどこへ行くか
+
+| フェーズ                          | 典型的な実行での割合 | 何に比例するか                                         |
+| --------------------------------- | -------------------- | ------------------------------------------------------ |
+| **1** analyze                     | 0%                   | —                                                      |
+| **2a** カード                     | **60〜80%**          | ファイル数 × `--detail`                                |
+| **2b** スケルトン + 割り当て      | 10〜20%              | ファイル数。`--synth-mode doctor` でははるかに増えます |
+| **2c** 編成                       | 5%                   | ステージ数                                             |
+| **3** ナレーション + 状態レジスタ | 5〜15%               | ステージ数。強力にキャッシュされます                   |
+
+**支出を減らしたいなら、意味を持つ場所は Phase 2a だけです。**
+
+## ノブを効果順に
+
+### 1. `deep` の代わりに `--detail brief`
+
+数倍安くなります。brief は目的、役割、ライフサイクルです。deep はそこに 120〜300 語の
+ウォークスルーと関数ごとのノートを加え、バッチサイズを 8 ファイルから 1 に落とします。
+
+```bash
+handbook generate --source $REPO --work $WORK                       # brief
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume  # upgrade later
+```
+
+### 2. `--source` を関心のある範囲に絞る
+
+グラフはスキャンした範囲から構築されます。モノレポの中の 1 サービスを文書化するコストは、
+全部を文書化するコストのほんの一部です:
+
+```bash
+handbook generate --source $REPO/services/payments --work work/payments
+```
+
+### 3. `--max-chars-per-file`
+
+```bash
+handbook generate --source $REPO --work $WORK --max-chars-per-file 20000
+```
+
+単一ファイルから送られる量の上限を設定します。生成されたファイル、ベンダリングされた
+バンドル、巨大な switch 文は、情報を含まない純粋なコストです。`0`(デフォルト)は
+無制限を意味します。
+
+### 4. 反復作業中は `--llm-cache`
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+モデル、プロンプト、オプションをキーに生の応答をキャッシュします。微調整後の再実行が
+ほぼ無料になります。意図的にキャッシュを無視したいときは `--refresh` を追加してください。
+
+### 5. `doctor` が必要でない限り `--synth-mode oneshot`
+
+doctor は、提案と 3 つの批評をそれぞれ数ラウンド実行します。oneshot が偏った、あるいは
+無意味なステージを生んだときには正しい選択ですが、そうでないときには純粋なオーバーヘッド
+です。
+
+### 6. 問題にならない箇所では安いモデルを
+
+フェーズによって、強いモデルの恩恵の大きさは異なります:
+
+| フェーズ       | モデルへの感度                                          |
+| -------------- | ------------------------------------------------------- |
+| 2a カード      | 中 — 小さいモデルでも実用に足る目的文を書きます         |
+| 2b スケルトン  | **高** — ハンドブック全体が乗っかる判断がここです       |
+| 2c 編成        | 低 — どのみち決定的な順序へ劣化します                   |
+| 3 ナレーション | 中〜高 — 人が読む文章はここです                         |
+| `plan`         | **最高** — バイト単位で正確なアンカーは容赦がありません |
+
+フェーズは個別に実行できるので、混在させられます:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --model cheap-model
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --model strong-model
+```
+
+## 速度
+
+コストと速度は別の問題です。以下は実時間を変えるもので、支出は変えません:
+
+| フラグ                   | デフォルト       | 上げるべきとき                                           |
+| ------------------------ | ---------------- | -------------------------------------------------------- |
+| `--llm-concurrency <n>`  | `16`             | エンドポイントが耐えられるとき。**グローバルな上限です** |
+| `--read-workers <n>`     | `12`             | Phase 2a がボトルネックのとき                            |
+| `--assign-workers <n>`   | `12`             | Phase 2b がボトルネックのとき                            |
+| `--organize-workers <n>` | `8`              | Phase 2c がボトルネックのとき                            |
+| `--narrate-workers <n>`  | `8`              | Phase 3 がボトルネックのとき                             |
+| `--read-batch-size <n>`  | 1 deep / 8 brief | より少なく、より大きなリクエストに。切り詰めに注意       |
+
+`--llm-concurrency` は他のすべての上限になります。`--llm-concurrency 16` のまま
+`--read-workers` を 40 に上げても、得られるのは 16 です。
+
+<Callout type="warn" title="レート制限は失敗のように見えます">
+  ログにリトライが見えたら、`--llm-retries` を上げる前に `--llm-concurrency` を **下げて** ください。
+  レート制限に対してより強くリトライすることは、同じトークンを二度支払うことです。
+</Callout>
+
+## 実行のコストを読む
+
+```json title="<work>/run-manifest.json"
+{
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```bash
+jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
+```
+
+これは **最後に成功した** 実行を記述します。失敗した実行は前回のマニフェストに手を
+付けません。中断された実行は何も書きません。
+
+## 順当なはしご
+
+<Steps>
+
+<Step>
+### 無料
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+ファイル数と `dropped-calls.json` を確認します。何かを支払う前にスキャンを修正して
+ください。
+
+</Step>
+
+<Step>
+### 安価 — 形は合っているか?
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+`phase2/skeleton.yaml` を読んでください。ステージが間違っているなら、文章を深くする前に
+それを直します。
+
+</Step>
+
+<Step>
+### 必要なら構造を直す
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+<Step>
+### 構造が正しくなってから深くする
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+</Step>
+
+<Step>
+### 二度と支払わない
+
+```bash
+handbook render ...      # free, deterministic, run in CI
+handbook skill ...       # free
+handbook validate ...    # free
+handbook resync ...      # proportional to the change
+```
+
+</Step>
+
+</Steps>
+
+## 非常に大きなリポジトリ
+
+| ファイル数   | 提案                                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------------------------- |
+| < 200        | 最初から `--detail deep --synth-mode doctor`                                                                    |
+| 200〜1,000   | まず brief、その後選択的に深くする                                                                              |
+| 1,000〜5,000 | brief、`--max-chars-per-file 20000`、そしてサブシステムごとに 1 冊のハンドブックを検討する                      |
+| > 5,000      | **サブシステムごとに 1 冊。** 5,000 ファイル超を 1 冊にしたハンドブックは、安くもなければ読みやすくもありません |
+
+複数のハンドブックを持つのはまったく問題ありません — それは単に複数の作業ディレクトリと
+複数の SKILL パッケージであり、それぞれが 1 つの巨大なものより鋭い description を持ちます。

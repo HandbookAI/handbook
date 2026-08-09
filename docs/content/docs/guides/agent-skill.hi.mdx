@@ -1,0 +1,181 @@
+---
+title: अपने एजेंट के लिए पैकेजिंग
+description: render किए गए handbook को drift detection के साथ एक SKILL पैकेज में बदलें, और उसे किसी coding एजेंट से जोड़ें।
+---
+
+```bash
+handbook skill --handbook <rendered-dir> --out <skill-dir> --name <slug> [options]
+handbook validate --skill <skill-dir> --source <repo>
+```
+
+दोनों deterministic हैं। **कोई LLM नहीं।**
+
+## इसे बनाएँ
+
+```bash
+handbook skill \
+  --handbook work/api/handbook \
+  --out skills/api \
+  --name api \
+  --project "Payments API" \
+  --work work/api \
+  --source ~/code/api \
+  --agent-dir work/api/handbook/agent
+```
+
+| फ़्लैग                | यह आपके काम का क्यों है                                                                       |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `--work` + `--source` | `coverage.json` बनाता है, जिसमें **हर फ़ाइल का content hash** होता है — यही drift का संकेत है |
+| `--agent-dir`         | locator पेज साथ भेजता है, और routing protocol में एक disambiguation चरण जोड़ता है             |
+| `--project`           | गद्य में प्रयुक्त होने वाला मानवीय नाम। डिफ़ॉल्ट `--name` है                                  |
+| `--lang zh`           | चीनी **body**। frontmatter अंग्रेज़ी में ही रहता है — नीचे देखें                              |
+
+## आपको क्या मिलता है
+
+```text
+skills/api/
+  SKILL.md                    the routing guide
+  corrections.jsonl           agent-written feedback (created by the agent, never the build)
+  references/
+    overview.md               the system's shape
+    index.md                  every subsystem → its files
+    registers.md              cross-stage state
+    stages/<id>.md            one page per stage
+    agent/how_to_use.md
+    agent/disambiguation.md
+    coverage.json             file → stage + sha256
+```
+
+यह पैकेज **आत्मनिर्भर और साझा करने योग्य** है, और इसमें कभी source code नहीं जोड़ा जाता। यह
+नक्शा भेजता है, इलाक़ा नहीं।
+
+## SKILL.md का contract
+
+```yaml
+---
+name: api-handbook
+description: Navigate the Payments API codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing Payments API work that is unfamiliar,
+  spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated
+  to Payments API or isolated edits where the exact file is already known and no
+  cross-cutting impact is plausible.
+---
+```
+
+<Callout type="warn" title="--lang zh के साथ भी frontmatter अंग्रेज़ी में ही रहता है">
+  एजेंट runtimes description टेक्स्ट से मिलान करके skills चुनते हैं, और validated "Use when … / Do not use …"
+  contract उसी routing सतह का हिस्सा है। उसका अनुवाद selection को चुपचाप तोड़ देगा। body का अनुवाद होता है;
+  routing सतह का नहीं।
+</Callout>
+
+body एक क्रमांकित protocol है:
+
+1. सिस्टम की संरचना के लिए `references/overview.md` पढ़ें।
+2. `references/index.md` से route करें — stage index हर subsystem को उसकी files से जोड़ता है।
+3. केवल प्रासंगिक `references/stages/<id>.md` पेज खोलें।
+4. cross-cutting state के लिए `references/registers.md` देखें — fan-out बदलावों के लिए अमूल्य।
+5. _(`--agent-dir` के साथ)_ जब कोई शब्द अस्पष्ट हो तो disambiguate करें।
+6. **कोई भी बदलाव प्रस्तावित करने या करने से पहले हर उद्धृत path पर वास्तविक source को `read_file` करें।**
+
+और इसकी पहली पंक्ति ही वह बात कहती है जो सबसे अधिक मायने रखती है:
+
+> यह handbook कोडबेस के लिए एक **location index** है, कोड का विवरण नहीं।
+
+## Drift की पहचान
+
+```json title="references/coverage.json"
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+```
+
+यह लाइव source को फिर से hash करता है और हर उस फ़ाइल के लिए चेतावनी देता है जिसकी सामग्री बदल
+चुकी है। विफलता पर **exit code `2`**, इसलिए यह सीधे CI में बैठ जाता है:
+
+```yaml
+- run: handbook validate --skill skills/api --source .
+  continue-on-error: true # a warning, not a build break — then schedule a resync
+```
+
+## Corrections का चक्र
+
+जब handbook का कोई दावा वास्तविक source का खंडन करता है, तो एजेंट **skill root** पर
+`corrections.jsonl` में एक पंक्ति जोड़ देता है:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py",
+  "notedAt": "2026-08-08T12:00:00Z"
+}
+```
+
+केवल `file` अनिवार्य है। यह root पर रहती है, कभी `references/` के नीचे नहीं, क्योंकि planner
+उस tree को read-only mount करते हैं।
+
+```bash
+handbook resync --case cases/x --work work/api --corrections skills/api/corrections.jsonl
+```
+
+नामित files refresh सेट में शामिल हो जाती हैं, **भले ही उनके bytes कभी न बदले हों** — जिस दावे
+का source खंडन करता है, वही उस फ़ाइल का फिर से वर्णन करने के लिए पर्याप्त कारण है। उपयोग हो
+चुकी फ़ाइल को फिर timestamp के साथ archive कर दिया जाता है, ताकि एक ही correction दो बार
+लागू न हो सके।
+
+rebuild, clean के बावजूद लंबित corrections को सुरक्षित रखता है।
+
+## इसे एजेंट से जोड़ना
+
+### Claude Code
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/api .claude/skills/api-handbook
+```
+
+एजेंट इसे इसके frontmatter description के आधार पर चुन लेता है।
+
+### फ़ाइलसिस्टम वाला कोई भी एजेंट
+
+उसे इस directory की ओर इंगित करें और पहले `SKILL.md` पढ़ने को कहें। अंदर का protocol
+स्वयं-व्याख्यायी है और किसी विशेष runtime पर निर्भर नहीं करता।
+
+### Planner
+
+```bash
+handbook plan --source ~/code/api --handbook skills/api/references \
+  --request "Retry failed uploads three times" --out plan.md
+```
+
+`--handbook` को `references/` directory दी जाती है, जो planner के sandbox के अंदर
+`__handbook__/` पर read-only mount होती है।
+
+## Build जिन बातों से इनकार करता है
+
+- **`--out` handbook directory या उसका कोई ancestor नहीं होना चाहिए।** build की शुरुआत
+  `--out` को मिटाने से होती है; ऐसा होने पर वही चीज़ मिट जाती जो package की जा रही है, और
+  फिर चुपचाप एक खाली skill बन जाती।
+- **Locator पेज या तो जोड़े में जाते हैं या बिल्कुल नहीं।** `SKILL.md` को कभी ऐसी फ़ाइल की ओर
+  route नहीं करना चाहिए जो मौजूद ही न हो।
+- **Register पेज हमेशा मौजूद रहता है**, शून्य registers वाले handbook के लिए भी, क्योंकि एक
+  स्थिर reference layout contract का हिस्सा है।
+
+## इसे ताज़ा रखना
+
+```bash
+handbook resync --case cases/latest --work work/api    # roll the handbook forward
+handbook skill  --handbook work/api/handbook --out skills/api --name api \
+                --work work/api --source ~/code/api --agent-dir work/api/handbook/agent
+handbook validate --skill skills/api --source ~/code/api
+```
+
+Resync incremental है, और `skill` + `validate` मुफ़्त हैं। यह पूरा क्रम इतना सस्ता है कि इसे
+नियमित schedule पर चलाया जा सकता है।

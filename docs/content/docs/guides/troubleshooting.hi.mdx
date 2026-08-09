@@ -1,0 +1,285 @@
+---
+title: समस्या-निवारण
+description: जो चीज़ें वाक़ई ग़लत होती हैं, संदेश का क्या मतलब है, और उसके बारे में क्या किया जाए।
+---
+
+<Callout title="हर बार, यहीं से शुरू करें">
+```bash
+handbook config --command <the-command-that-failed>
+```
+यह active environment, load की गई हर `.env` फ़ाइल, resolve हुई config फ़ाइल, और हर setting
+की एक पंक्ति छापता है — इस जानकारी समेत कि **उसका मान कहाँ से आया**। ज़्यादातर "इसने मेरी
+setting अनदेखी कर दी" समस्याओं का जवाब वह तालिका दस सेकंड में दे देती है।
+</Callout>
+
+## कॉन्फ़िगरेशन
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+ठीक वही जो यह कह रहा है — और यह इसे देने का हर तरीक़ा भी गिना देता है। Required होने की
+जाँच सभी layers से पूछे जाने के _बाद_ होती है, इसलिए इसका मतलब है कि उनमें से किसी के पास भी
+यह नहीं था।
+
+### मेरा environment variable अनदेखा हो रहा है
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+`FROM` कॉलम बताता है कि असल में कौन-सी layer जीती। सामान्य कारण:
+
+- कोई **flag** इसे override कर रहा है। Flags सब पर भारी पड़ते हैं।
+- आपने flat नाम set किया, लेकिन एक **scoped** नाम मौजूद है — `HANDBOOK_GENERATE_DETAIL`,
+  `HANDBOOK_DETAIL` पर भारी पड़ता है।
+- आपने **खाली** मान set किया। खाली को जानबूझकर unset माना जाता है।
+- आप किसी दूसरी directory से चला रहे हैं: **`.env` cascade केवल cwd में देखता है**, जबकि
+  `handbook.config.yaml` ऊपर की ओर चलते हुए खोजी जाती है।
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+इसे `.env` या shell environment में ले जाएँ। यह इनकार जानबूझकर है।
+
+### `node: /some/path.env: not found`, और exit code 9
+
+यह Handbook की error है ही नहीं। Node >= 20.6 का अपना `--env-file` flag है और वह पूरी
+command line को उसके लिए pre-scan करता है, इसलिए Handbook के शुरू होने से **पहले** ही वह
+missing path पर मर जाता है। इसके बजाय variable इस्तेमाल करें, जिसे कोई intercept नहीं कर
+सकता:
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+जब फ़ाइल वाक़ई मौजूद हो, तब flag ठीक काम करता है।
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+फ़ाइल YAML के रूप में parse तो हुई, लेकिन शीर्ष स्तर पर object नहीं है। पहली key का
+indentation जाँचें।
+
+## विश्लेषण
+
+### `no analyzable files found under <dir>`
+
+`--source` किसी ऐसी जगह इशारा कर रहा है जहाँ analyzer की पहचान में आने वाला कुछ नहीं है।
+typo जाँचें, और यह भी कि आप build output की directory के बजाय source root की ओर इशारा
+कर रहे हैं।
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### फ़ाइलों की गिनती अपेक्षा से बहुत कम है
+
+`-v` के साथ चलाएँ और `[scan]` पंक्तियाँ पढ़ें। संभावित कारण:
+
+- पूरी की पूरी एक भाषा सूची से गायब है → देखें [भाषा समर्थन](/docs/reference/languages)।
+- आपका कोड साझा skip सूची (`vendor`, `build`, `dist`, `out`, `target`, …) की किसी
+  directory के नीचे है। `--source` को असली source root पर इंगित करें।
+- Node ≥ 24 पर Swift → adapter ने discovery पर ही इनकार कर दिया। `node --liftoff-only`
+  इस्तेमाल करें।
+
+### फ़ाइलों की गिनती अपेक्षा से बहुत अधिक है
+
+आप `node_modules`, कोई vendored tree, या generated कोड scan कर रहे हैं। आम directories
+अपने आप skip हो जाती हैं; बाकी किसी भी चीज़ के लिए एक संकरा `--source` चाहिए।
+
+### `edgesDropped` बहुत बड़ा है
+
+Dynamic भाषाओं के लिए सामान्य, और यह error **नहीं** है — हर dropped call का अनुमान लगाने
+के बजाय उसे `phase1/dropped-calls.json` में वर्गीकृत किया जाता है:
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+Generic-tier भाषाएँ design के तहत ही अधिक drop करती हैं। देखें
+[Analysis fidelity](/docs/concepts/analysis-fidelity)।
+
+### Swift process को मार देता है
+
+```text
+Fatal process out of memory: Zone
+```
+
+बंडल किया गया Swift grammar V8 ≥ 13 पर abort कर देता है। ऐसे runtime पर adapter इसे होने
+देने के बजाय discovery पर ही इनकार कर देता है — अगर आपको खुद abort दिख रहा है, तो आप
+किसी ऐसे code path पर हैं जिसने उसे bypass कर दिया। इसके साथ चलाएँ:
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## जनरेशन
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+कोई API key resolve नहीं हुई। `handbook config --command generate` जाँचें — `llmApiKey`
+पंक्ति `— unset (required)` कहेगी। बिना key वाले local endpoint के लिए, स्पष्ट रूप से
+`OPENAI_API_KEY=EMPTY` set करें।
+
+### Endpoint HTML लौटाता है
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+कोई corporate proxy request को intercept करके `200` के साथ एक login पेज लौटा रहा है।
+proxy ठीक करें, या `--base-url` को किसी पहुँच-योग्य पते पर इंगित करें।
+
+### Cards खाली आते हैं
+
+देखें कि model ने असल में क्या कहा:
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+ये वे replies हैं जिनसे कोई उपयोगी card नहीं बना। आम कारण: schema का पालन करने के लिए
+बहुत छोटा model, कोई refusal, या truncation। `--detail brief`, एक छोटा
+`--read-batch-size`, या एक मज़बूत `--model` आज़माएँ।
+
+कौन-सी फ़ाइलें बिना गद्य के रह गईं:
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### Rate-limit errors, या बहुत धीमा run
+
+पहले `--llm-concurrency` **घटाएँ**। Rate limit के विरुद्ध और ज़ोर से retry करना वही टोकन
+दो बार खर्च करता है।
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### Stages का कोई मतलब नहीं बनता
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+Actor–critic loop ठीक इसी के लिए मौजूद है। अगर वह भी विफल रहे, तो खुद एक
+`skeleton.yaml` लिखें और `--skeleton` पास करें।
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+जानबूझकर। strategy बदलने के लिए phase 2b फिर से चलाएँ:
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+एक lock। या तो सचमुच कोई run चल रहा है — किसी Studio job समेत — या कोई पिछला run
+बुरी तरह मरा है। प्रतीक्षा करें, या यह पुष्टि करने के बाद कि कुछ भी नहीं चल रहा, संदेश में
+बताई गई lock directory हटा दें।
+
+## रेंडरिंग और पैकेजिंग
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` को **rendered** directory (`<work>/handbook`) की ओर इंगित करना चाहिए, work
+directory की ओर नहीं।
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+skill build की शुरुआत ही `--out` को मिटाने से होती है। इसे handbook पर इंगित करना input
+को ही delete कर देता। एक अलग directory इस्तेमाल करें: `--handbook work/api/handbook --out skills/api`।
+
+### `validate` stale hashes की चेतावनी देता है
+
+जैसा सोचा गया था, वैसा ही काम कर रहा है: packaging के बाद source आगे बढ़ गया है। handbook
+को आगे बढ़ाएँ:
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## Plan और apply
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+Model ने `## Tool result` sections गढ़ लिए — वह काल्पनिक फ़ाइल सामग्री पर reasoning कर
+रहा था। उस run से आई कोई भी चीज़ भरोसेमंद नहीं है। **एक मज़बूत model इस्तेमाल करें।**
+
+### `planner reached the turn limit without producing a plan`
+
+`--max-turns` बढ़ाएँ, या अनुरोध को संकरा करें। एक अस्पष्ट अनुरोध planner से localize करने
+के बजाय exploration करवाता है।
+
+### `apply` कहता है `no-match`
+
+plan लिखे जाने के बाद कोड बदल गया। `plan` फिर से चलाएँ। मेल कराने के लिए anchor को हाथ से
+**मत** बदलें — anchor ही safety mechanism है।
+
+### `apply` कहता है `ambiguous`
+
+`old` वाला text एक से अधिक बार आता है। `plan` फिर से चलाएँ, या plan को हाथ से संपादित
+करके `old` में आस-पास का और context जोड़ें, ताकि वह unique हो जाए।
+
+### `EDIT 1: content between the fenced blocks`
+
+`old` या `new` की सामग्री में कोई code fence है, जिसने block को समय से पहले बंद कर दिया।
+उन blocks को एक **लंबे** fence से खोलें:
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` किसी फ़ाइल को अस्वीकार कर देता है
+
+उसका वर्तमान hash, patch के बाद वाले hash से मेल नहीं खाता — patch के बाद किसी ने उसे
+संपादित किया है, और restore करना वह काम नष्ट कर देता। देखें कि क्या बदला, फिर निश्चित होने
+पर ही `--force` करें।
+
+## Studio
+
+### Studio खोलने पर `403`
+
+आप `localhost` इस्तेमाल नहीं कर रहे। CSRF guard `Host` header की जाँच करता है, इसलिए LAN
+IP या container नाम **जानबूझकर** अस्वीकार किया जाता है। `http://localhost:4860` इस्तेमाल
+करें, या एक SSH tunnel:
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+एक repository पर एक समय में एक ही job, क्योंकि artifacts समवर्ती writers के लिए सुरक्षित
+नहीं हैं। प्रतीक्षा करें, या UI से चल रहे job को cancel करें।
+
+## फिर भी अटके हैं
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+```
+
+अगर समस्या reproducible है, तो ऊपर के artifacts ठीक वही हैं जिनकी एक bug report को
+ज़रूरत होती है।

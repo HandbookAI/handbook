@@ -1083,6 +1083,9 @@ function settingsPayload(): unknown {
   };
 }
 
+/** The UI's locale files, as a fixed allowlist — never joined from user input. */
+const I18N_LOCALES = ['en', 'zh', 'hi', 'es', 'pt', 'ru', 'ja', 'de'] as const;
+
 /** Body minus anything that must not be persisted, for `lastParams`. */
 function persistableParams(body: Record<string, unknown>): Record<string, unknown> {
   const { llmApiKey: _key, OPENAI_API_KEY: _envKey, ...rest } = body;
@@ -1106,6 +1109,20 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(readFileSync(uiPath));
     return;
+  }
+
+  // UI dictionaries. The path is matched against a FIXED allowlist — the file
+  // name served is always one of these eight literals, never user input — and a
+  // locale whose dictionary has not landed yet gets a harmless no-op script, so
+  // the UI falls back to English key by key instead of breaking on a 404.
+  if (method === 'GET' || method === 'HEAD') {
+    const locale = I18N_LOCALES.find((loc) => path === `/i18n.${loc}.js`);
+    if (locale) {
+      const file = fileURLToPath(new URL(`../public/i18n.${locale}.js`, import.meta.url));
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      res.end(existsSync(file) ? readFileSync(file) : '/* not translated yet */\n');
+      return;
+    }
   }
 
   if (path === '/api/repos' && method === 'GET') {

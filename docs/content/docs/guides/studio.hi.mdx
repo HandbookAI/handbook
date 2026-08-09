@@ -1,0 +1,116 @@
+---
+title: Studio — वेब UI
+description: पूरा toolchain एक ब्राउज़र टैब में, लाइव logs और one-click rollback के साथ। जानबूझकर केवल localhost।
+---
+
+```bash
+handbook studio                 # → http://127.0.0.1:4860
+handbook studio --port 5000     # or: pnpm studio --port 5000
+```
+
+CLI जैसे ही code paths, वही config resolution, डिस्क पर वही artifacts — बस इसे चलाने का
+एक अलग तरीका।
+
+**कोई build step नहीं।** UI एक हाथ से लिखी HTML फ़ाइल है, जिसमें CSS inline है और vanilla JS है।
+न कोई bundler, न कोई framework, न CDN से कुछ मँगाया जाता है। यह तुरंत लोड होता है और
+नेटवर्क केबल निकालने पर भी काम करता है।
+
+## इसमें आप क्या कर सकते हैं
+
+| क्षेत्र              | यह क्या करता है                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| **Repositories**     | एक source tree + work dir को URL-safe नाम के तहत रजिस्टर करें                       |
+| **Generate**         | पूरा parameter set, SSE पर लाइव stream होते logs, बीच run में cancel करने योग्य     |
+| **Handbook browser** | render किया गया handbook वहीं का वहीं पढ़ें                                         |
+| **Impact graph**     | कौन-सी फ़ाइलें किस stage की हैं, अंदर कौन call करता है, बाहर किसे call करता है      |
+| **Source viewer**    | किसी भी card के पीछे की असली फ़ाइल, उद्धृत की गई लाइन पर खोलें                      |
+| **Plan**             | अनुरोध टाइप करें, read-only agent को काम करते देखें, plan पढ़ें                     |
+| **Apply / rollback** | dry-run, apply, हर backup सूचीबद्ध, one-click rollback                              |
+| **Resync**           | लाइव tree के हिसाब से handbook को आगे बढ़ाएँ — कोई case directory जोड़नी नहीं पड़ती |
+| **History**          | प्रति-repo विकास: हर run ने क्या बदला, और कब                                        |
+
+## जॉब्स
+
+Generation, planning और resync **background jobs** के रूप में चलते हैं, जिनका captured log
+Server-Sent Events पर परोसा जाता है।
+
+- **एक repository पर एक समय में एक ही job।** pipeline के artifacts एक ही work dir पर
+  समवर्ती writers के लिए सुरक्षित नहीं हैं; दूसरे start को एक स्पष्ट संदेश के साथ अस्वीकार कर दिया जाता है।
+- **Cancel किया जा सकता है।** हर job के पास एक `AbortController` है, जिसका signal in-flight LLM
+  requests तक पहुँचता है। Cancel का मतलब cancel है, न कि "बस मुझे log दिखाना बंद कर दो"।
+- **Statuses:** `running` → `succeeded` | `failed` | `cancelled`। पूरा log सुरक्षित रखा जाता है,
+  इसलिए ख़त्म होने के बाद आप पढ़ सकते हैं कि क्या हुआ।
+
+## कॉन्फ़िगरेशन
+
+Studio अपनी settings **हर दूसरे command जैसी ही परतों** से resolve करता है — flags,
+environment, `.env` cascade, `handbook.config.yaml`, defaults:
+
+```bash
+handbook studio --model gpt-4o --base-url https://my-proxy/v1 --port 5000
+handbook --env prod studio
+```
+
+UI से शुरू किया गया generate job वही config file layer देखता है जो CLI देखता, इसलिए
+`detail`, `narrateLang`, `readWorkers` और बाकी सब YAML से काम करते हैं।
+
+## सुरक्षा मॉडल
+
+Studio एक **लोकल टूल** है। यह बाहरी exposure के लिए hardened नहीं है और होने का दिखावा भी नहीं करता।
+
+- **डिफ़ॉल्ट रूप से `127.0.0.1` पर bind होता है।**
+- **CSRF guard `Host` request header की जाँच करता है**, socket की नहीं। केवल loopback host
+  नाम ही पास होते हैं।
+- **`POST` के लिए `application/json` अनिवार्य है**, जो क्लासिक cross-origin HTML form
+  हमले को रोक देता है।
+- **Repository नाम** filesystem को छूने से पहले `^[A-Za-z0-9][A-Za-z0-9._-]*$` के विरुद्ध
+  **validate किए जाते हैं**, और paths को realpath-normalize किया जाता है।
+- **Source और handbook फ़ाइलों की serving** रजिस्टर किए गए roots तक **sandbox की गई है।**
+
+### कंटेनर में
+
+```bash
+pnpm run docker:studio    # docker compose up --build studio
+```
+
+published port के पहुँच में होने के लिए कंटेनर को `0.0.0.0` पर bind करना ही पड़ता है
+(`docker-compose.yml` में `HANDBOOK_STUDIO_HOST=0.0.0.0`)।
+
+<Callout type="warn" title="केवल http://localhost:4860 ही काम करता है">
+  LAN IP नहीं, container का नाम भी नहीं। host से ब्राउज़ करने पर अब भी `Host: localhost:4860` भेजा जाता है और
+  वह पास हो जाता है; LAN IP या container hostname वाले अनुरोध को **जानबूझकर** `403` के साथ अस्वीकार किया जाता
+  है। Remote access एक जानबूझकर लागू न किया गया, अलग फ़ीचर है — उसके लिए एक स्पष्ट allowlist चाहिए होती — यह
+  इस बचाव की कोई कमी नहीं है।
+</Callout>
+
+## स्टेट
+
+```text
+~/.handbook-studio/
+  studio.json        the repository registry (schema-validated on read)
+  work/<name>/       auto-created work dirs for repos that did not bring their own
+```
+
+`--state-dir` इसे कहीं और ले जाता है। बाकी सब कुछ — handbook artifacts, evolution history —
+हर repository के अपने work dir में रहता है, इसलिए state directory हटाने से registry ही जाती है,
+और कुछ भी महत्वपूर्ण नहीं।
+
+## इस पर scripting करना
+
+UI सिर्फ़ एक client है। HTTP API इतना स्थिर है कि उस पर script लिखी जा सकती है:
+
+```bash
+curl -s http://localhost:4860/api/repos | jq
+
+curl -s -X POST http://localhost:4860/api/repos \
+  -H 'content-type: application/json' \
+  -d '{"name":"api","sourceRoot":"/Users/me/code/api","workDir":"/Users/me/work/api"}'
+
+curl -s -X POST http://localhost:4860/api/repos/api \
+  -H 'content-type: application/json' \
+  -d '{"action":"analyze"}'
+
+curl -N http://localhost:4860/api/jobs/<job-id>    # SSE log stream
+```
+
+पूरी route तालिका [package README](https://www.npmjs.com/package/@handbook/studio) में है।

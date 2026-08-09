@@ -45,6 +45,15 @@ export default tseslint.config(
     },
   },
 
+  // Studio's browser-side locale dictionaries: plain scripts served to the UI
+  // shell and evaluated in a browser — `window`, not Node's globals.
+  {
+    files: ['packages/*/public/**/*.js'],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+
   // The analyzer's fixture repo is sample source for the parser, not our code.
   {
     ignores: ['examples/demo-project/**'],

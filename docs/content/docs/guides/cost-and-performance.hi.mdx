@@ -1,0 +1,206 @@
+---
+title: लागत और प्रदर्शन
+description: टोकन असल में कहाँ जाते हैं, कौन-से knobs वाक़ई फ़र्क डालते हैं, और कुछ भी खर्च करने से पहले यह कैसे पता करें।
+---
+
+## खर्च से पहले पता लगाएँ
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**मुफ़्त।** `files` की संख्या ही लागत तय करती है, क्योंकि phase 2a — सबसे महँगा
+phase — मोटे तौर पर इसी के अनुपात में बढ़ता है।
+
+## टोकन कहाँ जाते हैं
+
+| Phase                        | सामान्य run में हिस्सा | किसके साथ बढ़ता है                                           |
+| ---------------------------- | ---------------------- | ------------------------------------------------------------ |
+| **1** analyze                | 0%                     | —                                                            |
+| **2a** cards                 | **60–80%**             | फ़ाइलों की संख्या × `--detail`                               |
+| **2b** skeleton + assignment | 10–20%                 | फ़ाइलों की संख्या, और `--synth-mode doctor` के साथ कहीं अधिक |
+| **2c** organization          | 5%                     | stages की संख्या                                             |
+| **3** narration + registers  | 5–15%                  | stages की संख्या, भारी मात्रा में cached                     |
+
+**यदि आप कम खर्च करना चाहते हैं, तो phase 2a ही एकमात्र जगह है जो मायने रखती है।**
+
+## Knobs, असर के क्रम में
+
+### 1. `deep` की जगह `--detail brief`
+
+कई गुना सस्ता। Brief में purpose, role और lifecycle आते हैं; deep इसमें 120–300 शब्दों का
+walkthrough और हर function पर एक नोट जोड़ता है, और batch size को 8 फ़ाइलों से घटाकर 1
+कर देता है।
+
+```bash
+handbook generate --source $REPO --work $WORK                       # brief
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume  # upgrade later
+```
+
+### 2. `--source` को उसी तक सीमित रखें जो आपके लिए मायने रखता है
+
+Graph उसी से बनता है जो आप scan करते हैं। एक monorepo के भीतर सिर्फ़ एक service का
+दस्तावेज़ बनाना, सबका दस्तावेज़ बनाने की तुलना में कहीं कम खर्चीला है:
+
+```bash
+handbook generate --source $REPO/services/payments --work work/payments
+```
+
+### 3. `--max-chars-per-file`
+
+```bash
+handbook generate --source $REPO --work $WORK --max-chars-per-file 20000
+```
+
+यह सीमित करता है कि किसी भी एक फ़ाइल का कितना हिस्सा कभी भेजा जाएगा। Generated
+फ़ाइलें, vendored bundles और विशाल switch statements शुद्ध लागत हैं, जिनमें कोई जानकारी
+नहीं होती। `0` (डिफ़ॉल्ट) का मतलब है कोई सीमा नहीं।
+
+### 4. iterate करते समय `--llm-cache`
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+Model, prompt और options के आधार पर raw replies को cache करता है। किसी बदलाव के बाद
+फिर से चलाना लगभग मुफ़्त हो जाता है। जब आप जानबूझकर cache की अनदेखी करना चाहें, तो
+`--refresh` जोड़ें।
+
+### 5. जब तक `doctor` की ज़रूरत न हो, `--synth-mode oneshot`
+
+Doctor प्रस्ताव के कई दौर चलाता है और हर दौर में तीन critics। जब one-shot ने असंतुलित
+या अर्थहीन stages बनाए हों, तब यह सही चुनाव है; और जब नहीं बनाए हों, तब यह शुद्ध overhead है।
+
+### 6. जहाँ फ़र्क नहीं पड़ता, वहाँ सस्ता model
+
+Phases इस बात में अलग-अलग हैं कि एक मज़बूत model का उन्हें कितना फ़ायदा मिलता है:
+
+| Phase           | Model संवेदनशीलता                                            |
+| --------------- | ------------------------------------------------------------ |
+| 2a cards        | मध्यम — छोटा model भी काम-चलाऊ purposes लिख देता है          |
+| 2b skeleton     | **उच्च** — यही वह निर्णय है जिस पर पूरा handbook टिका है     |
+| 2c organization | कम — यह वैसे भी एक deterministic क्रम में degrade हो जाता है |
+| 3 narration     | मध्यम-उच्च — यही वह गद्य है जो लोग पढ़ते हैं                 |
+| `plan`          | **सर्वोच्च** — byte-exact anchors कोई रियायत नहीं देते       |
+
+चूँकि phases अलग-अलग चलते हैं, आप इन्हें मिला सकते हैं:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --model cheap-model
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --model strong-model
+```
+
+## गति
+
+लागत और गति अलग-अलग समस्याएँ हैं। ये wall-clock समय बदलते हैं, खर्च नहीं:
+
+| Flag                     | डिफ़ॉल्ट         | कब बढ़ाएँ                                        |
+| ------------------------ | ---------------- | ------------------------------------------------ |
+| `--llm-concurrency <n>`  | `16`             | आपका endpoint इसे झेल लेता है। **Global cap**    |
+| `--read-workers <n>`     | `12`             | Phase 2a bottleneck है                           |
+| `--assign-workers <n>`   | `12`             | Phase 2b bottleneck है                           |
+| `--organize-workers <n>` | `8`              | Phase 2c bottleneck है                           |
+| `--narrate-workers <n>`  | `8`              | Phase 3 bottleneck है                            |
+| `--read-batch-size <n>`  | 1 deep / 8 brief | कम, लेकिन बड़े requests। Truncation पर नज़र रखें |
+
+`--llm-concurrency` बाकी सब पर cap लगाता है। `--llm-concurrency 16` के साथ
+`--read-workers` को 40 करने पर आपको 16 ही मिलते हैं।
+
+<Callout type="warn" title="Rate limits विफलताओं जैसी दिखती हैं">
+  अगर आपको log में retries दिखें, तो `--llm-retries` बढ़ाने से पहले `--llm-concurrency` **घटाएँ**। Rate limit
+  के विरुद्ध और ज़ोर से retry करना वही टोकन दो बार खर्च करता है।
+</Callout>
+
+## एक run की लागत पढ़ना
+
+```json title="<work>/run-manifest.json"
+{
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```bash
+jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
+```
+
+यह **आख़िरी सफल** run का वर्णन करता है। विफल run पिछले manifest को अछूता छोड़ देता है;
+बीच में रोका गया run कुछ भी नहीं लिखता।
+
+## एक समझदार सीढ़ी
+
+<Steps>
+
+<Step>
+### मुफ़्त
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+फ़ाइलों की गिनती और `dropped-calls.json` जाँचें। कुछ भी खर्च करने से पहले scan ठीक करें।
+
+</Step>
+
+<Step>
+### सस्ता — क्या आकार सही है?
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+`phase2/skeleton.yaml` पढ़ें। अगर stages ग़लत हैं, तो गद्य गहरा करने से पहले उसे ठीक करें।
+
+</Step>
+
+<Step>
+### ज़रूरत हो तो संरचना ठीक करें
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+<Step>
+### संरचना सही हो जाने पर गहरा करें
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+</Step>
+
+<Step>
+### इसके लिए दोबारा कभी भुगतान न करें
+
+```bash
+handbook render ...      # free, deterministic, run in CI
+handbook skill ...       # free
+handbook validate ...    # free
+handbook resync ...      # proportional to the change
+```
+
+</Step>
+
+</Steps>
+
+## बहुत बड़ी repositories
+
+| फ़ाइलें       | सुझाव                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| 200 से कम     | सीधे `--detail deep --synth-mode doctor`                                                         |
+| 200–1,000     | पहले brief, फिर चुनिंदा रूप से गहरा करें                                                         |
+| 1,000–5,000   | Brief, `--max-chars-per-file 20000`, और हर subsystem के लिए एक अलग handbook पर विचार करें        |
+| 5,000 से अधिक | **हर subsystem के लिए एक handbook।** 5,000 फ़ाइलों पर फैला एक अकेला handbook न सस्ता है, न पठनीय |
+
+कई handbooks होना बिल्कुल ठीक है — वे बस कई work directories हैं, और कई SKILL
+packages, जिनमें से हर एक का description एक विशाल handbook के description से कहीं
+अधिक सटीक होता है।

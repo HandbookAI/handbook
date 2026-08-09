@@ -1,0 +1,189 @@
+---
+title: 'Handbook の設定'
+description: '5 つの優先順位レイヤー、1 つのレジストリ、そしてどのレイヤーが勝ったかを正確に教えてくれるコマンド。'
+---
+
+<div className="not-prose">
+  <img
+    src="/diagrams/config-cascade.svg"
+    alt="Configuration cascade: flag, environment, .env files, handbook.config.yaml, default"
+    className="rounded-xl border"
+  />
+</div>
+
+すべての設定は、1 つのレジストリテーブルで **一度だけ** 宣言されます。CLI フラグ、環境変数名、
+設定ファイルのキー、`.env.example`、`handbook.config.example.yaml`、そして
+[設定リファレンス](/docs/reference/configuration)はすべてそこから _生成_ されます —
+そのため互いにドリフトすることはあり得ず、誰かが試みればドリフトテストがビルドを失敗させます。
+
+## 優先順位(高いものから)
+
+1. **CLI フラグ** — `--read-workers 4`
+2. **シェル環境** — `HANDBOOK_GENERATE_READ_WORKERS`、次に `HANDBOOK_READ_WORKERS`、
+   次に `OPENAI_MODEL` のようなベンダーエイリアス
+3. **`.env` カスケード** — 何かが読み取る前に環境へマージされます
+4. **`handbook.config.yaml`** — cwd から上へ辿って発見され、git ルートで停止します
+5. **レジストリのデフォルト**
+
+値を供給した最初のレイヤーが勝ち、それより下のレイヤーは _その設定については_ すべて
+無視されます。
+
+## `handbook.config.yaml`
+
+リポジトリのルートに置いてコミットしてください。発見処理は作業ディレクトリから上へ辿り、
+**リポジトリ境界で停止します** — そのため、設定ファイルを持たないプロジェクトが親の設定を
+継承することはありません。
+
+```yaml title="handbook.config.yaml"
+# Paths are resolved relative to THIS FILE, so the config stays portable.
+source: ./src
+work: ./.handbook
+
+llm:
+  model: gpt-4o-mini
+  baseUrl: https://api.openai.com/v1
+  maxTokens: 16000
+  concurrency: 16
+
+generate:
+  detail: deep
+  synthMode: doctor
+  narrateLang: en
+  readWorkers: 12
+
+render:
+  title: Payments API Handbook
+  html: true
+  agentSite: true
+  llmsTxt: true
+  sourceBaseUrl: https://github.com/me/api/blob/main
+
+studio:
+  port: 4860
+```
+
+知っておくべきことが 2 つあります。
+
+- **ネストとフラット化は同じものです。** `generate: { detail: deep }` とフラットな
+  `generateDetail: deep` はまったく同じ意味になります。ファイルは読み取られる前に
+  camelCase 結合でフラット化されるからです。
+- **相対 `path` 値は設定ファイル自身のディレクトリを基準に解決されます。** cwd ではありません。
+  これこそが、コミットされた設定ファイルをどこからコマンドを実行しても機能させ続ける仕組みです。
+
+<Callout type="warn" title="シークレットはここでは拒否されます">
+  `llmApiKey` / `OPENAI_API_KEY` は設定ファイルに決して書いてはいけません —
+  設定ファイルはコミットされるからです。 ローダーはそのファイルをきっぱりと拒否し、理由を伝えます。`.env`
+  かシェル環境に置いてください。
+</Callout>
+
+始めるには `handbook.config.example.yaml` をコピーしてください。レジストリから生成されて
+いるので、実際に存在するすべてのキーが列挙されています。
+
+## コマンド単位のスコープ
+
+どの設定も、**3 つの層すべて** で同じ変換により、1 つのサブコマンドにスコープできます:
+
+```bash
+export HANDBOOK_NARRATE_LANG=en            # everywhere
+export HANDBOOK_GENERATE_NARRATE_LANG=zh   # …except generate
+```
+
+```yaml
+narrateLang: en
+generate:
+  narrateLang: zh
+```
+
+スコープ付きの形式は、常にフラットな形式より優先されます。
+
+## 複数の環境
+
+```bash
+handbook generate --env prod --source ~/code/api --work work/api
+```
+
+`--env prod`(または `HANDBOOK_ENV=prod`)は 2 つのことを行います:
+
+1. `.env.prod.local` → `.env.prod` → `.env.local` → `.env` の順にロードします。先に書いた
+   ものが勝ちます。
+2. `handbook.config.prod.yaml` をプレーンなファイルより優先します — 上へ辿る途中で訪れる
+   **すべての** ディレクトリで優先されるため、プレーンなファイルの方が近くにあっても、
+   名前付きファイルが勝ちます。
+
+典型的なレイアウト:
+
+```text
+.env                     # team baseline, committed
+.env.local               # your machine, gitignored
+.env.prod                # team prod settings, committed (no secrets)
+.env.prod.local          # your prod credentials, gitignored
+handbook.config.yaml     # defaults
+handbook.config.prod.yaml
+```
+
+`--env-file <path>` はカスケードを完全にバイパスし、指定されたその 1 ファイルだけを
+ロードします。**そこでファイルが見つからない場合はフォールバックではなく、はっきりした
+エラーになります** — 特定のファイルを要求したのはあなただからです。
+
+## 実際に何が解決されたかを尋ねる
+
+```bash
+handbook config --command generate
+```
+
+```text
+environment   prod  (--env)
+env files     .env.prod, .env
+config file   /repo/handbook.config.prod.yaml
+
+SETTING            VALUE                     FROM
+source             /Users/me/code/api        flag --source
+llmModel           gpt-4o                    env HANDBOOK_LLM_MODEL
+llmApiKey          sk-••••••                 env OPENAI_API_KEY
+readWorkers        4                         handbook.config.prod.yaml (generate.readWorkers)
+detail             deep                      handbook.config.prod.yaml (generate.detail)
+narrateLang        en                        default
+```
+
+```bash
+handbook config --json                # machine-readable
+handbook config --check               # exit 2 on the first invalid or missing value
+```
+
+<Callout title="CI には --check を入れてください">
+  変数名のタイポは、かつては「黙ってデフォルトで実行される」ことを意味していました。`--check` はそれを、
+  メッセージに変数名が明記された失敗に変えます — 生成の実行開始から 40 分後に気づくよりずっと安上がりです。
+</Callout>
+
+`config` は意図的に、例外を投げないリゾルバを使います。**その仕事は設定を表示することです。
+壊れているときも含めてです。** `--source` が欠けていても、まさにその問題をデバッグするために
+使う唯一のツールを道連れにするのではなく、目に見える `— unset (required)` の行として
+表示されます。
+
+## リゾルバが強制すること
+
+- **空の値は未設定として扱われます。** `HANDBOOK_TITLE=` が無題のハンドブックを生むことは
+  ありません。
+- **供給されたが無効な値がデフォルトへ落ちることは決してありません。** 数値のタイポは
+  エラーであって、黙って 12 になることはありません。
+- **型は境界でチェックされ**、メッセージには供給元が明記されます:
+
+  ```text
+  env HANDBOOK_READ_WORKERS: readWorkers must be an integer >= 1, got "twelve"
+  handbook.config.yaml (generate.detail): detail must be one of brief | deep, got "verbose"
+  ```
+
+- **必須かどうかはすべてのレイヤーの後にチェックされ**、エラーには供給し得るすべての方法が
+  列挙されます:
+
+  ```text
+  source is required: pass --source, set HANDBOOK_GENERATE_SOURCE,
+  or add it to handbook.config.yaml
+  ```
+
+## 完全なリファレンス
+
+<Cards>
+  <Card title="すべての設定(レジストリから生成)" href="/docs/reference/configuration" />
+  <Card title="環境変数と .env カスケード" href="/docs/reference/environment" />
+</Cards>

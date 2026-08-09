@@ -1,0 +1,153 @@
+---
+title: बदलाव का plan बनाना
+description: planner को एक request और एक handbook दें; बदले में byte-exact edit plan और वह क्या-क्या छूता है इसकी machine-readable घोषणा पाएँ।
+---
+
+```bash
+handbook plan --source <repo> --handbook <dir> --request "<text>" --out plan.md
+```
+
+planner एक **read-only** एजेंट है। यह list, read और grep करता है — इसके पास कोई write tool
+है ही नहीं, disabled भी नहीं — और इसका output एक plan है जिसे किसी और चीज़ को execute करना है।
+
+## चक्र
+
+1. handbook से route करें: कौन-सी files, functions और state दायरे में हैं?
+2. मिले हर पते पर **वास्तविक source** पढ़ें।
+3. byte-exact `old` और `new` टेक्स्ट के साथ `### EDIT n` ब्लॉक निकालें।
+4. अंत में एक JSON declarations ब्लॉक दें।
+
+<Callout title="दो artifacts, दो भूमिकाएँ">
+  **handbook** एक location index है: यह उन बिखरी, गैर-स्पष्ट जगहों को सामने लाता है जो text search से छूट जाती
+  हैं — mirror implementations, किसी state का हर read और write, cross-subsystem संपर्क-बिंदु। **वास्तविक
+  source** ही इस बात का ground truth है कि क्या बदलना है। handbook पता देता है; उस पते पर मौजूद कोड bytes देता
+  है।
+</Callout>
+
+## अच्छा request लिखना
+
+| कमज़ोर                 | मज़बूत                                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| "upload का बग ठीक करो" | "503 से विफल होने वाले uploads को error दिखाने से पहले exponential backoff के साथ तीन बार retry करना चाहिए" |
+| "logging जोड़ो"        | "हर पूर्ण HTTP request पर मौजूदा logger का उपयोग करते हुए request id और अवधि को INFO स्तर पर log करो"       |
+| "इसे तेज़ बनाओ"        | "`resolveTenant` के परिणाम को tenant id की key से 60 सेकंड के लिए cache करो"                                |
+
+**जो व्यवहार आप चाहते हैं** वह बताएँ, वह फ़ाइल नहीं जिसमें आपको लगता है कि वह है। फ़ाइल का नाम
+देने से planner की खोज उसी जगह तक सिमट जाती है जिसके बारे में आप पहले ही सोच चुके हैं — जिससे
+पूरा उद्देश्य ही विफल हो जाता है।
+
+## plan को पढ़ना
+
+````markdown
+### EDIT 1
+
+- file: `src/upload.py`
+- where: `Uploader.send (~88)` — wrap the request in the retry helper
+
+```old
+    response = self._client.put(url, data)
+```
+
+```new
+    response = self._retry(lambda: self._client.put(url, data), attempts=3)
+```
+
+### EDIT 2
+
+- file: `src/upload.py`
+- where: `Uploader` — add the helper
+
+```old
+    def send(self, url, data):
+```
+
+```new
+    def _retry(self, call, attempts):
+        last = None
+        for _ in range(attempts):
+            try:
+                return call()
+            except TransientError as exc:
+                last = exc
+        raise last
+
+    def send(self, url, data):
+```
+
+Both call sites now share one retry policy.
+
+```json
+{ "will_modify": ["Uploader.send"], "will_add": ["Uploader._retry"], "will_remove": [] }
+```
+````
+
+इस फ़ॉर्मैट के नियम:
+
+- `old` **byte-exact** होना चाहिए और फ़ाइल में **ठीक एक बार** आना चाहिए।
+- **खाली** `old` का अर्थ है "यह फ़ाइल बनाओ"।
+- edits क्रमांकित होते हैं और ऊपर से नीचे **बढ़ते क्रम** में चलते हैं।
+- अंत का `json` ब्लॉक `resync` उपयोग करता है, ताकि वह अपने refresh दायरे को और सटीक कर सके।
+
+**plan को apply करने से पहले पढ़ें।** dry run बताता है कि यह apply _हो सकता_ है या नहीं; यह
+apply _होना चाहिए_ या नहीं, यह केवल आप बता सकते हैं।
+
+## जब यह हार मान लेता है
+
+`plan` **non-zero exit करता है** — यह `plan.md` में कोई माफ़ीनामा नहीं लिखता, जिसे कोई script
+`apply` में भेज दे।
+
+| `aborted`     | क्या हुआ                                                                                   | क्या करें                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `fabrication` | जवाब ने तीन बार `## Tool result` सेक्शन गढ़े — यह काल्पनिक फ़ाइल सामग्री पर तर्क कर रहा था | कोई मज़बूत model इस्तेमाल करें। उस run की कोई भी चीज़ भरोसेमंद नहीं है                              |
+| `turn-limit`  | बिना किसी EDIT ब्लॉक के turns समाप्त हो गए                                                 | `--max-turns` बढ़ाएँ, या request का दायरा घटाएँ                                                     |
+| `no-plan`     | `finish` को बिना किसी उपयोगी चीज़ के call किया                                             | आम तौर पर ऐसा request जिसे कोड बदलाव चाहिए ही नहीं, या इतना अस्पष्ट कि उसे स्थानीयकृत न किया जा सके |
+
+<Callout type="warn" title="fabrication को सिरे से क्यों ख़ारिज किया जाता है">
+  देखे गए एक जवाब में तेरह गढ़े हुए tool results थे और एक plan ऐसी पंक्ति पर बना था जो फ़ाइल में मौजूद ही नहीं
+  है। planner उस जवाब को पूरी तरह अस्वीकार करता है — **उसके अंत में दिए गए plan समेत**, क्योंकि वह plan कल्पना
+  से निकला था।
+</Callout>
+
+## इसे tune करना
+
+| फ़्लैग             | डिफ़ॉल्ट      | कब बदलें                                                              |
+| ------------------ | ------------- | --------------------------------------------------------------------- |
+| `--max-turns <n>`  | `30`          | बड़े repo या व्यापक बदलाव के लिए बढ़ाएँ; लागत सीमित करने के लिए घटाएँ |
+| `--model <id>`     | `gpt-4o-mini` | यही वह command है जिसे मज़बूत model से सबसे अधिक फ़ायदा होता है       |
+| `--handbook <dir>` | —             | इसे हमेशा दें। इसके बिना planner अंधेरे में खोजबीन करता है            |
+| `--out <file>`     | _(stdout)_    | pipe करने के लिए इसे छोड़ दें                                         |
+
+## बिना handbook के
+
+```bash
+handbook plan --source ~/code/api --request "…"
+```
+
+यह काम करता है — planner सीधे source की खोजबीन पर उतर आता है — लेकिन यह degraded mode है।
+handbook का अस्तित्व ठीक इसीलिए है क्योंकि बिना मार्गदर्शन की खोजबीन स्पष्ट जगहों को तो ढूँढ
+लेती है, पर बिखरी हुई जगहों को छोड़ देती है।
+
+## sandbox क्या अनुमति देता है
+
+```ts
+list_dir(path)
+read_file(path, start_line?, end_line?)
+grep(pattern, path)
+finish(plan)
+```
+
+- हर path sandbox root के अंदर ही resolve होता है; बाहर निकलने के रास्ते, symlinks के ज़रिए
+  भी, अस्वीकार किए जाते हैं।
+- handbook `__handbook__/` पर read-only mount होता है — source से **अलग** sandbox।
+- reads की सीमा 60,000 अक्षर है; grep की सीमा 100 hits है और यह 5 MB से बड़ी files को छोड़
+  देता है।
+- विनाशकारी regexes — किसी ऐसे group पर असीमित quantifier जिसके अंदर पहले से एक quantifier
+  हो, जैसे `(a+)+` या `(.*)*` — run को अटकाने के बजाय एक शालीन tool error के साथ अस्वीकार
+  कर दिए जाते हैं।
+
+## आगे
+
+<Cards>
+  <Card title="plan को सुरक्षित रूप से apply करना" href="/docs/guides/applying-changes" />
+  <Card title="handbook को अद्यतन रखना" href="/docs/guides/keeping-current" />
+</Cards>

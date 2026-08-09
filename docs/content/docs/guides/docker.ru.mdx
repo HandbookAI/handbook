@@ -1,0 +1,143 @@
+---
+title: 'Docker'
+description: 'Запустите весь тулчейн без локальной установки Node — включая Studio, и один образ для всех окружений.'
+---
+
+Образ — это Node 22 (намеренно **не** 24 — см. Dockerfile) плюс собранные пакеты.
+
+```bash
+pnpm run docker:build      # docker build -t handbook:local .
+```
+
+## Запуск команд
+
+`HANDBOOK_SOURCE=/src` и `HANDBOOK_WORK=/work` зашиты в образ, поэтому вы только
+монтируете тома — `--source` и `--work` не нужны:
+
+```bash
+# free, no key
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
+
+# with an endpoint
+docker run --rm --env-file .env \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate --detail deep
+
+# render, then get the output back out
+docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local render --html --agent-site --llms-txt
+docker run --rm -v handbook-work:/work -v "$PWD/out:/out" \
+  --entrypoint cp handbook:local -R /work/handbook /out/
+```
+
+Монтировать исходники **только для чтения** (`:ro`) — хорошая привычка для всего, кроме
+`apply`.
+
+## Переменные окружения
+
+Собственный докеровский `--env-file` накладывается **поверх** загрузки `.env` самим
+тулчейном — работают оба, и переменная `OPENAI_*`, переданная таким способом, видна ровно
+так же, как экспорт в оболочке.
+
+```bash
+docker run --rm --env-file .env -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+### Один образ — каждое окружение
+
+Файлы `.env*` **никогда не запекаются в образ** — см. `.dockerignore`. Выбирайте
+окружение во время запуска:
+
+```bash
+docker run --rm --env-file .env.prod -e HANDBOOK_ENV=prod \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  handbook:local generate
+```
+
+Или смонтируйте конфигурационный файл:
+
+```bash
+docker run --rm \
+  -v "$PWD:/src:ro" -v handbook-work:/work \
+  -v "$PWD/handbook.config.prod.yaml:/cfg.yaml:ro" \
+  handbook:local --config /cfg.yaml generate
+```
+
+## Studio
+
+```bash
+pnpm run docker:studio     # docker compose up --build studio
+```
+
+Затем откройте **`http://localhost:4860`**.
+
+<Callout type="warn" title="Работает только localhost — не IP из LAN и не имя контейнера">
+  Защита Studio от CSRF проверяет **заголовок запроса** `Host`, а не сокет. Контейнер
+  обязан слушать `0.0.0.0`, чтобы опубликованный порт вообще был достижим
+  (`HANDBOOK_STUDIO_HOST=0.0.0.0` в compose-файле), **но это не расширяет круг тех, кто
+  может с ним говорить.** Обращение из браузера на хосте по-прежнему отправляет
+  `Host: localhost:4860` и проходит; запрос с IP из LAN или именем хоста контейнера
+  `studio` отклоняется с `403` — так задумано.
+
+Удалённый доступ — это намеренно нереализованная отдельная возможность (ей понадобился
+бы явный список разрешённых), а не изъян этой защиты.
+
+</Callout>
+
+```yaml title="docker-compose.yml (excerpt)"
+services:
+  studio:
+    build: .
+    command: studio
+    environment:
+      HANDBOOK_STUDIO_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:4860:4860'
+    volumes:
+      - ./:/src:ro
+      - handbook-work:/work
+```
+
+Публикация порта как `127.0.0.1:4860:4860`, а не `4860:4860`, дополнительно убирает его с
+вашего LAN-интерфейса — двойная страховка поверх проверки заголовка Host.
+
+## Тома
+
+| Путь    | Содержимое             | Рекомендация                                |
+| ------- | ---------------------- | ------------------------------------------- |
+| `/src`  | Ваше дерево исходников | Монтируйте `:ro` для всего, кроме `apply`   |
+| `/work` | Артефакты Handbook     | Именованный том, чтобы он переживал запуски |
+
+## В CI
+
+```yaml title=".github/workflows/handbook.yml"
+jobs:
+  handbook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t handbook:ci .
+      - run: |
+          docker run --rm \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci generate --detail brief
+      - run: |
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/work:/work" \
+            handbook:ci render --html --agent-site --llms-txt
+      - uses: actions/upload-artifact@v4
+        with: { name: handbook, path: work/handbook }
+```
+
+`analyze`, `render`, `skill` и `validate` вообще не требуют ключа, поэтому безопасный для
+форков воркфлоу может выполнять их на каждом pull request, а `generate` приберечь для
+`main`.
+
+## Почему Node 22, а не 24
+
+Одна из встроенных грамматик tree-sitter (Swift) аварийно завершает процесс на V8 ≥ 13.
+Node 22 находится ниже этой границы, поэтому образу не нужны специальные флаги. На
+Node 24 адаптер отказывает на этапе обнаружения и просит передать `--liftoff-only`;
+закрепление образа на 22 снимает вопрос целиком. См.
+[Поддержка языков](/docs/reference/languages).

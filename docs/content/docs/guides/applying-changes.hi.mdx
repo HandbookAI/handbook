@@ -1,0 +1,175 @@
+---
+title: Apply करना और rollback करना
+description: चार सुरक्षा नियमों वाला एक यांत्रिक निष्पादक, ऐसा backup जो साबित कर सकता है कि वह क्या बहाल करता है, और ऐसा parser जो हर अस्पष्ट चीज़ को अस्वीकार कर देता है।
+---
+
+```bash
+handbook apply --source <repo> --plan plan.md --dry-run   # verify only
+handbook apply --source <repo> --plan plan.md             # for real
+handbook rollback --backup <dir>                          # undo
+```
+
+**कोई LLM शामिल नहीं है।** `apply` सटीक टेक्स्ट की जगह सटीक टेक्स्ट रखता है। इसकी हर
+दिलचस्प बात वही है, जो यह करने से इनकार करता है।
+
+## पहले हमेशा dry-run करें
+
+```bash
+handbook apply --source $REPO --plan plan.md --dry-run
+```
+
+```json
+{
+  "ok": true,
+  "dryRun": true,
+  "outcomes": [
+    { "index": 1, "file": "src/upload.py", "where": "Uploader.send (~88)", "status": "applied", "line": 88 },
+    { "index": 2, "file": "src/upload.py", "where": "Uploader", "status": "applied", "line": 71 }
+  ],
+  "changedFiles": [],
+  "problems": []
+}
+```
+
+`ok: true` का अर्थ है कि हर anchor resolve हो गया। `changedFiles` खाली है क्योंकि कुछ भी
+लिखा नहीं गया। **`--dry-run` फ़ाइलसिस्टम को कभी नहीं छूता।**
+
+## चार सुरक्षा नियम
+
+### 1. पहले सब कुछ सत्यापित करें, फिर दो चरणों में लिखें
+
+plan को पहले फ़ाइलों की मौजूदा सामग्री के विरुद्ध resolve किया जाता है। एक byte लिखे जाने से
+पहले ही **एक भी विफलता पूरी प्रक्रिया रोक देती है**। इसके बाद write हर फ़ाइल को temp फ़ाइल
+के रूप में stage करता है और तभी rename करता है जब _सारी_ staging सफल हो चुकी हो — और अगर
+कोई rename बीच में विफल हो जाए, तो पहले से rename हो चुकी files क्षण भर पहले लिए गए backup
+से बहाल कर दी जाती हैं।
+
+कोई ऐसी स्थिति नहीं होती जिसमें आधा plan लागू हुआ हो।
+
+### 2. `old` का मिलान byte-exact और अद्वितीय होना चाहिए
+
+| मिलान | परिणाम                                                    |
+| :---: | --------------------------------------------------------- |
+|   0   | `no-match` — plan लिखे जाने के बाद से कोड आगे बढ़ चुका है |
+|   1   | applied                                                   |
+|  2+   | `ambiguous` — anchor किसी एक ही स्थान की पहचान नहीं करता  |
+
+दोनों विफलताएँ इनकार करती हैं। **कोई भी एक को चुनता नहीं।** "पहली occurrence ले लो" ठीक
+वही तरीका है जिससे कोई patch गलत function में जा गिरता है।
+
+### 3. हर छुई गई फ़ाइल का backup उसके pre-patch hash के साथ लिया जाता है
+
+```text
+<source>/.handbook-patches/
+  .gitignore                     written automatically — backups never enter git
+  2026-08-08T14-05-11-204Z/
+    manifest.json                source root, timestamp, per-file pre/post hashes
+    files/…                      the original bytes
+```
+
+यही hash rollback को यह **साबित** करने देता है कि वह वही bytes बहाल कर रहा है जिन्हें इस
+patch ने बदला था — केवल फ़ाइल-नाम पर भरोसा नहीं करना पड़ता।
+
+### 4. कोई path source root से बाहर नहीं निकलता
+
+`..`, absolute paths, drive-absolute Windows paths — और **symlinked parent directory** के
+ज़रिए बाहर निकलना, जब फ़ाइल स्वयं अभी मौजूद न हो। यह आख़िरी वाला ही सूक्ष्म मामला है:
+realpath सबसे गहरे _मौजूद_ ancestor पर लिया जाता है, इसलिए कोई अनुपस्थित leaf इस जाँच को
+टाल नहीं सकती। symlinked लक्ष्यों को कभी बदला नहीं जाता।
+
+## परिणाम की स्थितियाँ
+
+| स्थिति         | अर्थ                                                   |
+| -------------- | ------------------------------------------------------ |
+| `applied`      | बदल दिया गया, उस 1-based पंक्ति के साथ जहाँ `old` मिला |
+| `created`      | `old` खाली था; फ़ाइल बनाई गई                           |
+| `no-match`     | `old` फ़ाइल में नहीं है                                |
+| `ambiguous`    | `old` एक से अधिक बार आता है                            |
+| `file-missing` | `old` खाली नहीं, पर ऐसी कोई फ़ाइल ही नहीं              |
+| `not-a-file`   | path एक directory या symlink है                        |
+| `unsafe-path`  | path source root से बाहर निकलता है                     |
+| `undecodable`  | फ़ाइल वैध UTF-8 नहीं है                                |
+| `skipped`      | पहले की किसी विफलता ने run रोक दिया                    |
+
+`ok` false होने पर `apply` **exit `2` करता है**।
+
+## Rollback करना
+
+```bash
+handbook rollback --backup $REPO/.handbook-patches/2026-08-08T14-05-11-204Z \
+                  --source $REPO
+```
+
+- **patch के बाद बदली गई किसी भी फ़ाइल के लिए इनकार करता है।** उसका वर्तमान hash अब
+  manifest के post-patch hash से मेल नहीं खाता, जिसका अर्थ है कि तब से किसी ने उसे संपादित
+  किया है — उसे बहाल करना उस काम को चुपचाप नष्ट कर देता। `--force` इसे override करता है,
+  जान-बूझकर स्पष्ट रूप से।
+- **`--source` दूसरी दिशा की रक्षा करता है:** rollback को किसी दूसरे tree से लिए गए backup
+  की ओर इंगित करना एक गलती है, कोई सुविधा नहीं।
+- **File modes, line endings और अंतिम newline पूरी प्रक्रिया में सुरक्षित रहते हैं।**
+  patcher किसी ऐसी चीज़ को normalize नहीं करता जिसे बदलने के लिए उससे कहा नहीं गया।
+- **rollback ने स्वयं जो खाली directories बनाईं, वे साफ़ कर दी जाती हैं।**
+
+```bash
+ls -1t $REPO/.handbook-patches/     # newest first
+```
+
+## parser अस्पष्टता के प्रति इतना कठोर क्यों है
+
+fence tracking backtick और tilde दोनों fences के लिए CommonMark का पालन करती है: N markers
+की श्रृंखला से खुला block केवल उसी पंक्ति पर बंद होता है जिसकी श्रृंखला ≥ N हो _और_ जिस पर
+कोई info string न हो। इसलिए किसी fenced क्षेत्र के अंदर `### EDIT n` **content है, कभी
+heading नहीं** — कोई plan जो उदाहरण के तौर पर edit उद्धृत करता है, run में कोई छद्म edit
+नहीं घुसा सकता।
+
+| अस्वीकृत                                                                            | संदेश आपको बताता है                                                                    |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| किसी edit के fenced blocks के बीच content                                           | किसी भीतरी fence ने शायद `old`/`new` को जल्दी बंद कर दिया — उन्हें लंबे fence से खोलें |
+| एक untagged ``` block                                                               | वही कारण; वह जहाँ भी हो, अस्वीकृत — ताकि कोई कटा-फटा anchor "epilogue" बनकर न निकल जाए |
+| ठीक एक `old` और एक `new` नहीं                                                       | उसे हर एक की कितनी मिलीं                                                               |
+| `old` से पहले `new`                                                                 | पहले anchor लिखें, फिर प्रतिस्थापन                                                     |
+| `old` और `new` एक समान                                                              | करने को कुछ नहीं                                                                       |
+| `- file:` पंक्ति अनुपस्थित या दोहराई गई                                             | ठीक एक आवश्यक है                                                                       |
+| edit की संख्याएँ क्रम से बाहर या दोहराई गईं                                         | उन्हें बढ़ते क्रम में होना चाहिए                                                       |
+| whitespace, backticks, control characters, backslashes, `~` या आरंभिक `/` वाला path | उसने कौन-सा नियम तोड़ा                                                                 |
+| क़रीब-क़रीब heading जैसा कुछ (`## EDIT 1`)                                          | यह heading जैसा दिखता है पर `### EDIT <n>` नहीं है                                     |
+
+अंतिम `old`/`new` जोड़ी के **बाद** आने वाला गद्य और declarations ब्लॉक अपेक्षित output हैं
+और उन्हें अनदेखा किया जाता है, अस्वीकार नहीं।
+
+## हाथ से plan लिखना
+
+ज़रूरी नहीं कि plan `handbook plan` से ही आए। यह फ़ॉर्मैट इतना छोटा है कि सीधे लिखा जा सकता
+है, जिससे `apply` अपने आप में एक उपयोगी यांत्रिक patcher बन जाता है:
+
+````markdown
+### EDIT 1
+
+- file: `src/config.py`
+- where: `DEFAULTS` — bump the timeout
+
+```old
+TIMEOUT_SECONDS = 30
+```
+
+```new
+TIMEOUT_SECONDS = 60
+```
+````
+
+apply किए बिना इसे lint करें:
+
+```ts
+import { parsePlan } from '@handbook/patcher';
+console.log(parsePlan(planText).problems);
+```
+
+## लागू होने के बाद
+
+handbook अब कोड से पीछे है। इसे आगे बढ़ाएँ:
+
+```bash
+handbook resync --case cases/upload-retry --work work/api
+```
+
+देखें [इसे अद्यतन रखना](/docs/guides/keeping-current)।

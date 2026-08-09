@@ -1,0 +1,183 @@
+---
+title: 'エージェント向けのパッケージング'
+description: 'レンダリング済みハンドブックをドリフト検出付きの SKILL パッケージに変換し、コーディングエージェントに組み込みます。'
+---
+
+```bash
+handbook skill --handbook <rendered-dir> --out <skill-dir> --name <slug> [options]
+handbook validate --skill <skill-dir> --source <repo>
+```
+
+どちらも決定的です。**LLM は使いません。**
+
+## ビルドする
+
+```bash
+handbook skill \
+  --handbook work/api/handbook \
+  --out skills/api \
+  --name api \
+  --project "Payments API" \
+  --work work/api \
+  --source ~/code/api \
+  --agent-dir work/api/handbook/agent
+```
+
+| フラグ                | 使う理由                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `--work` + `--source` | **ファイルごとのコンテンツハッシュ** を持つ `coverage.json` を生成します — ドリフトのシグナルです |
+| `--agent-dir`         | ロケータページを同梱し、ルーティングプロトコルに曖昧さ解消のステップを追加します                  |
+| `--project`           | 本文で使われる人間向けの名前。デフォルトは `--name` です                                          |
+| `--lang zh`           | 中国語の **本文**。frontmatter は英語のままです — 後述                                            |
+
+## 得られるもの
+
+```text
+skills/api/
+  SKILL.md                    the routing guide
+  corrections.jsonl           agent-written feedback (created by the agent, never the build)
+  references/
+    overview.md               the system's shape
+    index.md                  every subsystem → its files
+    registers.md              cross-stage state
+    stages/<id>.md            one page per stage
+    agent/how_to_use.md
+    agent/disambiguation.md
+    coverage.json             file → stage + sha256
+```
+
+パッケージは **自己完結していて共有可能** であり、ソースコードを埋め込むことは決して
+ありません。同梱するのは地図であって、土地そのものではありません。
+
+## SKILL.md の契約
+
+```yaml
+---
+name: api-handbook
+description: Navigate the Payments API codebase by behavior and source location. Use when
+  planning, implementing, debugging, or reviewing Payments API work that is unfamiliar,
+  spans multiple files, or may affect cross-cutting state. Do not use for tasks unrelated
+  to Payments API or isolated edits where the exact file is already known and no
+  cross-cutting impact is plausible.
+---
+```
+
+<Callout type="warn" title="--lang zh を指定しても frontmatter は英語のままです">
+  エージェントランタイムは description テキストとのマッチングでスキルを選択し、検証済みの「Use when … / Do not
+  use …」契約はそのルーティング面の一部です。これを翻訳すると選択が静かに壊れます。本文は翻訳されますが、
+  ルーティング面は翻訳されません。
+</Callout>
+
+本文は番号付きのプロトコルです:
+
+1. `references/overview.md` を読んでシステムの形を把握する。
+2. `references/index.md` を通じてルーティングする — ステージインデックスがすべてのサブシステムを
+   そのファイル群に対応付けます。
+3. 関係のある `references/stages/<id>.md` ページだけを開く。
+4. 横断的な状態は `references/registers.md` で確認する — 広範囲に波及する変更では非常に有用です。
+5. _(`--agent-dir` 使用時)_ 用語が曖昧な場合は曖昧さを解消する。
+6. **変更を提案・実施する前に、引用されたすべてのパスの実際のソースを `read_file` で読む。**
+
+そして最初の行に、最も重要なことが書かれています:
+
+> このハンドブックはコードベースの **ロケーションインデックス** であって、コードの説明では
+> ありません。
+
+## ドリフト検出
+
+```json title="references/coverage.json"
+{
+  "schemaVersion": 1,
+  "summary": { "eligibleFiles": 412, "stages": { "stage-1": 37, "stage-2": 54 } },
+  "files": [{ "path": "src/upload.py", "stage": "stage-3", "sha256": "9f2c…" }]
+}
+```
+
+```bash
+handbook validate --skill skills/api --source ~/code/api
+```
+
+は、生きているソースを再ハッシュし、内容が変わったすべてのファイルについて警告します。
+失敗時は **終了コード `2`** なので、そのまま CI に入れられます:
+
+```yaml
+- run: handbook validate --skill skills/api --source .
+  continue-on-error: true # a warning, not a build break — then schedule a resync
+```
+
+## 修正ループ
+
+ハンドブックの記述が実際のソースと矛盾する場合、エージェントは **スキルルート** の
+`corrections.jsonl` に 1 行追記します:
+
+```json
+{
+  "file": "src/engine.py",
+  "page": "references/stages/stage-2.md",
+  "claim": "spin() is defined in src/main.py",
+  "actual": "spin() is defined in src/engine.py",
+  "notedAt": "2026-08-08T12:00:00Z"
+}
+```
+
+必須なのは `file` だけです。このファイルはルートに置かれ、決して `references/` の下には
+置かれません。プランナーはそのツリーを読み取り専用でマウントするからです。
+
+```bash
+handbook resync --case cases/x --work work/api --corrections skills/api/corrections.jsonl
+```
+
+指名されたファイルは、**バイト列が一切変わっていなくても** リフレッシュ対象に加わります —
+ソースと矛盾する記述があること自体が、そのファイルを再記述する十分な理由だからです。
+消費された修正ファイルはタイムスタンプ付きでアーカイブされるため、同じ修正が二度適用される
+ことはありません。
+
+リビルドは、クリーン処理をまたいで未処理の修正を保持します。
+
+## エージェントへの組み込み
+
+### Claude Code
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/api .claude/skills/api-handbook
+```
+
+エージェントは frontmatter の description によってこれを拾い上げます。
+
+### ファイルシステムを持つ任意のエージェント
+
+ディレクトリを指し示し、まず `SKILL.md` を読むように伝えてください。中のプロトコルは
+自己記述的で、特定のランタイムには依存しません。
+
+### プランナー
+
+```bash
+handbook plan --source ~/code/api --handbook skills/api/references \
+  --request "Retry failed uploads three times" --out plan.md
+```
+
+`--handbook` には `references/` ディレクトリを渡します。これはプランナーのサンドボックス内で
+`__handbook__/` に読み取り専用でマウントされます。
+
+## ビルドが強制する拒否
+
+- **`--out` はハンドブックディレクトリやその祖先であってはなりません。** ビルドは最初に
+  `--out` を消去します。それを許すと、パッケージ化しようとしているものそれ自体を削除し、
+  黙って空のスキルを生成してしまいます。
+- **ロケータページはペアで同梱されるか、まったく同梱されないかのどちらかです。** `SKILL.md` が
+  存在しないファイルへルーティングすることは決してあってはなりません。
+- **状態レジスタのページは常に存在します。** レジスタが 1 つもないハンドブックでも同様です。
+  安定した参照レイアウトは契約の一部だからです。
+
+## 鮮度を保つ
+
+```bash
+handbook resync --case cases/latest --work work/api    # roll the handbook forward
+handbook skill  --handbook work/api/handbook --out skills/api --name api \
+                --work work/api --source ~/code/api --agent-dir work/api/handbook/agent
+handbook validate --skill skills/api --source ~/code/api
+```
+
+再同期はインクリメンタルで、`skill` と `validate` は無料です。この一連の流れは、
+スケジュール実行できるほど安価です。

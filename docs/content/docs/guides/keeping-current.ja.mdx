@@ -1,0 +1,166 @@
+---
+title: '最新に保つ'
+description: '再同期は古いコールグラフを新しいものと突き合わせ、実際に変わったものだけを再生成します。3 ファイル触れたら、3 ファイル分の支払いです。'
+---
+
+```bash
+handbook resync --case <case-dir> --work <workdir>
+```
+
+ドキュメントが腐るのは、更新に執筆と同じだけのコストがかかるからです。再同期は、更新を
+**変更に比例したもの** にします。
+
+## ケースの契約
+
+**ケース** とは、あなたが組み立てるディレクトリです。それは 2 つの問いに答えます:
+_コードは今どうなっているか_、そして _その変更は何のはずだったか_ です。
+
+```text
+cases/upload-retry/
+  edited/       the changed source tree             REQUIRED
+  plan.md       what the change was                 optional — SHARPENS the scope
+  change.diff   unified diff vs the previous tree   optional — WIDENS the scope
+```
+
+```bash
+mkdir -p cases/upload-retry
+cp -R $REPO cases/upload-retry/edited
+cp plan.md cases/upload-retry/
+git -C $REPO diff HEAD~1 > cases/upload-retry/change.diff
+
+handbook resync --case cases/upload-retry --work work/api
+```
+
+<Callout title="宣言と diff は対象集合を広げることしかできません">
+  グラフの diff が下限です: ファイルのバイト列が変わっていれば、プランがそれに言及していようがいまいが
+  リフレッシュされます。**自らの影響範囲を過少申告するプランが、古いページを生むことはできません。**
+</Callout>
+
+**空** の `change.diff` は「何もすることがない」を意味し、その実行は「すべてが変わった」と
+扱われるのではなく、きれいにスキップされます。
+
+## 実際に行うこと
+
+1. 編集済みツリーを再解析する — 新しい Phase 1 グラフ。
+2. 旧グラフと新グラフを diff する → 変更 / 追加 / 削除されたファイル。
+3. 変更・追加されたファイルのカードを再生成する。
+4. 追加ファイルを割り当て、削除ファイルを落とし、バケットを整合させる。
+5. 影響を受けたステージの編成を再構築する — 決定的で、LLM なし。
+6. 影響を受けたステージとシステム概要を再ナレーションする。コンテンツハッシュのキャッシュに
+   より、影響のないステージは一切再ナレーションされません。
+7. 状態レジスタをリフレッシュする。
+8. `<work>/handbook` 配下のレンダリング済み出力をリフレッシュする(スキップするには
+   `--no-render`)。
+
+```json title="stdout"
+{
+  "skipped": false,
+  "changedFiles": ["src/upload.py"],
+  "addedFiles": [],
+  "deletedFiles": [],
+  "affectedStages": ["stage-3"],
+  "cardsRegenerated": 1,
+  "narrated": true,
+  "rendered": ["work/api/handbook/overview.md", "work/api/handbook/stage-3.md"]
+}
+```
+
+## diff は何を捕まえるか
+
+| シグナル               | 検出するもの                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| **コンテンツハッシュ** | 行番号もシグネチャも変えない、その場での本体編集 — 構造的な diff が完全に見逃すケースです |
+| 関数の集合             | 追加・削除・リネームされた関数                                                            |
+| シグネチャと行範囲     | 形の変わった関数                                                                          |
+| 呼び出しエッジ         | 新規または削除された関係。触れていないファイルへの出入りも含みます                        |
+| ファイルの集合         | 追加・削除されたファイル                                                                  |
+
+ファイルごとのハッシュは、まさにこの目的のために Phase 1 が刻印したものです。それ以前の
+グラフは構造にフォールバックします — 劣化はしますが、決して間違いにはなりません。
+
+## エンドポイントなしで作業する
+
+```bash
+handbook resync --case cases/x --work work/api --no-llm
+```
+
+構造的な事実はリフレッシュされます — コールグラフ、関数の一覧、割り当て、順序 — そして、
+影響を受けたすべてのカードの目的欄に ` (stale: code changed since narration)` が追記されます。
+
+**これが誠実な劣化です。** その代替 — 文章に手を付けず、印も付けないこと — は、静かに嘘を
+つくハンドブックです。
+
+## 修正をフィードバックする
+
+```bash
+handbook resync --case cases/x --work work/api \
+  --corrections skills/api/corrections.jsonl
+```
+
+`corrections.jsonl` で指名されたファイルは、**バイト列が一切変わっていなくても** リフレッシュ
+対象に加わります。ソースと矛盾する記述があること自体が、そのファイルを再記述する十分な理由
+だからです。消費されたファイルはその後タイムスタンプ付きでアーカイブされるため、同じ修正が
+二度適用されることはありません。
+
+不正な形式の行は `report.corrections.problems` に報告され、決して致命的にはなりません —
+1 つのエージェントが書いた 1 つの不正な行が、リフレッシュを妨げてはならないからです。
+
+## 詳細度と言語は据え置き
+
+`--detail` と `--narrate-lang` は **デフォルトでは未設定** であり、未設定は _「このハンド
+ブックの現状に合わせる」_ を意味します。再同期が deep なハンドブックを黙って brief に格下げ
+したり、中国語のハンドブックを英語に切り替えたりすることはありません。
+
+深さや言語を本当に変えたいときにだけ、明示的に渡してください — その場合、すべてのカードが
+再生成されるまではハンドブックが混在状態になることを覚悟してください。
+
+## 代わりに再生成すべきとき
+
+再同期は **派生** レイヤーを前へ進めます。_構造_ を変えるべきときは再生成してください:
+
+| 状況                                       | やること                                             |
+| ------------------------------------------ | ---------------------------------------------------- |
+| 少数のファイルが変わった                   | `resync`                                             |
+| リファクタでコードがモジュール間を移動した | `resync` — グラフの diff が対応します                |
+| まったく新しいサブシステムを追加した       | `resync` の後、スケルトンがまだ合っているか確認する  |
+| スケルトンがもうシステムを記述していない   | `generate --phase 2b,2c,3 --synth-mode doctor`       |
+| ナレーションの言語や深さを変えた           | `generate --phase 2a` / `--phase 3 --refresh`        |
+| リポジトリの半分が書き直された             | `generate` をゼロから — 巨大な再同期より安上がりです |
+
+## 自動化する
+
+```yaml title=".github/workflows/handbook-resync.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - run: |
+          mkdir -p case
+          cp -R . case/edited
+          git diff HEAD~1 > case/change.diff
+      - run: handbook resync --case case --work work/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - run: handbook validate --skill skills/api --source .
+```
+
+再同期をプログラムから駆動する場合は、`edited/` を完全に省くこともできます: 代わりに
+`editedRoot` オプションで生きているツリーを指し示します。Studio がリポジトリをコピーせずに
+その場で再同期を実行するのは、この方法によるものです。
+
+## 安全性
+
+- **`generate` と同じディレクトリロック** を使うため、再同期が同じ成果物に対する並行生成と
+  交錯することはあり得ません。
+- **Phase 1 のステージング領域は常にクリーンアップされます** — `<case>/.resync-phase1` が
+  呼び出しより長生きすることは、成功時も失敗時もありません。
+- **削除されたファイルのカードは取り除かれる** ため、削除済みファイルがハンドブックに
+  居座ることはできません。
+- **キャンセル可能** — `AbortSignal` はステップ間でチェックされ、すべての LLM パスに
+  引き渡されます。

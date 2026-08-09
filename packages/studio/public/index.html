@@ -110,6 +110,7 @@
   .tabs button.cur{background:var(--card2);color:var(--gold-hi);font-weight:600}
   .hright{display:flex;gap:6px;flex:none}
   .hright button{padding:5px 10px;font:11.5px var(--mono);letter-spacing:.06em}
+  .hright select{width:auto;padding:4px 8px;font:11.5px var(--mono)}
   .jobchip{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 55%,transparent)}
   .jobchip[hidden]{display:none}
   .jobchip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);
@@ -347,9 +348,11 @@
   details.adv{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px}
   details.adv summary{cursor:pointer;font:10.5px var(--mono);letter-spacing:.18em;color:var(--ice)}
   details.adv summary:hover{color:var(--gold-hi)}
-  dialog label.ck{display:inline-flex;align-items:center;gap:7px;margin:12px 18px 0 0;cursor:pointer}
-  dialog label.ck input{width:auto;margin:0;accent-color:var(--gold)}
-  dialog .half2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+  label.ck{display:inline-flex;align-items:center;gap:7px;margin:12px 18px 0 0;cursor:pointer;
+    font-size:12.5px;color:var(--dim)}
+  label.ck input{width:auto;margin:0;accent-color:var(--gold)}
+  .half2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+  label.fld{display:block;font-size:12.5px;color:var(--dim);margin:10px 0 4px}
 
   /* ---------------------------------------------------------- responsive */
   @media (max-width:1180px){
@@ -405,7 +408,7 @@
     <nav class="tabs" id="tabs"></nav>
     <div class="hright">
       <button class="jobchip" data-act="job-chip" id="jobChip" hidden></button>
-      <button data-act="lang" id="langBtn" title="language"></button>
+      <select id="langSel" data-change="lang-select" title="language" aria-label="language"></select>
       <button data-act="theme" id="themeBtn" title="theme"></button>
     </div>
   </header>
@@ -464,6 +467,7 @@
       <label class="ck"><input type="checkbox" id="gRefresh"><span id="lbRefresh"></span></label>
     </div>
   </details>
+  <details class="adv"><summary id="advTitle2"></summary><div id="genAuto"></div></details>
   <div class="hint" id="genHint"></div>
   <div class="error" id="gErr"></div>
   <div class="row end">
@@ -472,6 +476,43 @@
   </div>
 </dialog>
 
+<dialog id="dlgRender">
+  <h3 id="renderTitle"></h3>
+  <div>
+    <label class="ck"><input type="checkbox" id="rHtml" checked><span id="lbRHtml"></span></label>
+    <label class="ck"><input type="checkbox" id="rSingle" checked><span id="lbRSingle"></span></label>
+    <label class="ck"><input type="checkbox" id="rAgent" checked><span id="lbRAgent"></span></label>
+    <label class="ck"><input type="checkbox" id="rLlms"><span id="lbRLlms"></span></label>
+  </div>
+  <label id="lbRSourceBase" for="rSourceBase"></label>
+  <input id="rSourceBase" autocomplete="off" spellcheck="false" placeholder="https://github.com/you/repo/blob/main">
+  <label id="lbRTitle" for="rTitle"></label><input id="rTitle" autocomplete="off">
+  <div class="row end">
+    <button data-act="render-cancel" id="renderCancel"></button>
+    <button class="primary" data-act="render-submit" id="renderSubmit"></button>
+  </div>
+</dialog>
+
+<dialog id="dlgSkill">
+  <h3 id="skillTitle"></h3>
+  <label id="lbSName" for="sName"></label><input id="sName" autocomplete="off" spellcheck="false">
+  <label id="lbSProject" for="sProject"></label><input id="sProject" autocomplete="off">
+  <label id="lbSLang" for="sLang"></label>
+  <select id="sLang"><option value="en">English</option><option value="zh">中文</option></select>
+  <div class="row end">
+    <button data-act="skill-cancel" id="skillCancel"></button>
+    <button class="primary" data-act="skill-submit" id="skillSubmit"></button>
+  </div>
+</dialog>
+
+<script src="/i18n.en.js"></script>
+<script src="/i18n.zh.js"></script>
+<script src="/i18n.hi.js"></script>
+<script src="/i18n.es.js"></script>
+<script src="/i18n.pt.js"></script>
+<script src="/i18n.ru.js"></script>
+<script src="/i18n.ja.js"></script>
+<script src="/i18n.de.js"></script>
 <script>
 "use strict";
 /* =====================================================================
@@ -481,339 +522,7 @@
    ===================================================================== */
 
 /* ------------------------------------------------------------ dictionary */
-const DICT = {
-  zh: {
-    tagline: '生成 · 浏览 · 演化，全在本机',
-    nav: { home: '首页', guide: '使用说明', ghistory: '演化历史', repos: 'REPOSITORIES', add: '＋ 添加仓库',
-           noRepos: '还没有仓库 — 点下面的按钮加一个' },
-    tabs: { overview: '总览', browse: '浏览手册', graph: '影响图', source: '源码', evolve: '演化', history: '历史' },
-    common: { dismiss: '知道了', loading: '加载中…', open: '打开', cancel: '取消',
-              viewAll: '查看全部', files: '文件', stage: '阶段', degree: '调用度', none: '—',
-      autoDesc: '自动概括', filesDesc: '按文件名', noDesc: '（未填写说明）',
-              failed: '加载失败', delete: '删除', confirmDelete: '删除仓库 “{0}”？只从 Studio 注册表移除，源码与 work 目录都不会被删。' },
-    home: {
-      title: '把一个仓库，变成一本<em>活的手册</em>',
-      sub: '本机运行的代码理解工作台：静态分析建图 → LLM 叙述成册 → 手册驱动定位 → 补丁落地 → 手册前滚。源码只发往你在 .env 里配置的那个端点。',
-      flow: '闭环',
-      startCard: { t: 'Hard Code', s: '一坨没人讲得清的老代码' },
-      endCard: { t: 'Evolved Harness', s: '代码与手册同时前进一格' },
-      steps: [
-        { t: 'Request', s: '用自然语言说出你想改什么' },
-        { t: 'Handbook', s: '手册按阶段把你路由到相关文件' },
-        { t: 'Plan', s: 'planner 读真实源码，产出字节精确的编辑计划' },
-        { t: 'Patch', s: 'dry-run 校验后写盘，带备份可回滚' },
-        { t: 'Sync', s: 'resync 只重写受影响章节，记一条演化' }
-      ],
-      feats: [
-        { k: 'GENERATE', t: '生成', items: ['免费静态分析：调用图 / 函数清单，先看规模', '三段流水线：骨架 → 归档 → 叙述', 'brief 便宜试水，deep 逐函数精读', '同时渲染 Markdown / HTML / agent 站点'], cta: '生成一本手册', tab: 'overview' },
-        { k: 'EXPLORE', t: '浏览', items: ['章节按阶段组织，读完知道系统怎么跑', '影响图：文件级调用关系，按阶段着色', '源码视图带行号与函数索引，点函数直接跳'], cta: '打开影响图', tab: 'graph' },
-        { k: 'EVOLVE', t: '演化', items: ['变更定位：手册路由 + 真实源码 = 编辑计划', '补丁执行器：dry-run → 应用 → 一键回滚', '增量重同步：只重写受影响章节', '每次演化都留一条可回溯的历史'], cta: '进入演化', tab: 'evolve' }
-      ],
-      recentRepos: '最近的仓库', recentEvos: '最近的演化',
-      noRepos: '还没有注册仓库。指向任意本地代码目录即可开始。',
-      noEvos: '还没有演化记录。改完代码在「演化」页跑一次重同步，这里就会出现时间线。',
-      addFirst: '添加第一个仓库'
-    },
-    guide: {
-      title: '使用说明',
-      lead: 'Handbook Studio 是一台本机的代码理解工作台。它先用静态分析把仓库拆成调用图，再让 LLM 把图叙述成一本按“阶段”组织的手册；之后每一次改动，都能沿着手册定位、落地、并让手册跟着前滚。',
-      secs: [
-        { n: '01', h: 'Studio 是什么', p: '三件事，一个循环。', li: [
-          '<b>生成</b>：扫源码 → 建调用图 → 合成阶段骨架 → 归档文件 → 叙述成章 → 渲染成站点。',
-          '<b>浏览</b>：手册按阶段读，影响图看文件之间怎么互相调用，源码视图看真相。',
-          '<b>演化</b>：提需求 → 出编辑计划 → 校验 → 应用 → 重同步手册，历史留痕。'
-        ] },
-        { n: '02', h: '五步闭环', p: '首页那条链子不是装饰，它就是操作顺序。', li: [
-          '<b>① Request</b> — 在「演化 · 变更定位」里用一句话说清你要改什么。',
-          '<b>② Handbook</b> — planner 先读手册的阶段索引，决定该去哪几个文件，而不是全库瞎搜。',
-          '<b>③ Plan</b> — 它再打开真实源码，输出 <code>### EDIT n</code> 格式的字节精确计划（只读，不改代码）。',
-          '<b>④ Patch</b> — 先「校验计划（dry-run）」确认每处 old 文本都还在，再「应用补丁」写盘；写盘前自动备份，可一键回滚。',
-          '<b>⑤ Sync</b> — 代码改完，跑「增量重同步」，只重写受影响的章节，并记一条演化历史。'
-        ] },
-        { n: '03', h: '按钮词典', kv: [
-          ['免费分析', '只做静态分析（phase 1）：建调用图、导出函数清单。不调用 LLM，不花钱，也不外发任何字节。'],
-          ['生成手册', '完整流水线 + 渲染。需要可用的 LLM 端点。首次跑建议 brief。'],
-          ['生成计划', 'planner 以手册为地图、以源码为事实，产出编辑计划。不会修改任何文件。'],
-          ['校验计划（dry-run）', '把计划里每个 EDIT 的 old 文本在源码里找一遍：找到几处、在第几行。不写盘。'],
-          ['应用补丁', '全部命中才写盘；任何一处不匹配就整体拒绝执行。写盘前把原文件备份到 work/patches/&lt;时间戳&gt;。'],
-          ['回滚', '把某个备份戳里的文件还原回去。新建的文件会被移除。'],
-          ['增量重同步', '对比源码与手册状态，只重写受影响的章节，然后重新渲染。'],
-          ['仅结构（免 LLM）', '同上但不调用 LLM：只前滚结构（调用图、归档、覆盖率），叙述文本保持不变。完全免费。']
-        ] },
-        { n: '04', h: '花多少钱', li: [
-          '<b>免费分析</b> 与 <b>仅结构重同步</b>：零 LLM 调用，零成本。',
-          '<b>brief</b>：每个阶段一张概览卡，先试水看效果，便宜。',
-          '<b>deep</b>：逐函数精读，卡片密度高很多，token 也高很多 —— 确认骨架靠谱后再上。',
-          '<b>oneshot</b> 一次合成骨架；<b>doctor</b> 会多跑评审-修复循环，更稳但更贵。',
-          '<b>增量重同步</b>只处理受影响章节，所以比重新生成整本便宜一个量级。'
-        ] },
-        { n: '05', h: '数据去哪了', p: '这是本机工具，不是服务。', li: [
-          '服务只绑 <code>127.0.0.1</code>：没有鉴权、没有 TLS，因为它不接受外部请求。所有 POST 必须是同源的 JSON。',
-          '源码与 prose 只会发往<b>你在 .env 里配置的那个 LLM 端点</b>，除此之外不外发。',
-          '把端点指向 mock / 本地模型 = <b>零外发</b>：静态分析、渲染、影响图、源码视图全部离线可用。',
-          '这个页面不请求任何 CDN、字体或第三方脚本。断网也能用。'
-        ] },
-        { n: '06', h: '心法', p: '', note: '<b>手册是定位索引，代码才是事实来源。</b>手册的价值在于把“我该看哪几个文件”从几小时压到几秒；一旦定位完成，判断对错要回到源码。所以补丁失败（no-match）不是 bug，是代码已经往前走了的信号 —— 重新生成计划，别去改计划迁就旧文本。' }
-      ]
-    },
-    ov: {
-      status: 'STATUS', chapters: 'CHAPTERS', coverage: 'COVERAGE', actions: 'ACTIONS',
-      ready: '就绪', half: '半程', empty: '空',
-      readyD: '手册已生成，可浏览 / 演化', halfD: '已有调用图，还没叙述', emptyD: '还没分析过',
-      chap: ' 章', strategy: '策略', assigned: ' 已归档', ofFiles: '共 {0} 个文件',
-      analyze: '① 免费分析', gen: '② 生成手册', regen: '重新生成',
-      actHint: '先免费分析看规模，再决定生成深度。',
-      sysOv: 'SYSTEM OVERVIEW', stages: '阶段索引', registers: 'STATE REGISTERS',
-      languages: 'LANGUAGES', tierFull: '全保真', tierGeneric: '通用档',
-      fidelityHint: '通用档语言的调用关系由通用（配置驱动）分析器提取：尽力而为，可能不完整。文件清单与结构仍是精确的。',
-      hotFiles: '热点文件', hotHint: '按调用度排序，来自调用图；点一个进源码视图。',
-      chapter: '章节', graph: '影响图', crosscut: '横切',
-      noStages: '还没有阶段数据', notGen: '这个仓库还没生成手册。先「免费分析」看看规模，再「生成手册」。'
-    },
-    browse: { site: '章节站点', single: '单页版', agent: 'Agent 索引' },
-    graph: {
-      stageAll: '全部阶段', limit: '节点上限',
-      stat: '{0} 节点 · {1} 条边 · 仓库共 {2} 文件',
-      hint: '圆点 = 文件，半径按调用度；连线 = 跨文件调用，粗细按调用次数。悬停高亮邻居，点击进源码视图。',
-      empty: '还没有调用图 — 先在「总览」跑一次「免费分析」。',
-      noNodes: '这个范围内没有跨文件调用关系。换个阶段或提高节点上限试试。',
-      reload: '重新加载'
-    },
-    src: {
-      open: '打开', ph: '相对源码根的路径，例如 core/src/model.ts',
-      fns: 'FUNCTIONS', noFns: '调用图里没有这个文件的函数锚点',
-      lines: '{0} 行 · {1} 个函数', pick: '选一个文件开始',
-      pickHint: '从影响图点节点，或在上面输入相对路径。下面是调用度最高的文件：',
-      notFound: '打不开这个文件', back: '← 文件列表', recent: '刚看过'
-    },
-    ev: {
-      planK: 'PLAN · 变更定位（只读，不改代码）',
-      planD: '用自然语言描述想做的变更；planner 用手册路由 + 读真实源码，输出精确编辑计划。',
-      planPh: '例：上传失败自动重试三次，退避 1s / 2s / 4s',
-      planRun: '生成计划', planTurns: '{0} 轮对话', planDecl: '{0} 处声明',
-      patchK: 'PATCH · 补丁执行器',
-      patchD: '计划生成后会自动填到这里；也可以把 CLI 里的计划直接粘进来。先 dry-run，再应用。',
-      patchPh: '### EDIT 1\n- file: `path/to/file.ts`\n- where: `Fn (~12)` — 为什么\n```old\n<原文>\n```\n```new\n<新文>\n```',
-      dry: '校验计划（dry-run）', apply: '应用补丁', rollback: '回滚',
-      skippedTitle: '这些文件在打补丁之后被改过，已跳过（未覆盖）：',
-      rollbackForce: '仍然回滚（覆盖这些改动）',
-      dryOk: 'dry-run 通过：{0} 处编辑都能落地，未写盘。',
-      dryBad: 'dry-run 未通过 —— 没有写任何文件。',
-      noChanges: '这份计划没有任何编辑块，而且明确声明不改任何文件 —— 规划器的结论是「不需要改动」。这不是错误。',
-      busy: '该仓库有作业在跑', reattach: '查看正在跑的作业', hideOnly: '收起（作业继续在后台跑）',
-      applyOk: '已写入 {0} 个文件。备份：{1}',
-      applyBad: '应用失败 —— 没有写任何文件（或已回退）。',
-      afterApply: '先跑你自己的编译和测试 —— 逐字节匹配保证「改对了位置」，不保证「改对了逻辑」。确认没问题再跑「增量重同步」让手册追上。',
-      outcomes: '逐条结果', fromLog: '（从任务日志还原，缺少 where 字段）',
-      backups: '备份历史', noBackups: '还没有备份 —— 应用过补丁后这里会出现时间戳。',
-      resyncK: 'RESYNC · 代码已改，手册跟上',
-      resyncD: '你（或 agent）改完代码后，让手册增量前滚：只重写受影响的章节。',
-      resyncPh: '这次改了什么？（会写进演化历史）',
-      resyncNo: '仅结构（免 LLM）', resyncGo: '增量重同步',
-      needPlan: '先粘贴或生成一份计划', needReq: '先写一句需求'
-    },
-    hist: {
-      title: '演化历史', gtitle: '全部演化历史',
-      sub: '每一次重同步都是一条记录：改了哪些文件、影响哪些章节、有没有重写叙述。',
-      changed: '变更', added: '新增', deleted: '删除', stages: '受影响章节',
-      cards: '重生成卡片', narrated: '已重叙述', structural: '仅结构', skipped: '无变化',
-      empty: '还没有演化记录', emptyD: '在某个仓库的「演化」页跑一次重同步后，这里会出现按天分组的时间线。',
-      unreadable: '这条记录读不出来'
-    },
-    job: { title: '任务', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', cancelled: 'CANCELLED',
-           hide: '收起（后台继续）', chip: '任务进行中', cancel: '取消',
-           cancelReq: '… 已请求取消：作业会在下一个检查点停下' },
-    dlg: {
-      add: '添加仓库', name: '名称（唯一，URL 安全）', source: '源码目录（绝对路径）',
-      work: 'work 目录（可留空）', workPh: '留空 = 先沿用已有手册，找不到再由 Studio 托管', addGo: '添加',
-      adopted: '已接管该目录下已有的手册：', 
-      gen: '生成手册', lang: '叙述语言', detail: '卡片深度', synth: '骨架模式',
-      title2: '手册标题（可留空）',
-      detailBrief: 'brief — 便宜，先试水', detailDeep: 'deep — 逐函数精读',
-      synthOne: 'oneshot — 快', synthDoc: 'doctor — 评审循环修复',
-      genHint: '需要 .env 或环境变量里的 OPENAI_API_KEY；phase 1 静态分析免费。',
-      genGo: '开始生成', need: '名称与源码目录都必填',
-      advanced: '高级选项',
-      strategy: '骨架策略（strategy）',
-      strategyAuto: '默认（沿用 work 目录已记录的策略）', strategyFile: 'file — 自动骨架，按文件归档',
-      strategyMember: 'member — 手写骨架，函数级归档',
-      skeleton: 'skeleton.yaml 路径（member 策略必填）',
-      srcLang: '源码语言（lang）', phase: '阶段（phase）',
-      phasePh: 'all | 1 | 2 | 2a | 2b | 2c | 3 | 逗号列表',
-      resume: 'resume — 跳过已有完整卡片的文件',
-      refresh: 'refresh — 忽略阶段 3 缓存',
-      readWorkers: '并发卡片批次（readWorkers）',
-      doctorRounds: 'doctor 收敛轮数（仅 doctor 模式）',
-      needSkeleton: 'member 策略需要 skeleton.yaml 路径'
-    }
-  },
-  en: {
-    tagline: 'Generate · Explore · Evolve — all on this machine',
-    nav: { home: 'Home', guide: 'Instructions', ghistory: 'Evolution history', repos: 'REPOSITORIES',
-           add: '＋ Add repository', noRepos: 'No repositories yet — add one below' },
-    tabs: { overview: 'Overview', browse: 'Handbook', graph: 'Impact graph', source: 'Source', evolve: 'Evolve', history: 'History' },
-    common: { dismiss: 'Dismiss', loading: 'loading…', open: 'Open', cancel: 'Cancel',
-              viewAll: 'View all', files: 'files', stage: 'stage', degree: 'degree', none: '—',
-      autoDesc: 'auto summary', filesDesc: 'by filename', noDesc: '(no description)',
-              failed: 'Failed to load', delete: 'Remove',
-              confirmDelete: 'Remove repository "{0}"? This only drops it from the Studio registry — source and work dir are untouched.' },
-    home: {
-      title: 'Turn a repository into a <em>living handbook</em>',
-      sub: 'A local code-comprehension workbench: static analysis builds the call graph, an LLM narrates it into chapters, the handbook routes your changes, the patcher lands them, and resync rolls the handbook forward. Source only ever reaches the endpoint you configured in .env.',
-      flow: 'The loop',
-      startCard: { t: 'Hard Code', s: 'A codebase nobody can explain' },
-      endCard: { t: 'Evolved Harness', s: 'Code and handbook, both one step ahead' },
-      steps: [
-        { t: 'Request', s: 'Say what you want changed, in plain words' },
-        { t: 'Handbook', s: 'Stage index routes you to the relevant files' },
-        { t: 'Plan', s: 'The planner reads real source, emits byte-exact edits' },
-        { t: 'Patch', s: 'Dry-run verifies, then writes with a backup you can undo' },
-        { t: 'Sync', s: 'Resync rewrites only affected chapters, logs an evolution' }
-      ],
-      feats: [
-        { k: 'GENERATE', t: 'Generate', items: ['Free static analysis: call graph + function inventory', 'Three phases: skeleton → assignment → narration', 'brief to test the water, deep for per-function reading', 'Renders Markdown / HTML / agent site at once'], cta: 'Generate a handbook', tab: 'overview' },
-        { k: 'EXPLORE', t: 'Explore', items: ['Chapters organised by stage, not by folder', 'Impact graph: file-level call relations, coloured by stage', 'Source viewer with line numbers and a function index'], cta: 'Open the impact graph', tab: 'graph' },
-        { k: 'EVOLVE', t: 'Evolve', items: ['Change location: handbook routing + real source = edit plan', 'Patch executor: dry-run → apply → one-click rollback', 'Incremental resync rewrites only affected chapters', 'Every evolution leaves a traceable record'], cta: 'Go to Evolve', tab: 'evolve' }
-      ],
-      recentRepos: 'Recent repositories', recentEvos: 'Recent evolutions',
-      noRepos: 'No repositories registered yet. Point Studio at any local code directory.',
-      noEvos: 'No evolutions yet. Run a resync from the Evolve tab and the timeline shows up here.',
-      addFirst: 'Add the first repository'
-    },
-    guide: {
-      title: 'Instructions',
-      lead: 'Handbook Studio is a local code-comprehension workbench. Static analysis splits the repo into a call graph; an LLM narrates that graph into a handbook organised by stages; from then on every change is located through the handbook, landed by the patcher, and the handbook rolls forward with it.',
-      secs: [
-        { n: '01', h: 'What Studio is', p: 'Three things, one loop.', li: [
-          '<b>Generate</b>: scan source → build the call graph → synthesise a stage skeleton → assign files → narrate chapters → render a site.',
-          '<b>Explore</b>: read the handbook by stage, see how files call each other in the impact graph, check the truth in the source viewer.',
-          '<b>Evolve</b>: state a request → get an edit plan → verify → apply → resync the handbook, with history kept.'
-        ] },
-        { n: '02', h: 'The five-step loop', p: 'The chain on the home page is the operating order, not decoration.', li: [
-          '<b>① Request</b> — describe the change in one sentence under Evolve · Plan.',
-          '<b>② Handbook</b> — the planner reads the stage index first, so it opens a handful of files instead of grepping the world.',
-          '<b>③ Plan</b> — it then reads the real source and emits a byte-exact <code>### EDIT n</code> plan. Read-only: nothing is written.',
-          '<b>④ Patch</b> — run “Verify plan (dry-run)” to confirm every old text is still there, then “Apply patch”. Originals are backed up first; rollback is one click.',
-          '<b>⑤ Sync</b> — after the code changes, run “Incremental resync”: only affected chapters are rewritten, and an evolution is recorded.'
-        ] },
-        { n: '03', h: 'Button dictionary', kv: [
-          ['Free analysis', 'Phase 1 only: build the call graph, export the function inventory. No LLM, no cost, not a single byte leaves the machine.'],
-          ['Generate handbook', 'Full pipeline + render. Needs a working LLM endpoint. Use brief for the first run.'],
-          ['Plan a change', 'The planner uses the handbook as a map and the source as the truth, and produces an edit plan. It never writes files.'],
-          ['Verify plan (dry-run)', 'Looks for each EDIT\'s old text in the source: how many matches, at which line. Nothing is written.'],
-          ['Apply patch', 'Writes only when every edit matches; one mismatch rejects the whole plan. Originals are backed up to work/patches/&lt;stamp&gt;.'],
-          ['Rollback', 'Restores the files from a backup stamp. Files the patch created are removed.'],
-          ['Incremental resync', 'Diffs source against handbook state, rewrites only affected chapters, re-renders.'],
-          ['Structure only (no LLM)', 'Same, minus the LLM: structure (graph, assignment, coverage) rolls forward, narration is left as is. Free.']
-        ] },
-        { n: '04', h: 'What it costs', li: [
-          '<b>Free analysis</b> and <b>structure-only resync</b>: zero LLM calls, zero cost.',
-          '<b>brief</b>: one overview card per stage — cheap, good for a first look.',
-          '<b>deep</b>: per-function reading, far denser cards and far more tokens — turn it on once the skeleton looks right.',
-          '<b>oneshot</b> synthesises the skeleton once; <b>doctor</b> adds review-and-repair rounds: steadier, pricier.',
-          '<b>Incremental resync</b> touches only affected chapters, so it is an order of magnitude cheaper than regenerating.'
-        ] },
-        { n: '05', h: 'Where your code goes', p: 'This is a desktop tool, not a service.', li: [
-          'The server binds <code>127.0.0.1</code> only: no auth, no TLS, because it accepts no remote requests. Every POST must be same-origin JSON.',
-          'Source and prose only travel to <b>the LLM endpoint you configured in .env</b> — nowhere else.',
-          'Point that endpoint at a mock or a local model and egress is <b>exactly zero</b>: analysis, rendering, impact graph and source viewer all work offline.',
-          'This page loads no CDN, no fonts, no third-party script. It works with the network unplugged.'
-        ] },
-        { n: '06', h: 'The mental model', p: '', note: '<b>The handbook is a locator index; the code is the source of truth.</b> Its value is collapsing “which files should I read” from hours to seconds. Once you have located the change, correctness is decided by the source. So a failed patch (no-match) is not a bug — it is the signal that the code moved on. Re-plan; never bend the plan to fit stale text.' }
-      ]
-    },
-    ov: {
-      status: 'STATUS', chapters: 'CHAPTERS', coverage: 'COVERAGE', actions: 'ACTIONS',
-      ready: 'Ready', half: 'Halfway', empty: 'Empty',
-      readyD: 'Handbook generated — browse or evolve', halfD: 'Call graph present, not narrated yet', emptyD: 'Not analysed yet',
-      chap: ' ch.', strategy: 'strategy', assigned: ' assigned', ofFiles: 'of {0} files',
-      analyze: '① Free analysis', gen: '② Generate handbook', regen: 'Regenerate',
-      actHint: 'Analyse for free to see the size, then choose a depth.',
-      sysOv: 'SYSTEM OVERVIEW', stages: 'Stage index', registers: 'STATE REGISTERS',
-      languages: 'LANGUAGES', tierFull: 'full', tierGeneric: 'generic',
-      fidelityHint: 'Generic-tier call relations come from the config-driven analyzer: best-effort and possibly incomplete. The file inventory and structure are still exact.',
-      hotFiles: 'Hot files', hotHint: 'Ranked by call degree, from the call graph. Click one to open the source viewer.',
-      chapter: 'Chapter', graph: 'Graph', crosscut: 'crosscut',
-      noStages: 'No stage data yet', notGen: 'No handbook for this repo yet. Run the free analysis first, then generate.'
-    },
-    browse: { site: 'Chapter site', single: 'Single page', agent: 'Agent index' },
-    graph: {
-      stageAll: 'All stages', limit: 'Node cap',
-      stat: '{0} nodes · {1} links · {2} files in repo',
-      hint: 'Dots are files, radius by call degree; curves are cross-file calls, width by call count. Hover highlights neighbours, click opens the source.',
-      empty: 'No call graph yet — run “Free analysis” from the Overview tab.',
-      noNodes: 'No cross-file calls in this slice. Try another stage or a higher node cap.',
-      reload: 'Reload'
-    },
-    src: {
-      open: 'Open', ph: 'Path relative to the source root, e.g. core/src/model.ts',
-      fns: 'FUNCTIONS', noFns: 'The call graph has no function anchors for this file',
-      lines: '{0} lines · {1} functions', pick: 'Pick a file to start',
-      pickHint: 'Click a node in the impact graph, or type a relative path above. Highest-degree files:',
-      notFound: 'Could not open that file', back: '← Files', recent: 'Recently opened'
-    },
-    ev: {
-      planK: 'PLAN · locate the change (read-only)',
-      planD: 'Describe the change in plain words; the planner routes through the handbook, reads real source, and emits a precise edit plan.',
-      planPh: 'e.g. retry failed uploads three times with 1s / 2s / 4s backoff',
-      planRun: 'Plan the change', planTurns: '{0} turns', planDecl: '{0} declarations',
-      patchK: 'PATCH · executor',
-      patchD: 'A finished plan lands here automatically; you can also paste a plan from the CLI. Dry-run first, then apply.',
-      patchPh: '### EDIT 1\n- file: `path/to/file.ts`\n- where: `Fn (~12)` — why\n```old\n<current text>\n```\n```new\n<replacement>\n```',
-      dry: 'Verify plan (dry-run)', apply: 'Apply patch', rollback: 'Rollback',
-      skippedTitle: 'These files changed after the patch and were left untouched:',
-      rollbackForce: 'Roll back anyway (overwrite them)',
-      dryOk: 'Dry-run passed: all {0} edits would land. Nothing written.',
-      dryBad: 'Dry-run failed — nothing was written.',
-      noChanges: 'This plan has no edit blocks and declares no file changes — the planner concluded no change is needed. Not an error.',
-      busy: 'a job is already running for this repo', reattach: 'show the running job', hideOnly: 'Hide (the job keeps running)',
-      applyOk: 'Wrote {0} file(s). Backup: {1}',
-      applyBad: 'Apply failed — nothing was written (or it was reverted).',
-      afterApply: 'The code moved; the handbook did not. Run an incremental resync to catch it up.',
-      outcomes: 'Per-edit results', fromLog: '(recovered from the job log — no “where” field)',
-      backups: 'Backup history', noBackups: 'No backups yet — applying a patch creates a timestamp here.',
-      resyncK: 'RESYNC · code changed, handbook catches up',
-      resyncD: 'After you (or your agent) changed the code, roll the handbook forward: only affected chapters are rewritten.',
-      resyncPh: 'What changed this time? (goes into the evolution history)',
-      resyncNo: 'Structure only (no LLM)', resyncGo: 'Incremental resync',
-      needPlan: 'Paste or generate a plan first', needReq: 'Write a request first'
-    },
-    hist: {
-      title: 'History', gtitle: 'All evolution history',
-      sub: 'Every resync is a record: which files changed, which chapters were affected, whether narration was rewritten.',
-      changed: 'changed', added: 'added', deleted: 'deleted', stages: 'affected chapters',
-      cards: 'cards regenerated', narrated: 're-narrated', structural: 'structure only', skipped: 'no change',
-      empty: 'No evolutions yet', emptyD: 'Run a resync from any repo\'s Evolve tab and a day-grouped timeline appears here.',
-      unreadable: 'This record could not be read'
-    },
-    job: { title: 'Job', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', cancelled: 'CANCELLED',
-           hide: 'Hide (keeps running)', chip: 'Job running', cancel: 'Cancel',
-           cancelReq: '… cancel requested — the job stops at its next checkpoint' },
-    dlg: {
-      add: 'Add repository', name: 'Name (unique, URL-safe)', source: 'Source directory (absolute path)',
-      work: 'Work directory (optional)', workPh: 'empty = adopt an existing handbook, else Studio-managed', addGo: 'Add',
-      adopted: 'Adopted the handbook already in: ', 
-      gen: 'Generate handbook', lang: 'Narration language', detail: 'Card depth', synth: 'Skeleton mode',
-      title2: 'Handbook title (optional)',
-      detailBrief: 'brief — cheap, first look', detailDeep: 'deep — per-function reading',
-      synthOne: 'oneshot — fast', synthDoc: 'doctor — review & repair loop',
-      genHint: 'Needs OPENAI_API_KEY in .env or the environment; phase-1 static analysis is free.',
-      genGo: 'Start', need: 'Name and source directory are required',
-      advanced: 'Advanced',
-      strategy: 'Skeleton strategy',
-      strategyAuto: 'default (keep the work dir\'s recorded strategy)', strategyFile: 'file — auto skeleton, file-level filing',
-      strategyMember: 'member — authored skeleton, function-level filing',
-      skeleton: 'skeleton.yaml path (required for member)',
-      srcLang: 'Source language', phase: 'Phase',
-      phasePh: 'all | 1 | 2 | 2a | 2b | 2c | 3 | comma list',
-      resume: 'resume — skip files with a completed card',
-      refresh: 'refresh — ignore phase-3 caches',
-      readWorkers: 'Concurrent card batches (readWorkers)',
-      doctorRounds: 'Doctor convergence rounds (doctor mode only)',
-      needSkeleton: 'member strategy needs a skeleton.yaml path'
-    }
-  }
-};
+const DICT = window.HB_DICT || {};
 
 /* --------------------------------------------------------------- helpers */
 const $ = (id) => document.getElementById(id);
@@ -822,12 +531,25 @@ const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;
 const esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, (c) => ESC[c]);
 const fmt = (s, ...a) => String(s).replace(/\{(\d+)\}/g, (_, i) => String(a[Number(i)] ?? ''));
 
+/** The eight locales, as native names. Untranslated ones fall back to English
+ *  key by key (the server serves a no-op file until a dictionary lands). */
+const LOCALES = [
+  ['en', 'English'], ['zh', '简体中文'], ['hi', 'हिन्दी'], ['es', 'Español'],
+  ['pt', 'Português'], ['ru', 'Русский'], ['ja', '日本語'], ['de', 'Deutsch'],
+];
+const LOCALE_IDS = LOCALES.map((l) => l[0]);
+
 const state = {
   view: 'home',            // home | guide | ghistory | repo
   repo: null,              // repo name
   tab: 'overview',
   repos: [],
-  lang: localStorage.getItem('hb.lang') === 'en' ? 'en' : 'zh',
+  lang: (() => {
+    const saved = localStorage.getItem('hb.lang');
+    if (LOCALE_IDS.indexOf(saved) !== -1) return saved;
+    const nav = String(navigator.language || 'en').toLowerCase().split('-')[0];
+    return LOCALE_IDS.indexOf(nav) !== -1 ? nav : 'en';
+  })(),
   theme: localStorage.getItem('hb.theme') === 'light' ? 'light' : 'dark',
   graph: { stage: '', limit: 60, data: null },
   stages: null,            // cached overview stages for the stage picker
@@ -838,16 +560,23 @@ const state = {
   backups: null,
   job: null,               // newest RUNNING job for this view {id, repo, kind, status, startedAt}
   languages: ['auto'],     // source-language choices; replaced by /api/languages at boot
+  settings: null,          // registry surface from /api/settings; null until it loads
 };
 
+/** Dictionary lookup without the key-echo fallback: undefined when missing,
+ *  so callers can substitute their own fallback (e.g. a registry doc string). */
+function tLookup(key) {
+  const dig = (dict) => {
+    let cur = dict;
+    for (const p of String(key).split('.')) cur = cur === undefined || cur === null ? undefined : cur[p];
+    return cur;
+  };
+  const hit = dig(DICT[state.lang]);
+  return hit !== undefined ? hit : dig(DICT.en);
+}
 function t(key) {
-  const parts = String(key).split('.');
-  let cur = DICT[state.lang];
-  for (const p of parts) cur = cur === undefined || cur === null ? undefined : cur[p];
-  if (cur !== undefined) return cur;
-  let alt = DICT.zh;
-  for (const p of parts) alt = alt === undefined || alt === null ? undefined : alt[p];
-  return alt === undefined ? key : alt;
+  const val = tLookup(key);
+  return val === undefined ? key : val;
 }
 
 /** Every server call funnels through here so no button can fail silently. */
@@ -878,11 +607,10 @@ function relTime(iso) {
   const ts = Date.parse(iso);
   if (!Number.isFinite(ts)) return String(iso || '');
   const d = Math.max(0, Date.now() - ts) / 1000;
-  const zh = state.lang === 'zh';
-  if (d < 90) return zh ? '刚刚' : 'just now';
-  if (d < 3600) return Math.round(d / 60) + (zh ? ' 分钟前' : 'm ago');
-  if (d < 86400) return Math.round(d / 3600) + (zh ? ' 小时前' : 'h ago');
-  if (d < 86400 * 30) return Math.round(d / 86400) + (zh ? ' 天前' : 'd ago');
+  if (d < 90) return t('time.justNow');
+  if (d < 3600) return fmt(t('time.mAgo'), Math.round(d / 60));
+  if (d < 86400) return fmt(t('time.hAgo'), Math.round(d / 3600));
+  if (d < 86400 * 30) return fmt(t('time.dAgo'), Math.round(d / 86400));
   return String(iso).slice(0, 10);
 }
 /** Evolution stamps look like 2026-08-03T05-55-52-379Z — recover a Date-ish. */
@@ -933,13 +661,13 @@ const NAV = [
 const TABS = ['overview', 'browse', 'graph', 'source', 'evolve', 'history'];
 
 function renderChrome() {
-  document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : 'en';
+  document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : state.lang;
   document.documentElement.dataset.theme = state.theme;
   $('brandSub').textContent = t('tagline');
-  $('langBtn').textContent = state.lang === 'zh' ? 'EN' : '中文';
-  $('themeBtn').textContent = state.theme === 'dark' ? 'LIGHT' : 'DARK';
-  $('themeBtn').setAttribute('aria-label', state.theme === 'dark' ? 'switch to light theme' : 'switch to dark theme');
-  $('langBtn').setAttribute('aria-label', state.lang === 'zh' ? 'switch to English' : '切换到中文');
+  $('langSel').innerHTML = LOCALES.map((l) =>
+    '<option value="' + l[0] + '"' + (state.lang === l[0] ? ' selected' : '') + '>' + esc(l[1]) + '</option>').join('');
+  $('themeBtn').textContent = t(state.theme === 'dark' ? 'chrome.themeLight' : 'chrome.themeDark');
+  $('themeBtn').setAttribute('aria-label', t(state.theme === 'dark' ? 'chrome.themeToLight' : 'chrome.themeToDark'));
   $('addBtn').textContent = t('nav.add');
   $('drawerHide').textContent = t('job.hide');
   $('jobCancel').textContent = t('job.cancel');
@@ -971,9 +699,9 @@ function renderChrome() {
 }
 
 function statusBits(r) {
-  if (r.hasHandbook) return { cls: 'ok', txt: state.lang === 'zh' ? '● 手册就绪' : '● handbook ready' };
-  if (r.hasGraph) return { cls: 'half', txt: state.lang === 'zh' ? '◐ 已分析' : '◐ analysed' };
-  return { cls: '', txt: state.lang === 'zh' ? '○ 未生成' : '○ not generated' };
+  if (r.hasHandbook) return { cls: 'ok', txt: t('status.ready') };
+  if (r.hasGraph) return { cls: 'half', txt: t('status.analysed') };
+  return { cls: '', txt: t('status.notGenerated') };
 }
 
 function renderRepoList() {
@@ -1012,6 +740,16 @@ async function loadLanguages() {
     const out = await api('/api/languages');
     if (Array.isArray(out && out.languages) && out.languages.length) state.languages = out.languages;
   } catch { /* keep the fallback */ }
+}
+
+/** The registry surface for every studio-runnable command, so the generate
+ *  dialog's second advanced section is rendered FROM the registry instead of
+ *  hand-maintained. A fetch failure just leaves that section empty. */
+async function loadSettings() {
+  try {
+    const out = await api('/api/settings');
+    if (out && out.commands) state.settings = out;
+  } catch { /* non-fatal: the auto-generated sections stay empty */ }
 }
 
 /** A reloaded page has no memory of the job it started — /api/jobs is how it
@@ -1268,6 +1006,7 @@ async function renderGlobalHistory(c, tok) {
 async function renderOverview(c, tok, repo) {
   const zh = state.lang === 'zh';
   const st = repo.hasHandbook ? 'ready' : repo.hasGraph ? 'half' : 'empty';
+  const hbDis = repo.hasHandbook || (repo.outputs && repo.outputs.html) ? '' : ' disabled';
   let h = '<div class="grid g4">' +
     '<div class="card"><span class="k">' + esc(t('ov.status')) + '</span><div class="num">' +
       esc(t('ov.' + st)) + '</div><p>' + esc(t('ov.' + st + 'D')) + '</p></div>' +
@@ -1279,6 +1018,12 @@ async function renderOverview(c, tok, repo) {
     '<div class="card"><span class="k">' + esc(t('ov.actions')) + '</span>' +
       '<div class="row" style="margin-top:4px"><button data-act="analyze">' + esc(t('ov.analyze')) + '</button>' +
       '<button class="primary" data-act="gen-open">' + esc(repo.hasHandbook ? t('ov.regen') : t('ov.gen')) + '</button></div>' +
+      // Post-generate actions: they consume the handbook, so they stay disabled
+      // until one exists.
+      '<div class="row" style="margin-top:6px">' +
+      '<button class="sm" data-act="render-open"' + hbDis + '>' + esc(t('ov.render')) + '</button>' +
+      '<button class="sm" data-act="skill-open"' + hbDis + '>' + esc(t('ov.skill')) + '</button>' +
+      '<button class="sm" data-act="validate-run"' + hbDis + '>' + esc(t('ov.validate')) + '</button></div>' +
       '<p class="hint">' + esc(t('ov.actHint')) + '</p></div></div>';
   h += '<div id="ovBody"><div class="loading"><span class="spin"></span> ' + esc(t('common.loading')) + '</div></div>';
   c.innerHTML = h;
@@ -1791,15 +1536,30 @@ function patchPanel() {
 }
 
 async function renderEvolve(c, tok, repo) {
+  const lbl = (id, key) => '<label class="fld" for="' + id + '">' + esc(t(key)) + '</label>';
   c.innerHTML =
     '<div class="grid g2" style="align-items:start">' +
       '<div class="card"><span class="k g">' + esc(t('ev.planK')) + '</span><p>' + esc(t('ev.planD')) + '</p>' +
       '<textarea id="planReq" rows="3" style="margin-top:10px" placeholder="' + esc(t('ev.planPh')) + '"></textarea>' +
       busyBar() +
-      '<div class="row end" style="margin-top:10px"><button class="primary" data-act="plan-run"' + busyAttr() + '>' +
+      '<div class="row end" style="margin-top:10px">' +
+      '<label for="planTurns" style="font-size:12.5px;color:var(--dim)">' + esc(t('ev.planMaxTurns')) + '</label>' +
+      '<input type="number" id="planTurns" min="1" step="1" placeholder="30" style="width:90px">' +
+      '<button class="primary" data-act="plan-run"' + busyAttr() + '>' +
       esc(t('ev.planRun')) + '</button></div></div>' +
       '<div class="card"><span class="k">' + esc(t('ev.resyncK')) + '</span><p>' + esc(t('ev.resyncD')) + '</p>' +
       '<textarea id="resyncDesc" rows="3" style="margin-top:10px" placeholder="' + esc(t('ev.resyncPh')) + '"></textarea>' +
+      '<div class="half2">' +
+      '<div>' + lbl('rsLang', 'ev.rsLang') +
+      '<select id="rsLang"><option value="">' + esc(t('common.default')) + '</option>' +
+      '<option value="en">English</option><option value="zh">中文</option></select></div>' +
+      '<div>' + lbl('rsDetail', 'ev.rsDetail') +
+      '<select id="rsDetail"><option value="">' + esc(t('common.default')) + '</option>' +
+      '<option value="brief">brief</option><option value="deep">deep</option></select></div>' +
+      '</div>' +
+      lbl('rsCorrections', 'ev.rsCorrections') +
+      '<input id="rsCorrections" autocomplete="off" spellcheck="false" placeholder="/path/to/corrections.jsonl">' +
+      '<div><label class="ck"><input type="checkbox" id="rsRender" checked><span>' + esc(t('ev.rerender')) + '</span></label></div>' +
       '<div class="row end" style="margin-top:10px"><button data-act="resync" data-nollm="1"' + busyAttr() + '>' +
       esc(t('ev.resyncNo')) + '</button><button class="primary" data-act="resync"' + busyAttr() + '>' + esc(t('ev.resyncGo')) +
       '</button></div></div>' +
@@ -1928,7 +1688,7 @@ function runJob(job, title, onDone) {
   evtSource.addEventListener('done', () => { void finish(); });
   evtSource.onerror = () => {
     if (finished) return;
-    appendLog(state.lang === 'zh' ? '⚠ 日志流断开，正在拉取任务状态…' : '⚠ log stream dropped, fetching job status…');
+    appendLog(t('job.streamDropped'));
     void finish();
   };
 }
@@ -1944,7 +1704,7 @@ function notice(title, message) {
   $('drawer').classList.add('show');
   $('jobTitle').textContent = title;
   setJobStatus('cancelled');          // the drawer's only neutral styling
-  $('jobStatus').textContent = 'INFO';
+  $('jobStatus').textContent = t('job.info');
   $('jobCancel').hidden = true;
   $('jobLog').textContent = String(message) + '\n';
 }
@@ -1962,12 +1722,6 @@ const ACT = {
   'view': (el) => go(el.dataset.view),
   'side-open': () => document.body.classList.add('side'),
   'side-close': () => document.body.classList.remove('side'),
-  'lang': () => {
-    state.lang = state.lang === 'zh' ? 'en' : 'zh';
-    localStorage.setItem('hb.lang', state.lang);
-    syncDialogs();
-    render();
-  },
   'theme': () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
     localStorage.setItem('hb.theme', state.theme);
@@ -2012,7 +1766,7 @@ const ACT = {
       if (created && created.adoptedWorkDir) notice(t('nav.add'), t('dlg.adopted') + created.workDir);
     } catch (e) { $('fErr').textContent = errMsg(e); }
   },
-  'gen-open': () => { $('gErr').textContent = ''; $('dlgGen').showModal(); },
+  'gen-open': () => { $('gErr').textContent = ''; prefillGen(); $('dlgGen').showModal(); },
   'gen-cancel': () => $('dlgGen').close(),
   'gen-submit': async () => {
     const repo = current();
@@ -2044,11 +1798,73 @@ const ACT = {
     if (workers) body.readWorkers = workers;
     const rounds = $('gRounds').value.trim();
     if (body.synthMode === 'doctor' && rounds) body.maxDoctorRounds = rounds;
+    // The registry-driven section: only values the user actually set travel —
+    // a checkbox at its registry default and an empty field both stay home.
+    document.querySelectorAll('#genAuto [data-skey]').forEach((el) => {
+      if (el.type === 'checkbox') {
+        if (el.checked !== (el.dataset.sdefault === 'true')) body[el.dataset.skey] = el.checked;
+      } else {
+        const v = el.value.trim();
+        if (v) body[el.dataset.skey] = v;
+      }
+    });
     $('dlgGen').close();
     try {
       const job = await api('/api/repos/' + enc(repo.name) + '/generate', { method: 'POST', body: JSON.stringify(body) });
       runJob(job, t('dlg.gen'));
     } catch (e) { showError(t('dlg.gen'), errMsg(e)); }
+  },
+  'render-open': () => { prefillRender(); $('dlgRender').showModal(); },
+  'render-cancel': () => $('dlgRender').close(),
+  'render-submit': async () => {
+    const repo = current();
+    if (!repo) return;
+    const body = {
+      html: $('rHtml').checked,
+      htmlSingle: $('rSingle').checked,
+      agentSite: $('rAgent').checked,
+      llmsTxt: $('rLlms').checked,
+    };
+    const sb = $('rSourceBase').value.trim();
+    if (sb) body.sourceBaseUrl = sb;
+    const ti = $('rTitle').value.trim();
+    if (ti) body.title = ti;
+    $('dlgRender').close();
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/render', { method: 'POST', body: JSON.stringify(body) });
+      runJob(job, t('dlg.render'));
+    } catch (e) { showError(t('dlg.render'), errMsg(e)); }
+  },
+  'skill-open': () => { prefillSkill(current()); $('dlgSkill').showModal(); },
+  'skill-cancel': () => $('dlgSkill').close(),
+  'skill-submit': async () => {
+    const repo = current();
+    if (!repo) return;
+    const body = { bodyLang: $('sLang').value };
+    const name = $('sName').value.trim();
+    if (name) body.name = name;
+    const project = $('sProject').value.trim();
+    if (project) body.project = project;
+    $('dlgSkill').close();
+    try {
+      const job = await api('/api/repos/' + enc(repo.name) + '/skill', { method: 'POST', body: JSON.stringify(body) });
+      runJob(job, t('dlg.skill'));
+    } catch (e) { showError(t('dlg.skill'), errMsg(e)); }
+  },
+  'validate-run': async () => {
+    const repo = current();
+    if (!repo) return;
+    try {
+      // Synchronous by design: ok:false is the tool working and the answer
+      // being no (the CLI's exit 2), so it lands in the neutral/error surface
+      // rather than as a job.
+      const out = await api('/api/repos/' + enc(repo.name) + '/validate', { method: 'POST', body: '{}' });
+      const warn = Array.isArray(out.warnings) && out.warnings.length
+        ? '\n' + t('validate.warnings') + '\n' + out.warnings.join('\n')
+        : '';
+      if (out.ok) notice(t('ov.validate'), t('validate.ok') + warn);
+      else showError(t('ov.validate'), (Array.isArray(out.errors) ? out.errors : []).join('\n') + warn);
+    } catch (e) { showError(t('ov.validate'), errMsg(e)); }
   },
   'job-cancel': async () => {
     if (!attachedJobId) return;
@@ -2115,9 +1931,12 @@ const ACT = {
     const req = $('planReq').value.trim();
     if (!repo) return;
     if (!req) { showError(t('ev.planRun'), t('ev.needReq')); return; }
+    const body = { request: req };
+    const turns = ($('planTurns') && $('planTurns').value.trim()) || '';
+    if (turns) body.maxTurns = turns;
     try {
       const job = await api('/api/repos/' + enc(repo.name) + '/plan', {
-        method: 'POST', body: JSON.stringify({ request: req }),
+        method: 'POST', body: JSON.stringify(body),
       });
       runJob(job, t('ev.planRun'), async (full) => {
         if (full && full.status === 'succeeded' && full.result && full.result.plan) {
@@ -2164,9 +1983,17 @@ const ACT = {
     const noLlm = el.dataset.nollm === '1';
     const title = noLlm ? t('ev.resyncNo') : t('ev.resyncGo');
     const desc = ($('resyncDesc') && $('resyncDesc').value.trim()) || '';
+    const body = { description: desc, noLlm };
+    const proseLang = $('rsLang') && $('rsLang').value;
+    if (proseLang) body.proseLang = proseLang;
+    const cardDetail = $('rsDetail') && $('rsDetail').value;
+    if (cardDetail) body.cardDetail = cardDetail;
+    if ($('rsRender')) body.refreshRendered = $('rsRender').checked;
+    const corrections = ($('rsCorrections') && $('rsCorrections').value.trim()) || '';
+    if (corrections) body.corrections = corrections;
     try {
       const job = await api('/api/repos/' + enc(repo.name) + '/resync', {
-        method: 'POST', body: JSON.stringify({ description: desc, noLlm }),
+        method: 'POST', body: JSON.stringify(body),
       });
       runJob(job, title, async () => { state.evoCount = null; await render(); });
     } catch (e) { showError(title, errMsg(e)); }
@@ -2231,7 +2058,12 @@ document.addEventListener('click', (e) => {
 document.addEventListener('change', (e) => {
   const el = e.target.closest('[data-change]');
   if (!el) return;
-  if (el.dataset.change === 'graph-stage') {
+  if (el.dataset.change === 'lang-select') {
+    state.lang = LOCALE_IDS.indexOf(el.value) !== -1 ? el.value : 'en';
+    localStorage.setItem('hb.lang', state.lang);
+    syncDialogs();
+    render();
+  } else if (el.dataset.change === 'graph-stage') {
     state.graph = { stage: el.value, limit: state.graph.limit, data: null };
     render();
   } else if (el.dataset.change === 'graph-limit') {
@@ -2257,6 +2089,144 @@ window.addEventListener('resize', () => {
 });
 
 /* ------------------------------------------------------------- dialogs */
+/** The params the previous run of `kind` was started with, for pre-filling. */
+function lastParamsFor(kind) {
+  const r = current();
+  const lp = r && r.lastParams && r.lastParams[kind];
+  return lp && typeof lp === 'object' ? lp : {};
+}
+/** Defensive setters: only touch the control when the stored value is usable. */
+function setSel(id, v) {
+  const el = $(id);
+  if (!el || v === undefined || v === null) return;
+  const s = String(v);
+  for (const o of el.options) if (o.value === s) { el.value = s; return; }
+}
+function setTxt(id, v) {
+  const el = $(id);
+  if (el && (typeof v === 'string' || typeof v === 'number')) el.value = String(v);
+}
+function setCk(id, v) {
+  const el = $(id);
+  if (el && typeof v === 'boolean') el.checked = v;
+}
+
+/* Registry-driven second advanced section of the generate dialog: every
+ * generate setting that is not hand-rendered above (and not managed/secret),
+ * so a new registry knob shows up here with zero UI work. */
+const GEN_HAND_KEYS = ['phase', 'strategy', 'skeleton', 'lang', 'narrateLang', 'detail',
+  'synthMode', 'maxDoctorRounds', 'readWorkers', 'resume', 'refresh'];
+
+/** Label for an auto-rendered field: `set.<key>`, falling back to the
+ *  setting's English `doc` when no dictionary entry exists yet. */
+function settingLabel(s) {
+  const hit = tLookup('set.' + s.key);
+  return hit === undefined ? String(s.doc || s.key) : hit;
+}
+
+function genAutoSettings() {
+  const cmds = (state.settings && state.settings.commands) || {};
+  return (cmds.generate || []).filter((s) =>
+    !s.managed && !s.secret && GEN_HAND_KEYS.indexOf(s.key) === -1);
+}
+
+/** `fresh` rebuilds from lastParams (dialog open); otherwise the values the
+ *  user already typed survive a re-render (e.g. a language switch). */
+function renderGenAuto(fresh) {
+  const box = $('genAuto');
+  if (!box) return;
+  const list = genAutoSettings();
+  if (!list.length) { box.innerHTML = ''; return; }
+  const last = lastParamsFor('generate');
+  const prior = {};
+  if (!fresh) {
+    box.querySelectorAll('[data-skey]').forEach((el) => {
+      prior[el.dataset.skey] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+  }
+  const bools = [];
+  const fields = [];
+  for (const s of list) {
+    const id = 'gset_' + s.key;
+    const init = prior[s.key] !== undefined ? prior[s.key] : last[s.key];
+    const label = settingLabel(s);
+    if (s.type === 'bool') {
+      const def = s.default === true;
+      const on = init === undefined || init === null ? def : init === true || init === 'true';
+      bools.push('<label class="ck"><input type="checkbox" id="' + id + '" data-skey="' + esc(s.key) +
+        '" data-sdefault="' + def + '"' + (on ? ' checked' : '') + '><span>' + esc(label) + '</span></label>');
+      continue;
+    }
+    const val = init === undefined || init === null ? '' : String(init);
+    let control;
+    if (s.type === 'enum' && Array.isArray(s.choices)) {
+      control = '<select id="' + id + '" data-skey="' + esc(s.key) + '">' +
+        '<option value="">' + esc(t('common.default')) + '</option>' +
+        s.choices.map((c) => '<option value="' + esc(c) + '"' + (val === String(c) ? ' selected' : '') + '>' +
+          esc(c) + '</option>').join('') + '</select>';
+    } else if (s.type === 'int') {
+      control = '<input type="number" id="' + id + '" data-skey="' + esc(s.key) + '"' +
+        (s.min === undefined || s.min === null ? '' : ' min="' + esc(s.min) + '"') + ' step="1"' +
+        (s.default === undefined || s.default === null ? '' : ' placeholder="' + esc(s.default) + '"') +
+        ' value="' + esc(val) + '">';
+    } else {
+      control = '<input type="text" id="' + id + '" data-skey="' + esc(s.key) + '" autocomplete="off" spellcheck="false"' +
+        (s.default === undefined || s.default === null || s.default === '' ? '' : ' placeholder="' + esc(s.default) + '"') +
+        ' value="' + esc(val) + '">';
+    }
+    fields.push('<div><label for="' + id + '">' + esc(label) + '</label>' + control + '</div>');
+  }
+  let h = '';
+  for (let i = 0; i < fields.length; i += 2) {
+    h += '<div class="half2">' + fields[i] + (fields[i + 1] || '<div></div>') + '</div>';
+  }
+  if (bools.length) h += '<div>' + bools.join('') + '</div>';
+  box.innerHTML = h;
+}
+
+/** Seed the generate dialog from the previous run's params (best effort). */
+function prefillGen() {
+  const p = lastParamsFor('generate');
+  setSel('gLang', p.narrateLang);
+  setSel('gDetail', p.detail);
+  setSel('gSynth', p.synthMode);
+  setTxt('gTitle', p.title);
+  setSel('gStrategy', p.strategy);
+  setTxt('gSkeleton', p.skeleton);
+  setSel('gSrcLang', p.lang);
+  setTxt('gPhase', p.phase);
+  setTxt('gWorkers', p.readWorkers);
+  setTxt('gRounds', p.maxDoctorRounds);
+  setCk('gResume', p.resume);
+  setCk('gRefresh', p.refresh);
+  // Dependent controls must track the (possibly prefilled) values.
+  $('skelRow').hidden = $('gStrategy').value !== 'member';
+  $('gRounds').disabled = $('gSynth').value !== 'doctor';
+  renderGenAuto(true);
+}
+
+/** Seed the render dialog: last run's params, else the studio defaults. */
+function prefillRender() {
+  const p = lastParamsFor('render');
+  $('rHtml').checked = p.html === undefined ? true : !!p.html;
+  $('rSingle').checked = p.htmlSingle === undefined ? true : !!p.htmlSingle;
+  $('rAgent').checked = p.agentSite === undefined ? true : !!p.agentSite;
+  $('rLlms').checked = !!p.llmsTxt;
+  $('rSourceBase').value = typeof p.sourceBaseUrl === 'string' ? p.sourceBaseUrl : '';
+  $('rTitle').value = typeof p.title === 'string' ? p.title : '';
+}
+
+/** Seed the skill dialog; the placeholder mirrors the server's auto slug. */
+function prefillSkill(repo) {
+  const p = lastParamsFor('skill');
+  $('sName').value = typeof p.name === 'string' ? p.name : '';
+  $('sName').placeholder = repo
+    ? repo.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-handbook'
+    : '';
+  $('sProject').value = typeof p.project === 'string' ? p.project : '';
+  setSel('sLang', p.bodyLang);
+}
+
 function syncDialogs() {
   $('addTitle').textContent = t('dlg.add');
   $('lbName').textContent = t('dlg.name');
@@ -2293,14 +2263,31 @@ function syncDialogs() {
   keep('gSynth', [['oneshot', t('dlg.synthOne')], ['doctor', t('dlg.synthDoc')]]);
   keep('gStrategy', [['', t('dlg.strategyAuto')], ['file', t('dlg.strategyFile')], ['member', t('dlg.strategyMember')]]);
   keep('gSrcLang', state.languages.map((l) => [l, l]));
+  $('advTitle2').textContent = t('dlg.advanced2');
+  renderGenAuto(false);
+  $('renderTitle').textContent = t('dlg.render');
+  $('lbRHtml').textContent = t('dlg.rHtml');
+  $('lbRSingle').textContent = t('dlg.rSingle');
+  $('lbRAgent').textContent = t('dlg.rAgent');
+  $('lbRLlms').textContent = t('dlg.rLlms');
+  $('lbRSourceBase').textContent = t('dlg.rSourceBase');
+  $('lbRTitle').textContent = t('dlg.title2');
+  $('renderCancel').textContent = t('common.cancel');
+  $('renderSubmit').textContent = t('dlg.renderGo');
+  $('skillTitle').textContent = t('dlg.skill');
+  $('lbSName').textContent = t('dlg.sName');
+  $('lbSProject').textContent = t('dlg.sProject');
+  $('lbSLang').textContent = t('dlg.sLang');
+  $('skillCancel').textContent = t('common.cancel');
+  $('skillSubmit').textContent = t('dlg.skillGo');
 }
 
 /* ----------------------------------------------------------------- boot */
 (async function boot() {
   document.documentElement.dataset.theme = state.theme;
   syncDialogs();
-  await Promise.all([loadRepos(), loadLanguages()]);
-  syncDialogs(); // re-run once /api/languages has replaced the 'auto'-only fallback
+  await Promise.all([loadRepos(), loadLanguages(), loadSettings()]);
+  syncDialogs(); // re-run once /api/languages and /api/settings have landed
   await render();
   if (state.reposError) showError('GET /api/repos', state.reposError);
 })();
