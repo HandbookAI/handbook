@@ -181,6 +181,14 @@ jobs:
           key: next-${{ hashFiles('docs/pnpm-lock.yaml') }}-${{ hashFiles('docs/**/*.ts', 'docs/**/*.tsx', 'docs/content/**') }}
           restore-keys: next-${{ hashFiles('docs/pnpm-lock.yaml') }}-
 
+      # A translation can be fluent and still broken: a dropped code fence, an
+      # unclosed <Callout>, a link whose href got localized, a command
+      # translated inside a shell block. Nobody on the team reads all eight
+      # languages, and only some of that fails the MDX build — so it is checked
+      # mechanically against the English source instead.
+      - name: Check translation integrity
+        run: node docs/scripts/check-translations.mjs
+
       - name: Typecheck
         working-directory: docs
         run: pnpm run types:check
