@@ -559,6 +559,58 @@ Validate 按钮只按「有没有 handbook」置灰，但它消费的是 **SKILL
 - 标签表补完后必须 `pnpm run config:docs` 重新生成三个生成物（现在因编译错误跑不了）。
 - 然后 `pnpm check` + `pnpm check:cli`。
 
+## 真实端点实测 + 防护审计（2026-08-09 晚）
+
+真实端点：GLM-5.2（`.env` 里的 `open.bigmodel.cn`），2.3s 往返，可用。
+
+### 实测抓到了 mock 抓不到的真 bug ⚠️
+
+**语言守卫 layer 3 只救回 1/4**。原因是结构性的：重试把纠正**追加在原 prompt 之后**，
+而原 prompt 里的一切（指令、英文代码样例、英文字段名）都在跟纠正竞争；而且"重新推导答案"
+本身就是更难的任务，模型有更多机会再次漂移。
+**改法**：让它**翻译自己刚产出的文本**，原 prompt 完全不重发。翻译是模型可靠擅长的任务，
+且没有冲突。改后 4/4 → 全语种 7/7。
+**教训**：mock 客户端只会返回被脚本设定的字符串，它证明了管道，永远证明不了 prompt 有效。
+
+### 深度防护审计（逐包，agent 出的报告）
+
+已修的 HIGH：
+- **H4 安全**：Studio 允许请求体覆盖 `llmBaseUrl` → 把每条 prompt 和**服务器的 API key**
+  发到任意主机。拒绝 key 进来、却允许 key 被指向别处，等于没拒绝。现已连同
+  `OPENAI_BASE_URL` 一起在 body 层拒收。
+- **H10**：`config --check --command <拼错>` 打印 `config: OK` 退出 0——未知命令让
+  `settingsFor` 返回空列表，所有检查真空通过。CI 里唯一的配置守门员什么都没校验，还是绿的。
+- **H11**：`handbook rollback` 永远 exit 0，哪怕一个文件都没恢复。
+- **M22**：每个 int 只有下限没有上限，`--read-workers 1000000000` 能解析通过，
+  并让并发限制器变成空操作。14 个设置加了上限。
+
+端口（用户问）：`--port` 一直有，但被占用只给一句裸的 `listen EADDRINUSE`。
+现在两种常见原因都指出路，EACCES 解释 <1024 的情况，**`--port 0` 自动取空闲端口**，
+且 URL 从 socket 读回而不是回显请求（否则 `--port 0` 会打印 `http://127.0.0.1:0`）。
+
+### 非 OpenAI 兼容端点（用户问）
+
+`ChatClient` 一直是接缝，但只有一个实现，CLI/Studio 都写死。现在 provider 只提供三样：
+URL+头、请求体、响应解析；**重试/超时/取消/永久错误分类/网关页识别/token 预算学习/用量计量
+全部共享**——那才是 bug 所在，每个 provider 复制一份就是三个不同的重试 bug。
+
+**用真实 HTTP 服务器测线格式**（不是 mock 对象）：Anthropic 的 `x-api-key`（非 bearer）、
+强制版本头、content blocks、**只读 text block**（thinking 草稿绝不能进手册）；
+Gemini 的 model 在路径里、key 在**头**里（query string 会被沿途每个代理记录）、
+usageMetadata 计量；十种畸形响应必须失败而非返回 `''`；Gemini 安全拒答算失败不算答案；
+非数字 usage 记为 0 而不是 NaN。最后两条证明 provider 会**自动继承**共享的
+503 重试与 401 不重试。
+
+### 审计报告里仍未修的（按严重度，供下一轮）
+- H1/H2 分析器按裸名解析类型、首个声明胜出，猜出来的边直接当真实边发出，
+  `dropped-calls.json` 是空的——违反不变量 2。需要冲突名 sentinel。
+- H3 未分配文件从所有渲染输出里消失，但总数还算它。
+- H5 Studio 对 6 种收不到 signal 的 job 也接受 cancel，然后报 succeeded。
+- H7 读不了/解析失败的文件被静默抹掉，`scannedFiles` 仍然列着它。
+- H8 语言守卫尚未接进 pipeline（本轮只做了守卫本身 + 实测）。
+- H9 `skill --out` 几乎无保护地 rm -rf。
+- H12 Studio 无认证。
+
 ### 仍可继续（非阻塞）
 - `logLevel: debug` 目前几乎无输出——若要它有用，需要在 pipeline 里补 `.debug()` 调用点。
 - Studio UI 的 render/skill 对话框尚未做真浏览器点击测试（API 层已有 62 个测试覆盖）。
