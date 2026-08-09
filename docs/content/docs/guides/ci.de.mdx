@@ -1,0 +1,204 @@
+---
+title: 'CI-Integration'
+description: 'Welche Befehle günstig genug sind, um bei jedem Commit zu laufen, welche einen Schlüssel brauchen, und wie ein Build bei Handbook-Drift fehlschlägt.'
+---
+
+## Was kostet was
+
+| Befehl               | Braucht einen Schlüssel? | Deterministisch? | Ausführen…                    |
+| -------------------- | :----------------------: | :--------------: | ----------------------------- |
+| `analyze`            |            ❌            |        ✅        | bei jedem Commit              |
+| `render`             |            ❌            |        ✅        | bei jedem Commit              |
+| `skill`              |            ❌            |        ✅        | bei jedem Commit              |
+| `validate`           |            ❌            |        ✅        | bei jedem Commit              |
+| `config --check`     |            ❌            |        ✅        | bei jedem Commit              |
+| `apply` / `rollback` |            ❌            |        ✅        | bei Bedarf                    |
+| `generate`           |            ✅            |        ❌        | auf `main` oder nach Zeitplan |
+| `resync`             |            ✅            |        ❌        | auf `main`                    |
+| `plan`               |            ✅            |        ❌        | bei Bedarf                    |
+
+**Fünf davon sind kostenlos.** Ein Pull-Request-Workflow, der sie ausführt, kostet nichts
+und fängt echte Probleme ab.
+
+## Der kostenlose Pull-Request-Job
+
+```yaml title=".github/workflows/handbook-check.yml"
+name: handbook check
+
+on: [pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # 1. Configuration is valid — catches a typo'd variable before it costs a run.
+      - run: node packages/cli/dist/main.js config --check --command generate
+
+      # 2. The call graph still builds, and the file count has not collapsed.
+      - name: analyze
+        run: |
+          node packages/cli/dist/main.js analyze --source . --work work/self > stats.json
+          cat stats.json
+          test "$(jq .files stats.json)" -gt 10
+
+      # 3. The committed SKILL package is still structurally valid, and still fresh.
+      - name: validate the skill
+        run: node packages/cli/dist/main.js validate --skill skills/self --source .
+```
+
+`validate` **beendet sich mit `2`**, wenn der Skill gedriftet ist. Entscheiden Sie, ob das
+den Build fehlschlagen lassen oder nur warnen soll:
+
+```yaml
+- run: node packages/cli/dist/main.js validate --skill skills/self --source .
+  continue-on-error: true # warn; schedule a resync instead of blocking the PR
+```
+
+## Auf `main` regenerieren
+
+```yaml title=".github/workflows/handbook-resync.yml"
+name: handbook resync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: handbook-resync
+  cancel-in-progress: false # never interleave two runs on the same work dir
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: assemble the resync case
+        run: |
+          mkdir -p case
+          rsync -a --exclude .git --exclude node_modules --exclude work ./ case/edited/
+          git diff HEAD~1 > case/change.diff
+
+      - name: resync
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node packages/cli/dist/main.js resync --case case --work work/self
+
+      - name: repackage and validate
+        run: |
+          node packages/cli/dist/main.js skill \
+            --handbook work/self/handbook --out skills/self --name self \
+            --work work/self --source . --agent-dir work/self/handbook/agent
+          node packages/cli/dist/main.js validate --skill skills/self --source .
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/handbook-resync
+          title: 'docs: roll the handbook forward'
+          commit-message: 'docs: roll the handbook forward'
+```
+
+Zwei Details, auf die es ankommt:
+
+- **`concurrency` mit `cancel-in-progress: false`.** Ein Lauf pro Arbeitsverzeichnis wird
+  durch eine Sperre erzwungen; zwei überlappende CI-Läufe würden nur dazu führen, dass
+  einer von beiden fehlschlägt.
+- **Einen PR öffnen statt zu pushen.** Ein regeneriertes Handbook ist ein Diff, den es
+  sich zu lesen lohnt.
+
+## Die HTML-Site veröffentlichen
+
+```yaml title=".github/workflows/handbook-pages.yml"
+name: publish handbook
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm build
+
+      - run: |
+          node packages/cli/dist/main.js render \
+            --work work/self --title "Self Handbook" \
+            --html --html-single --agent-site --llms-txt \
+            --source-base-url https://github.com/${{ github.repository }}/blob/${{ github.sha }}
+
+      - run: cp work/self/handbook/llms*.txt work/self/handbook/html/
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: work/self/handbook/html }
+      - uses: actions/deploy-pages@v4
+```
+
+Rendern ist kostenlos und deterministisch, also kann das bei jedem Push laufen. Wenn
+`--source-base-url` auf `${{ github.sha }}` statt auf `main` zeigt, verweist jeder Link
+im veröffentlichten Handbook auf exakt den Code, aus dem es gerendert wurde.
+
+## Das Arbeitsverzeichnis committen
+
+Es ist reines JSON und YAML, es zu committen ist also eine legitime Entscheidung:
+
+**Pro** — der Diff einer Regenerierung ist reviewbar, `render` braucht in CI keinen
+Schlüssel, und `validate` hat etwas, wogegen es prüfen kann.
+
+**Contra** — `phase2/cards/` ist bei einem großen Repository groß, und die Kartenprosa
+schwankt zwischen Modellversionen.
+
+Ein guter Mittelweg: `skills/<name>/` committen (klein, und das, was Agenten
+konsumieren) und `work/` gitignoren (groß, und regenerierbar).
+
+## Zwischen Läufen cachen
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: work/self/phase3/cache
+    key: handbook-cache-${{ hashFiles('**/*.ts', '**/*.py') }}
+    restore-keys: handbook-cache-
+```
+
+Der Phase-3-Cache ist über Content-Hashes geschlüsselt, einen veralteten
+wiederherzustellen ist also sicher — er verfehlt einfach. `phase2/cards/` zu cachen und
+`--resume` zu verwenden ist sogar noch wirksamer, wenn sich pro Lauf nur wenige Dateien
+ändern.
+
+## Bewusst bei Drift fehlschlagen
+
+```bash
+handbook validate --skill skills/api --source .
+case $? in
+  0) echo "handbook is fresh" ;;
+  2) echo "::warning::handbook has drifted — a resync is due" ;;
+  *) exit 1 ;;
+esac
+```
+
+Behandeln Sie `2` als Planungssignal statt als Build-Bruch. Ein veraltetes Handbook ist
+eine Wartungsaufgabe; ein _kaputtes_ (Exit `1`) ist ein Bug.

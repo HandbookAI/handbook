@@ -1,0 +1,210 @@
+---
+title: 'Kosten und Performance'
+description: 'Wohin die Tokens tatsächlich fließen, welche Stellschrauben wirklich etwas bewegen, und wie Sie es herausfinden, bevor Sie irgendetwas ausgeben.'
+---
+
+## Erst herausfinden, dann ausgeben
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**Kostenlos.** Die Zahl `files` ist diejenige, die die Kosten treibt, denn Phase 2a — die
+teuerste Phase — ist darin ungefähr linear.
+
+## Wohin die Tokens fließen
+
+| Phase                       | Anteil eines typischen Laufs | Skaliert mit                                                    |
+| --------------------------- | ---------------------------- | --------------------------------------------------------------- |
+| **1** analyze               | 0%                           | —                                                               |
+| **2a** Karten               | **60–80%**                   | Anzahl der Dateien × `--detail`                                 |
+| **2b** Skelett + Zuweisung  | 10–20%                       | Anzahl der Dateien, und deutlich mehr mit `--synth-mode doctor` |
+| **2c** Organisation         | 5%                           | Anzahl der Etappen                                              |
+| **3** Erzähltext + Register | 5–15%                        | Anzahl der Etappen, stark gecacht                               |
+
+**Wenn Sie weniger ausgeben wollen, ist Phase 2a die einzige Stelle, die zählt.**
+
+## Die Stellschrauben, nach Wirkung sortiert
+
+### 1. `--detail brief` statt `deep`
+
+Um ein Mehrfaches günstiger. Brief ist Zweck, Rolle und Lebenszyklus; deep ergänzt einen
+Walkthrough mit 120–300 Wörtern plus eine Notiz pro Funktion und senkt die Batch-Größe
+von 8 Dateien auf 1.
+
+```bash
+handbook generate --source $REPO --work $WORK                       # brief
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume  # upgrade later
+```
+
+### 2. `--source` auf das eingrenzen, was Ihnen wichtig ist
+
+Der Graph wird aus dem gebaut, was Sie scannen. Einen Dienst innerhalb eines Monorepos zu
+dokumentieren kostet einen Bruchteil davon, alle zu dokumentieren:
+
+```bash
+handbook generate --source $REPO/services/payments --work work/payments
+```
+
+### 3. `--max-chars-per-file`
+
+```bash
+handbook generate --source $REPO --work $WORK --max-chars-per-file 20000
+```
+
+Deckelt, wie viel von einer einzelnen Datei jemals gesendet wird. Generierte Dateien,
+vendored Bundles und riesige switch-Anweisungen sind reine Kosten ohne Information darin.
+`0` (der Standard) bedeutet kein Limit.
+
+### 4. `--llm-cache` beim Iterieren
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+Cacht rohe Antworten, geschlüsselt nach Modell, Prompt und Optionen. Ein erneuter Lauf
+nach einer Anpassung wird nahezu kostenlos. Ergänzen Sie `--refresh`, wenn Sie den Cache
+bewusst ignorieren wollen.
+
+### 5. `--synth-mode oneshot`, außer Sie brauchen `doctor`
+
+Doctor führt mehrere Vorschlagsrunden plus je drei Kritiker aus. Er ist die richtige
+Wahl, wenn One-Shot schiefe oder bedeutungslose Etappen produziert hat — und reiner
+Overhead, wenn nicht.
+
+### 6. Ein günstigeres Modell dort, wo es nicht darauf ankommt
+
+Die Phasen unterscheiden sich darin, wie stark sie ein starkes Modell belohnen:
+
+| Phase           | Modellsensitivität                                                      |
+| --------------- | ----------------------------------------------------------------------- |
+| 2a Karten       | Mittel — ein kleines Modell schreibt brauchbare Zweckbeschreibungen     |
+| 2b Skelett      | **Hoch** — dies ist das Urteil, auf dem das ganze Handbook ruht         |
+| 2c Organisation | Niedrig — sie degradiert ohnehin zu einer deterministischen Reihenfolge |
+| 3 Erzähltext    | Mittel bis hoch — dies ist die Prosa, die Menschen lesen                |
+| `plan`          | **Am höchsten** — byte-genaue Anker verzeihen nichts                    |
+
+Da die Phasen getrennt laufen, können Sie mischen:
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --model cheap-model
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --model strong-model
+```
+
+## Geschwindigkeit
+
+Kosten und Geschwindigkeit sind verschiedene Probleme. Diese Flags ändern die Laufzeit,
+nicht die Ausgaben:
+
+| Flag                     | Standard         | Erhöhen, wenn                                        |
+| ------------------------ | ---------------- | ---------------------------------------------------- |
+| `--llm-concurrency <n>`  | `16`             | Ihr Endpoint es verträgt. **Die globale Obergrenze** |
+| `--read-workers <n>`     | `12`             | Phase 2a der Engpass ist                             |
+| `--assign-workers <n>`   | `12`             | Phase 2b der Engpass ist                             |
+| `--organize-workers <n>` | `8`              | Phase 2c der Engpass ist                             |
+| `--narrate-workers <n>`  | `8`              | Phase 3 der Engpass ist                              |
+| `--read-batch-size <n>`  | 1 deep / 8 brief | Weniger, größere Anfragen. Auf Abschneiden achten    |
+
+`--llm-concurrency` deckelt alles andere. `--read-workers` auf 40 zu erhöhen ergibt mit
+`--llm-concurrency 16` genau 16.
+
+<Callout type="warn" title="Rate-Limits sehen aus wie Fehlschläge">
+  Sehen Sie Retries im Log, **senken** Sie `--llm-concurrency`, bevor Sie `--llm-retries` erhöhen. Härter
+  gegen ein Rate-Limit anzurennen gibt dieselben Tokens zweimal aus.
+</Callout>
+
+## Ablesen, was ein Lauf gekostet hat
+
+```json title="<work>/run-manifest.json"
+{
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```bash
+jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
+```
+
+Es beschreibt den **letzten erfolgreichen** Lauf. Ein fehlgeschlagener Lauf lässt das
+vorherige Manifest unangetastet; ein abgebrochener schreibt keines.
+
+## Eine vernünftige Leiter
+
+<Steps>
+
+<Step>
+### Kostenlos
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+Prüfen Sie die Dateianzahl und `dropped-calls.json`. Reparieren Sie den Scan, bevor Sie
+irgendetwas ausgeben.
+
+</Step>
+
+<Step>
+### Günstig — stimmt die Form?
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+Lesen Sie `phase2/skeleton.yaml`. Sind die Etappen falsch, beheben Sie das, bevor Sie die
+Prosa vertiefen.
+
+</Step>
+
+<Step>
+### Die Struktur reparieren, falls nötig
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+<Step>
+### Vertiefen, sobald die Struktur stimmt
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+</Step>
+
+<Step>
+### Nie wieder dafür bezahlen
+
+```bash
+handbook render ...      # free, deterministic, run in CI
+handbook skill ...       # free
+handbook validate ...    # free
+handbook resync ...      # proportional to the change
+```
+
+</Step>
+
+</Steps>
+
+## Sehr große Repositories
+
+| Dateien     | Empfehlung                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------- |
+| < 200       | Sofort `--detail deep --synth-mode doctor`                                                              |
+| 200–1.000   | Erst brief, dann selektiv vertiefen                                                                     |
+| 1.000–5.000 | Brief, `--max-chars-per-file 20000`, und ein Handbook pro Subsystem erwägen                             |
+| > 5.000     | **Ein Handbook pro Subsystem.** Ein einzelnes Handbook über 5.000 Dateien ist weder günstig noch lesbar |
+
+Mehrere Handbooks sind völlig in Ordnung — sie sind nur mehrere Arbeitsverzeichnisse und
+mehrere SKILL-Pakete, jedes mit einer schärferen Beschreibung, als ein einziges riesiges
+sie hätte.

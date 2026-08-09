@@ -417,10 +417,32 @@ requests 阶段页、express mock 总览——排版、编号、芯片、目录�
 - CJK 搜索实测可用（zh 配置/骨架、ja ステージ、ru этап 都有正确命中）；
   回退横幅只在未翻译页出现（验证过正反两向）。
 
+### 精确断点（wave 3 被 session limit 掐断后，已提交到 git 的状态）
+
+**guides（12 mdx + meta.json，共 13/语种）：**
+- hi / es / ru / ja / de：**13/13 完成 ✅**
+- zh：12/13 —— 只缺 `applying-changes.zh.mdx`
+- pt：8/13 —— 缺 `ci` `docker` `studio` `cost-and-performance` `troubleshooting`（各 .pt.mdx）
+
+**Studio UI 词典 `packages/studio/public/i18n.<loc>.js`：**
+- en / zh / es 已落盘（es 已验证 320 个叶子键与 en 完全一致 ✅）
+- 缺：hi / pt / ru / ja / de（缺失时服务端返回 no-op，UI 自动回退英文，不会坏）
+- 做法：读 i18n.en.js，同结构翻译 values，用
+  `new Function('window', code)` 加载后递归比对叶子键集合必须与 en 相同
+
+**C 批完全未开始**：`content/docs/reference/`（artifacts、cli、configuration.md、
+environment、exit-codes、languages、packages、prompts）+ `contributing/`
+（adding-a-language、development、releasing）+ 两个 meta.json，× 7 语种。
+注意 cli.mdx 21KB、configuration.md 23KB，单语种建议拆 2 个 agent。
+
+**注意**：`reference/configuration.md` 是 registry 生成物，翻译副本
+`configuration.<loc>.md` 不受 drift 测试约束（测试只比对英文原件），可以安全翻译。
+
 ### 待办（按序）
-1. wave 3 收尾确认：guides zh/es/pt/de 补齐 + studio 词典 6 语种落盘
-2. C 批 × 7（reference 8 页 + contributing 3 页 + 2 meta；cli.mdx 21KB、
-   configuration.md 23KB 最大，语种内可拆 2 个 agent）
+1. 补 zh 的 applying-changes、pt 的 5 页
+2. 补 5 个 studio 词典（hi/pt/ru/ja/de）
+3. C 批 × 7
+4. 全部落地后：`pnpm check` + docs build + 两个浏览器套件 + 5 轮对抗
 3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
    README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
 4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +

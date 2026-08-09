@@ -1,0 +1,201 @@
+---
+title: '成本与性能'
+description: 'token 到底花在了哪里、哪些旋钮真正管用，以及如何在花钱之前就先弄清楚。'
+---
+
+## 花钱之前先弄清楚
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+```json
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+```
+
+**免费。** 驱动成本的是 `files` 这个数字，因为最贵的 Phase 2a 与它大致成线性关系。
+
+## token 花在哪里
+
+| Phase               | 典型运行中的占比 | 随什么增长                                 |
+| ------------------- | ---------------- | ------------------------------------------ |
+| **1** 分析          | 0%               | —                                          |
+| **2a** 文件卡片     | **60–80%**       | 文件数 × `--detail`                        |
+| **2b** 骨架 + 归属  | 10–20%           | 文件数；`--synth-mode doctor` 下会高出许多 |
+| **2c** 组织         | 5%               | 阶段数                                     |
+| **3** 叙述 + 寄存器 | 5–15%            | 阶段数，缓存命中率很高                     |
+
+**如果你想少花钱，唯一值得下手的地方就是 Phase 2a。**
+
+## 各个旋钮，按效果排序
+
+### 1. 用 `--detail brief` 而不是 `deep`
+
+便宜好几倍。brief 只有 purpose、role 和 lifecycle；deep 会加上一段 120–300 词的
+讲解外加每个函数一条注记，并把批大小从 8 个文件降到 1 个。
+
+```bash
+handbook generate --source $REPO --work $WORK                       # brief
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume  # upgrade later
+```
+
+### 2. 把 `--source` 收窄到你真正关心的范围
+
+图是从你扫描到的东西构建的。在 monorepo 里只为一个服务生成文档，成本只是全部服务
+的零头：
+
+```bash
+handbook generate --source $REPO/services/payments --work work/payments
+```
+
+### 3. `--max-chars-per-file`
+
+```bash
+handbook generate --source $REPO --work $WORK --max-chars-per-file 20000
+```
+
+限制任何单个文件最多送出多少内容。生成的文件、vendor 进来的打包产物、巨大的
+switch 语句都是纯粹的成本，里面没有任何信息。`0`（默认值）表示不设上限。
+
+### 4. 迭代期间开着 `--llm-cache`
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+以模型、提示词和选项为键缓存原始回复。调整之后重跑几乎免费。想刻意无视缓存时加
+`--refresh`。
+
+### 5. 不需要 `doctor` 就用 `--synth-mode oneshot`
+
+doctor 会跑好几轮提案，每轮还带三个评审者。当 one-shot 产出了畸重畸轻或毫无意义的
+阶段时，它是正确的选择；当 one-shot 没出问题时，它就是纯粹的开销。
+
+### 6. 在无关紧要的地方用更便宜的模型
+
+各个 phase 从强模型中获益的程度并不一样：
+
+| Phase       | 模型敏感度                             |
+| ----------- | -------------------------------------- |
+| 2a 文件卡片 | 中——小模型也能写出够用的 purpose       |
+| 2b 骨架     | **高**——整本手册都压在这一步的判断上   |
+| 2c 组织     | 低——反正它会降级成确定性排序           |
+| 3 叙述      | 中高——这是人真正阅读的文字             |
+| `plan`      | **最高**——字节级精确的锚点不容半点差错 |
+
+由于各个 phase 分开运行，你可以混搭：
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --model cheap-model
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --model strong-model
+```
+
+## 速度
+
+成本和速度是两个不同的问题。下面这些改变的是真实耗时，而不是花费：
+
+| 标志                     | 默认值           | 什么时候调高                           |
+| ------------------------ | ---------------- | -------------------------------------- |
+| `--llm-concurrency <n>`  | `16`             | 你的端点扛得住的时候。**这是全局上限** |
+| `--read-workers <n>`     | `12`             | Phase 2a 是瓶颈时                      |
+| `--assign-workers <n>`   | `12`             | Phase 2b 是瓶颈时                      |
+| `--organize-workers <n>` | `8`              | Phase 2c 是瓶颈时                      |
+| `--narrate-workers <n>`  | `8`              | Phase 3 是瓶颈时                       |
+| `--read-batch-size <n>`  | 1 deep / 8 brief | 想要更少、更大的请求时。小心截断       |
+
+`--llm-concurrency` 封顶其他一切。把 `--read-workers` 提到 40 而
+`--llm-concurrency` 还是 16，你得到的就是 16。
+
+<Callout type="warn" title="速率限制看起来像故障">
+  如果日志里出现重试，先**调低** `--llm-concurrency`，再考虑调高 `--llm-retries`。对着速率限制
+  拼命重试，等于把同样的 token 花两遍。
+</Callout>
+
+## 读懂一次运行花了多少
+
+```json title="<work>/run-manifest.json"
+{
+  "model": "gpt-4o-mini",
+  "phases": ["1", "2a", "2b", "2c", "3"],
+  "startedAt": "2026-08-08T13:02:11.004Z",
+  "finishedAt": "2026-08-08T13:19:44.881Z",
+  "usage": { "promptTokens": 1840221, "completionTokens": 214880, "totalTokens": 2055101 }
+}
+```
+
+```bash
+jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
+```
+
+它描述的是**最近一次成功**的运行。失败的运行不会动上一份清单；被中止的运行则什么
+都不写。
+
+## 一条合理的阶梯
+
+<Steps>
+
+<Step>
+### 免费
+
+```bash
+handbook analyze --source $REPO --work $WORK
+```
+
+检查文件数和 `dropped-calls.json`。先把扫描修对，再花任何一分钱。
+
+</Step>
+
+<Step>
+### 便宜——形状对不对？
+
+```bash
+handbook generate --source $REPO --work $WORK --llm-cache
+```
+
+读一读 `phase2/skeleton.yaml`。如果阶段划分不对，先修它，再去加深文字。
+
+</Step>
+
+<Step>
+### 需要的话，修结构
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+</Step>
+
+<Step>
+### 结构对了之后，再加深
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2a --detail deep --resume
+```
+
+</Step>
+
+<Step>
+### 从此不再为它付费
+
+```bash
+handbook render ...      # free, deterministic, run in CI
+handbook skill ...       # free
+handbook validate ...    # free
+handbook resync ...      # proportional to the change
+```
+
+</Step>
+
+</Steps>
+
+## 超大仓库
+
+| 文件数      | 建议                                                                   |
+| ----------- | ---------------------------------------------------------------------- |
+| 少于 200    | 直接上 `--detail deep --synth-mode doctor`                             |
+| 200–1,000   | 先 brief，再选择性加深                                                 |
+| 1,000–5,000 | brief、`--max-chars-per-file 20000`，并考虑每个子系统一本手册          |
+| 多于 5,000  | **每个子系统一本手册。** 一本覆盖 5,000 个文件的手册既不便宜，也没法读 |
+
+多本手册完全没问题——它们不过是多个工作目录、多个 SKILL 包，而且每个包的描述都比
+一个巨无霸的描述更锋利。
