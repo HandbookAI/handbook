@@ -438,11 +438,33 @@ environment、exit-codes、languages、packages、prompts）+ `contributing/`
 **注意**：`reference/configuration.md` 是 registry 生成物，翻译副本
 `configuration.<loc>.md` 不受 drift 测试约束（测试只比对英文原件），可以安全翻译。
 
+### 状态更新（2026-08-09 下午）—— A/B 批与 Studio 全部完成 ✅
+
+- **guides 12 页 + meta：7 语种全部 13/13 完成 ✅**
+- **Studio 8 语种词典全部完成 ✅**，每个都用「加载后递归比对叶子键」验证过
+  与 en 完全一致（320 个键 × 8）。真浏览器逐语种切换验证 14/14 通过，
+  八种语言确实是八种不同文案（不是回退英文）。
+- **`pnpm check` 全绿**；docs build 358/358。
+- 浏览器套件现有三个，全部进了 CI：`docs-site.mjs`、`handbook-html.mjs`、
+  新增 `studio-ui.mjs`（CI 的 demo job 里起一个真 studio 再跑）。
+
+### 对抗第 1 轮（针对 Studio 新端点）—— 已完成，2 个真 bug 已修
+
+1. **render/skill/plan/analyze 不做前置校验**：generate/resync 有，这四个没有，
+   于是 `{"html":"yes-please"}` 返回 202，几秒后才在抽屉里变成失败 job。
+   已加 `preflight()` 统一走 resolveConfig，坏输入现在是 400。
+2. **`lang` 无法被解析器校验**（`dynamicChoices`，合法集合要注册适配器后才存在）：
+   未知语言一路走到分析器，返回空分析——读起来像「你的仓库没有代码」。
+   preflight 里改成对活的适配器注册表校验。
+3. **假警报**：CSRF 守卫看似失效——其实是探针用 `fetch` 设 `Host` 头，
+   而 `fetch` 会静默丢弃它（本会话第二次踩这个坑）。改用 `node:http` 重测，
+   所有路由（含两个新路由）非回环 Host 一律 403、回环 200。全部加了回归测试。
+
 ### 待办（按序）
-1. 补 zh 的 applying-changes、pt 的 5 页
-2. 补 5 个 studio 词典（hi/pt/ru/ja/de）
-3. C 批 × 7
-4. 全部落地后：`pnpm check` + docs build + 两个浏览器套件 + 5 轮对抗
+1. C 批翻译 × 7（reference 8 + contributing 3 + 2 meta）—— 3 个 agent 在跑
+2. C 批落地后：把翻译页的 `/diagrams/*.svg` 再跑一次本地化替换脚本
+3. 对抗第 2–5 轮（第 2 轮已实质完成：Studio 八语言真浏览器验证）
+4. 收尾：`pnpm check` + `pnpm check:cli` + docs build + 三个浏览器套件
 3. 翻译落地后：脚本统一把 *.{loc}.mdx 里 /diagrams/X.svg → X.{loc}.svg，
    README.zh-CN.md 的 assets/X.svg → X.zh.svg；git add 新 SVG（README 链接 drift 测试）
 4. Studio server：/api/settings（registry 驱动）+ render/skill/validate 端点 +
