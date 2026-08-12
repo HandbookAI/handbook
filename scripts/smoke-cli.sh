@@ -85,7 +85,19 @@ t "config --check --command config (nothing required → 0)" 0 "${HB[@]}" config
 t "config --env prod" 0 "${HB[@]}" --env prod config --command generate
 t "HANDBOOK_ENV_FILE missing → our own error" 1 env HANDBOOK_ENV_FILE=/nope/none.env "${HB[@]}" config
 t "--env-file missing → node eats it first (exit 9)" 9 "${HB[@]}" --env-file /nope/none.env config
-t "config --config missing → error" 1 "${HB[@]}" --config /nope/none.yaml config
+# Showing broken configuration is `config`'s entire job, so a config file it
+# could not read is DISPLAYED, not fatal — the person running this is running it
+# because something is wrong. `--check` is the one that renders a verdict.
+t "config --config missing → shown, not fatal" 0 "${HB[@]}" --config /nope/none.yaml config
+"${HB[@]}" --config /nope/none.yaml config > "$OUT/cfgmissing.log" 2>&1 || true
+grep_ok "NOT LOADED" "$OUT/cfgmissing.log" \
+  "a config file that could not be read is marked NOT LOADED" "silently ignored → $OUT/cfgmissing.log"
+grep_ok "ENOENT" "$OUT/cfgmissing.log" \
+  "and the reason it could not be read is named" "no reason given → $OUT/cfgmissing.log"
+t "config --check with an unreadable config file → 2" 2 "${HB[@]}" --config /nope/none.yaml config --check
+# The safety-critical half: every OTHER command must still refuse to run on a
+# config file it could not read, rather than quietly falling back to defaults.
+t "analyze with an unreadable config file → 1" 1 "${HB[@]}" --config /nope/none.yaml analyze --source "$SRC" --work "$OUT/wcfg"
 
 echo
 echo "== 3. required-ness and validation =="
@@ -240,7 +252,16 @@ cat > "$CFG/handbook.config.yaml.bad" <<'YAML'
 llm:
   apiKey: sk-nope
 YAML
-t "secret in a config file → refused" 1 env -C "$CFG" "${HB[@]}" --config "$CFG/handbook.config.yaml.bad" config
+t "secret in a config file → shown, not fatal, by config" 0 env -C "$CFG" "${HB[@]}" --config "$CFG/handbook.config.yaml.bad" config
+env -C "$CFG" "${HB[@]}" --config "$CFG/handbook.config.yaml.bad" config > "$OUT/cfgbadsecret.log" 2>&1 || true
+grep_ok "must not appear in a config file" "$OUT/cfgbadsecret.log" \
+  "a secret in a config file is named and explained" "not reported → $OUT/cfgbadsecret.log"
+# Invariant 7 is about REFUSING, and the refusal lives on the commands that
+# would act on it. `config` only ever displays.
+t "secret in a config file → refused by every other command" 1 \
+  env -C "$CFG" "${HB[@]}" --config "$CFG/handbook.config.yaml.bad" analyze --source "$SRC" --work "$OUT/wsec"
+t "secret in a config file → --check says no" 2 \
+  env -C "$CFG" "${HB[@]}" --config "$CFG/handbook.config.yaml.bad" config --check
 
 echo
 echo "== 11. scoped env overrides =="
@@ -270,10 +291,25 @@ for (const f of ["phase2/skeleton.yaml","phase2/organization.yaml","phase2/strat
                  "phase3/narration.json","phase3/registers.json","run-manifest.json",
                  "handbook/overview.md","handbook/index.md",
                  "handbook/html/overview.html","handbook/handbook.html",
-                 "handbook/agent/index.md","handbook/agent/how_to_use.md",
-                 "handbook/agent/disambiguation.md","handbook/llms.txt","handbook/llms-full.txt"]) {
+                 "handbook/agent/index.md","handbook/agent/symbols.tsv",
+                 "handbook/agent/files.tsv","handbook/agent/calls.tsv",
+                 "handbook/llms.txt","handbook/llms-full.txt"]) {
   if (!existsSync(W + "/" + f)) fail.push("missing " + f);
 }
+// Existence is not enough for a fact table: an empty one answers "no such
+// symbol" rather than "this file was never written", which is the failure the
+// whole artifact exists to avoid. Check it actually carries rows, and that a
+// location looks like a location.
+const symbols = readFileSync(W + "/handbook/agent/symbols.tsv", "utf8")
+  .split("\n").filter((l) => l && !l.startsWith("#"));
+if (!symbols.length) fail.push("symbols.tsv has no rows");
+const badLoc = symbols.find((l) => !/^[^\t]+\t[^\t]+:\d+-\d+\t/.test(l));
+if (badLoc) fail.push("symbols.tsv row has no path:start-end — " + badLoc.slice(0, 60));
+// The index is the one file assumed always-loaded; its budget is a product
+// decision, not an accident.
+const idx = readFileSync(W + "/handbook/agent/index.md", "utf8");
+if (Buffer.byteLength(idx) > 4096) fail.push("agent/index.md over its 4 KB cap: " + Buffer.byteLength(idx));
+if (!/## lookup/.test(idx)) fail.push("agent/index.md has no lookup recipes");
 const man = JSON.parse(readFileSync(W + "/run-manifest.json", "utf8"));
 if (!man.usage) fail.push("no token usage in the run manifest");
 if (fail.length) { console.log("  FAIL " + fail.join(" | ")); process.exit(1); }
@@ -289,15 +325,75 @@ const skill = readFileSync(S + "/SKILL.md", "utf8");
 if (!/^---\nname: sweep-handbook\n/.test(skill)) fail.push("frontmatter name");
 if (!/Use when/.test(skill) || !/Do not use/.test(skill)) fail.push("routing contract");
 for (const f of ["references/overview.md","references/index.md","references/registers.md",
-                 "references/coverage.json","references/agent/how_to_use.md",
-                 "references/agent/disambiguation.md"]) {
+                 "references/coverage.json","references/agent/index.md",
+                 "references/agent/symbols.tsv","references/agent/files.tsv",
+                 "references/agent/calls.tsv"]) {
   if (!existsSync(S + "/" + f)) fail.push("missing " + f);
 }
+// The delivery channel this guards: `buildSkill` probed for a file the renderer
+// had stopped writing, so every skill shipped without its agent index — with no
+// error, because an absent artifact is a supported configuration.
+if (!/references\/agent\/symbols\.tsv/.test(skill)) fail.push("SKILL.md does not route to the fact tables");
 const cov = JSON.parse(readFileSync(S + "/references/coverage.json", "utf8"));
 if (!cov.files.length || cov.files.some((f) => !f.sha256)) fail.push("coverage hashes");
 if (fail.length) { console.log("  FAIL " + fail.join(" | ")); process.exit(1); }
 console.log("  ok   the SKILL package satisfies its own contract");
 ' "$OUT/skill"; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); FAILURES+=("skill contract"); fi
+
+echo
+echo "== Ctrl-C =="
+# A real SIGINT to a real run. Cancellation is only observable in a process that
+# actually has signals: a unit test can assert an AbortSignal propagates, but it
+# cannot prove the CLI installs a handler, that the run unwinds instead of
+# hanging, or that the shell sees 130 rather than a stack trace and exit 1.
+SIGINT_WORK="$OUT/sigint"
+# A source big enough that the run cannot finish before the signal arrives. The
+# demo project completes against the mock LLM in a couple of seconds, and a
+# signal delivered to an already-finished run proves nothing — it just passes.
+"${HB[@]}" generate --source "$ROOT/packages" --work "$SIGINT_WORK" > "$OUT/sigint.log" 2>&1 &
+CANCELLED=$!
+# Wait for evidence the run is genuinely under way rather than sleeping a fixed
+# guess: a fixed sleep is either too short (signal lands during startup) or too
+# long (the run finished) depending on the machine.
+for _ in $(seq 1 60); do
+  if grep -q "scan\|phase\|LLM" "$OUT/sigint.log" 2>/dev/null; then break; fi
+  sleep 0.5
+done
+if ! kill -0 "$CANCELLED" 2>/dev/null; then
+  # Report it rather than signalling a corpse and calling that a pass.
+  fail_ "SIGINT lands on a live run" "the run finished before it could be signalled → $OUT/sigint.log"
+fi
+kill -INT "$CANCELLED" 2>/dev/null
+# Wait, but not forever: hanging IS the failure this guards against, and a smoke
+# suite that hangs tells nobody anything.
+SIGINT_EXIT=""
+for _ in $(seq 1 40); do
+  if ! kill -0 "$CANCELLED" 2>/dev/null; then break; fi
+  sleep 0.5
+done
+if kill -0 "$CANCELLED" 2>/dev/null; then
+  kill -9 "$CANCELLED" 2>/dev/null
+  fail_ "SIGINT stops the run" "still running 20s after SIGINT — the handler did not unwind"
+else
+  wait "$CANCELLED"; SIGINT_EXIT=$?
+  if [ "$SIGINT_EXIT" = "130" ]; then
+    pass_ "SIGINT exits 130 (128+SIGINT), not 0 and not a crash"
+  else
+    fail_ "SIGINT exits 130" "got exit=$SIGINT_EXIT → $OUT/sigint.log"
+  fi
+fi
+grep_ok "cancelling" "$OUT/sigint.log" \
+  "the first Ctrl-C says it is cancelling, and how to force" "no cancelling notice → $OUT/sigint.log"
+# A cancelled run is not a crash. A stack trace tells the user they hit a bug
+# when they hit Ctrl-C.
+grep_ok -v "handbook: error:" "$OUT/sigint.log" \
+  "a cancelled run does not report itself as an error" "printed an error → $OUT/sigint.log"
+# Invariant 5: a run that gave up must not leave an artifact claiming success.
+if [ -f "$SIGINT_WORK/run-manifest.json" ]; then
+  fail_ "a cancelled run writes no run manifest" "run-manifest.json exists in $SIGINT_WORK"
+else
+  pass_ "a cancelled run writes no run manifest"
+fi
 
 echo
 echo "=============================================================="

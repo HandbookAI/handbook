@@ -25,6 +25,7 @@ import { applyEnvFile } from './env-file.js';
 import { addSettings } from './options.js';
 import {
   currentConfigFile,
+  currentConfigFileFailure,
   currentEnvironment,
   resolveOrThrow,
   setConfigFile,
@@ -34,10 +35,11 @@ import {
   applyEnvFiles,
   createLogger,
   discoverConfigFile,
-  loadConfigFile,
+  readConfigFile,
   resolveConfig,
   settingByKey,
   SETTINGS,
+  unknownKeyWarnings,
   type LogLevel,
 } from '@handbook/core';
 import { renderConfigJson, renderConfigTable } from './config-command.js';
@@ -129,17 +131,27 @@ program.hook('preAction', (_thisCommand, actionCommand) => {
   }
   setEnvironment({ name: envName, source: envSource, envFiles });
 
-  let configNote: string | undefined;
+  // An explicitly named file that is missing is still a mistake, not a
+  // fallback — but the mistake is REPORTED rather than thrown here. A file
+  // that cannot be parsed, read, or is not a file at all used to abort
+  // bootstrap, which took `handbook config` down with it: the one command
+  // whose job is to show broken configuration could not run once the
+  // configuration was broken. Recording the failure keeps every other command
+  // refusing (see `resolveOrThrow`) while leaving `config` able to explain it.
   const explicitConfig = program.opts<{ config?: string }>().config;
-  if (explicitConfig) {
-    // An explicitly named file that is missing is a mistake, not a fallback.
-    setConfigFile(loadConfigFile(resolve(explicitConfig)));
+  const configPath = explicitConfig ? resolve(explicitConfig) : discoverConfigFile(process.cwd(), envName);
+  let configNote: string | undefined;
+  let configWarnings: readonly string[] = [];
+  if (configPath === undefined) {
+    setConfigFile(undefined);
   } else {
-    const found = discoverConfigFile(process.cwd(), envName);
-    if (found) {
-      setConfigFile(loadConfigFile(found));
-      configNote = `[config] loaded ${found}`;
-    }
+    const read = readConfigFile(configPath);
+    setConfigFile(
+      read.file,
+      read.error === undefined ? undefined : { path: configPath, message: read.error },
+    );
+    configNote = read.error === undefined ? `[config] loaded ${configPath}` : undefined;
+    configWarnings = unknownKeyWarnings(read.file);
   }
 
   // Resolve THIS command's log level now — env and the config file are both
@@ -157,7 +169,20 @@ program.hook('preAction', (_thisCommand, actionCommand) => {
   const log = logger(values);
   if (envNote) log.debug(envNote);
   if (configNote) log.debug(configNote);
+  // A key nothing recognises is a WARNING, not a failure: a config file
+  // written for a newer Handbook has to keep working, and hard-failing on it
+  // would make forward compatibility impossible. But silence is what let a
+  // typo'd `readWorker` look applied for a whole run, so it is reported on
+  // every command, at a level that shows without -v. `config --check` treats
+  // the same warning as a problem — that gate exists to be strict.
+  for (const warning of configWarnings) log.warn(`[config] ${warning}`);
 });
+
+/** The level `-v`/`-q` forced, or undefined when neither was given. Quiet wins. */
+function shorthandLevel(): LogLevel | undefined {
+  const opts = program.opts<{ verbose?: boolean; quiet?: boolean }>();
+  return opts.quiet ? 'error' : opts.verbose ? 'debug' : undefined;
+}
 
 /** Level comes from the resolved config; -v/-q are top-level shorthand that override it (quiet wins). */
 function logger(cfg?: Record<string, unknown>): ReturnType<typeof createLogger> {
@@ -168,6 +193,61 @@ function logger(cfg?: Record<string, unknown>): ReturnType<typeof createLogger> 
       ? 'debug'
       : ((cfg?.logLevel as LogLevel | undefined) ?? (settingByKey('logLevel')?.default as LogLevel));
   return createLogger('', level);
+}
+
+/**
+ * Ctrl-C, wired to the cancellation the pipeline already understands.
+ *
+ * Without this, SIGINT kills the process where it stands: an in-flight model
+ * call is abandoned mid-charge, and a work dir can be left with a half-written
+ * artifact that looks finished. `runGenerate`, `runPlanner` and `resyncHandbook`
+ * all accept an `AbortSignal` and unwind cleanly on it — nothing was ever
+ * passing one.
+ *
+ * Two presses, because a cooperative stop is not instant and a person who has
+ * decided to stop should not have to wait for a retry backoff to finish:
+ *
+ *   1. abort the run, say so, and let it unwind and record what it did;
+ *   2. give up on unwinding and leave.
+ *
+ * Exit code 130 is the shell convention for "died on SIGINT" (128 + 2). It is
+ * non-zero, which is what invariant 5 demands of a run that gave up.
+ *
+ * The listeners are installed ONLY when this file is the process's main module,
+ * and only once. Signal handlers are process-global: registering them from an
+ * imported action means the CLI's handler fires for signals aimed at whatever
+ * host imported it — and the second-press branch calls `process.exit`, so it
+ * would hijack that host's shutdown outright. This was not hypothetical: the
+ * first version printed "SIGTERM — cancelling" three times during `vitest run`,
+ * from workers being torn down. A library caller passes its own signal.
+ */
+let cancellation: AbortSignal | undefined;
+
+function installCancellation(): AbortSignal {
+  if (cancellation) return cancellation;
+  const controller = new AbortController();
+  cancellation = controller.signal;
+  if (!runningAsMain()) return cancellation;
+
+  let pressed = 0;
+  const onSignal = (name: string) => (): void => {
+    pressed += 1;
+    if (pressed === 1) {
+      process.stderr.write(`\nhandbook: ${name} — cancelling; press again to stop waiting\n`);
+      controller.abort(new DOMException(`cancelled by ${name}`, 'AbortError'));
+      return;
+    }
+    process.stderr.write('handbook: forced\n');
+    process.exit(130);
+  };
+  process.on('SIGINT', onSignal('SIGINT'));
+  process.on('SIGTERM', onSignal('SIGTERM'));
+  return cancellation;
+}
+
+/** True for the rejection an aborted run produces, however deep it came from. */
+function isAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 /** LLM settings come from the resolved config, so --model/--base-url/etc reach the client. */
@@ -188,7 +268,7 @@ addSettings(
   program.command('analyze').description('Phase 1 only: build the static call graph (no LLM needed)'),
   'analyze',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('analyze', opts);
+  const cfg = resolveOrThrow('analyze', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const stats = await runPhase1({
     sourceRoot: cfg.source as string,
     workDir: cfg.work as string,
@@ -204,7 +284,7 @@ addSettings(
     .description('Run the handbook generation pipeline (env: OPENAI_API_KEY/MODEL/BASE_URL)'),
   'generate',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('generate', opts);
+  const cfg = resolveOrThrow('generate', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const phase = String(cfg.phase);
   // Build the client opportunistically: some selections need no LLM at all
   // (phase 1; member-strategy 2c). generateHandbook fails with a clear
@@ -220,7 +300,9 @@ addSettings(
   if (client && cfg.llmCache && !cfg.refresh) {
     client = new CachedChatClient(client, join(cfg.work as string, 'phase3', 'cache'));
   }
+  const signal = installCancellation();
   const stats = await generateHandbook({
+    signal,
     sourceRoot: cfg.source as string,
     workDir: cfg.work as string,
     client,
@@ -254,7 +336,7 @@ addSettings(
     .description('Render a completed work dir to markdown (+ optional HTML site / agent index); no LLM'),
   'render',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('render', opts);
+  const cfg = resolveOrThrow('render', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const workDir = cfg.work as string;
   const outDir = (cfg.out as string | undefined) ?? join(workDir, 'handbook');
   const model = loadHandbookModel(workDir, cfg.title as string);
@@ -284,7 +366,7 @@ addSettings(
   program.command('skill').description('Package a rendered handbook as an agent SKILL; no LLM'),
   'skill',
 ).action((opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('skill', opts);
+  const cfg = resolveOrThrow('skill', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   let coverage;
   if (cfg.work) {
     const work = new WorkDir(cfg.work as string);
@@ -315,7 +397,7 @@ addSettings(
     .description('Validate a SKILL package (structure, index links, coverage freshness); no LLM'),
   'validate',
 ).action((opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('validate', opts);
+  const cfg = resolveOrThrow('validate', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const result = validateSkill({
     skillDir: cfg.skill as string,
     sourceRoot: cfg.source as string | undefined,
@@ -332,8 +414,9 @@ addSettings(
     .description('Localize a change request with the handbook and emit a precise edit plan'),
   'plan',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('plan', opts);
+  const cfg = resolveOrThrow('plan', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const result = await runPlanner({
+    signal: installCancellation(),
     client: llmClient(cfg),
     sourceRoot: cfg.source as string,
     handbookDir: cfg.handbook as string | undefined,
@@ -362,10 +445,11 @@ addSettings(
     .description('Roll a handbook forward after a code change (case dir: edited/ + plan.md + change.diff)'),
   'resync',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('resync', opts);
+  const cfg = resolveOrThrow('resync', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const workDir = cfg.work as string;
   const useLlm = cfg.useLlm as boolean;
   const report = await resyncHandbook({
+    signal: installCancellation(),
     caseDir: cfg.case as string,
     workDir,
     client: useLlm ? llmClient(cfg) : undefined,
@@ -388,7 +472,7 @@ addSettings(
     .description("Apply a plan's EDIT blocks to a source tree (byte-exact, all-or-nothing, with backups)"),
   'apply',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('apply', opts);
+  const cfg = resolveOrThrow('apply', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const { applyPlan } = await import('@handbook/patcher');
   const result = applyPlan({
     sourceRoot: cfg.source as string,
@@ -407,7 +491,7 @@ addSettings(
     .description('Restore a source tree from a patch backup produced by `handbook apply`'),
   'rollback',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('rollback', opts);
+  const cfg = resolveOrThrow('rollback', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const { rollback } = await import('@handbook/patcher');
   const result = rollback(cfg.backup as string, {
     force: cfg.force as boolean,
@@ -433,7 +517,7 @@ addSettings(
     ),
   'studio',
 ).action(async (opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('studio', opts);
+  const cfg = resolveOrThrow('studio', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
   const { startStudio, boundPort } = await import('@handbook/studio');
   const port = cfg.port as number;
   const host = cfg.host as string;
@@ -472,7 +556,10 @@ addSettings(
   program.command('config').description('Print the resolved configuration and where each value came from'),
   'config',
 ).action((opts: Record<string, unknown>) => {
-  const cfg = resolveOrThrow('config', opts);
+  // Tolerant of a config file that could not be loaded at all (see
+  // resolve-config.ts): this command has to survive exactly the situation it
+  // exists to explain.
+  const cfg = resolveOrThrow('config', opts, { tolerateBrokenConfigFile: true });
   const target = (cfg.forCommand as string | undefined) ?? 'generate';
   // An unknown command name makes `settingsFor` return an empty list, so every
   // check passed and `--check` printed OK — the one gate that exists to catch
@@ -495,17 +582,31 @@ addSettings(
     env: process.env,
     file: currentConfigFile(),
   });
+  // Problems with the FILE rather than with any one value: it could not be
+  // loaded at all, or it sets keys no setting claims. Neither can appear as a
+  // row below — there is no row for a key nothing recognises — so they are
+  // carried separately, and both count as failures under --check.
+  const failure = currentConfigFileFailure();
+  const warnings = unknownKeyWarnings(currentConfigFile());
   if (cfg.check) {
-    for (const error of result.errors) process.stderr.write(`config: ${error}\n`);
-    process.stderr.write(result.errors.length ? 'config: FAILED\n' : 'config: OK\n');
-    process.exitCode = result.errors.length ? 2 : 0;
+    const problems = [...(failure ? [failure.message] : []), ...result.errors, ...warnings];
+    for (const problem of problems) process.stderr.write(`config: ${problem}\n`);
+    process.stderr.write(problems.length ? 'config: FAILED\n' : 'config: OK\n');
+    process.exitCode = problems.length ? 2 : 0;
     return;
   }
   // The active environment, the files it cascaded from, and the config file
   // resolved from it: without these, a cascade of up to eight possible
   // sources is unauditable — see config-command.ts.
   const environment = currentEnvironment();
-  const envDisplay = { ...environment, configFile: currentConfigFile()?.path };
+  const envDisplay = {
+    ...environment,
+    // The attempted path when the load failed, so a broken file is never
+    // displayed as "(none)" — which reads as a project with no config file.
+    configFile: currentConfigFile()?.path ?? failure?.path,
+    configFileError: failure?.message,
+    configFileWarnings: warnings,
+  };
   process.stdout.write(
     cfg.json ? renderConfigJson(result, target, envDisplay) : renderConfigTable(result, target, envDisplay),
   );
@@ -534,6 +635,13 @@ function runningAsMain(): boolean {
 
 if (runningAsMain()) {
   program.parseAsync(process.argv).catch((error: unknown) => {
+    // A cancelled run is not a crash. Printing a stack for something the user
+    // asked for reads as a bug, and exit 1 would put it in the same bucket as a
+    // genuine failure.
+    if (isAbort(error)) {
+      process.stderr.write('handbook: cancelled\n');
+      process.exit(130);
+    }
     process.stderr.write(`handbook: error: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   });
