@@ -14,21 +14,25 @@ handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
 
 手写的适配器：类型驱动的调用解析、继承成员、按属性的状态跟踪、语句范围。
 
-| 语言                           | 扩展名                                                   | 注册表键     |
-| ------------------------------ | -------------------------------------------------------- | ------------ |
-| Python                         | `.py`                                                    | `python`     |
-| TypeScript _(以及 JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` |
-| Go                             | `.go`                                                    | `go`         |
-| Rust                           | `.rs`                                                    | `rust`       |
-| Java                           | `.java`                                                  | `java`       |
-| C#                             | `.cs`                                                    | `csharp`     |
-| C/C++                          | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        |
-| Ruby                           | `.rb` `.rake` `.gemspec`                                 | `ruby`       |
-| PHP                            | `.php` `.phtml`                                          | `php`        |
-| Swift                          | `.swift`                                                 | `swift`      |
-| Dart                           | `.dart`                                                  | `dart`       |
-| Solidity                       | `.sol`                                                   | `solidity`   |
-| Shell                          | `.sh` `.bash`                                            | `shell`      |
+| 语言                           | 扩展名                                                   | 注册表键     | 索引的类型                                           |
+| ------------------------------ | -------------------------------------------------------- | ------------ | ---------------------------------------------------- |
+| Python                         | `.py`                                                    | `python`     | `class`                                              |
+| TypeScript _(以及 JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` | `class` `interface` `enum` `alias`                   |
+| Go                             | `.go`                                                    | `go`         | `struct` `interface` `alias` `other`                 |
+| Rust                           | `.rs`                                                    | `rust`       | `struct` `enum` `trait` `alias` `other`              |
+| Java                           | `.java`                                                  | `java`       | `class` `interface` `enum` `record` `other`          |
+| C#                             | `.cs`                                                    | `csharp`     | `class` `interface` `struct` `record` `enum` `other` |
+| C/C++                          | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        | `class` `struct` `enum` `alias` `other`              |
+| Ruby                           | `.rb` `.rake` `.gemspec`                                 | `ruby`       | `class` `other`                                      |
+| PHP                            | `.php` `.phtml`                                          | `php`        | `class` `interface` `enum` `trait`                   |
+| Swift                          | `.swift`                                                 | `swift`      | `class` `struct` `enum` `interface` `alias`          |
+| Dart                           | `.dart`                                                  | `dart`       | `class` `enum` `trait` `alias` `other`               |
+| Solidity                       | `.sol`                                                   | `solidity`   | `class` `interface` `struct` `enum` `other`          |
+| Shell                          | `.sh` `.bash`                                            | `shell`      | —                                                    |
+
+最后一列就是 `AdapterCapabilities.typeKinds`——每个 adapter **实际能找到**的，不是它想找到的。
+Shell 根本没有类型声明，所以那里的 `—` 是一个肯定的声明而不是缺口。
+常量、变量和宏在任何语言里都不被索引。
 
 <Callout type="info" title="JavaScript 没有单独的适配器">
   它由 TypeScript 那个适配器覆盖。这里没有什么好选的——`.js`、`.jsx`、`.mjs` 和 `.cjs` 都会被自动 认领。

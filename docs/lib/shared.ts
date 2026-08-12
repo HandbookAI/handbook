@@ -55,9 +55,20 @@ export const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ??
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
-/** Point this at your fork; the "edit this page" and GitHub links read it. */
+/**
+ * The repository the site links to: "edit this page", the header's GitHub icon,
+ * the oEmbed author URL.
+ *
+ * The default is the real upstream, not a placeholder. It used to be
+ * `handbook-tools/handbook`, which does not exist — so every GitHub link the
+ * site rendered led to a 404, on 358 pages, and nothing failed a build to say
+ * so. A wrong link is worse than a missing one: a reader who clicks it concludes
+ * the project is gone rather than that the docs are misconfigured.
+ *
+ * The env vars stay, so a fork points at itself without a code change.
+ */
 export const gitConfig = {
-  user: process.env.NEXT_PUBLIC_GITHUB_USER ?? 'handbook-tools',
+  user: process.env.NEXT_PUBLIC_GITHUB_USER ?? 'HandbookAI',
   repo: process.env.NEXT_PUBLIC_GITHUB_REPO ?? 'handbook',
   branch: 'main',
 };

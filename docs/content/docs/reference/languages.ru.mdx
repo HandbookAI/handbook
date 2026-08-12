@@ -16,21 +16,26 @@ handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
 Написанные вручную адаптеры: разрешение вызовов по типам, унаследованные члены,
 отслеживание состояния по каждому атрибуту, границы операторов.
 
-| Язык                        | Расширения                                               | Ключ в реестре |
-| --------------------------- | -------------------------------------------------------- | -------------- |
-| Python                      | `.py`                                                    | `python`       |
-| TypeScript _(и JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`   |
-| Go                          | `.go`                                                    | `go`           |
-| Rust                        | `.rs`                                                    | `rust`         |
-| Java                        | `.java`                                                  | `java`         |
-| C#                          | `.cs`                                                    | `csharp`       |
-| C/C++                       | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`          |
-| Ruby                        | `.rb` `.rake` `.gemspec`                                 | `ruby`         |
-| PHP                         | `.php` `.phtml`                                          | `php`          |
-| Swift                       | `.swift`                                                 | `swift`        |
-| Dart                        | `.dart`                                                  | `dart`         |
-| Solidity                    | `.sol`                                                   | `solidity`     |
-| Shell                       | `.sh` `.bash`                                            | `shell`        |
+| Язык                        | Расширения                                               | Ключ в реестре | Индексируемые типы                                   |
+| --------------------------- | -------------------------------------------------------- | -------------- | ---------------------------------------------------- |
+| Python                      | `.py`                                                    | `python`       | `class`                                              |
+| TypeScript _(и JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`   | `class` `interface` `enum` `alias`                   |
+| Go                          | `.go`                                                    | `go`           | `struct` `interface` `alias` `other`                 |
+| Rust                        | `.rs`                                                    | `rust`         | `struct` `enum` `trait` `alias` `other`              |
+| Java                        | `.java`                                                  | `java`         | `class` `interface` `enum` `record` `other`          |
+| C#                          | `.cs`                                                    | `csharp`       | `class` `interface` `struct` `record` `enum` `other` |
+| C/C++                       | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`          | `class` `struct` `enum` `alias` `other`              |
+| Ruby                        | `.rb` `.rake` `.gemspec`                                 | `ruby`         | `class` `other`                                      |
+| PHP                         | `.php` `.phtml`                                          | `php`          | `class` `interface` `enum` `trait`                   |
+| Swift                       | `.swift`                                                 | `swift`        | `class` `struct` `enum` `interface` `alias`          |
+| Dart                        | `.dart`                                                  | `dart`         | `class` `enum` `trait` `alias` `other`               |
+| Solidity                    | `.sol`                                                   | `solidity`     | `class` `interface` `struct` `enum` `other`          |
+| Shell                       | `.sh` `.bash`                                            | `shell`        | —                                                    |
+
+Последний столбец — это `AdapterCapabilities.typeKinds`: то, что адаптер действительно
+находит, а не то, к чему он стремится. В Shell нет объявлений типов, поэтому `—` в той строке —
+положительное утверждение, а не пробел. Константы, переменные и макросы не индексируются ни в
+одном языке.
 
 <Callout type="info" title="У JavaScript нет отдельного адаптера">
   Его покрывает адаптер TypeScript. Выбирать нечего — `.js`, `.jsx`, `.mjs` и `.cjs` забираются автоматически.

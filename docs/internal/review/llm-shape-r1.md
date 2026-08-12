@@ -61,8 +61,8 @@ entry. With `batch.length === 1` — the default for deep mode
 
 ```sh
 cat > /tmp/p1.mjs <<'EOF'
-import { extractJsonBlock, repairJson } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
-import { extractCardEntries } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/cards.js';
+import { extractJsonBlock, repairJson } from '<repo>/packages/core/dist/index.js';
+import { extractCardEntries } from '<repo>/packages/pipeline/dist/cards.js';
 const reply = [
   '```json',
   '{"purposes": [{"file": "app/queue.py", "purpose": "Holds work that is waiting.",',
@@ -104,9 +104,9 @@ cat > /tmp/p1b.mjs <<'EOF'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateCards } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/cards.js';
-import { WorkDir } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/workdir.js';
-import { extractJsonBlock } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { generateCards } from '<repo>/packages/pipeline/dist/cards.js';
+import { WorkDir } from '<repo>/packages/pipeline/dist/workdir.js';
+import { extractJsonBlock } from '<repo>/packages/core/dist/index.js';
 const files = ['src/core/index.ts'];
 const repo = mkdtempSync(join(tmpdir(), 'hb-'));
 mkdirSync(join(repo, 'src/core'), { recursive: true });
@@ -164,7 +164,7 @@ by exactly those characters. So the heuristic is inverted for the common case.
 
 ```sh
 cat > /tmp/p2.mjs <<'EOF'
-import { repairJson } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { repairJson } from '<repo>/packages/core/dist/index.js';
 const frags = ['the "config" file', 'supports "list", "map" and "filter"',
   'she said "no", then left', 'the flag is "verbose"', 'a "queue": a waiting line',
   'known as the "front door"', '"main" is where it starts', 'ends with a "quote"',
@@ -217,7 +217,7 @@ immediately.
 
 ```sh
 cat > /tmp/p3.mjs <<'EOF'
-import { OpenAiChatClient } from '/Users/jack/Desktop/share/handbook/packages/llm/dist/client.js';
+import { OpenAiChatClient } from '<repo>/packages/llm/dist/client.js';
 const CAP = 16384; const seen = [];
 let n = 0;
 const client = new OpenAiChatClient({
@@ -268,8 +268,8 @@ with a one-chapter spine into which `assignFiles` files every file.
 
 ```sh
 cat > /tmp/p4.mjs <<'EOF'
-import { extractJsonBlock } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
-import { normalizeSkeleton } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/skeleton.js';
+import { extractJsonBlock } from '<repo>/packages/core/dist/index.js';
+import { normalizeSkeleton } from '<repo>/packages/pipeline/dist/skeleton.js';
 const reply = ['```json', '{', '  "stages": [',
 '    {"id": "stage-1", "title": "Boot", "description": "The wiring that runs before any work.", "parent": null, "crosscut": false},',
 '    {"id": "stage-2", "title": "Queue", "description": "A "queue": a waiting line for jobs.", "parent": null, "crosscut": false},',
@@ -339,8 +339,8 @@ Script:
 
 ```sh
 cat > /tmp/p5.mjs <<'EOF'
-import { classifyMembers } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/member.js';
-import { extractJsonBlock } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { classifyMembers } from '<repo>/packages/pipeline/dist/member.js';
+import { extractJsonBlock } from '<repo>/packages/core/dist/index.js';
 const nodes = {};
 for (let i = 1; i <= 40; i += 1) nodes[`app.mod.fn${i}`] = { id: `app.mod.fn${i}`, name: `fn${i}`, qualname: `fn${i}`,
   file: 'app/mod.py', lineStart: i, lineEnd: i, signature: `def fn${i}()`, isAsync: false, isMethod: false,
@@ -377,9 +377,9 @@ cat > /tmp/p6.mjs <<'EOF'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateCards } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/cards.js';
-import { WorkDir } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/workdir.js';
-import { extractJsonBlock } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { generateCards } from '<repo>/packages/pipeline/dist/cards.js';
+import { WorkDir } from '<repo>/packages/pipeline/dist/workdir.js';
+import { extractJsonBlock } from '<repo>/packages/core/dist/index.js';
 const files = ['src/a.ts', 'src/b.ts'];
 const repo = mkdtempSync(join(tmpdir(), 'hb-'));
 mkdirSync(join(repo, 'src'), { recursive: true });
@@ -431,9 +431,9 @@ cat > /tmp/p7.mjs <<'EOF'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateCards } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/cards.js';
-import { WorkDir } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/workdir.js';
-import { extractJsonBlock } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { generateCards } from '<repo>/packages/pipeline/dist/cards.js';
+import { WorkDir } from '<repo>/packages/pipeline/dist/workdir.js';
+import { extractJsonBlock } from '<repo>/packages/core/dist/index.js';
 async function run(files, purposes, batchSize) {
   const repo = mkdtempSync(join(tmpdir(), 'hb-'));
   for (const f of files) { mkdirSync(join(repo, f.split('/').slice(0, -1).join('/')), { recursive: true }); writeFileSync(join(repo, f), '// x\n'); }
@@ -491,7 +491,7 @@ strings.
 
 ```sh
 cat > /tmp/p8.mjs <<'EOF'
-import { repairJson } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { repairJson } from '<repo>/packages/core/dist/index.js';
 for (const intended of [{ tags: ['supports "list", "map" and "filter"'] },
                         { also: ['sets "mode" to "on", "off"', 'stage-2'] }]) {
   const wire = JSON.stringify(intended, null, 1).replace(/\\"/g, '"');
@@ -527,7 +527,7 @@ if (hit) return hit;          // [] is truthy
 
 ```sh
 cat > /tmp/p9.mjs <<'EOF'
-import { extractEntryList } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { extractEntryList } from '<repo>/packages/core/dist/index.js';
 console.log('real list under a later key is discarded:',
   JSON.stringify(extractEntryList({ registers: [], state: [{ id: 'r1' }] }, ['registers', 'state'])));
 console.log('strings under the first key hide the objects under the second:',
@@ -565,7 +565,7 @@ on the same client (F3).
 
 ```sh
 cat > /tmp/p10.mjs <<'EOF'
-import { OpenAiChatClient } from '/Users/jack/Desktop/share/handbook/packages/llm/dist/client.js';
+import { OpenAiChatClient } from '<repo>/packages/llm/dist/client.js';
 const sent = [];
 const prose = 'The Queue stage is one station on this system’s assembly line: work arrives from the previous station, this stage does its one job, and the result moves';
 const client = new OpenAiChatClient({
@@ -624,9 +624,9 @@ cat > /tmp/p11.mjs <<'EOF'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateCards } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/cards.js';
-import { WorkDir } from '/Users/jack/Desktop/share/handbook/packages/pipeline/dist/workdir.js';
-import { extractJsonBlock } from '/Users/jack/Desktop/share/handbook/packages/core/dist/index.js';
+import { generateCards } from '<repo>/packages/pipeline/dist/cards.js';
+import { WorkDir } from '<repo>/packages/pipeline/dist/workdir.js';
+import { extractJsonBlock } from '<repo>/packages/core/dist/index.js';
 function mk(files) {
   const repo = mkdtempSync(join(tmpdir(), 'hb-'));
   for (const f of files) { mkdirSync(join(repo, f.split('/').slice(0, -1).join('/') || '.'), { recursive: true }); writeFileSync(join(repo, f), '// x\n'); }

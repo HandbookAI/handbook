@@ -5,7 +5,7 @@
 
 ## 目标
 
-在 /Users/jack/Desktop/share/handbook 用 Node.js + TypeScript + pnpm monorepo
+在 <repo> 用 Node.js + TypeScript + pnpm monorepo
 实现一个「代码库手册」工具链，功能覆盖并强于参考实现：
 
 1. **generate**：从任意代码库生成结构化手册（两种策略：大库 file-as-leaf 自底向上 / 小库 skeleton 驱动），markdown + HTML 站点。
@@ -28,7 +28,7 @@
   逐章精读后再实现对应包。规格本身是对参考实现的逐行转录，价值只在调研阶段；实现完成后已删除，
   不保留在仓库里（遵守本文件第 4 行的约束）。
 - [x] 设计文档：docs/internal/specs/2026-08-02-handbook-design.md（分包/依赖方向/算法提要/CLI 全在这里）
-- [x] monorepo 骨架（pnpm + tsc -b composite + vitest 根配置 + eslint/prettier；根目录 /Users/jack/Desktop/share/handbook，已 git init，main 分支）
+- [x] monorepo 骨架（pnpm + tsc -b composite + vitest 根配置 + eslint/prettier；根目录 <repo>，已 git init，main 分支）
 - [x] @handbook/core 完成（ir.ts/model.ts/errors/logger/util/*，17 测试绿）
 - [x] @handbook/llm 完成（client.ts OpenAI 兼容 + mock.ts + critic.ts actor-critic，14 测试绿）
 - [x] @handbook/analyzer 完成：5 语言 adapter（python/typescript/go/rust/shell）+ graph + navpack，47 测试绿

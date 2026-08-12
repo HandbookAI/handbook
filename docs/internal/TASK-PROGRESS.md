@@ -98,7 +98,7 @@
 
 ### Step 6 — 真实仓库实测 + 修 bug ✅ (commit 2d2a183)
 
-拉了 **17 个真实 GitHub 仓库**到 `/Users/jack/Desktop/share/repos/`，覆盖全部 18 种语言：
+拉了 **17 个真实 GitHub 仓库**到 `<workspace>/repos/`，覆盖全部 18 种语言：
 
 | 仓库 | 语言 | 文件 | 函数 |
 | --- | --- | ---: | ---: |
@@ -1196,3 +1196,79 @@ cards 批次构成、organize/narrate 的并发度。
 
 顺手修了一个自己造的错：organize 的 debug 标签写成 `[2b]`，但它实际在 2c 跑，
 于是这行出现在 `[2b] done` **之后**——**带时间戳的自相矛盾比没有这行更糟**。
+
+## 本轮收尾（类型覆盖 + 保真度 + debug）
+
+已合入 `main`：`ab0a54d` analyzer、`d511c64` renderer/pipeline、`9fb2ac9` docs。
+
+### 类型抽取：6 → 12 种语言
+
+新增 cpp、dart、php、ruby、solidity、swift，加 C# 的 `delegate`。
+真实仓库匹配率（行数 ÷ grep 可见的声明数）：
+
+| 仓库 | 语言 | 匹配率 |
+|---|---|---|
+| guzzle | php | **100%** |
+| openzeppelin-contracts | solidity | **100%** |
+| Newtonsoft.Json | csharp | 98.9% |
+| Alamofire | swift | 97.0% |
+| flutter/packages | dart | 96.1% |
+| sinatra | ruby | 92.7% |
+| spdlog | cpp | 87.5%（仅解析干净的文件） |
+
+每一处差额都是 adapter **拒绝去猜**的声明——函数体内部的类型、无 arity id 模型下的撞名、
+或 spdlog 里被宏击穿的语法（已记在 `scan-coverage.json`）。没有一处是猜出来的跨度。
+
+**generic tier 那 5 种（kotlin/objc/ocaml/scala/zig）明确不做**：模式匹配引擎产出的类型行
+在 IR 里和精确解析的**长得一样、保真度低一档**，正是不变量 3 要防的。
+Kotlin 恰好是漏得最多的那个（实测 18% 查不到），这不舒服但不是理由。
+
+### 修掉的一个真缺陷（agent 只披露、我修了）
+
+跨度从前置注解开始是对的（那是语法节点的起点，和 C#/Java 一致，保留），
+但长注解会把类型名挤出 200 字符签名上限——实测 flutter/packages 58/7212、
+Alamofire 43/424、Newtonsoft.Json 4/1756（后者早于类型抽取）。
+新增 `typeSignature()`：上限会切掉名字时改为**省略前置 attribute** 并加前导 `…`。
+**不写出自己声明了什么的签名不是"更短"，是无用。**
+
+写这条测试时自己踩了一个坑：断言写的是"结果里不含 `…`"，但 `truncate()` 截断时
+本来就会加省略号——我把"我加的前缀标记"和"truncate 的尾部标记"混为一谈了。
+改成断言**前缀**，这才是两者的区别（前导 `…` = 前面被省略，尾部 = 尾巴被截）。
+
+### 逐行保真度
+
+`graph.metadata.fileLanguages`（可选、排序）→ `files.tsv` 的 `language/tier` 列。
+okio 实测：**338 个 kotlin/generic 和 28 个 java/full 在同一张表里逐行区分**。
+缺数据时**整列不出**而不是满格 `?`——后者看起来像渲染器算不出来，
+而事实是这份产物从来没带过这个信息。
+
+### debug 补完
+
+1 行 → 35 行。含每阶段 start/done + 耗时（"卡在哪一步"是第一个问题，
+而原有 info 行只报告阶段**发现了什么**，什么都没产出的阶段连一行都没有）。
+顺手修了 organize 的 debug 标签写成 `[2b]` 却在 2c 跑的问题——
+那行会出现在 `[2b] done` 之后，**带时间戳的自相矛盾比没有这行更糟**。
+
+### 我自己造的一个 bug，以及补上的守卫
+
+跨 8 语种同步同一段文字时，一个中文 `記` 混进了**俄文**页面。
+它能渲染、通过全部结构检查、prettier 满意、构建全绿——
+俄文读者会在一段讲 C++ 头文件的句子中间看到一个汉字。
+`check-translations.mjs` 新增书写系统检查（查字符集不查词；
+拉丁字母各语种都允许，因为都要引用标识符和路径）。非空洞验证：放回去会报错。
+
+### 推送前的脱敏
+
+`docs/internal/` 里有 26 处真实磁盘路径 `/Users/<user>/...`（PROGRESS.md 2、
+TASK-PROGRESS.md 1、review/llm-shape-r1.md 23）。已替换为 `<repo>` / `<workspace>`。
+本仓库对此有先例（早前的 "redact the original author's disk paths"）。
+**推送是不可逆的**——GitHub 会缓存和索引，之后删掉也没用，所以必须在推之前做。
+
+密钥扫描（全部历史、850 个路径、8 类模式）：唯一命中是
+`packages/core/src/config/file.test.ts` 里的 `https://u:p@gw.internal/v1`，
+那正是"拒绝 URL 内嵌凭据"那条测试用例的 fixture。`.env` 从未被跟踪，只有生成的 `.env.example`。
+
+### 覆盖率下限（七个包上调，无一下调）
+
+cli 65/68/75/64 · studio 87/75/92/90 · pipeline 86/71/86/88 · analyzer 85/72/94/89 ·
+skill 88/80/98/92 · llm 94/89/96/96 · renderer 95/83/94/96

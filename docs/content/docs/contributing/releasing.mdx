@@ -110,6 +110,9 @@ node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
 node scripts/set-repo-url.mjs --check
 ```
 
+Already set for this repository; the command is here for a fork, and for the day the
+repository moves.
+
 It is idempotent — run it again after moving the repository. It is deliberately **not**
 wired into `pnpm check`: until the repository has a public URL there is nothing to check
 against, and a gate that fails on a fresh clone teaches people to ignore gates.
