@@ -584,3 +584,117 @@ class Redirect {
     );
   });
 });
+
+describe('DartAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `class Engine {
+  int rpm = 0;
+  void spin() {}
+}
+
+abstract interface class Contract {
+  void run();
+}
+
+sealed class Shape {}
+
+enum Gear { low, high }
+
+mixin Loggable {
+  void log(String m) {}
+}
+
+extension StringX on String {
+  String shout() => this;
+}
+
+typedef Callback = void Function(int);
+
+typedef void OldStyle(int x);
+
+extension type Meters(int value) {}
+
+@immutable
+class Annotated {
+  final int x = 0;
+}
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = writeRepo({ 'lib/kinds.dart': SRC }, 'hb-dart-types-');
+    analysis = await new DartAdapter().analyze(['lib/kinds.dart'], root);
+  });
+
+  it('maps class and enum onto the obvious buckets', () => {
+    expect(find('Engine')?.kind).toBe('class');
+    expect(find('Gear')?.kind).toBe('enum');
+  });
+
+  it('calls a mixin a trait, because that is what the word means here', () => {
+    // A named bundle of method BODIES, composed in with `with`, not instantiable —
+    // this vocabulary's definition of `trait`, and what Scala and PHP call one.
+    expect(find('Loggable')?.kind).toBe('trait');
+    expect(find('Loggable')?.signature).toBe('mixin Loggable');
+    // The name is not in a `name` field on this node, so the fallback must work.
+    expect(lines[(find('Loggable')?.lineStart ?? 0) - 1]).toContain('mixin Loggable');
+  });
+
+  it('keeps a modified class a class, with the modifiers in the signature', () => {
+    // `interface`/`sealed`/`abstract` restrict who may extend or implement; they do
+    // not make the declaration a different kind of thing.
+    expect(find('Contract')?.kind).toBe('class');
+    expect(find('Contract')?.signature).toBe('abstract interface class Contract');
+    expect(find('Shape')?.kind).toBe('class');
+    expect(find('Shape')?.signature).toBe('sealed class Shape');
+  });
+
+  it('calls a typedef an alias, in both of Dart spellings', () => {
+    expect(find('Callback')?.kind).toBe('alias');
+    expect(find('Callback')?.signature).toBe('typedef Callback = void Function(int);');
+    // The old form puts the RETURN type first, so the name is not the first child.
+    expect(find('OldStyle')?.kind).toBe('alias');
+    expect(find('OldStyle')?.signature).toBe('typedef void OldStyle(int x);');
+  });
+
+  it('calls an extension type `other`, not an alias', () => {
+    // `Meters` and `int` are not interchangeable, so `alias` would state the
+    // opposite of the language's rule. Same call as a Go defined type.
+    expect(find('Meters')?.kind).toBe('other');
+    expect(find('Meters')?.signature).toBe('extension type Meters(int value)');
+  });
+
+  it('emits no type for an extension, whose members it still scans', () => {
+    // `StringX` cannot annotate a variable, and `String` was declared elsewhere: a
+    // row here would point at a declaration that is not in this file at all.
+    expect(find('StringX')).toBeUndefined();
+    expect(find('String')).toBeUndefined();
+    expect(analysis.functions.some((f) => f.qualname === 'StringX.shout')).toBe(true);
+  });
+
+  it('spans the declaration and never the members', () => {
+    const engine = find('Engine');
+    expect(lines[(engine?.lineStart ?? 0) - 1]).toBe('class Engine {');
+    expect(engine?.lineEnd).toBe(4);
+    expect(engine?.container).toBeNull();
+    expect(engine?.id).toBe('type:lib.kinds.Engine');
+  });
+
+  it('starts an annotated declaration span at the annotation, as the grammar does', () => {
+    // Pinned rather than tolerated. The annotation is INSIDE `class_definition`, so
+    // this is the declaration node's own span — the same choice the C# and Java
+    // adapters already make for `[Attribute]` and `@Annotation`. The cost is real
+    // and is disclosed in the README: a long annotation can push the type's name
+    // past the truncated signature (measured 58/7212 rows on flutter/packages).
+    const annotated = find('Annotated');
+    expect(lines[(annotated?.lineStart ?? 0) - 1]).toBe('@immutable');
+    expect(annotated?.signature).toBe('@immutable class Annotated');
+    expect(lines[(annotated?.lineEnd ?? 0) - 1]).toBe('}');
+  });
+
+  it('declares exactly the kinds it emits', () => {
+    expect(new DartAdapter().capabilities.typeKinds).toEqual(['alias', 'class', 'enum', 'other', 'trait']);
+  });
+});

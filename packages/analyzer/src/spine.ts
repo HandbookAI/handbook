@@ -435,6 +435,37 @@ export interface RecordTypeOptions {
  * position, so in practice this guard only fires on a caller passing something
  * that is not a declaration.
  */
+/**
+ * The declaration header, flattened and capped — and guaranteed to contain the
+ * type's own name.
+ *
+ * The span deliberately starts where the grammar's declaration node starts,
+ * which for an attributed declaration is the attribute (`@immutable class Foo`,
+ * `[Serializable] class Foo`). That is the same choice the C# and Java adapters
+ * already made and it is the honest span. But it means a long attribute can push
+ * the name past the cap, leaving a signature that does not say WHAT it declares
+ * — measured on real repositories at 58/7212 rows in flutter/packages, 43/424 in
+ * Alamofire, 25/414 in spdlog, and 4/1756 in Newtonsoft.Json, which predates
+ * type extraction entirely.
+ *
+ * A signature without the name is not a shorter signature, it is a useless one:
+ * the column exists to identify the declaration. So when the cap would cut the
+ * name away, the ATTRIBUTES are elided instead, marked with a leading `…` so
+ * nobody reads the result as the declaration verbatim. Deliberately
+ * language-agnostic — it looks for the name it was given rather than for any
+ * grammar's notion of an attribute node, so a language added later gets this
+ * for free.
+ */
+function typeSignature(header: string, name: string): string {
+  const flat = header.replace(/\s+/g, ' ').trim();
+  const capped = truncate(flat, TYPE_SIGNATURE_CHARS);
+  if (capped.includes(name)) return capped;
+  const at = flat.indexOf(name);
+  // No name anywhere in the header: nothing better to offer than the cap.
+  if (at <= 0) return capped;
+  return `… ${truncate(flat.slice(at), Math.max(1, TYPE_SIGNATURE_CHARS - 2))}`;
+}
+
 export function recordType(scan: BaseScan, opts: RecordTypeOptions): void {
   const { name, kind, node, body, file } = opts;
   if (name === '') return;
@@ -457,7 +488,7 @@ export function recordType(scan: BaseScan, opts: RecordTypeOptions): void {
     lineStart,
     lineEnd: Math.max(lineStart, lineEnd),
     kind,
-    signature: truncate(header.replace(/\s+/g, ' ').trim(), TYPE_SIGNATURE_CHARS),
+    signature: typeSignature(header, name),
     container,
   });
 }

@@ -146,27 +146,56 @@ over-claim both fail the build.
 Type extraction is **partial, and the partition is declared**. `typeKinds` lists the kinds
 an adapter actually parses; an empty list is a positive statement that it parses none.
 
-| Language                                              | Extracts | Mapping                                                                                              |
-| ----------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| TypeScript                                            | yes      | `class` (incl. `abstract`) · `interface` · `enum` (incl. `const enum`) · `alias` (`type X = …`)      |
-| Python                                                | yes      | `class`                                                                                              |
-| Go                                                    | yes      | `struct` · `interface` · `alias` (`type A = B`) · `other` (a _defined_ type, `type Celsius float64`) |
-| Rust                                                  | yes      | `struct` · `enum` · `trait` · `alias` (`type`) · `other` (`union`)                                   |
-| Java                                                  | yes      | `class` · `interface` · `enum` · `record` · `other` (`@interface`)                                   |
-| C#                                                    | yes      | `class` · `interface` · `struct` · `record` (incl. `record struct`) · `enum`                         |
-| C/C++, Ruby, PHP, Swift, Dart, Solidity               | **no**   | —                                                                                                    |
-| Shell                                                 | **no**   | the language has no named types                                                                      |
-| Kotlin, Scala, Zig, Objective-C, OCaml (generic tier) | **no**   | —                                                                                                    |
+| Language                                              | Extracts | Mapping                                                                                                   |
+| ----------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| TypeScript                                            | yes      | `class` (incl. `abstract`) · `interface` · `enum` (incl. `const enum`) · `alias` (`type X = …`)           |
+| Python                                                | yes      | `class`                                                                                                   |
+| Go                                                    | yes      | `struct` · `interface` · `alias` (`type A = B`) · `other` (a _defined_ type, `type Celsius float64`)      |
+| Rust                                                  | yes      | `struct` · `enum` · `trait` · `alias` (`type`) · `other` (`union`)                                        |
+| Java                                                  | yes      | `class` · `interface` · `enum` · `record` · `other` (`@interface`)                                        |
+| C#                                                    | yes      | `class` · `interface` · `struct` · `record` (incl. `record struct`) · `enum` · `other` (`delegate`)       |
+| C/C++                                                 | yes      | `class` · `struct` · `enum` (incl. `enum class`) · `alias` (`using X = …`, `typedef`) · `other` (`union`) |
+| Ruby                                                  | yes      | `class` · `other` (`module` — one keyword, two jobs; see below)                                           |
+| PHP                                                   | yes      | `class` · `interface` · `trait` · `enum`                                                                  |
+| Swift                                                 | yes      | `class` (incl. `actor`) · `struct` · `enum` · `interface` (`protocol`) · `alias` (`typealias`)            |
+| Dart                                                  | yes      | `class` · `enum` · `trait` (`mixin`) · `alias` (`typedef`) · `other` (`extension type`)                   |
+| Solidity                                              | yes      | `class` (`contract`) · `interface` · `struct` · `enum` · `other` (`library`, `type X is Y`)               |
+| Shell                                                 | **no**   | the language has no named types                                                                           |
+| Kotlin, Scala, Zig, Objective-C, OCaml (generic tier) | **no**   | pattern-matched, not precisely parsed — see below                                                         |
+
+The generic tier extracts **no** types on purpose. Both tiers produce identical-looking
+IR, so a pattern-matched type row would be indistinguishable from a parsed one at a lower
+fidelity — exactly what the fidelity declaration exists to prevent. Those five languages
+keep the `class-derived` fallback instead, which is labelled as derived.
 
 Known gaps inside the covered languages, so a miss is never mistaken for absence:
 
 - **TypeScript**: a type inside a `namespace` is not emitted (the scan is flat over
   top-level declarations).
-- **C#**: `delegate` is not emitted — it is a named type that fits no bucket, and `other`
-  for something that common would say less than nothing.
 - **Python**: `class Color(Enum)` is reported as a `class`. The only evidence for `enum` is
   a base-class name any module may define and any import may rename, so it is not inferred.
-- **Every language**: constants, variables and macros are not indexed at all.
+- **Ruby**: a `module` is `other`, not `trait` and not `interface`. One keyword does two
+  unrelated jobs — a namespace (`module Demo` around a file's classes) and a mixin carrying
+  implementation (`include Comparable`) — and no declaration says which. A `class` or
+  `module` inside a `describe`/`do` block is not emitted at all: the scan does not descend
+  into DSL blocks, for the same reason it records no `define_method` methods.
+- **Swift, Dart**: an `extension` declares no type and gets no row. Its `name` is a type
+  declared somewhere else — usually another file — so a row would point at the extension
+  instead of the declaration. Extension MEMBERS are still recorded on the extended type.
+- **C/C++**: a forward declaration (`class Fwd;`) gets no row — it declares no members, and
+  in the usual header/source split it is not even the right file. A `using` alias inside a
+  FUNCTION body is not indexed (the walk does not enter function bodies).
+- **Swift, C++, Ruby**: a type declared inside a function body is not emitted, for the same
+  reason.
+- **Solidity**: an `event` and a custom `error` get no row. Both are named, neither is a
+  type: they cannot annotate a variable or be inherited.
+- **Every language with attributes** (C#, Java, Swift, Dart, Python): the span starts at the
+  leading attribute/annotation, because that is where the grammar's declaration node starts.
+  A long annotation can therefore push the type's own name past the end of the truncated
+  `signature` — measured at 58/7212 rows on `flutter/packages` and 4/1756 on Newtonsoft.Json.
+- **Every language**: constants, variables and macros are not indexed at all. An overload set
+  or a generic-arity family sharing one name shares one id, so only the first row survives
+  (`Func<T>`/`Func<T1,T2>` → one `Func`), the same id model functions already use.
 
 The vocabulary is closed (`class` `interface` `struct` `record` `enum` `trait` `alias`
 `other`), like `FILE_ROLES`. A construct that fits none of the first seven gets `other`

@@ -470,3 +470,125 @@ describe('SolidityAdapter — awkward but legal source', () => {
     expect(bump?.selfAttrsWritten).toEqual(['level']);
   });
 });
+
+describe('SolidityAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract Engine {
+    struct Reading {
+        uint256 value;
+    }
+
+    enum Gear { Low, High }
+
+    uint256 public rpm;
+
+    function spin() public {}
+}
+
+abstract contract Base {
+    function go() public virtual;
+}
+
+interface ISpinner {
+    function spin() external;
+}
+
+library MathLib {
+    function double(uint256 a) internal pure returns (uint256) {
+        return a * 2;
+    }
+}
+
+struct TopLevel {
+    uint256 x;
+}
+
+enum TopEnum { A, B }
+
+type Price is uint128;
+
+error Unauthorized(address who);
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-sol-types-'));
+    writeFileSync(join(root, 'Kinds.sol'), SRC);
+    analysis = await new SolidityAdapter().analyze(['Kinds.sol'], root);
+  });
+
+  it('calls a contract a class, keeping the keyword in the signature', () => {
+    // Nominal, instantiable, owns methods and state: every clause of `class`. The
+    // keyword is never lost, so a reader sees `contract`, not a claim of `class`.
+    expect(find('Engine')?.kind).toBe('class');
+    expect(find('Engine')?.signature).toBe('contract Engine');
+    expect(find('Base')?.kind).toBe('class');
+    expect(find('Base')?.signature).toBe('abstract contract Base');
+  });
+
+  it('refuses to call a library a class', () => {
+    // Not instantiable, no state, no inheritance — it fails the definition, so it
+    // goes in the escape hatch rather than the nearest-looking bucket.
+    expect(find('MathLib')?.kind).toBe('other');
+    expect(find('MathLib')?.signature).toBe('library MathLib');
+  });
+
+  it('maps interface, struct and enum onto the obvious buckets', () => {
+    expect(find('ISpinner')?.kind).toBe('interface');
+    expect(find('TopLevel')?.kind).toBe('struct');
+    expect(find('TopEnum')?.kind).toBe('enum');
+  });
+
+  it('calls a user-defined value type `other`, not an alias', () => {
+    // `Price` needs wrap/unwrap to become a uint128: it is a distinct type, so
+    // `alias` would state the opposite of the language's rule.
+    expect(find('Price')?.kind).toBe('other');
+    expect(find('Price')?.signature).toBe('type Price is uint128;');
+  });
+
+  it('qualifies a struct and an enum declared inside a contract', () => {
+    // Solidity refers to them as `Engine.Reading` from outside.
+    expect(find('Reading')?.qualname).toBe('Engine.Reading');
+    expect(find('Reading')?.container).toBe('Engine');
+    expect(find('Gear')?.qualname).toBe('Engine.Gear');
+    expect(find('TopLevel')?.container).toBeNull();
+  });
+
+  it('stops a struct signature at the brace instead of listing its fields', () => {
+    expect(find('Reading')?.signature).toBe('struct Reading');
+    expect(find('TopEnum')?.signature).toBe('enum TopEnum');
+    expect(lines[(find('Reading')?.lineStart ?? 0) - 1]).toContain('struct Reading');
+  });
+
+  it('emits nothing for an error declaration', () => {
+    // An error is a revert signature, not a type: it cannot annotate a variable
+    // and cannot be inherited. Same for an event.
+    expect(find('Unauthorized')).toBeUndefined();
+    expect((analysis.types ?? []).map((t) => t.name).sort()).toEqual([
+      'Base',
+      'Engine',
+      'Gear',
+      'ISpinner',
+      'MathLib',
+      'Price',
+      'Reading',
+      'TopEnum',
+      'TopLevel',
+    ]);
+  });
+
+  it('declares exactly the kinds it emits', () => {
+    expect(new SolidityAdapter().capabilities.typeKinds).toEqual([
+      'class',
+      'enum',
+      'interface',
+      'other',
+      'struct',
+    ]);
+  });
+});

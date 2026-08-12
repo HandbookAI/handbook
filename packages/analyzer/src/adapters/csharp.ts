@@ -79,10 +79,18 @@ const TYPE_DECLS = new Set([
  * declaration says and what a reader searches for, and the value/reference
  * distinction survives in the signature (`record struct Point` vs `record Point`).
  *
- * `delegate_declaration` is deliberately absent. A delegate is a named type, so
- * it belongs in a type index — but it is neither an aggregate nor a contract nor
- * an alias, and `other` for something that common would say less than nothing.
- * Left unclaimed rather than mis-bucketed; the coverage note names the gap.
+ * `delegate_declaration` is `other`, and the alternative was measured before
+ * choosing: 21 delegates in Newtonsoft.Json, none of them findable any other way.
+ * A delegate IS a first-class named type — it annotates fields and parameters and
+ * is inherited from — so leaving it out made an agent read a miss as absence,
+ * which is the failure this declaration exists to prevent. It is not an aggregate
+ * (no fields), not a contract (nothing implements it), and NOT an `alias`: two
+ * delegates with identical signatures are distinct, non-interconvertible types,
+ * so `alias` would state the opposite of the language's rule. That is exactly
+ * what `other` is for, and no new vocabulary member is warranted: `TYPE_KINDS` is
+ * closed on purpose, and {@link TypeNode.signature} already carries
+ * `delegate void Handler(int)` verbatim — the same treatment a C++ `union` and a
+ * Go defined type get.
  */
 const CSHARP_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
   ['class_declaration', 'class'],
@@ -91,6 +99,7 @@ const CSHARP_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKin
   ['record_declaration', 'record'],
   ['record_struct_declaration', 'record'],
   ['enum_declaration', 'enum'],
+  ['delegate_declaration', 'other'],
 ]);
 
 /** Declarations whose children are more declarations. */
@@ -999,8 +1008,11 @@ const CSHARP_SPEC: LanguageSpec<ModuleScan, CSharpIndexes> = {
               owner: name ? (frame.owner ? `${frame.owner}.${name}` : name) : frame.owner,
             });
           }
-        } else if (child.type === 'enum_declaration') {
-          // Indexed but never scanned for members: an enum has none to call.
+        } else if (child.type === 'enum_declaration' || child.type === 'delegate_declaration') {
+          // Indexed but never scanned for members: an enum's members are not
+          // callable, and a delegate declares none at all — its `Invoke` is
+          // synthesised by the compiler, and inventing a node for it would put a
+          // function nobody wrote into the call graph.
           recordTypeDeclaration(scan, child, file, frame.owner);
         }
       }

@@ -774,3 +774,189 @@ void go(detail::Impl& impl) {
     expect(analysis.functions.filter((f) => f.name === 'run')).toHaveLength(2);
   });
 });
+
+describe('CppAdapter — parsed type declarations (C++)', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `#pragma once
+
+namespace demo {
+
+class Engine : public Base {
+public:
+    void spin();
+
+    class Inner {
+        int z;
+    };
+
+    enum Local { A };
+
+    using Alias2 = int;
+};
+
+struct Point {
+    int x;
+};
+
+enum Gear { LOW, HIGH };
+
+enum class Mode { A, B };
+
+union Payload {
+    int i;
+    float f;
+};
+
+using Rpm = int;
+
+typedef int Cycles;
+
+typedef int (*Handler)(int, char*);
+
+template <typename T>
+class Box {
+public:
+    T value;
+};
+
+class Fwd;
+
+}  // namespace demo
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = writeRepo({ 'src/kinds.h': SRC }, 'hb-cpp-types-');
+    analysis = await new CppAdapter().analyze(['src/kinds.h'], root);
+  });
+
+  it('maps class, struct and enum onto the obvious buckets', () => {
+    expect(find('Engine')?.kind).toBe('class');
+    expect(find('Point')?.kind).toBe('struct');
+    expect(find('Gear')?.kind).toBe('enum');
+  });
+
+  it('keeps `enum class` an enum, with the modifier in the signature', () => {
+    expect(find('Mode')?.kind).toBe('enum');
+    expect(find('Mode')?.signature).toBe('enum class Mode');
+  });
+
+  it('refuses to call a union a struct', () => {
+    // Overlapping storage read through one member at a time. A reader who took it
+    // for an aggregate would believe every field holds a value at once.
+    expect(find('Payload')?.kind).toBe('other');
+    expect(find('Payload')?.signature).toBe('union Payload');
+  });
+
+  it('calls both alias spellings an alias', () => {
+    expect(find('Rpm')?.kind).toBe('alias');
+    expect(find('Rpm')?.signature).toBe('using Rpm = int;');
+    expect(find('Cycles')?.kind).toBe('alias');
+    expect(find('Cycles')?.signature).toBe('typedef int Cycles;');
+  });
+
+  it('finds the name of a function-pointer typedef, not its parameter type', () => {
+    // The name is buried under function → parenthesized → pointer declarators, so a
+    // shallow read gets `(*Handler)(int, char*)` or nothing at all.
+    expect(find('Handler')?.kind).toBe('alias');
+    expect(find('Handler')?.name).toBe('Handler');
+  });
+
+  it('spans the class inside a template, not the template header', () => {
+    // `template <typename T>` is on the line before, and it does not name the type —
+    // so a reader jumping to `lineStart` must land on `class Box`.
+    expect(lines[(find('Box')?.lineStart ?? 0) - 1]).toContain('class Box');
+    expect(find('Box')?.signature).toBe('class Box');
+  });
+
+  it('emits nothing for a forward declaration', () => {
+    // `class Fwd;` declares no members. A row for it points a reader at a line that
+    // is not the definition — and in the usual header/source split, at another file.
+    expect(find('Fwd')).toBeUndefined();
+  });
+
+  it('qualifies by namespace, and nests a member type under its enclosing type', () => {
+    expect(find('Engine')?.qualname).toBe('demo.Engine');
+    expect(find('Engine')?.container).toBeNull();
+    expect(find('Engine')?.id).toBe('type:src.kinds.demo.Engine');
+    // A nested type reaches the walk wrapped in a `field_declaration`, so this is
+    // also the check that the wrapper is unwrapped at all.
+    expect(find('Inner')?.qualname).toBe('demo.Engine.Inner');
+    expect(find('Inner')?.container).toBe('demo.Engine');
+    expect(find('Local')?.qualname).toBe('demo.Engine.Local');
+    expect(find('Alias2')?.qualname).toBe('demo.Engine.Alias2');
+  });
+
+  it('stops a class signature at its member list', () => {
+    expect(find('Engine')?.signature).toBe('class Engine : public Base');
+    expect(find('Point')?.signature).toBe('struct Point');
+  });
+
+  it('declares exactly the kinds it emits', () => {
+    expect(new CppAdapter().capabilities.typeKinds).toEqual(['alias', 'class', 'enum', 'other', 'struct']);
+  });
+});
+
+describe('CppAdapter — parsed type declarations (pure C)', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `struct Point { int x; };
+typedef struct Node { int v; struct Node* next; } Node;
+typedef enum { A, B } Letter;
+enum Gear { LOW, HIGH };
+union U { int i; float f; };
+typedef unsigned long ulong_t;
+struct Fwd;
+typedef struct Opaque Opaque;
+enum Direction : int;
+`;
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = writeRepo({ 'c/kinds.c': SRC }, 'hb-c-types-');
+    analysis = await new CppAdapter().analyze(['c/kinds.c'], root);
+  });
+
+  it('reads the same six node types out of the `c` grammar', () => {
+    expect(find('Point')?.kind).toBe('struct');
+    expect(find('Gear')?.kind).toBe('enum');
+    expect(find('U')?.kind).toBe('other');
+    expect(find('ulong_t')?.kind).toBe('alias');
+  });
+
+  it('prefers the definition when `typedef struct X { … } X;` names both', () => {
+    // Two declarations, one name, one id. The struct is recorded first so it is the
+    // struct that survives — a reader wants the definition, not the alias to it.
+    expect(analysis.types?.filter((t) => t.name === 'Node')).toHaveLength(1);
+    expect(find('Node')?.kind).toBe('struct');
+    expect(find('Node')?.signature).toBe('struct Node');
+  });
+
+  it('names an anonymous enum by the typedef that gives it one', () => {
+    // `typedef enum { A, B } Letter;` — the enum itself has no name to record, so
+    // the only honest row is the alias.
+    expect(find('Letter')?.kind).toBe('alias');
+    expect(find('Letter')?.signature).toBe('typedef enum { A, B } Letter;');
+  });
+
+  it('emits nothing for a C forward declaration either', () => {
+    expect(find('Fwd')).toBeUndefined();
+  });
+
+  it('gives an opaque handle typedef the alias row only, never a bodyless struct', () => {
+    // `typedef struct Opaque Opaque;` is the C opaque-handle idiom: the struct is
+    // DEFINED in some .c file we may not even be scanning. One row, the alias, whose
+    // span is the line a reader can actually open.
+    expect(analysis.types?.filter((t) => t.name === 'Opaque')).toHaveLength(1);
+    expect(find('Opaque')?.kind).toBe('alias');
+    expect(find('Opaque')?.signature).toBe('typedef struct Opaque Opaque;');
+  });
+
+  it('emits nothing for a forward-declared enum', () => {
+    // `enum Direction : int;` reaches the recorder directly (an enum has no members
+    // to scan), so this is the case the body requirement exists for.
+    expect(find('Direction')).toBeUndefined();
+  });
+});

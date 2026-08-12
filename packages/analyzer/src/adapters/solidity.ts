@@ -87,13 +87,15 @@
  * effectively skipped.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, CallType } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, CallType, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
   dirOf,
+  recordType,
   resolveOwnMethod,
   resolveSameFileFree,
   unresolvedOf,
@@ -118,6 +120,82 @@ const DATA_DECLARATIONS = new Set([
   'event_definition',
   'error_declaration',
 ]);
+
+/**
+ * Node type → the {@link TypeKind} it declares, for THIS grammar. Three of the
+ * five mappings are judgement calls, so each is argued rather than asserted.
+ *
+ * **`contract` is `class`.** Read the vocabulary's definition of `class` clause by
+ * clause — nominal, instantiable, owns methods and state — and a Solidity contract
+ * satisfies every one of them literally: `new Engine()` deploys one, it holds
+ * storage, it has a constructor, it inherits with `is`, it can be `abstract`, and
+ * `Engine(addr)` uses it as a variable's type. The reasons to hesitate (it is
+ * deployed at an address; state is persistent storage) are facts about the runtime,
+ * not about the shape of the declaration a reader is looking up. Filing the single
+ * most common declaration in the language under `other` would leave the escape
+ * hatch carrying most of the index, which tells a reader nothing at all.
+ *
+ * **`library` is NOT `class`, and is `other`.** A library is the one contract-like
+ * form that fails the definition: it cannot be instantiated, cannot declare state
+ * variables, and cannot inherit or be inherited from. It is not an `interface`
+ * either — it carries implementations — and not a `trait`: nothing "is a" library,
+ * and `using MathLib for uint256` attaches functions to a type rather than making
+ * the type a subtype of anything. A stateless, non-instantiable named collection of
+ * functions is exactly the case `other` exists for, with `library MathLib` verbatim
+ * in the signature.
+ *
+ * **`type Price is uint128` is `other`, not `alias`.** Solidity has no type aliases.
+ * A user-defined value type is a DISTINCT type with no implicit conversion to its
+ * representation — `Price.wrap`/`unwrap` are required — so `alias` would state the
+ * opposite of the language's rule. Same reasoning, and the same bucket, as a Go
+ * defined type.
+ *
+ * Deliberately absent: `event_definition` and `error_declaration`. Both are named,
+ * both are in {@link DATA_DECLARATIONS} because their names must not be mistaken for
+ * contracts at a call site, and neither is a TYPE — an event is a log signature and
+ * an error is a revert signature; neither can annotate a variable or be inherited.
+ * A `constructor` and a `modifier` are members, and are already functions.
+ */
+const SOLIDITY_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['contract_declaration', 'class'],
+  ['interface_declaration', 'interface'],
+  ['library_declaration', 'other'],
+  ['struct_declaration', 'struct'],
+  ['enum_declaration', 'enum'],
+  ['user_defined_type_definition', 'other'],
+]);
+
+/**
+ * Emit the {@link TypeNode} for one declaration, if it declares a type at all.
+ *
+ * `container` is the enclosing contract for a nested `struct` or `enum` — Solidity
+ * refers to those as `Engine.Reading` from outside, so the qualname matches the
+ * source. A top-level one has no container: a Solidity file is not a namespace.
+ */
+function recordTypeDeclaration(scan: ModuleScan, node: Node, file: string, container: string | null): void {
+  const kind = SOLIDITY_TYPE_KINDS.get(node.type);
+  if (!kind) return;
+  recordType(scan, {
+    name: fieldText(node, 'name'),
+    kind,
+    node,
+    // A contract/interface/library has a `body` field. A struct's and an enum's
+    // members are DIRECT children with no wrapper to stop at, so the brace is the
+    // stop — otherwise a 40-field struct's signature would be 40 fields long.
+    body: node.childForFieldName('body') ?? openingBrace(node),
+    file,
+    container,
+  });
+}
+
+/** The `{` that opens a member list, for a declaration with no body node. */
+function openingBrace(node: Node): Node | null {
+  for (let i = 0; i < node.childCount; i += 1) {
+    const child = node.child(i);
+    if (child && !child.isNamed && child.text === '{') return child;
+  }
+  return null;
+}
 
 /**
  * Compiler intrinsics reachable as a bare call. They are genuinely external to
@@ -685,6 +763,10 @@ function scanTypeMembers(scan: ModuleScan, decl: Node, file: string): void {
         ownerName: owner,
         file,
       });
+    } else if (DATA_DECLARATIONS.has(member.type)) {
+      // A `struct` or `enum` declared INSIDE a contract. Referred to from outside
+      // as `Engine.Reading`, so the container makes the qualname match the source.
+      recordTypeDeclaration(scan, member, file, owner);
     }
   }
 }
@@ -1176,11 +1258,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
-  // No type extraction yet — an EMPTY list is the positive declaration, not a
-  // gap in this object. The agent artifact reads it and says so on the page, and
-  // the `class-derived` fallback row (a span inferred from a class's methods,
-  // labelled as inferred) is what covers Solidity contracts, interfaces, libraries and structs in the meantime.
-  typeKinds: [],
+  typeKinds: declaredTypeKinds(SOLIDITY_TYPE_KINDS),
 };
 
 const SOLIDITY_SPEC: LanguageSpec<ModuleScan, SolidityIndexes> = {
@@ -1222,6 +1300,7 @@ const SOLIDITY_SPEC: LanguageSpec<ModuleScan, SolidityIndexes> = {
       } else if (TYPE_DECLARATIONS.has(child.type)) {
         declarations.push(child);
         scanTypeShape(scan, child);
+        recordTypeDeclaration(scan, child, file, null);
       } else if (child.type === 'function_definition') {
         // Solidity ≥0.7: a function outside any contract.
         const name = fieldText(child, 'name');
@@ -1229,6 +1308,7 @@ const SOLIDITY_SPEC: LanguageSpec<ModuleScan, SolidityIndexes> = {
       } else if (DATA_DECLARATIONS.has(child.type)) {
         const name = fieldText(child, 'name');
         if (name) scan.dataTypes.add(name);
+        recordTypeDeclaration(scan, child, file, null);
       }
     }
 

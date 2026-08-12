@@ -101,12 +101,14 @@
  * the same call this repo already makes for C#'s `.Designer.cs` / `.g.cs`.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
+  recordType,
   unresolvedOf,
   SpineAdapter,
   type BaseScan,
@@ -159,6 +161,44 @@ const TYPE_DECLS = new Set([
   'mixin_declaration',
   'extension_declaration',
   'enum_declaration',
+]);
+
+/**
+ * Node type → the {@link TypeKind} it declares, for THIS grammar. Not the same
+ * set as {@link TYPE_DECLS}, and the two differences are the interesting part.
+ *
+ * `mixin_declaration` is `trait`, not `other`. A Dart `mixin` is a named bundle of
+ * method BODIES that a class composes in with `with`, and cannot be instantiated
+ * — which is this vocabulary's definition of `trait`, word for word, and exactly
+ * what a Scala or PHP trait is. Dart split `mixin` out of `class` in 2.19 for
+ * precisely this reason, so the keyword has ONE job and can be mapped without
+ * ambiguity. (Contrast Ruby's `module`, whose two jobs are why it is `other`.)
+ *
+ * `extension_type_declaration` (`extension type Meters(int value)`) is `other`,
+ * on the same reasoning as a Go defined type: it is a distinct static type with
+ * its own interface over a representation, NOT a second name for one — `Meters`
+ * and `int` are not interchangeable — so `alias` would state the opposite of the
+ * language's rule.
+ *
+ * `extension_declaration` (`extension StringX on String`) is deliberately ABSENT,
+ * even though it is in {@link TYPE_DECLS} because its members are real functions.
+ * An extension declares no type: `StringX` cannot annotate a variable, and the
+ * type in the declaration (`String`) is one that was declared somewhere else
+ * entirely. A row for it would put a non-type in the type index AND point at
+ * `String`'s members as though this were where `String` came from — the wrong
+ * pointer the agent artifact exists to prevent. Same rule as a Swift `extension`.
+ *
+ * A `class` modified by `interface`, `sealed`, `abstract`, `base` or `mixin`
+ * (`abstract interface class Contract`) stays `class`: Dart's class modifiers
+ * restrict who may extend or implement the type, they do not make it a different
+ * kind of declaration, and the modifier survives verbatim in the signature.
+ */
+const DART_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_definition', 'class'],
+  ['enum_declaration', 'enum'],
+  ['mixin_declaration', 'trait'],
+  ['type_alias', 'alias'],
+  ['extension_type_declaration', 'other'],
 ]);
 
 /** Signature nodes that name a constructor; all share the `Type[.name]` shape. */
@@ -1047,14 +1087,44 @@ function scanMembers(scan: ModuleScan, body: Node, owner: string | null, file: s
 function typeNameOf(node: Node): string {
   const named = fieldText(node, 'name');
   if (named) return named;
+  // A `typedef` names itself with a `type_identifier`, and in the old
+  // `typedef void Cb(int x)` form the return type comes FIRST — so it is the first
+  // `type_identifier` that is the name, never simply the first named child.
+  if (node.type === 'type_alias') {
+    return node.namedChildren.find((c) => c?.type === 'type_identifier')?.text ?? '';
+  }
   const application = node.namedChildren.find((c) => c?.type === 'mixin_application_class');
   const source = application ?? node;
   return source.namedChildren.find((c) => c?.type === 'identifier')?.text ?? '';
 }
 
+/**
+ * Emit the {@link TypeNode} for one declaration. Separate from
+ * `scanTypeDeclaration` because the two sets differ in both directions: a
+ * `typedef` and an `extension type` declare a type but no member this adapter
+ * scans, and an `extension` is the reverse — real members, no type of its own.
+ */
+function recordTypeDeclaration(scan: ModuleScan, node: Node, file: string): void {
+  const kind = DART_TYPE_KINDS.get(node.type);
+  if (!kind) return;
+  recordType(scan, {
+    name: typeNameOf(node),
+    kind,
+    // A `mixin` has no `body` FIELD, only a `class_body` child, so the signature
+    // would otherwise swallow every member. A `typedef` has no body at all, which
+    // is right: `typedef Compare<T> = int Function(T, T)` is all header.
+    body: node.childForFieldName('body') ?? node.namedChildren.find((c) => c?.type === 'class_body') ?? null,
+    node,
+    file,
+    // Dart has no nested type declarations — a class body holds members only.
+    container: null,
+  });
+}
+
 function scanTypeDeclaration(scan: ModuleScan, node: Node, file: string): void {
   const owner = typeNameOf(node);
   if (!owner) return;
+  recordTypeDeclaration(scan, node, file);
   if (!scan.ownerMethods.has(owner)) scan.ownerMethods.set(owner, new Set());
   if (!scan.ownerFields.has(owner)) scan.ownerFields.set(owner, new Set());
   collectBases(scan, owner, node);
@@ -1613,11 +1683,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
-  // No type extraction yet — an EMPTY list is the positive declaration, not a
-  // gap in this object. The agent artifact reads it and says so on the page, and
-  // the `class-derived` fallback row (a span inferred from a class's methods,
-  // labelled as inferred) is what covers Dart classes, mixins and enums in the meantime.
-  typeKinds: [],
+  typeKinds: declaredTypeKinds(DART_TYPE_KINDS),
 };
 
 const DART_SPEC: LanguageSpec<ModuleScan, DartIndexes> = {
@@ -1660,6 +1726,10 @@ const DART_SPEC: LanguageSpec<ModuleScan, DartIndexes> = {
         collectDirective(child, scan, file);
       } else if (TYPE_DECLS.has(child.type)) {
         scanTypeDeclaration(scan, child, file);
+      } else if (DART_TYPE_KINDS.has(child.type)) {
+        // A `typedef` or an `extension type`: indexed as a type, but no member of
+        // it is scanned, so it never enters call resolution.
+        recordTypeDeclaration(scan, child, file);
       }
     }
     // Top-level functions, getters and setters are direct children of `program`,

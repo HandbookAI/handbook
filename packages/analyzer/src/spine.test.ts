@@ -14,6 +14,7 @@ import {
   dirOf,
   lookupBareType,
   lookupScoped,
+  recordType,
   resolveFieldType,
   resolveOwnMethod,
   resolveSameFileFree,
@@ -972,5 +973,80 @@ describe('dedupeTypesById', () => {
   it('keeps distinct ids apart', () => {
     const kept = dedupeTypesById([type('type:m.A', 1), type('type:m.B', 5)]);
     expect(kept.map((t) => t.id)).toEqual(['type:m.A', 'type:m.B']);
+  });
+});
+
+describe('a type signature always names the type it declares', () => {
+  /**
+   * The span starts where the grammar's declaration node starts, which for an
+   * attributed declaration is the attribute. That is the honest span and it is
+   * kept — but it meant a long attribute could push the name past the 200-char
+   * cap, leaving a signature that does not say what it declares. Measured on
+   * real repositories: 58/7212 rows in flutter/packages, 43/424 in Alamofire,
+   * 25/414 in spdlog, and 4/1756 in Newtonsoft.Json, which predates types
+   * entirely.
+   *
+   * A signature without the name is not a shorter signature; the column exists
+   * to identify the declaration.
+   */
+  function signatureOf(source: string, name: string): string | undefined {
+    const scan: BaseScan = {
+      moduleId: 'm',
+      files: ['a.x'],
+      functions: [],
+      fnContext: new Map(),
+      imports: new Map(),
+      ownerMethods: new Map(),
+      fieldTypes: new Map(),
+      freeFunctions: new Set(),
+    };
+    // A stand-in for a grammar node: `recordType` only reads text and positions.
+    const bodyAt = source.indexOf('{');
+    const node = {
+      text: source,
+      startIndex: 0,
+      endIndex: source.length,
+      startPosition: { row: 0 },
+      endPosition: { row: source.split('\n').length - 1 },
+    } as unknown as Node;
+    const body = { startIndex: bodyAt } as unknown as Node;
+    recordType(scan, { name, kind: 'class', node, body, file: 'a.x' });
+    return scan.typeNodes?.[0]?.signature;
+  }
+
+  it('keeps a short attributed declaration verbatim', () => {
+    expect(signatureOf('@immutable class Annotated {}', 'Annotated')).toBe('@immutable class Annotated');
+  });
+
+  it('elides the attributes when they would cut the name away', () => {
+    const long = `@Attribute(${'x'.repeat(400)}) class Buried {}`;
+    const sig = signatureOf(long, 'Buried') ?? '';
+    expect(sig).toContain('Buried');
+    // Marked, so nobody reads it as the declaration verbatim.
+    expect(sig.startsWith('… ')).toBe(true);
+    expect(sig.length).toBeLessThanOrEqual(202);
+  });
+
+  it('still caps a declaration whose name is early but whose header is long', () => {
+    const long = `class Wide extends ${'A'.repeat(400)} {}`;
+    const sig = signatureOf(long, 'Wide') ?? '';
+    expect(sig).toContain('Wide');
+    expect(sig.startsWith('…')).toBe(false);
+    expect(sig.length).toBeLessThanOrEqual(200);
+  });
+
+  it('falls back to the plain cap when the header does not name the type at all', () => {
+    // Nothing better to offer, and inventing a name would be worse than a
+    // signature that happens to be unhelpful.
+    //
+    // Asserted on the PREFIX, not on the absence of an ellipsis: `truncate`
+    // appends one of its own when it cuts a tail, so the two marks coexist and
+    // mean different things — a LEADING `… ` says attributes were removed from
+    // the front, a trailing one says the tail was cut. Testing for "no ellipsis
+    // anywhere" conflated them, and the first version of this test failed for
+    // that reason rather than for a defect.
+    const sig = signatureOf(`${'z'.repeat(300)} {}`, 'Absent') ?? '';
+    expect(sig.startsWith('… ')).toBe(false);
+    expect(sig.length).toBeLessThanOrEqual(200);
   });
 });

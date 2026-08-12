@@ -571,3 +571,105 @@ describe('RubyAdapter — hairy realistic Ruby', () => {
     expect(analysis.functions.every((f) => f.lineStart > 0 && f.lineEnd >= f.lineStart)).toBe(true);
   });
 });
+
+describe('RubyAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `module Demo
+  class Engine
+    def spin
+      @rpm = 1
+    end
+  end
+
+  class Sub < Engine; end
+
+  class Bare
+  end
+
+  module Loggable
+    def log(m); m; end
+  end
+
+  Alias = Engine
+
+  class << self
+    def meta; 1; end
+  end
+end
+
+class Demo::Nested
+  def deep; 1; end
+end
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = writeRepo({ 'lib/kinds.rb': SRC }, 'hb-ruby-types-');
+    analysis = await new RubyAdapter().analyze(['lib/kinds.rb'], root);
+  });
+
+  it('calls a class a class', () => {
+    expect(find('Engine')?.kind).toBe('class');
+    expect(find('Sub')?.kind).toBe('class');
+  });
+
+  it('files a module under `other` rather than guessing which job it does', () => {
+    // One keyword, two unrelated jobs: `module Demo` is a namespace, `module
+    // Loggable` is a mixin carrying implementation. Nothing in either declaration
+    // says which, so both stay `other` and the signature carries the keyword.
+    expect(find('Demo')?.kind).toBe('other');
+    expect(find('Loggable')?.kind).toBe('other');
+    expect(find('Demo')?.signature).toBe('module Demo');
+    expect(find('Loggable')?.signature).toBe('module Loggable');
+  });
+
+  it('spans the declaration from its keyword to its `end`', () => {
+    const engine = find('Engine');
+    expect(lines[(engine?.lineStart ?? 0) - 1]).toContain('class Engine');
+    expect(lines[(engine?.lineEnd ?? 0) - 1]?.trim()).toBe('end');
+    expect(engine?.lineEnd).toBeGreaterThan(engine?.lineStart ?? 0);
+  });
+
+  it('stops a body-less declaration signature at `end`, not after it', () => {
+    // An empty class has no body node at all, so without the `end` stop the header
+    // would read "class Bare end" — a keyword the reader never wrote in a header.
+    expect(find('Bare')?.signature).toBe('class Bare');
+    // The one-line form keeps its statement separator, exactly as written: the
+    // signature is the declaration verbatim, not a re-rendering of it.
+    expect(find('Sub')?.signature).toBe('class Sub < Engine;');
+  });
+
+  it('nests a type under the module it is written in', () => {
+    expect(find('Engine')?.qualname).toBe('Demo.Engine');
+    expect(find('Engine')?.container).toBe('Demo');
+    expect(find('Engine')?.id).toBe('type:lib.kinds.Demo.Engine');
+    expect(find('Demo')?.container).toBeNull();
+  });
+
+  it('nests a compound-name declaration under the scope it names', () => {
+    // `class Demo::Nested` does not open `Demo` as a lookup scope, but it is still
+    // written inside it, and the qualname must match what the methods got.
+    expect(find('Nested')?.qualname).toBe('Demo.Nested');
+    expect(find('Nested')?.container).toBe('Demo');
+    expect(analysis.functions.find((f) => f.name === 'deep')?.qualname).toBe('Demo.Nested.deep');
+  });
+
+  it('emits nothing for `class << self` or for a constant assignment', () => {
+    // The singleton class declares no new type and has no name; `Alias = Engine`
+    // is an expression evaluated at load time, not a declaration.
+    expect((analysis.types ?? []).map((t) => t.name).sort()).toEqual([
+      'Bare',
+      'Demo',
+      'Engine',
+      'Loggable',
+      'Nested',
+      'Sub',
+    ]);
+  });
+
+  it('declares exactly the kinds it emits', () => {
+    expect(new RubyAdapter().capabilities.typeKinds).toEqual(['class', 'other']);
+  });
+});

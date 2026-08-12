@@ -439,8 +439,12 @@ public static class Helpers
 `,
     // Every remaining declared typeKind. `record` and `record struct` both map to
     // `record` — that is what the declaration says and what a reader searches for;
-    // the reference/value distinction survives in the signature.
+    // the reference/value distinction survives in the signature. A `delegate` is
+    // `other`: a real named type that is no aggregate, no contract, and not an
+    // alias (two same-signature delegates are distinct types).
     'src/Kinds.cs': `namespace Demo.Engines;
+
+public delegate void Nudge(string reason);
 
 public interface ISpinner
 {
@@ -503,6 +507,28 @@ int ignite(Engine& e) {
 
 }  // namespace demo
 `,
+    // Every remaining declared typeKind (`class` is in engine.h). A `union` is
+    // `other`, not a struct: one member holds a value at a time. Both alias
+    // spellings mean the same thing here, unlike Go's defined type.
+    'src/kinds.h': `#pragma once
+
+namespace demo {
+
+struct Point {
+    int x;
+};
+
+enum Gear { LOW, HIGH };
+
+union Payload {
+    int i;
+    float f;
+};
+
+using Rpm = int;
+
+}  // namespace demo
+`,
     'src/app.cpp': `#include "engine.h"
 #include <cstdio>
 
@@ -535,7 +561,7 @@ private:
 }  // namespace demo
 `,
   },
-  analyze: ['src/app.cpp', 'src/engine.cpp', 'src/engine.h'],
+  analyze: ['src/app.cpp', 'src/engine.cpp', 'src/engine.h', 'src/kinds.h'],
 };
 
 /**
@@ -658,6 +684,10 @@ let run x =
 
 const RUBY: Fixture = {
   files: {
+    // Both declared typeKinds are here already: `class` for App/Engine, and
+    // `other` for `module Demo` — one keyword doing two unrelated jobs (namespace
+    // and mixin), so it is not filed as a trait or an interface. Do not flatten the
+    // module away; the kind guard below would then pass vacuously.
     'app.rb': `require_relative 'engine'
 require_relative 'helpers'
 
@@ -802,8 +832,31 @@ class App extends Base
     }
 }
 `,
+    // Every remaining declared typeKind. PHP is the one language whose keywords
+    // land on four vocabulary members with nothing forced — a PHP `trait` is the
+    // canonical `trait`: a contract that carries implementation.
+    'src/Kinds.php': `<?php
+
+namespace App\\Billing;
+
+interface Spinner
+{
+    public function spin(): void;
+}
+
+trait Loggable
+{
+    public function log(): void {}
+}
+
+enum Gear
+{
+    case Low;
+    case High;
+}
+`,
   },
-  analyze: ['src/App.php', 'src/Motor.php', 'src/Engine.php'],
+  analyze: ['src/App.php', 'src/Motor.php', 'src/Engine.php', 'src/Kinds.php'],
 };
 
 const DART: Fixture = {
@@ -857,8 +910,18 @@ class App {
     'lib/util/text.dart': `
 String shout(String text) => text;
 `,
+    // Every remaining declared typeKind (`class` and `trait` are in engine.dart —
+    // a `mixin` is a trait: method bodies composed in with `with`). An `extension
+    // type` is `other`, not `alias`: `Meters` and `int` are not interchangeable.
+    'lib/kinds.dart': `
+enum Gear { low, high }
+
+typedef Callback = void Function(int);
+
+extension type Meters(int value) {}
+`,
   },
-  analyze: ['lib/engine.dart', 'lib/app.dart', 'lib/util/text.dart'],
+  analyze: ['lib/engine.dart', 'lib/app.dart', 'lib/util/text.dart', 'lib/kinds.dart'],
 };
 
 const SWIFT: Fixture = {
@@ -944,8 +1007,22 @@ public class App: EngineBase, Runner {
     private func prepare() { }
 }
 `,
+    // Every remaining declared typeKind (`class` and `interface` are in
+    // Engine.swift — a `protocol` IS an interface). An `actor` is a `class`; an
+    // `extension` declares no type and Extras.swift proves none is emitted for one.
+    'Sources/Kinds.swift': `struct Point {
+    var x: Int
+}
+
+enum Gear {
+    case low
+    case high
+}
+
+typealias Rpm = Int
+`,
   },
-  analyze: ['Sources/Engine.swift', 'Sources/Extras.swift', 'Sources/App.swift'],
+  analyze: ['Sources/Engine.swift', 'Sources/Extras.swift', 'Sources/App.swift', 'Sources/Kinds.swift'],
 };
 
 const SOLIDITY: Fixture = {
@@ -1021,8 +1098,27 @@ library MathLib {
     }
 }
 `,
+    // Every remaining declared typeKind. A `contract` is a `class` (App.sol) and a
+    // `library` is `other` (MathLib.sol, not instantiable and stateless); a
+    // user-defined value type is `other` too, since `Price` needs wrap/unwrap and
+    // so is NOT an alias for uint128.
+    'src/Kinds.sol': `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface ISpinner {
+    function spin() external;
+}
+
+struct Reading {
+    uint256 value;
+}
+
+enum Gear { Low, High }
+
+type Price is uint128;
+`,
   },
-  analyze: ['src/App.sol', 'src/Engine.sol', 'src/MathLib.sol'],
+  analyze: ['src/App.sol', 'src/Engine.sol', 'src/MathLib.sol', 'src/Kinds.sol'],
 };
 
 const FIXTURES: Record<string, Fixture> = {

@@ -425,7 +425,11 @@ public class Outer
     {
         public void Deep() {}
     }
+
+    public delegate void Nudge(string reason);
 }
+
+public delegate TResult Transform<in T, out TResult>(T arg);
 
 public interface ISpinner
 {
@@ -476,6 +480,29 @@ public enum Gear
     expect(find('Sample')?.kind).toBe('record');
     expect(find('Reading')?.signature).toContain('record Reading');
     expect(find('Sample')?.signature).toContain('record struct Sample');
+  });
+
+  it('indexes a delegate as `other`, keeping the keyword in the signature', () => {
+    // A delegate is a real named type — it annotates fields and parameters — but it
+    // is no aggregate, no contract, and emphatically not an `alias`: two delegates
+    // with the same signature are distinct types. `other` plus the verbatim
+    // declaration is the claim with no lie in it.
+    expect(find('Transform')?.kind).toBe('other');
+    expect(find('Transform')?.signature).toContain('delegate TResult Transform<in T, out TResult>');
+    expect(lines[(find('Transform')?.lineStart ?? 0) - 1]).toContain('delegate TResult Transform');
+  });
+
+  it('declares no callable node for a delegate', () => {
+    // `Invoke` is synthesised by the compiler. A node for it would be a function
+    // nobody wrote, reachable from nothing, in a graph whose whole value is that
+    // every vertex is a real definition.
+    expect(analysis.functions.map((f) => f.name)).not.toContain('Invoke');
+    expect(analysis.functions.some((f) => f.qualname.includes('Transform'))).toBe(false);
+  });
+
+  it('qualifies a nested delegate by its enclosing type', () => {
+    expect(find('Nudge')?.qualname).toBe('Outer.Nudge');
+    expect(find('Nudge')?.container).toBe('Outer');
   });
 
   it('qualifies a nested type by its enclosing type, and not by its namespace', () => {

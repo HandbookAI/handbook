@@ -544,3 +544,106 @@ describe('PhpAdapter', () => {
     expect(adapter.statementSpans).toBeUndefined();
   });
 });
+
+describe('PhpAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `<?php
+
+namespace App\\Demo;
+
+class Engine
+{
+    public function spin(): void {}
+}
+
+abstract class Base {}
+
+interface Spinner
+{
+    public function spin(): void;
+}
+
+trait Loggable
+{
+    public function log(): void {}
+}
+
+enum Gear
+{
+    case Low;
+    case High;
+}
+
+enum Suit: string
+{
+    case Hearts = 'H';
+}
+
+$anon = new class extends Base {};
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-php-types-'));
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'Kinds.php'), SRC);
+    analysis = await new PhpAdapter().analyze(['src/Kinds.php'], root);
+  });
+
+  it('maps each of PHP four declaration keywords onto its own bucket', () => {
+    expect(find('Engine')?.kind).toBe('class');
+    expect(find('Spinner')?.kind).toBe('interface');
+    expect(find('Loggable')?.kind).toBe('trait');
+    expect(find('Gear')?.kind).toBe('enum');
+  });
+
+  it('keeps the modifier in the signature rather than inventing a kind for it', () => {
+    expect(find('Base')?.kind).toBe('class');
+    expect(find('Base')?.signature).toBe('abstract class Base');
+  });
+
+  it('keeps a backed enum an enum, with its backing type in the signature', () => {
+    expect(find('Suit')?.kind).toBe('enum');
+    expect(find('Suit')?.signature).toBe('enum Suit: string');
+  });
+
+  it('spans the declaration, not its members', () => {
+    const engine = find('Engine');
+    // `class Engine` on its own line and the body brace on the next: the span must
+    // start at the keyword, which is the whole reason this is parsed and not derived.
+    expect(lines[(engine?.lineStart ?? 0) - 1]).toBe('class Engine');
+    expect(engine?.lineEnd).toBeGreaterThan(engine?.lineStart ?? 0);
+    expect(lines[(engine?.lineEnd ?? 0) - 1]).toBe('}');
+  });
+
+  it('keeps the namespace in the qualname and leaves container null', () => {
+    // A namespace is a scope, not a type — and PHP has no nested type declarations,
+    // so `container` is null for every row this adapter can ever emit.
+    expect(find('Engine')?.qualname).toBe('App.Demo.Engine');
+    expect(find('Engine')?.id).toBe('type:src.Kinds.App.Demo.Engine');
+    expect(find('Engine')?.container).toBeNull();
+    expect((analysis.types ?? []).every((t) => t.container === null)).toBe(true);
+  });
+
+  it('emits a row for every named declaration in the file and nothing else', () => {
+    // The fixture's last line is `new class extends Base {}`. It contributes no row,
+    // and the reason is structural rather than a name check: the grammar makes an
+    // anonymous class an `object_creation_expression` inside an expression statement,
+    // which is not a declaration container, so it is never even a candidate. Pinned
+    // here because "no row" and "no name" would otherwise look like the same fact.
+    expect((analysis.types ?? []).map((t) => t.name).sort()).toEqual([
+      'Base',
+      'Engine',
+      'Gear',
+      'Loggable',
+      'Spinner',
+      'Suit',
+    ]);
+  });
+
+  it('declares exactly the four kinds it emits', () => {
+    expect(new PhpAdapter().capabilities.typeKinds).toEqual(['class', 'enum', 'interface', 'trait']);
+  });
+});
