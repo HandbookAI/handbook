@@ -1,6 +1,6 @@
 {
   "name": "@handbooks/resync",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Roll a handbook's derived layer forward after code changes (diff-driven incremental update)",
   "type": "module",
   "exports": {

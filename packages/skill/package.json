@@ -1,6 +1,6 @@
 {
   "name": "@handbooks/skill",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Package a rendered handbook as an agent SKILL; validate handbook structure and compute coverage",
   "type": "module",
   "exports": {

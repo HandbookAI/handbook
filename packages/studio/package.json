@@ -1,6 +1,6 @@
 {
   "name": "@handbooks/studio",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Local web UI over the handbook toolchain: browse handbooks, run generation, plan changes, and roll handbooks forward",
   "type": "module",
   "exports": {
