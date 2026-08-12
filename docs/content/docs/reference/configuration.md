@@ -67,13 +67,13 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
-| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
+| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy); a URL with embedded credentials is refused in the config file, which gets committed |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
 | `llmTimeout` | `--timeout <sec>` | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT` | int | `300` | per-request deadline in seconds; a stalled call is retried rather than allowed to hold a phase hostage |
 | `llmMaxRetries` | `--llm-retries <n>` | `HANDBOOK_LLM_MAX_RETRIES` | int | `6` | retry attempts per request; 0 means a single attempt |
 | `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF` | int | `3` | base backoff between retries, in seconds |
 | `llmConcurrency` | `--llm-concurrency <n>` | `HANDBOOK_LLM_CONCURRENCY` | int | `16` | global cap on concurrent requests through one client |
-| `llmExtraBody` | `--extra-body <json>` | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden |
+| `llmExtraBody` | — | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden. Free-form, so it is treated as a secret: never a flag and never allowed in the config file |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | required | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `work` | `--work <dir>` | `HANDBOOK_WORK` | path | required | work directory holding pipeline artifacts; optional for skill, where it adds coverage.json |
 | `lang` | `--lang <lang>` | `HANDBOOK_LANG` | enum (`auto`, plus any registered language) | `auto` | source language; auto detects and merges every registered language |
@@ -139,13 +139,13 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
-| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
+| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy); a URL with embedded credentials is refused in the config file, which gets committed |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
 | `llmTimeout` | `--timeout <sec>` | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT` | int | `300` | per-request deadline in seconds; a stalled call is retried rather than allowed to hold a phase hostage |
 | `llmMaxRetries` | `--llm-retries <n>` | `HANDBOOK_LLM_MAX_RETRIES` | int | `6` | retry attempts per request; 0 means a single attempt |
 | `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF` | int | `3` | base backoff between retries, in seconds |
 | `llmConcurrency` | `--llm-concurrency <n>` | `HANDBOOK_LLM_CONCURRENCY` | int | `16` | global cap on concurrent requests through one client |
-| `llmExtraBody` | `--extra-body <json>` | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden |
+| `llmExtraBody` | — | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden. Free-form, so it is treated as a secret: never a flag and never allowed in the config file |
 | `source` | `--source <dir>` | `HANDBOOK_SOURCE` | path | required | source root; required for analyze/generate/plan/apply, optional elsewhere (hash freshness for validate/skill, and the tree a backup belongs to for rollback) |
 | `out` | `--out <dir>` | `HANDBOOK_PLAN_OUT` *(scoped)* | path | — | output location; render defaults to <work>/handbook, plan writes a file, skill writes a directory |
 | `handbook` | `--handbook <dir>` | `HANDBOOK_PLAN_HANDBOOK` *(scoped)* | path | — | rendered handbook directory; required for skill, optional context for plan |
@@ -179,13 +179,13 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
-| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
+| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy); a URL with embedded credentials is refused in the config file, which gets committed |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
 | `llmTimeout` | `--timeout <sec>` | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT` | int | `300` | per-request deadline in seconds; a stalled call is retried rather than allowed to hold a phase hostage |
 | `llmMaxRetries` | `--llm-retries <n>` | `HANDBOOK_LLM_MAX_RETRIES` | int | `6` | retry attempts per request; 0 means a single attempt |
 | `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF` | int | `3` | base backoff between retries, in seconds |
 | `llmConcurrency` | `--llm-concurrency <n>` | `HANDBOOK_LLM_CONCURRENCY` | int | `16` | global cap on concurrent requests through one client |
-| `llmExtraBody` | `--extra-body <json>` | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden |
+| `llmExtraBody` | — | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden. Free-form, so it is treated as a secret: never a flag and never allowed in the config file |
 | `work` | `--work <dir>` | `HANDBOOK_WORK` | path | required | work directory holding pipeline artifacts; optional for skill, where it adds coverage.json |
 | `title` | `--title <title>` | `HANDBOOK_TITLE` | string | `System Handbook` | handbook title for rendered outputs |
 | `case` | `--case <dir>` | `HANDBOOK_CASE` | path | required | case directory: edited/ + plan.md + change.diff |
@@ -203,13 +203,13 @@ The config-file forms are interchangeable: a flat `readWorkers: ...` and a neste
 | `llmApiKey` | — | `HANDBOOK_LLM_API_KEY`, `OPENAI_API_KEY` | string | `""` (empty) | API key for the LLM endpoint; use EMPTY for keyless local endpoints. Never a flag and never allowed in the config file |
 | `llmProvider` | `--provider <name>` | `HANDBOOK_LLM_PROVIDER`, `OPENAI_PROVIDER` | enum (openai\|anthropic\|gemini) | `openai` | LLM wire format; 'openai' covers every OpenAI-compatible endpoint (most of them) |
 | `llmModel` | `--model <id>` | `HANDBOOK_LLM_MODEL`, `OPENAI_MODEL` | string | `gpt-4o-mini` | model identifier |
-| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy) |
+| `llmBaseUrl` | `--base-url <url>` | `HANDBOOK_LLM_BASE_URL`, `OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy); a URL with embedded credentials is refused in the config file, which gets committed |
 | `llmMaxTokens` | `--max-tokens <n>` | `HANDBOOK_LLM_MAX_TOKENS`, `OPENAI_MAX_TOKENS` | int | `16000` | max output tokens per request |
 | `llmTimeout` | `--timeout <sec>` | `HANDBOOK_LLM_TIMEOUT`, `OPENAI_TIMEOUT` | int | `300` | per-request deadline in seconds; a stalled call is retried rather than allowed to hold a phase hostage |
 | `llmMaxRetries` | `--llm-retries <n>` | `HANDBOOK_LLM_MAX_RETRIES` | int | `6` | retry attempts per request; 0 means a single attempt |
 | `llmRetryBackoff` | `--llm-retry-backoff <sec>` | `HANDBOOK_LLM_RETRY_BACKOFF` | int | `3` | base backoff between retries, in seconds |
 | `llmConcurrency` | `--llm-concurrency <n>` | `HANDBOOK_LLM_CONCURRENCY` | int | `16` | global cap on concurrent requests through one client |
-| `llmExtraBody` | `--extra-body <json>` | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden |
+| `llmExtraBody` | — | `HANDBOOK_LLM_EXTRA_BODY`, `OPENAI_EXTRA_BODY` | json | — | vendor fields merged into every request body; model/messages/token fields cannot be overridden. Free-form, so it is treated as a secret: never a flag and never allowed in the config file |
 | `port` | `--port <n>` | `HANDBOOK_PORT` | int | `4860` | port to listen on; 0 picks any free port |
 | `host` | `--host <addr>` | `HANDBOOK_HOST` | string | `127.0.0.1` | bind address; stays on loopback unless you set it (containers need 0.0.0.0). The CSRF guard still requires a loopback Host header |
 | `stateDir` | `--state-dir <dir>` | `HANDBOOK_STATE_DIR` | path | — | where studio.json and managed work dirs live; defaults to $HOME/.handbook-studio |

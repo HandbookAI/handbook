@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { envName, scopedEnvName, fileKeyCandidates } from './names.js';
+import { envName, scopedEnvName, fileKeyCandidates, joinKey, nearestKey } from './names.js';
 import type { Setting } from './types.js';
 
 const setting = (over: Partial<Setting> = {}): Setting => ({
@@ -42,5 +42,36 @@ describe('fileKeyCandidates', () => {
     // `--out` means three different things across render/skill/plan, so a bare
     // `out:` in the config file would be a footgun rather than a convenience.
     expect(fileKeyCandidates('render', setting({ key: 'out', scopedOnly: true }))).toEqual(['renderOut']);
+  });
+});
+
+describe('joinKey', () => {
+  it('camel-joins a prefix onto a key, and leaves an unprefixed key alone', () => {
+    expect(joinKey('generate', 'readWorkers')).toBe('generateReadWorkers');
+    expect(joinKey('', 'readWorkers')).toBe('readWorkers');
+  });
+});
+
+describe('nearestKey', () => {
+  const known = ['readWorkers', 'readBatchSize', 'generateReadWorkers', 'llmBaseUrl', 'logLevel'];
+
+  it('finds the key a one-character typo meant', () => {
+    expect(nearestKey('generateReadWorker', known)).toBe('generateReadWorkers');
+    expect(nearestKey('logLevl', known)).toBe('logLevel');
+  });
+
+  it('folds case, so a capitalisation slip is zero edits away', () => {
+    expect(nearestKey('llmbaseurl', known)).toBe('llmBaseUrl');
+  });
+
+  it('suggests nothing when nothing is close, rather than the least wrong candidate', () => {
+    // A confident wrong suggestion sends the reader off to rewrite a key they
+    // never meant — worse than saying nothing.
+    expect(nearestKey('somethingEntirelyElse', known)).toBeUndefined();
+    expect(nearestKey('out', known)).toBeUndefined();
+  });
+
+  it('returns nothing for an empty candidate list', () => {
+    expect(nearestKey('readWorkers', [])).toBeUndefined();
   });
 });

@@ -1,11 +1,25 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { discoverConfigFile, flattenConfig, loadConfigFile } from './file.js';
+import {
+  discoverConfigFile,
+  flattenConfig,
+  loadConfigFile,
+  readConfigFile,
+  unknownKeyWarnings,
+} from './file.js';
 import { ConfigError } from './coerce.js';
+import { renderConfigExampleYaml } from './render-docs.js';
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'hb-config-'));
+
+/** Writes `body` as the config file in a fresh temp dir and returns its path. */
+const configWith = (body: string): string => {
+  const path = join(tmp(), 'handbook.config.yaml');
+  writeFileSync(path, body);
+  return path;
+};
 
 describe('flattenConfig', () => {
   it('joins nested maps by camelCase, so one rule covers grouping and command scoping', () => {
@@ -59,6 +73,153 @@ describe('loadConfigFile', () => {
     const dir = tmp();
     writeFileSync(join(dir, 'handbook.config.yaml'), 'a:\n  - b\n c: broken\n');
     expect(() => loadConfigFile(join(dir, 'handbook.config.yaml'))).toThrow(/handbook\.config\.yaml/);
+  });
+
+  it('refuses a secret written as a nested map, which flattening hides (M23)', () => {
+    // `llm: { extraBody: { … } }` never arrives as `llmExtraBody` — it arrives
+    // as `llmExtraBodyAuthorization`, which the equality/suffix check the
+    // guard used to do walked straight past.
+    const path = configWith('llm:\n  extraBody:\n    authorization: Bearer sk-leaked\n');
+    expect(() => loadConfigFile(path)).toThrow(/llmExtraBody must not appear in a config file/);
+    expect(() => loadConfigFile(path)).toThrow(/llm\.extraBody\.authorization/);
+  });
+
+  it('refuses a secret written as a JSON string too, and names the env route', () => {
+    const path = configWith('llm:\n  extraBody: \'{"authorization":"Bearer sk-leaked"}\'\n');
+    expect(() => loadConfigFile(path)).toThrow(/HANDBOOK_LLM_EXTRA_BODY or OPENAI_EXTRA_BODY/);
+  });
+});
+
+describe('loadConfigFile — credentials embedded in a value (M23)', () => {
+  it('refuses a base URL carrying userinfo, and says what to do instead', () => {
+    // A committed gateway URL is legitimate; a committed `user:pass@` in it is
+    // a committed credential.
+    const path = configWith('llm:\n  baseUrl: https://user:pass@gw.internal/v1\n');
+    expect(() => loadConfigFile(path)).toThrow(ConfigError);
+    expect(() => loadConfigFile(path)).toThrow(/llm\.baseUrl embeds credentials in the URL/);
+    expect(() => loadConfigFile(path)).toThrow(
+      /set the whole URL through HANDBOOK_LLM_BASE_URL or OPENAI_BASE_URL/,
+    );
+  });
+
+  it('refuses a token-only userinfo, not just user:pass', () => {
+    expect(() => loadConfigFile(configWith('llm:\n  baseUrl: https://sk-tok3n@gw.internal/v1\n'))).toThrow(
+      /embeds credentials/,
+    );
+  });
+
+  it('refuses it under a command scope as well as at the llm group', () => {
+    expect(() => loadConfigFile(configWith('generate:\n  llmBaseUrl: https://u:p@gw.internal/v1\n'))).toThrow(
+      /generate\.llmBaseUrl embeds credentials/,
+    );
+  });
+
+  it('still accepts the plain shared-gateway URL this setting exists for', () => {
+    // The whole point of not marking `llmBaseUrl` secret: a team pointing every
+    // checkout at one endpoint must keep working.
+    const file = loadConfigFile(configWith('llm:\n  baseUrl: https://gw.internal/v1\n'));
+    expect(file.flat).toEqual({ llmBaseUrl: 'https://gw.internal/v1' });
+  });
+
+  it('leaves a path segment alone — a token baked into a path is not guessed at', () => {
+    const url = 'https://gw.internal/proxy/sk-not-userinfo/v1';
+    expect(loadConfigFile(configWith(`llm:\n  baseUrl: ${url}\n`)).flat.llmBaseUrl).toBe(url);
+  });
+});
+
+describe('loadConfigFile — unknown keys (M25)', () => {
+  it('reports a typo instead of silently ignoring it, and suggests the key that was meant', () => {
+    const path = configWith('generate:\n  readWorker: 4\n');
+    const file = loadConfigFile(path);
+    // The value still resolves to nothing — that part is unchanged. What is
+    // new is that the file says so.
+    expect(file.flat.generateReadWorkers).toBeUndefined();
+    expect(file.unknownKeys).toEqual([
+      { path: 'generate.readWorker', key: 'generateReadWorker', suggestion: 'generate.readWorkers' },
+    ]);
+    expect(unknownKeyWarnings(file)).toEqual([
+      `${path}: unknown key "generate.readWorker" is ignored — did you mean "generate.readWorkers"?`,
+    ]);
+  });
+
+  it('writes the suggestion back in the shape the file already uses, flat or nested', () => {
+    expect(loadConfigFile(configWith('generateReadWorker: 4\n')).unknownKeys?.[0]?.suggestion).toBe(
+      'generateReadWorkers',
+    );
+  });
+
+  it('offers no suggestion when nothing is close, and says so plainly', () => {
+    const file = loadConfigFile(configWith('somethingNobodyDeclared: 1\n'));
+    expect(file.unknownKeys?.[0]?.suggestion).toBeUndefined();
+    expect(unknownKeyWarnings(file)[0]).toMatch(/no setting by that name/);
+  });
+
+  it('reports a bootstrap-only key, which the file genuinely cannot supply', () => {
+    // `--env` selects the cascade that finds this file; a value here would
+    // have nothing left to read it.
+    expect(loadConfigFile(configWith('env: prod\n')).unknownKeys?.[0]?.path).toBe('env');
+  });
+
+  it('says nothing about a key with no value, which declares nothing', () => {
+    expect(loadConfigFile(configWith('generate:\nllm:\n  model: m\n')).unknownKeys).toEqual([]);
+  });
+
+  it('accepts every key of the generated example config', () => {
+    // The strongest guard available: the file this project tells people to copy
+    // must not produce a single "unknown key" line. A drift between the
+    // registry's file-key space and the example renderer fails here.
+    const path = configWith(renderConfigExampleYaml());
+    expect(unknownKeyWarnings(loadConfigFile(path))).toEqual([]);
+  });
+
+  it('reports nothing for an empty file', () => {
+    expect(loadConfigFile(configWith('')).unknownKeys).toEqual([]);
+  });
+
+  it('has no unknown keys to report when there is no file at all', () => {
+    expect(unknownKeyWarnings(undefined)).toEqual([]);
+  });
+});
+
+describe('readConfigFile (M24)', () => {
+  // `handbook config` runs BECAUSE something is broken. Throwing during
+  // bootstrap took the whole command down before it could print a line.
+  it('returns the parse error instead of throwing, and still names the path', () => {
+    const path = configWith('llm:\n  model: "unterminated\ngenerate:\n  detail: deep\n');
+    const read = readConfigFile(path);
+    expect(read.file).toBeUndefined();
+    expect(read.path).toBe(path);
+    expect(read.error).toMatch(/handbook\.config\.yaml/);
+  });
+
+  it('returns an error for a config path that is a directory', () => {
+    const dir = tmp();
+    mkdirSync(join(dir, 'handbook.config.yaml'));
+    // `discoverConfigFile` finds it — `existsSync` is true for a directory —
+    // so this is reachable without anybody naming it explicitly.
+    expect(discoverConfigFile(dir)).toBe(join(dir, 'handbook.config.yaml'));
+    expect(readConfigFile(join(dir, 'handbook.config.yaml')).error).toMatch(/EISDIR|directory/);
+  });
+
+  it('returns an error for a file that cannot be read', () => {
+    if (process.getuid?.() === 0) return; // root reads anything; the mode says nothing
+    const path = configWith('detail: deep\n');
+    chmodSync(path, 0o000);
+    expect(readConfigFile(path).error).toMatch(/EACCES|permission/i);
+  });
+
+  it('returns an error for a named file that does not exist, rather than falling back', () => {
+    expect(readConfigFile(join(tmp(), 'handbook.config.yaml')).error).toMatch(/ENOENT|no such file/);
+  });
+
+  it('returns an error for a secret in the file, so `config` can display that too', () => {
+    expect(readConfigFile(configWith('llm:\n  apiKey: sk-leaked\n')).error).toMatch(/llmApiKey/);
+  });
+
+  it('returns the loaded file, with no error, when the file is fine', () => {
+    const read = readConfigFile(configWith('generate:\n  detail: deep\n'));
+    expect(read.error).toBeUndefined();
+    expect(read.file?.flat).toEqual({ generateDetail: 'deep' });
   });
 });
 

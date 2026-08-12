@@ -16,10 +16,30 @@ import { envName, fileKeyCandidates, scopedEnvName } from './names.js';
 import { settingsFor } from './registry.js';
 import type { ResolveResult, Setting, Source } from './types.js';
 
+/**
+ * A key the file sets that no setting claims — `generate: {readWorker: 4}` for
+ * `readWorkers`. It resolves to nothing, which is indistinguishable from never
+ * having written it, so it has to be reported rather than dropped.
+ */
+export interface UnknownConfigKey {
+  /** Dotted path exactly as the file nests it — `generate.readWorker`. */
+  readonly path: string;
+  /** The flattened key it produced, which is what matched nothing. */
+  readonly key: string;
+  /** Nearest known key, written back in the shape the file already uses. */
+  readonly suggestion?: string;
+}
+
 export interface ConfigFileData {
   readonly path: string;
   /** Already flattened by camelCase join — see `file.ts`. */
   readonly flat: Record<string, unknown>;
+  /**
+   * Reported, never fatal: a file written for a newer Handbook must keep
+   * working, so an unrecognised key cannot fail the load. Optional because
+   * callers (studio, tests) construct this shape by hand.
+   */
+  readonly unknownKeys?: readonly UnknownConfigKey[];
 }
 
 export interface ResolveInput {

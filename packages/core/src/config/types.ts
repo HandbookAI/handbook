@@ -44,6 +44,20 @@ export interface Setting {
   readonly scopedOnly?: boolean;
   /** Never a flag, never allowed in the config file (it gets committed). */
   readonly secret?: boolean;
+  /**
+   * A refusal that inspects the VALUE, in the config file only.
+   *
+   * `secret` is the blunt form — no flag, no config file, ever — and it is the
+   * wrong answer for a setting that is genuinely worth committing (a team
+   * pointing every checkout at one shared gateway) but whose value can still
+   * carry a credential. `'urlCredentials'` rejects exactly RFC 3986 userinfo
+   * (`https://user:pass@host`), which is a credential by POSITION and so needs
+   * no guessing; a token baked into a path is indistinguishable from a path
+   * and is deliberately not guessed at. Flags and environment variables are
+   * left alone: they are per-invocation and per-machine, while the config file
+   * is the one layer that gets committed.
+   */
+  readonly rejectInFile?: 'urlCredentials';
   /** Commander maps `--no-llm` to `{ llm: false }`; the flag string is the negated one. */
   readonly negated?: boolean;
   /** Must have a value after resolution; the error names all supply routes. */

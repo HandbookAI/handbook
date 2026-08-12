@@ -26,7 +26,7 @@ llm:
   provider: openai
   # model identifier
   model: gpt-4o-mini
-  # any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy)
+  # any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy); a URL with embedded credentials is refused in the config file, which gets committed
   baseUrl: https://api.openai.com/v1
   # max output tokens per request
   maxTokens: 16000
@@ -38,8 +38,6 @@ llm:
   retryBackoff: 3
   # global cap on concurrent requests through one client
   concurrency: 16
-  # vendor fields merged into every request body; model/messages/token fields cannot be overridden
-  # extraBody:
 
 generate:
   # all | 1 | 2 | 2a | 2b | 2c | 3, or a comma list

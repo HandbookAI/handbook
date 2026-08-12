@@ -23,6 +23,16 @@ export interface EnvironmentDisplay {
   /** Env files actually loaded, highest precedence first. */
   readonly envFiles: readonly string[];
   readonly configFile?: string;
+  /**
+   * Why the config file could not be loaded at all. Its keys are then absent
+   * from every row below, so without this line the output is indistinguishable
+   * from a project that has no config file — the worst possible answer for
+   * someone running this command precisely because the file is broken.
+   */
+  readonly configFileError?: string;
+  /** Keys the file sets that the registry does not claim. They resolved to
+   *  nothing, and no value row can show that, because there is no row. */
+  readonly configFileWarnings?: readonly string[];
 }
 
 /** Enough of a key to recognise it, never enough to use it. */
@@ -35,11 +45,12 @@ export function maskSecret(value: string): string {
  * `environment: prod  (--env)` / `env files:   .env.prod, .env.local, .env` /
  * `config file: /repo/handbook.config.prod.yaml` — three left-padded lines,
  * label width shared so the values line up regardless of which label is
- * longest.
+ * longest, plus one line per file-level problem.
  */
 function environmentBlock(env: EnvironmentDisplay | undefined): string {
   const sourceLabel = env?.source === 'flag' ? '--env' : env?.source === 'env' ? 'HANDBOOK_ENV' : undefined;
   const files = env?.envFiles ?? [];
+  const configFile = env?.configFile;
   const rows: [string, string][] = [
     ['environment:', env?.name ? `${env.name}  (${sourceLabel})` : '(not set)'],
     [
@@ -48,8 +59,13 @@ function environmentBlock(env: EnvironmentDisplay | undefined): string {
         ? `${files.map((f) => basename(f)).join(', ')} (highest precedence first)`
         : '(none loaded)',
     ],
-    ['config file:', env?.configFile ?? '(none)'],
+    ['config file:', configFile ? `${configFile}${env?.configFileError ? '  (NOT LOADED)' : ''}` : '(none)'],
   ];
+  // A parser error arrives multi-line, with its own caret pointing into the
+  // source; folded onto one line it still names the line and column, and it
+  // keeps this block a table instead of wrecking the alignment of every row.
+  if (env?.configFileError) rows.push(['error:', env.configFileError.replace(/\s+/g, ' ').trim()]);
+  for (const warning of env?.configFileWarnings ?? []) rows.push(['warning:', warning]);
   const width = Math.max(...rows.map(([label]) => label.length)) + 1;
   return `${rows.map(([label, value]) => `${label.padEnd(width)}${value}`).join('\n')}\n\n`;
 }
@@ -81,10 +97,14 @@ function sourceText(key: string, command: string, result: ResolveResult): string
   return isRequiredMissing(key, command) ? 'unset (required)' : 'unset';
 }
 
+/** One-line text for a resolved value, objects included. */
+function displayText(value: unknown): string {
+  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+}
+
 function display(key: string, result: ResolveResult): string {
   if (!(key in result.values)) return '—';
-  const value = result.values[key];
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const text = displayText(result.values[key]);
   return settingByKey(key)?.secret ? maskSecret(text) : text;
 }
 
@@ -107,7 +127,10 @@ export function renderConfigTable(
 function jsonValue(key: string, result: ResolveResult): unknown {
   if (!(key in result.values)) return null;
   const value = result.values[key];
-  return settingByKey(key)?.secret ? maskSecret(String(value)) : value;
+  // A `json`-typed secret (llmExtraBody) has to be masked from its JSON text,
+  // the way the table does it: `String(anObject)` is `[object Object]`, which
+  // masks to something that reads like a real, short value.
+  return settingByKey(key)?.secret ? maskSecret(displayText(value)) : value;
 }
 
 export function renderConfigJson(
@@ -127,6 +150,11 @@ export function renderConfigJson(
       environment: environment?.name ? { name: environment.name, source: sourceLabel } : null,
       envFiles: environment?.envFiles ?? [],
       configFile: environment?.configFile ?? null,
+      // Separate from `errors`, which is per-setting: these two describe the
+      // file itself, and a consumer that only checked `errors` would call a
+      // config file that never loaded a clean run.
+      configFileError: environment?.configFileError ?? null,
+      configFileWarnings: environment?.configFileWarnings ?? [],
       settings,
       errors: result.errors,
     },
