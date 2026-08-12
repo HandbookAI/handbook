@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NARRATE_LANGS, checkLanguage, type NarrateLang } from '@handbook/core';
-import { makeFixtureModel } from './fixture.test-helper.js';
+import { ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderAgentSite } from './agent-site.js';
 import { renderHtmlSite, renderSinglePageHtml } from './html.js';
 import { renderLlmsTxt } from './llms-txt.js';
@@ -124,6 +124,47 @@ describe.each(NARRATE_LANGS)('renders in %s', (lang) => {
       const path = join(dir, 'handbook.html');
       renderSinglePageHtml(model, path, { languages });
       expect(readFileSync(path, 'utf8')).toContain('kotlin');
+    });
+  });
+
+  it('names the files no stage claims, in every output that lists structure', () => {
+    // Four new label tables — heading, the assigned/total note, the split file
+    // count — each taking substitutions. A dropped `${}` or an English label in
+    // the Japanese handbook compiles fine and only rendering catches it, so the
+    // disclosure has to be rendered in all eight languages, not two.
+    const unassignedModel = makeUnassignedFixtureModel();
+    unassignedModel.lang = lang;
+    unassignedModel.narration.lang = lang;
+    withTempDir((dir) => {
+      renderMarkdownHandbook(unassignedModel, dir);
+      const index = readFileSync(join(dir, 'index.md'), 'utf8');
+      expect(index).toContain(ORPHAN);
+      expect(index).not.toMatch(/\$\{|\[object Object\]|undefined/);
+    });
+    withTempDir((dir) => {
+      renderHtmlSite(unassignedModel, dir);
+      const overview = readFileSync(join(dir, 'overview.html'), 'utf8');
+      expect(overview).toContain(ORPHAN);
+      expect(overview).toContain('id="ov-unassigned"');
+      expect(overview).not.toMatch(/\$\{|\[object Object\]|undefined</);
+    });
+    withTempDir((dir) => {
+      renderAgentSite(unassignedModel, dir);
+      // The agent artifact names the file in `files.tsv` with an explicit
+      // `unassigned` stage rather than in a prose section of the index — which
+      // is the same disclosure in the place an agent greps. The index carries
+      // the count, so a reader who never opens the table still learns the gap
+      // exists. Deliberately NOT language-dependent: these are column values,
+      // not labels, and translating them would break the grep recipes.
+      expect(readFileSync(join(dir, 'files.tsv'), 'utf8')).toContain(`${ORPHAN}\tunassigned\t`);
+      const index = readFileSync(join(dir, 'index.md'), 'utf8');
+      expect(index).toMatch(/unrouted \(stage=unassigned/);
+      expect(index).not.toMatch(/\$\{|\[object Object\]|undefined/);
+    });
+    withTempDir((dir) => {
+      renderLlmsTxt(unassignedModel, dir);
+      expect(readFileSync(join(dir, 'llms-full.txt'), 'utf8')).toContain(ORPHAN);
+      expect(readFileSync(join(dir, 'llms.txt'), 'utf8')).not.toMatch(/\$\{|\[object Object\]|undefined/);
     });
   });
 

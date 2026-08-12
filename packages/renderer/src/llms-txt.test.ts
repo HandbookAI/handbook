@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { makeFixtureModel } from './fixture.test-helper.js';
+import { ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderLlmsTxt } from './llms-txt.js';
 
 const model = makeFixtureModel();
@@ -178,5 +178,36 @@ describe('renderLlmsTxt — fidelity disclosure', () => {
     // an agent may read only the head — the caveat must precede the links
     expect(txt.indexOf('Analysis fidelity')).toBeLessThan(txt.indexOf('## '));
     expect(readFileSync(join(dir, 'llms-full.txt'), 'utf8')).toMatch(/Analysis fidelity/);
+  });
+});
+
+describe('renderLlmsTxt — files in no stage', () => {
+  /**
+   * `llms-full.txt` claims to be the whole handbook flattened, and everything in
+   * it comes from the stage buckets — which exclude unassigned files. An agent
+   * reading only these two files had no way to learn those files exist.
+   */
+  let outDir: string;
+  beforeAll(() => {
+    outDir = mkdtempSync(join(tmpdir(), 'hb-renderer-llms-unassigned-'));
+    renderLlmsTxt(makeUnassignedFixtureModel(), outDir);
+  });
+  afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+
+  it('discloses the split in llms.txt before the link list', () => {
+    const txt = readFileSync(join(outDir, 'llms.txt'), 'utf8');
+    expect(txt).toContain('> 4 of 5 files were placed in a stage');
+    expect(txt.indexOf('4 of 5 files')).toBeLessThan(txt.indexOf('## '));
+  });
+
+  it('names every one of them in llms-full.txt', () => {
+    const full = readFileSync(join(outDir, 'llms-full.txt'), 'utf8');
+    expect(full).toContain('## Files in no stage');
+    expect(full).toContain(`- \`${ORPHAN}\``);
+  });
+
+  it('adds nothing when every file was placed', () => {
+    expect(read('llms.txt')).not.toContain('in no stage');
+    expect(read('llms-full.txt')).not.toContain('in no stage');
   });
 });

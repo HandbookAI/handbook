@@ -30,6 +30,30 @@ export const LOADER = 'src/ingest/loader.ts';
 export const PARSER = 'src/ingest/parser.ts';
 export const ENGINE = 'src/query/engine.ts';
 export const ENGINE_TEST = 'src/query/engine_test.ts';
+/** A file the assignment left in no stage — see {@link makeUnassignedFixtureModel}. */
+export const ORPHAN = 'src/vendor/bundle.ts';
+
+/**
+ * The same fixture plus one file the assignment placed in NO stage.
+ *
+ * The base fixture has `unassigned: []` — the only case every renderer used to
+ * handle. This is the other one: `coverage.nFiles` counts {@link ORPHAN}, it has
+ * a card, and no bucket contains it, so before the fix it appeared in no page,
+ * no llms.txt and no agent index while the headline still said five files.
+ */
+export function makeUnassignedFixtureModel(): HandbookModel {
+  const model = makeFixtureModel();
+  model.cards[ORPHAN] = {
+    version: 1,
+    file: ORPHAN,
+    purpose: 'Vendored bundle no stage claims.',
+    role: 'generated',
+    lifecycle: 'none',
+  };
+  model.assignment.fileStage[ORPHAN] = { stage: 'unassigned', also: [] };
+  model.assignment.coverage = { nFiles: 5, nAssigned: 4, unassigned: [ORPHAN] };
+  return model;
+}
 
 export function makeFixtureModel(): HandbookModel {
   const manyCalls = Array.from({ length: 12 }, (_, i) => `ingest.reader${i + 1}`);

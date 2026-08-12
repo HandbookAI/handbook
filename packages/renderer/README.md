@@ -15,13 +15,13 @@
 The presentation arm of the [Handbook](../../README.md) toolchain. It takes a
 `HandbookModel` — the boundary type produced by `@handbook/pipeline` — and writes:
 
-| Function                 | Output                                                                       | Audience |
-| ------------------------ | ---------------------------------------------------------------------------- | -------- |
-| `renderMarkdownHandbook` | `overview.md`, `index.md`, `register.md`, one page per stage                 | humans   |
-| `renderHtmlSite`         | A multi-page site with a shared shell                                        | humans   |
-| `renderSinglePageHtml`   | One self-contained `.html` file                                              | humans   |
-| `renderAgentSite`        | `how_to_use.md`, `index.md`, `disambiguation.md`, one locator page per stage | agents   |
-| `renderLlmsTxt`          | `llms.txt` + `llms-full.txt`                                                 | agents   |
+| Function                 | Output                                                                 | Audience |
+| ------------------------ | ---------------------------------------------------------------------- | -------- |
+| `renderMarkdownHandbook` | `overview.md`, `index.md`, `register.md`, one page per stage           | humans   |
+| `renderHtmlSite`         | A multi-page site with a shared shell                                  | humans   |
+| `renderSinglePageHtml`   | One self-contained `.html` file                                        | humans   |
+| `renderAgentSite`        | `index.md`, `symbols.tsv`, `files.tsv`, `calls.tsv`, `stages/<sid>.md` | agents   |
+| `renderLlmsTxt`          | `llms.txt` + `llms-full.txt`                                           | agents   |
 
 **Generation is expensive and happens once. Rendering is free and can happen on every
 commit.** That split is the whole reason this is a separate package.
@@ -72,7 +72,8 @@ handbook render --work work/myrepo --title "MyRepo Handbook" \
 
 ```
 overview.md      system prose + a mermaid stage map + "see also" links
-index.md         every stage, nested by depth, with a paragraph each
+index.md         every stage, nested by depth, with a paragraph each,
+                 plus the files no stage claims
 <stage-id>.md    one page per content-bearing stage
 register.md      the cross-stage state table (only when registers exist)
 ```
@@ -88,6 +89,11 @@ Two details that matter more than they look:
   a renamed stage does not leave a ghost page behind for the skill packager to scoop up.
 - **The per-stage register section is idempotent.** It is appended under a marker and
   only if the marker is absent, so re-rendering never stacks duplicates.
+- **Files in no stage are named, not silently dropped.** Every page is built from
+  `assignment.buckets`, which excludes them, while the headline count is
+  `coverage.nFiles`, which includes them — so the index, the HTML overview, the agent
+  index and `llms-full.txt` all list them explicitly, and any printed total says
+  `assigned / total` rather than a number the pages contradict.
 
 Both English and Chinese are first-class: every label, heading and table header is
 localized from `model.lang`. **The structure is identical in both**, so tooling that reads
@@ -135,10 +141,57 @@ Each stage gets a fixed-schema locator block:
 information — rather than _"the model did not know"_, which is noise an agent will
 happily reason on top of.
 
-`disambiguation.md` handles the opposite problem: when one term legitimately points at
-several stages, it lists them side by side with what distinguishes them, so an agent can
-choose instead of guessing. `strongTwins` and `buildCollisionIndex` are what detect those
-collisions.
+### Facts, not prose
+
+The agent artifact and the human handbook used to render the **same prose in different
+shapes**, which is how the agent one ended up 2.1× the size of the human one while
+containing no symbol locations at all. The split now:
+
+**The human artifact explains. The agent artifact locates.**
+
+Where an agent needs the explanation it is one hop away — the stage page links
+`../<sid>.md` — rather than copied.
+
+| file              | answers                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.md`        | the only always-read file: grep recipes, a stage table, the register table, coverage. Hard cap 4 KB, because it is paid on every session _and_ every subagent spawn |
+| `symbols.tsv`     | `name → path:startLine-endLine`, plus kind, stage, nCalledBy, signature                                                                                             |
+| `files.tsv`       | `path → stage, role, nSymbols, purpose[prose]`                                                                                                                      |
+| `calls.tsv`       | resolved call edges, both endpoints located                                                                                                                         |
+| `stages/<sid>.md` | second hop: the stage's files and its co-change pairs                                                                                                               |
+
+TSV rather than markdown tables, for reasons measured on this repo: 338 signature rows
+contain `|` (TypeScript union types) which a table would mangle silently; one fact per
+line survives truncation, where a table's header, alignment row and body only mean
+something together; and a tab anchors a whole column in grep where a bare name matches
+any substring of any column.
+
+Column order is **value order** — what you looked up first, prose last — because
+consumers clip long lines, and clipping must eat prose before it eats a path.
+
+### What is a fact and what is not
+
+Invariant 1 says parser facts and model prose are never mixed. In this artifact that is
+enforced by position and by label: prose appears in exactly one column, it is last, it is
+clipped to 120 characters, and its header says `purpose[prose]`.
+
+Two places where the artifact could have quietly invented something and does not:
+
+- **A type row says whether its span was parsed or inferred.** `kind=type:<class|interface|
+struct|record|enum|trait|alias|other>` is a real declaration, its span read off the
+  declaration node. `kind=class-derived` is the fallback for a language whose adapter
+  extracts no types: the span is `min..max` of the class's _methods_ — where the members
+  are, not where the declaration is. Emitting that unmarked would put an invented number in
+  the column an agent trusts most. And because type extraction is partial,
+  `index.md` names **which languages are indexed and which are not** (from
+  `graph.metadata.languages[…].typeKinds`) — an agent that greps a type, finds nothing, and
+  concludes the type does not exist is a _wrong pointer_, the failure this artifact exists
+  to avoid. `nCalledBy` is `-` on any non-function row rather than `0`, because a type has
+  no callers and `0` in that column reads as dead code.
+- **A call that leaves the scanned set gets `boundary:<specifier>` as its location**, never
+  a path. In a monorepo this matters more than it sounds: cross-package calls arrive as
+  unfollowed imports, and with resolved edges only, a function called exclusively from
+  another package showed zero callers — which reads as dead code.
 
 ---
 

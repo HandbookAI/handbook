@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdapterCapabilities } from '@handbook/core';
-import { ENGINE, makeFixtureModel } from './fixture.test-helper.js';
+import { ENGINE, ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
 import type { RenderOptions } from './shared.js';
 
@@ -322,5 +322,37 @@ describe('renderMarkdownHandbook — orphan-page cleanup (manifest)', () => {
     expect(existsSync(join(outDir, `${oldStage}.md`)), 'stale page must be deleted').toBe(false);
     expect(existsSync(join(outDir, 'renamed-1.md'))).toBe(true);
     expect(existsSync(join(outDir, 'overview.md'))).toBe(true);
+  });
+});
+
+describe('renderMarkdownHandbook — files in no stage', () => {
+  /**
+   * `assignment.coverage.unassigned` was in the model and read by no renderer.
+   * Every page is built from `assignment.buckets`, which excludes those files by
+   * construction, so a handbook could count 300 files and describe 260 with the
+   * other 40 named nowhere at all.
+   */
+  let outDir: string;
+  beforeAll(() => {
+    outDir = mkdtempSync(join(tmpdir(), 'hb-renderer-md-unassigned-'));
+    renderMarkdownHandbook(makeUnassignedFixtureModel(), outDir);
+  });
+  afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+
+  it('names every unassigned file on the stage index', () => {
+    const index = readFileSync(join(outDir, 'index.md'), 'utf8');
+    expect(index).toContain('## 🗂️ Files in no stage');
+    expect(index).toContain(`- \`${ORPHAN}\``);
+  });
+
+  it('states the assigned/total split rather than a bare total', () => {
+    expect(readFileSync(join(outDir, 'index.md'), 'utf8')).toContain(
+      '4/5 files were placed in a stage. The 1 below',
+    );
+  });
+
+  it('stays silent when every file was placed', () => {
+    // The common case must not grow an empty section.
+    expect(read('index.md')).not.toContain('Files in no stage');
   });
 });
