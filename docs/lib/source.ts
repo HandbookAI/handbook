@@ -9,6 +9,16 @@ const docs = defineDocs({
   dir: 'content/docs',
   docs: {
     schema: pageSchema,
+    // Real per-file dates, read from git. The sitemap used to stamp every one of
+    // 273 URLs with the build time — one distinct value across the whole file —
+    // which tells a crawler that all 273 pages changed on every deploy. Google
+    // drops `lastmod` it cannot correlate with actual change, so a fabricated
+    // one is worse than none: it spends the signal instead of using it.
+    //
+    // Needs git history at build time. Vercel clones shallowly by default, so
+    // the project also sets VERCEL_DEEP_CLONE=true; where the history is absent
+    // this yields undefined and the sitemap omits the field rather than lying.
+    lastModified: true,
     postprocess: {
       includeProcessedMarkdown: true,
     },

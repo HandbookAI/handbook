@@ -14,6 +14,7 @@ import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { gitConfig, siteUrl } from '@/lib/shared';
 import { i18n, BCP47, LOCALES, type Locale } from '@/lib/i18n';
 import { ui } from '@/lib/ui-strings';
+import { pageCardMetadata, PageStructuredData } from '@/lib/seo';
 
 export default async function Page(props: PageProps<'/[lang]/docs/[[...slug]]'>) {
   const { slug, lang } = await props.params;
@@ -30,8 +31,42 @@ export default async function Page(props: PageProps<'/[lang]/docs/[[...slug]]'>)
   // `reference/cli.mdx`. That difference is the only honest signal available.
   const isFallback = lang !== i18n.defaultLanguage && !page.path.includes(`.${lang}.`);
 
+  // The breadcrumb trail Google renders under a result instead of a bare URL,
+  // walked over the slug prefixes rather than read from the page tree.
+  // `getBreadcrumbItems` matches a tree node by URL and the localized routes do
+  // not line up with it, so it returned nothing usable and every page shipped
+  // without breadcrumbs; `source.getPage` is the same lookup this route already
+  // trusts for the page itself.
+  //
+  // Only levels that ARE a page appear. Most section folders here — `guides`,
+  // `concepts` — carry a `meta.json` title and no index page, and schema.org
+  // requires `item` on every breadcrumb but the last, so the alternative to
+  // skipping those levels is inventing a link to a page that does not exist.
+  // `Docs › Generating a handbook` is shorter than the sidebar, and resolves.
+  const docsIndexUrl = lang === i18n.defaultLanguage ? '/docs' : `/${lang}/docs`;
+  const ancestors = (slug ?? [])
+    .slice(0, -1)
+    .map((_, i) => source.getPage((slug ?? []).slice(0, i + 1), lang))
+    .filter((p): p is NonNullable<typeof p> => !!p);
+  const trail =
+    page.url === docsIndexUrl
+      ? []
+      : [
+          { name: t.navDocs, url: `${siteUrl}${docsIndexUrl}` },
+          ...ancestors.map((p) => ({ name: p.data.title, url: `${siteUrl}${p.url}` })),
+          { name: page.data.title, url: `${siteUrl}${page.url}` },
+        ];
+
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
+      <PageStructuredData
+        title={page.data.title}
+        description={page.data.description}
+        url={`${siteUrl}${page.url}`}
+        locale={lang}
+        modified={page.data.lastModified}
+        trail={trail}
+      />
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
       <div className="flex flex-row items-center gap-2 border-b pb-6">
@@ -78,12 +113,15 @@ export async function generateMetadata(props: PageProps<'/[lang]/docs/[[...slug]
         'x-default': canonicalFor(i18n.defaultLanguage),
       },
     },
-    openGraph: {
+    // Open Graph *and* Twitter together — see `pageCardMetadata`. Returning only
+    // the first one left every documentation page unfurling as the home page on
+    // Twitter/X, Slack, Discord, LinkedIn and Teams.
+    ...pageCardMetadata({
       title: page.data.title,
       description: page.data.description,
       url: canonicalFor(lang),
-      locale: BCP47[lang as Locale] ?? lang,
-      images: getPageImageUrl(page).url,
-    },
+      locale: lang,
+      image: getPageImageUrl(page).url,
+    }),
   };
 }
