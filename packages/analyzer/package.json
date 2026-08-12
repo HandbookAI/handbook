@@ -31,11 +31,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HandbookAI/handbook.git",
+    "url": "git+https://github.com/HandbookAI/handbooks.git",
     "directory": "packages/analyzer"
   },
-  "homepage": "https://github.com/HandbookAI/handbook/tree/main/packages/analyzer#readme",
+  "homepage": "https://github.com/HandbookAI/handbooks/tree/main/packages/analyzer#readme",
   "bugs": {
-    "url": "https://github.com/HandbookAI/handbook/issues"
+    "url": "https://github.com/HandbookAI/handbooks/issues"
   }
 }

@@ -63,7 +63,7 @@ as a location index an agent can route with. Then it keeps both current as the c
 moves.
 
 ```bash
-git clone <this repo> && cd handbook
+git clone <this repo> && cd handbooks
 pnpm install && pnpm build
 pnpm demo            # ← full end-to-end run, offline, no API key, ~30 seconds
 ```

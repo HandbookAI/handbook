@@ -30,11 +30,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HandbookAI/handbook.git",
+    "url": "git+https://github.com/HandbookAI/handbooks.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/HandbookAI/handbook/tree/main/packages/core#readme",
+  "homepage": "https://github.com/HandbookAI/handbooks/tree/main/packages/core#readme",
   "bugs": {
-    "url": "https://github.com/HandbookAI/handbook/issues"
+    "url": "https://github.com/HandbookAI/handbooks/issues"
   }
 }

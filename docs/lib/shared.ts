@@ -179,7 +179,7 @@ export const siteUrl =
  */
 export const gitConfig = {
   user: process.env.NEXT_PUBLIC_GITHUB_USER ?? 'HandbookAI',
-  repo: process.env.NEXT_PUBLIC_GITHUB_REPO ?? 'handbook',
+  repo: process.env.NEXT_PUBLIC_GITHUB_REPO ?? 'handbooks',
   branch: 'main',
 };
 

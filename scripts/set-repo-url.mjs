@@ -15,7 +15,7 @@
 //
 // Idempotent: run it again after moving the repo and it rewrites the values.
 //
-//   node scripts/set-repo-url.mjs https://github.com/OWNER/handbook
+//   node scripts/set-repo-url.mjs https://github.com/OWNER/REPO
 //   node scripts/set-repo-url.mjs --check        # verify, don't write
 //
 // Deliberately not wired into `pnpm check`. Until the repo has a public URL
@@ -45,7 +45,7 @@ if (checkOnly) {
   if (missing.length) {
     console.error(`no "repository" field in ${missing.length} manifest(s):`);
     for (const path of missing) console.error(`  ${path}`);
-    console.error('\nfix: node scripts/set-repo-url.mjs https://github.com/OWNER/handbook');
+    console.error('\nfix: node scripts/set-repo-url.mjs https://github.com/OWNER/REPO');
     process.exit(1);
   }
   console.log(`repository fields present in all ${manifests.length} manifests`);

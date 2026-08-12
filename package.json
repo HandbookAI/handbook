@@ -79,10 +79,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HandbookAI/handbook.git"
+    "url": "git+https://github.com/HandbookAI/handbooks.git"
   },
-  "homepage": "https://github.com/HandbookAI/handbook#readme",
+  "homepage": "https://github.com/HandbookAI/handbooks#readme",
   "bugs": {
-    "url": "https://github.com/HandbookAI/handbook/issues"
+    "url": "https://github.com/HandbookAI/handbooks/issues"
   }
 }

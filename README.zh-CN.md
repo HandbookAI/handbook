@@ -60,7 +60,7 @@
 之后代码变了，两份一起跟着变。
 
 ```bash
-git clone <本仓库> && cd handbook
+git clone <本仓库> && cd handbooks
 pnpm install && pnpm build
 pnpm demo            # ← 完整跑通全流程，全离线，不需要任何 API Key，约 30 秒
 ```
