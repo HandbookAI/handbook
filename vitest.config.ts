@@ -75,7 +75,9 @@ export default defineConfig({
         // everything a unit test cannot see — exit codes, signals, real files.
         // Still the lowest floor in the workspace, because `main.ts` is mostly
         // commander wiring that only the smoke suite executes.
-        'packages/cli/src/**': { statements: 65, branches: 68, functions: 75, lines: 64 },
+        // Ratcheted 2026-08-13 with the --version fix: measured
+        // 67.92/70.61/77.97/66.90, so these sit the usual ~2 points under.
+        'packages/cli/src/**': { statements: 66, branches: 69, functions: 76, lines: 65 },
 
         'packages/resync/src/**': { statements: 78, branches: 70, functions: 85, lines: 80 },
         // Ratcheted 2026-08-12 with the SSE backpressure work: measured

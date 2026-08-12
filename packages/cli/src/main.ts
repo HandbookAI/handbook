@@ -62,6 +62,7 @@ import { buildSkill, validateSkill } from '@handbooks/skill';
 import { runPlanner } from '@handbooks/planner';
 import { resyncHandbook } from '@handbooks/resync';
 import { graphFidelity, graphFileLanguages, refreshRenderedHandbook } from './render-refresh.js';
+import { readCliVersion } from './version.js';
 
 // Exported so a test can drive it with a controlled argv and mocked seams
 // (`@handbooks/studio`'s `startStudio`, `@handbooks/pipeline`'s `generateHandbook`)
@@ -71,7 +72,7 @@ export const program = new Command();
 program
   .name('handbook')
   .description('Turn any codebase into a navigable handbook — and use it to plan precise code changes.')
-  .version('0.1.0')
+  .version(readCliVersion())
   .option('-v, --verbose', 'debug logging')
   .option('-q, --quiet', 'errors only')
   .option(
