@@ -19,14 +19,14 @@ await b.setViewport(1440, 900);
 await b.goto(B, { waitMs: 2500 });
 // Register a repo big enough that the cards pass ticks more than once.
 await b.eval(
-  `fetch('/api/repos',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:'p',sourceRoot:${JSON.stringify(SOURCE)}})}).then((r) => r.status)`,
+  `const T=(document.querySelector('meta[name=hb-token]')||{}).content||''; const H={authorization:'Bearer '+T}; fetch('/api/repos',{method:'POST',headers:{'content-type':'application/json',...H},body:JSON.stringify({name:'p',sourceRoot:${JSON.stringify(SOURCE)}})}).then((r) => r.status)`,
 );
 await new Promise((r) => setTimeout(r, 800));
 // Start a generate and watch the SSE stream for progress events.
 const seen = await b.eval(`(async () => {
-  const j = await (await fetch('/api/repos/p/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({narrateLang:'en'})})).json();
+  const T=(document.querySelector('meta[name=hb-token]')||{}).content||''; const H={authorization:'Bearer '+T}; const j = await (await fetch('/api/repos/p/generate',{method:'POST',headers:{'content-type':'application/json',...H},body:JSON.stringify({narrateLang:'en'})})).json();
   return await new Promise((resolve) => {
-    const events = []; const es = new EventSource('/api/jobs/' + j.id + '/stream');
+    const events = []; const es = new EventSource('/api/jobs/' + j.id + '/stream?token=' + encodeURIComponent(T));
     es.addEventListener('progress', (e) => { try { events.push(JSON.parse(e.data)); } catch {} });
     es.addEventListener('done', () => { es.close(); resolve(events); });
     setTimeout(() => { es.close(); resolve(events); }, 90000);

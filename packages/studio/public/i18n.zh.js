@@ -308,6 +308,7 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       cancelReq: '… 已请求取消：作业会在下一个检查点停下',
       info: '提示',
       streamDropped: '⚠ 日志流断开，正在拉取任务状态…',
+      linesDropped: '⚠ 已丢弃 {0} 行日志 — 实时视图跟不上；重新加载即可查看完整日志',
     },
     dlg: {
       add: '添加仓库',

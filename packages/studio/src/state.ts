@@ -3,7 +3,7 @@
  * server is stateless across restarts. Everything else (handbook artifacts,
  * evolution history) lives in each repo's work dir.
  */
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
 import { fileExists, readValidatedJson, writeJsonFile } from '@handbook/core';
@@ -42,13 +42,40 @@ const stateSchema = z.object({
 });
 export type StudioState = z.infer<typeof stateSchema>;
 
-/** realpath when possible so two spellings of one tree compare equal. */
+/**
+ * The real path of `path`, resolved as far as the filesystem allows.
+ *
+ * `realpathSync` throws for anything that does not exist yet, which is the
+ * normal case for a work dir: studio creates it AFTER the entry is accepted.
+ * Resolving the nearest existing ancestor and re-attaching the rest is what
+ * makes the containment checks below symlink-aware for a directory that is
+ * still hypothetical — without it, `/w/link/handbook` (where `link` points at
+ * another repo's work dir) compares as a string nobody has seen before.
+ */
 function realOf(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
+  let head = resolve(path);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return tail.length === 0 ? realpathSync(head) : join(realpathSync(head), ...tail);
+    } catch {
+      const parent = dirname(head);
+      if (parent === head) return resolve(path); // reached the root: nothing resolves
+      tail.unshift(head.slice(parent.length + 1));
+      head = parent;
+    }
   }
+}
+
+/**
+ * Whether `child` is `parent` or sits under it.
+ *
+ * The separator matters: without it `/w/handbook-2` reads as living inside
+ * `/w/handbook`, and a second repo whose work dir merely shares a name prefix
+ * gets refused.
+ */
+function inside(child: string, parent: string): boolean {
+  return child === parent || child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
 }
 
 export class StateStore {
@@ -57,9 +84,29 @@ export class StateStore {
 
   constructor(stateDir: string) {
     this.path = join(stateDir, 'studio.json');
-    this.state = fileExists(this.path)
-      ? readValidatedJson(this.path, stateSchema)
-      : { version: 1, repos: [] };
+    this.state = fileExists(this.path) ? this.load() : { version: 1, repos: [] };
+  }
+
+  /**
+   * Read the registry, or refuse to start with a message a person can act on.
+   *
+   * Starting fresh on a file that will not parse is the wrong recovery: the
+   * registry is the only record of which trees studio knows about and where
+   * their handbooks live, and silently replacing it with an empty one loses
+   * that while looking like success. Refusing names the file — a bare
+   * "Unterminated string in JSON at position 28" does not.
+   */
+  private load(): StudioState {
+    try {
+      return readValidatedJson(this.path, stateSchema);
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `studio state file is unreadable: ${this.path} — ${why}. ` +
+          'Fix it, or remove the file to start with an empty repository list ' +
+          '(work dirs are untouched; each repo can be added back).',
+      );
+    }
   }
 
   list(): RepoEntry[] {
@@ -76,22 +123,28 @@ export class StateStore {
     if (!fileExists(parsed.sourceRoot) || !statSync(parsed.sourceRoot).isDirectory()) {
       throw new Error(`sourceRoot is not a directory: ${parsed.sourceRoot}`);
     }
-    const inside = (child: string, parent: string): boolean =>
-      child === parent || child.startsWith(`${parent}/`);
-    if (inside(parsed.workDir, parsed.sourceRoot)) {
+    // Every containment test below compares REAL paths. A lexical comparison
+    // asks whether two strings look alike; what actually decides whether two
+    // runs collide is whether they reach the same directory, and a symlink is
+    // how one directory gets two names. The job mutex is keyed on repo NAME, so
+    // a pair that slips past here has nothing else standing between it and two
+    // writers in one set of phase dirs.
+    const myWork = realOf(parsed.workDir);
+    const mySource = realOf(parsed.sourceRoot);
+    if (inside(myWork, mySource)) {
       throw new Error('workDir must live outside sourceRoot (generated artifacts would be re-analyzed)');
     }
     for (const other of this.state.repos) {
-      if (inside(parsed.workDir, other.workDir) || inside(other.workDir, parsed.workDir)) {
+      const theirWork = realOf(other.workDir);
+      if (inside(myWork, theirWork) || inside(theirWork, myWork)) {
         throw new Error(
           `workDir overlaps repo "${other.name}" (${other.workDir}) — artifacts would clobber each other`,
         );
       }
       // Two entries sharing a source tree would let concurrent jobs patch the
       // same files (the job mutex is keyed on repo name).
-      const mine = realOf(parsed.sourceRoot);
-      const theirs = realOf(other.sourceRoot);
-      if (inside(mine, theirs) || inside(theirs, mine)) {
+      const theirSource = realOf(other.sourceRoot);
+      if (inside(mySource, theirSource) || inside(theirSource, mySource)) {
         throw new Error(
           `sourceRoot overlaps repo "${other.name}" (${other.sourceRoot}) — one tree, one repo`,
         );
@@ -128,6 +181,12 @@ export class StateStore {
     return removed;
   }
 
+  /**
+   * `writeJsonFile` writes a sibling temp file and renames it over the target,
+   * which is the property this file depends on: a studio killed mid-write must
+   * leave the previous registry intact, not a truncated one that stops the next
+   * launch. Do not swap this for a plain write.
+   */
   private save(): void {
     writeJsonFile(this.path, this.state);
   }
