@@ -13,12 +13,12 @@
  * the CLI's own `--help` / `handbook config` continuing to describe the
  * flag would not save it, same as it did not save P0-1.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatClient } from '@handbook/llm';
-import type { Logger } from '@handbook/core';
+import { PIPELINE_DEFAULTS, type Logger } from '@handbook/core';
 import type * as Pipeline from '@handbook/pipeline';
 import type { GenerateOptions, GenerateStats } from '@handbook/pipeline';
 import type { StudioOptions } from '@handbook/studio';
@@ -217,6 +217,171 @@ describe('preAction hook (P2-16)', () => {
     });
     const debugLines = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0]));
     expect(debugLines.some((line: string) => line.includes('[config] loaded'))).toBe(false);
+  });
+});
+
+describe('a config file that is itself broken (M24)', () => {
+  // The command is run BECAUSE something is broken, so it has to survive the
+  // breakage. Bootstrap used to throw and take the whole process down at
+  // exit 1, before a single line was printed.
+  const broken = 'llm:\n  model: "unterminated\ngenerate:\n  detail: deep\n';
+  const configPath = (): string => join(cwd, 'handbook.config.yaml');
+
+  afterEach(() => {
+    process.exitCode = 0;
+  });
+
+  it('still prints the table, naming the file and the parse error', async () => {
+    writeFileSync(configPath(), broken);
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate'], { from: 'node' });
+    const out = stdoutSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(out).toContain(configPath());
+    expect(out).toContain('(NOT LOADED)');
+    expect(out).toMatch(/error:\s+.*handbook\.config\.yaml/);
+    // And it still did its actual job: every setting, with its source.
+    expect(out).toMatch(/llmMaxTokens\s+16000\s+default/);
+  });
+
+  it('reports it in --json without pretending the file was fine', async () => {
+    writeFileSync(configPath(), broken);
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+      from: 'node',
+    });
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      configFile: string;
+      configFileError: string;
+    };
+    expect(parsed.configFile).toBe(configPath());
+    expect(parsed.configFileError).toContain('handbook.config.yaml');
+  });
+
+  it('exits 2 under --check, which is what a CI gate is for', async () => {
+    writeFileSync(configPath(), broken);
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--check'], {
+      from: 'node',
+    });
+    const err = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(err).toContain('config: FAILED');
+    expect(process.exitCode).toBe(2);
+  });
+
+  it('survives a config path that is a directory, not a file', async () => {
+    mkdirSync(configPath());
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+      from: 'node',
+    });
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as { configFileError: string };
+    expect(parsed.configFileError).toMatch(/EISDIR|directory/);
+  });
+
+  it('still refuses to run every OTHER command, rather than falling back to defaults', async () => {
+    // Tolerance is `config`'s alone. A generate run on a file nobody could read
+    // must not quietly proceed as if the file said nothing.
+    writeFileSync(configPath(), broken);
+    await expect(
+      program.parseAsync(
+        ['node', 'handbook', 'generate', '--source', cwd, '--work', workDir, '--phase', '1'],
+        {
+          from: 'node',
+        },
+      ),
+    ).rejects.toThrow(/handbook\.config\.yaml/);
+    expect(generateHandbookMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('unknown config keys (M25)', () => {
+  afterEach(() => {
+    process.exitCode = 0;
+  });
+
+  it('warns on every command, naming the key that was probably meant', async () => {
+    writeFileSync(join(cwd, 'handbook.config.yaml'), 'generate:\n  readWorker: 4\n');
+    await program.parseAsync(
+      ['node', 'handbook', 'generate', '--source', cwd, '--work', workDir, '--phase', '1'],
+      { from: 'node' },
+    );
+    const err = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(err).toMatch(
+      /unknown key "generate\.readWorker" is ignored — did you mean "generate\.readWorkers"\?/,
+    );
+    // A warning, not a failure: a file written for a newer Handbook keeps working.
+    expect(generateHandbookMock).toHaveBeenCalledTimes(1);
+    expect(generateHandbookMock.mock.calls[0]?.[0]?.readWorkers).toBe(PIPELINE_DEFAULTS.readWorkers);
+  });
+
+  it('fails --check with exit 2, because that gate exists to be strict', async () => {
+    writeFileSync(join(cwd, 'handbook.config.yaml'), 'generate:\n  readWorker: 4\n');
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--check'], {
+      from: 'node',
+    });
+    const err = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(err).toMatch(/config: .*unknown key "generate\.readWorker"/);
+    expect(err).toContain('config: FAILED');
+    expect(process.exitCode).toBe(2);
+  });
+
+  it('shows the warning in the table too, where the missing row would otherwise be', async () => {
+    writeFileSync(join(cwd, 'handbook.config.yaml'), 'generate:\n  readWorker: 4\n');
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate'], { from: 'node' });
+    const out = stdoutSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(out).toMatch(/warning:\s+.*unknown key "generate\.readWorker"/);
+    expect(out).toMatch(new RegExp(`readWorkers\\s+${PIPELINE_DEFAULTS.readWorkers}\\s+default`));
+  });
+
+  it('stays silent, and exits 0 under --check, for a file with only known keys', async () => {
+    writeFileSync(
+      join(cwd, 'handbook.config.yaml'),
+      'source: .\nwork: ./work\ngenerate:\n  readWorkers: 4\n',
+    );
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--check'], {
+      from: 'node',
+    });
+    const err = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(err).not.toContain('unknown key');
+    expect(err).toContain('config: OK');
+    expect(process.exitCode).toBe(0);
+  });
+});
+
+describe('credentials in the config file (M23)', () => {
+  afterEach(() => {
+    process.exitCode = 0;
+  });
+
+  it('refuses a base URL with userinfo and tells the user where to put it instead', async () => {
+    writeFileSync(join(cwd, 'handbook.config.yaml'), 'llm:\n  baseUrl: https://user:pass@gw.internal/v1\n');
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+      from: 'node',
+    });
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      configFileError: string;
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.configFileError).toMatch(/embeds credentials in the URL/);
+    expect(parsed.configFileError).toMatch(/HANDBOOK_LLM_BASE_URL or OPENAI_BASE_URL/);
+    // Refused means refused: the value never became the resolved endpoint.
+    expect(parsed.settings.llmBaseUrl?.value).toBe('https://api.openai.com/v1');
+  });
+
+  it('keeps accepting the plain shared-gateway URL, which is why it is not a secret', async () => {
+    writeFileSync(join(cwd, 'handbook.config.yaml'), 'llm:\n  baseUrl: https://gw.internal/v1\n');
+    await program.parseAsync(['node', 'handbook', 'config', '--command', 'generate', '--json'], {
+      from: 'node',
+    });
+    const parsed = JSON.parse(String(stdoutSpy.mock.calls[0]?.[0])) as {
+      configFileError: string | null;
+      settings: Record<string, { value: unknown }>;
+    };
+    expect(parsed.configFileError).toBeNull();
+    expect(parsed.settings.llmBaseUrl?.value).toBe('https://gw.internal/v1');
+  });
+
+  it('has no --extra-body flag to leak into shell history or ps', async () => {
+    // llmExtraBody is a secret now; a flag would put a request body that may
+    // carry auth onto the command line.
+    const generate = program.commands.find((c) => c.name() === 'generate');
+    expect(generate?.options.map((o) => o.long)).not.toContain('--extra-body');
   });
 });
 
