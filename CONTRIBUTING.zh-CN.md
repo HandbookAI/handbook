@@ -117,8 +117,9 @@ changeset 是写给升级的人看的，不是写给 reviewer 看的：对他们
 
 ### 浏览器测试
 
-有两处产物是"给人点的 HTML"，任何字符串断言都判断不了它到底能不能用：文档站，以及渲染器
-写出的那份 handbook。两者都由 [`scripts/browser/`](scripts/browser) 覆盖——直接用 DevTools
+有三处产物是"给人点的 HTML"，任何字符串断言都判断不了它到底能不能用：文档站、渲染器
+写出的那份 handbook，以及 Studio 的界面——后者是一个没有框架也没有构建步骤的手写文件，
+连类型检查都没有。三者都由 [`scripts/browser/`](scripts/browser) 覆盖——直接用 DevTools
 Protocol 驱动真实 Chrome，不需要 Playwright、不需要 Puppeteer、不需要额外安装。
 
 ```bash
@@ -129,13 +130,21 @@ node scripts/browser/docs-site.mjs http://127.0.0.1:3000
 pnpm demo
 node scripts/browser/handbook-html.mjs \
   examples/work/demo/handbook/html examples/work/demo/handbook/handbook.html
+
+# Studio。先重新构建——用陈旧的 dist 起 studio 已经让这个项目白查过两次。
+pnpm exec tsc -b
+node packages/cli/dist/main.js studio --port 4860 --state-dir "$(mktemp -d)" &
+node scripts/browser/studio-ui.mjs http://127.0.0.1:4860        # 语言包、设置面、鉴权
+node scripts/browser/studio-progress.mjs http://127.0.0.1:4860 packages/core/src
+node scripts/browser/studio-dialogs.mjs http://127.0.0.1:4860 \
+  examples/demo-project examples/work/demo                      # render / skill / validate
 ```
 
-Chrome 装在非常规位置时设置 `CHROME_PATH`。这两个套件每次推送都会在 CI 里跑。
+Chrome 装在非常规位置时设置 `CHROME_PATH`。这些套件每次推送都会在 CI 里跑。
 
 它们的存在源于一个它们现在能抓住的 bug：`next dev` 拒绝把自己的 JavaScript 发给
 `127.0.0.1`，于是每个页面服务端渲染都完美、所有基于 fetch 的检查都通过，在浏览器里却
-完全是死的——搜索、主题、语言菜单、侧边栏收起全都不响应。如果你给这两处加了行为，
+完全是死的——搜索、主题、语言菜单、侧边栏收起全都不响应。如果你给这几处加了行为，
 请同时补上"它消失时会报警"的那条断言。
 
 ## 新增一种语言

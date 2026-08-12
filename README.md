@@ -38,9 +38,9 @@ with search, a theme toggle and deep links, generated from your code. Open it fr
 
 ### 🤖 The handbook for **AI**
 
-A machine-shaped _location index_ — file→stage routing tables, per-function call
-facts, disambiguation rules, `llms.txt`, and an installable SKILL package. Not a
-summary: an address book.
+A machine-shaped _location index_ — `symbol → path:line`, resolved call edges,
+file→stage routing, `llms.txt`, and an installable SKILL package. Not a summary:
+an address book. Facts only, prose clipped to one labelled column.
 
 **Your coding agent reads this one.**
 
