@@ -39,7 +39,7 @@ Paths are POSIX-relative to the analyzed source root unless stated otherwise.
     "generatedAt": "2026-08-02T10:00:00.000Z",
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
-    "scannedFiles": ["app/main.py", "…"], // only files that were actually read and parsed
+    "scannedFiles": ["aggregate/rollup.rs", "…"], // only files that were actually read and parsed
     "nInternalFunctions": 316,
     "nBoundaryNodes": 45,
     "nEdges": 903,
@@ -55,7 +55,7 @@ Paths are POSIX-relative to the analyzed source root unless stated otherwise.
       "id": "app.main.main",
       "name": "main",
       "qualname": "main",
-      "file": "app/main.py",
+      "file": "ingest/collector.go",
       "lineStart": 4,
       "lineEnd": 9,
       "signature": "def main()",
@@ -86,14 +86,14 @@ Paths are POSIX-relative to the analyzed source root unless stated otherwise.
   "edges": [
     {
       "callerId": "app.main.main",
-      "calleeId": "app.queue.TaskQueue.__init__",
+      "calleeId": "ingest.collector.Source.Next",
       "isAwait": false,
       "callType": "internal_constructor",
       "line": 6,
-      "raw": "TaskQueue",
+      "raw": "c.source.Next",
     },
   ],
-  "selfAttrs": { "TaskQueue": { "items": { "readIn": ["…"], "writtenIn": ["…"] } } },
+  "selfAttrs": { "Collector": { "dropped": { "readIn": ["…"], "writtenIn": ["…"] } } },
 }
 ```
 
@@ -140,7 +140,7 @@ had analyzed.
   "files": [
     // sorted by path, so an unchanged tree re-runs byte-identically
     { "file": "app/legacy.py", "reason": "partial", "detail": "the parse tree contains syntax errors…" },
-    { "file": "scripts/deploy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
+    { "file": "ops/legacy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
     { "file": "vendor/dangling.py", "reason": "unreadable", "detail": "ENOENT: no such file or directory…" },
   ],
 }
@@ -179,7 +179,7 @@ thing.
 ```jsonc
 {
   "version": 1,
-  "file": "app/worker.py",
+  "file": "ingest/collector.go",
   "purpose": "Drains the queue and executes each task.", // "" = generation failed (backfilled)
   "role": "domain_logic", // entrypoint|orchestration|domain_logic|io_transport|data_model|config|util|test|generated|other
   "lifecycle": "main loop", // free-form short hint; "none" when not meaningful
@@ -193,7 +193,7 @@ thing.
       "className": "Worker",
       "lineRange": [10, 13],
       "signature": "def run(self)",
-      "calls": ["app.queue.TaskQueue.pop"],
+      "calls": ["ingest.collector.valid"],
       "calledBy": ["app.main.main"],
       "extCalls": [],
       "nCalls": 3,
@@ -235,8 +235,8 @@ This same schema is what you author by hand for `--strategy member` / `--skeleto
 ```jsonc
 {
   "version": 1,
-  "fileStage": { "app/main.py": { "stage": "stage-1", "also": [] } }, // "unassigned" allowed
-  "buckets": { "stage-1": ["app/main.py"] }, // primary stage only; disjoint
+  "fileStage": { "ingest/collector.go": { "stage": "stage-1", "also": [] } }, // "unassigned" allowed
+  "buckets": { "stage-1": ["ingest/collector.go"] }, // primary stage only; disjoint
   "coverage": { "nFiles": 5, "nAssigned": 5, "unassigned": [] },
 }
 ```
@@ -252,8 +252,8 @@ stages:
       - title: Core flow
         summary: Everything this stage owns, in execution order.
         files:
-          - { file: app/queue.py, purpose: '…', role: domain_logic, nFunctions: 4 }
-    orderedFiles: [app/queue.py, app/worker.py] # flat reading order across groups
+          - { file: ingest/collector.go, purpose: '…', role: domain_logic, nFunctions: 5 }
+    orderedFiles: [ingest/collector.go, ingest/http_source.go] # flat reading order across groups
 coverage: { nFiles: 5, nOrganized: 5 }
 ```
 

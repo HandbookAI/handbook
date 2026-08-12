@@ -13,7 +13,7 @@ bash examples/run-demo.sh
 ```
 
 Runs the complete toolchain against `demo-project/` (a tiny bundled Python + TypeScript +
-Shell repo — NOT this monorepo; that's why its handbook mentions `app/main.py` etc.).
+Shell repo — NOT this monorepo; that's why its handbook mentions `ingest/collector.go` etc.).
 
 ## 2. Self handbook — `run-self.sh`
 
