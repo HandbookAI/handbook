@@ -72,25 +72,43 @@ gemeinsamen Laufwerk. Sie hat keinerlei Abhängigkeiten.
 `--agent-site` → `<out>/agent/`
 
 ```text
-how_to_use.md      the agent-side search protocol
-index.md           every stage, as locator blocks
-disambiguation.md  terms that legitimately point at several stages
-<stage-id>.md      one locator page per stage
+index.md         lookup recipes, the stage table, registers, coverage — read whole
+symbols.tsv      name → path:startLine-endLine, kind, stage, nCalledBy, signature
+files.tsv        path → stage, role, nSymbols, purpose[prose]
+calls.tsv        call edges; callee located or boundary:<import specifier>
+stages/<id>.md   second hop: the stage's files and its co-change pairs
 ```
 
-Jede Etappe erhält einen Block mit festem Schema: **duty**, **entry concepts**, **state**,
-**exemplar**, **core files** und **strong co-change**.
+**Das Artefakt für Menschen erklärt; das Artefakt für Agenten verortet.** Das ist die ganze
+Aufteilung. Das Markdown-Handbuch oben ist zum Lesen geschrieben, dieses hier zum Greppen —
+und es trägt das eine, was die Prosaseiten nie hatten: **wo jedes Symbol steht**.
 
-Gemessen über siebzehn echte Repositories füllen sich die ersten fünf Felder auf den
-meisten Seiten; **strong co-change ist absichtlich das spärlichste** — es greift nur dort,
-wo eine Testdatei _neben_ ihrer Quelle liegt (`engine.go` + `engine_test.go`), und die
-meisten Projekte legen Tests stattdessen in einem separaten Baum ab. Ein fehlendes Feld
-ist dort das Gating bei der Arbeit, keine Lücke.
+`index.md` ist die einzige Datei, die ganz gelesen werden soll, und sie ist in diesem
+Repository **3,2 KB** groß. Ihr Abschnitt `## lookup` ist das Suchprotokoll selbst und nicht
+ein Link darauf, denn ein Rezept einen Sprung weiter ist ein Rezept, dem niemand folgt:
 
-Die Invariante: **ein Feld wird genau dann ausgegeben, wenn sein strukturelles Signal
-existiert.** Keine Platzhalter, kein "N/A". Ein leeres Feld bedeutet _"der Graph hat hier
-kein Signal"_ — echte Information — und nicht _"das Modell wusste es nicht"_, also
-Rauschen, auf dem ein Agent weiter aufbauen würde.
+```text
+symbol -> location     grep -m5 "^NAME	" symbols.tsv
+file   -> its symbols  grep "	PATH:" symbols.tsv
+callers of a symbol    grep "	NAME	" calls.tsv
+callees of a symbol    grep "^NAME	" calls.tsv
+file   -> stage, role  grep "^PATH	" files.tsv
+stage  -> its files    read stages/<sid>.md
+```
+
+Die Tabellen sind TSV und kein Markdown, denn eine Signatur, die `|` enthält — jeder
+TypeScript-Union-Typ —, würde eine Markdown-Tabelle stillschweigend zerstören. Ein Fakt pro
+Zeile übersteht das Abschneiden, und ein Tab verankert eine ganze Spalte.
+
+Prosa ist auf **eine gekürzte Zeile pro Datei in der letzten Spalte** reduziert, damit beim
+Kürzen langer Zeilen zuerst Prosa wegfällt und nicht ein Pfad. Die vollständige Erklärung
+bleibt auf der Seite für Menschen, die jede Etappenseite verlinkt.
+
+**Co-change ist absichtlich das spärlichste Signal** — es greift nur dort, wo eine Testdatei
+_neben_ ihrer Quelle liegt (`engine.go` + `engine_test.go`), und die meisten Projekte legen
+Tests stattdessen in einem separaten Baum ab. Ein fehlendes Feld ist dort das Gating bei der
+Arbeit, keine Lücke: **ein Feld wird genau dann ausgegeben, wenn sein strukturelles Signal
+existiert.** Keine Platzhalter, kein "N/A".
 
 Übergeben Sie dieses Verzeichnis an `handbook skill --agent-dir`, um es im SKILL-Paket
 mitzuliefern.

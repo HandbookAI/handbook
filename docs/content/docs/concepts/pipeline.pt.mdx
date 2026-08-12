@@ -9,7 +9,7 @@ com o seu endpoint de LLM.
 | Phase  | Produz                                          | LLM? | Reexecutável sozinha? |
 | :----: | ----------------------------------------------- | :--: | :-------------------: |
 | **1**  | o grafo de chamadas                             |  ❌  |          ✅           |
-| **2a** | uma ficha por arquivo-fonte                     |  ✅  |          ✅           |
+| **2a** | uma ficha por arquivo varrido                   |  ✅  |          ✅           |
 | **2b** | esqueleto de etapas + atribuição de arquivos    |  ✅  |          ✅           |
 | **2c** | agrupamento e ordenação dentro de cada etapa    |  ✅  |          ✅           |
 | **3**  | narração + registradores de estado entre etapas |  ✅  |          ✅           |
@@ -39,7 +39,33 @@ Ele também grava um **hash de conteúdo por arquivo varrido**. É esse hash que
 de linha nem assinaturas — o caso que um diff puramente estrutural deixa passar por
 completo.
 
-**Saída:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+### O que ela não conseguiu ler
+
+Um arquivo que a descoberta listou mas que o analisador não conseguiu transformar em
+fatos é **registrado**, nunca pulado em silêncio. Cada um deles vai parar em
+`phase1/scan-coverage.json` com um motivo:
+
+- **`unreadable`** — a própria leitura falhou (um modo de permissão, um symlink quebrado,
+  um arquivo que o build apagou no meio da execução). Nenhum fato.
+- **`unparsable`** — a gramática lançou erro ou não devolveu árvore alguma. Nenhum fato.
+  Um script de shell contendo `case` é o caso comum.
+- **`partial`** — o arquivo parseou, mas com erros de sintaxe. As funções e chamadas
+  encontradas no resto dele são **reais**; o que falta é o que quer que estivesse dentro
+  do nó de erro.
+
+Os arquivos das duas primeiras categorias também saem de `scannedFiles`, porque um
+arquivo que não rendeu nada não pode ser entregue à Phase 2a como se estivesse vazio. A
+Phase 1 encerra nomeando a lacuna no log:
+
+```text
+[scan] coverage: 409 files analyzed; 3 recorded in scan-coverage.json (partial=1 unparsable=1 unreadable=1)
+```
+
+Um array `files` vazio nesse artefato é a versão positiva da mesma afirmação: tudo
+parseou.
+
+**Saída:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`,
+`scan-coverage.json`.
 
 <Callout title="Rode isto primeiro, sempre">
   `handbook analyze` é exatamente esta fase. Não custa nada e é a única forma de descobrir que você está
@@ -52,7 +78,9 @@ completo.
 
 **LLM. Normalmente a fase mais cara.**
 
-Cada arquivo-fonte recebe uma ficha:
+Cada arquivo que a Phase 1 realmente leu recebe uma ficha — ou seja, o `scannedFiles` do
+`graph.json`, que exclui os caminhos unreadable e unparsable registrados em
+`scan-coverage.json`:
 
 - **purpose** — uma ou duas frases em linguagem simples
 - **role** — de um vocabulário fechado (`entrypoint`, `domain_logic`, `io_transport`, …)

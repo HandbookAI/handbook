@@ -10,7 +10,7 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611, "filesUnparsed": 3 }
 ```
 
 **Free.** The `files` number is the one that drives cost, because phase 2a — the most
@@ -143,7 +143,9 @@ untouched; an aborted run writes none.
 handbook analyze --source $REPO --work $WORK
 ```
 
-Check the file count and `dropped-calls.json`. Fix the scan before spending anything.
+Check the file count, `dropped-calls.json` and `scan-coverage.json`. A non-zero
+`filesUnparsed` is a hole in the handbook you are about to pay for. Fix the scan before
+spending anything.
 
 </Step>
 

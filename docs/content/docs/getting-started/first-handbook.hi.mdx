@@ -21,7 +21,14 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 **यह मुफ़्त है और यही आपका smoke test है।** कोई LLM नहीं, कोई key नहीं, कोई tokens नहीं।
@@ -31,7 +38,10 @@ handbook analyze --source $REPO --work $WORK
   scan log देखिए। - **`files` बहुत ज़्यादा?** आप `node_modules`, `vendor` या कोई build directory analyze कर
   रहे हैं। आम directories अपने आप skip होती हैं; अगर आपकी नहीं हो रही, तो `--source` को repo root के बजाय असली
   source root की ओर कीजिए। - **`edgesDropped`, `edgesKept` की तुलना में बहुत बड़ा?** Dynamic languages के लिए
-  सामान्य है। `phase1/dropped-calls.json` देखिए — हर unresolved call वहाँ categorized है, छिपाई नहीं गई।
+  सामान्य है। `phase1/dropped-calls.json` देखिए — हर unresolved call वहाँ categorized है, छिपाई नहीं गई। -
+  **`filesUnparsed` शून्य नहीं?** उन files के नाम `phase1/scan-coverage.json` में एक reason के साथ दर्ज हैं।
+  जो `unreadable` और `unparsable` हैं वे कुछ भी योगदान नहीं करतीं और उन्हें कोई page नहीं मिलता, इसलिए अभी
+  बनाए गए handbook में ठीक वहीं एक छेद रह जाएगा — prose की क़ीमत चुकाने से पहले इसे ठीक कर लेना बेहतर है।
 </Callout>
 
 ऊपर की जो भी गड़बड़ी हो, उसे **अभी** ठीक कीजिए। यहाँ की हर समस्या आगे चलकर और महँगी समस्या
@@ -103,8 +113,9 @@ handbook skill --handbook $WORK/handbook --out skills/myrepo \
 चीज़ है जो handbook के drift को detect करने लायक़ बनाती है** — वरना वह बाद में चुपचाप ग़लत होता
 रहता।
 
-`--agent-dir` locator pages साथ भेजता है, और SKILL के routing protocol में एक
-disambiguation step जोड़ता है।
+`--agent-dir` agent index और उसकी fact तालिकाएँ साथ भेजता है, और SKILL के routing protocol
+को उसके grep नुस्ख़े देता है — ताकि agent गद्य पढ़कर अंदाज़ा लगाने के बजाय एक ही command में
+किसी symbol के नाम को `path:startLine-endLine` में बदल सके।
 
 ## Step 5 — validate कीजिए
 

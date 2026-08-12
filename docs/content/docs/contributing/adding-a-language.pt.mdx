@@ -165,6 +165,22 @@ do grafo a coloca em quarentena em `dropped-calls.json` com uma categoria e seu 
 depois, o que envenena de uma só vez o agrupamento, as dicas de co-alteração e o índice
 localizador do agente.
 
+### A regra da divulgação
+
+O mesmo vale para arquivos inteiros. Um arquivo que o seu adaptador não consegue ler, não
+consegue parsear, ou parseia só em parte, precisa voltar em `ModuleAnalysis.unparsedFiles`
+— nunca ser pulado em silêncio:
+
+- `unreadable` — a leitura lançou erro. O `detail` é a mensagem de errno.
+- `unparsable` — a gramática lançou erro, ou não devolveu árvore.
+- `partial` — `tree.rootNode.hasError`. Os fatos que você conseguiu extrair são reais; o
+  que quer que estivesse dentro do nó de erro não está lá.
+
+A espinha compartilhada do analisador registra os três por você, então um adaptador guiado
+por especificação ganha isso de graça. O pipeline tira os dois primeiros de `scannedFiles`
+e escreve cada entrada em `phase1/scan-coverage.json`. Um arquivo que some da análise em
+silêncio é o único modo de falha que nada a jusante consegue detectar.
+
 ## Registrando um adaptador de fora
 
 O registro é público, então você pode adicionar uma linguagem sem fazer um fork:
@@ -187,6 +203,7 @@ fora dos metadados do grafo** em vez de ter uma alegação de fidelidade inventa
 - [ ] Registrado em `register.ts` (entradas de nível generic são recolhidas automaticamente)
 - [ ] Um teste que parseia código-fonte **real** em um diretório temporário
 - [ ] Capacidades declaradas honestamente
+- [ ] Arquivos unreadable, unparsable e partial reportados, nunca pulados em silêncio
 - [ ] Nome de exibição adicionado ao mapa `DISPLAY` do teste de deriva
 - [ ] Ambos os READMEs, os READMEs do analisador e a referência de linguagens atualizados
 - [ ] `pnpm check` passa

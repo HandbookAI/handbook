@@ -16,6 +16,7 @@ description: '流水线写出的每一个文件、它们的 schema，以及读�
     functions.csv         one row per internal function
     graph.dot             Graphviz view (files as clusters; await edges colored)
     dropped-calls.json    unresolved calls, categorized
+    scan-coverage.json    files the scan could NOT turn into facts, and why
   phase2/
     cards/<rel>.json      one card per source file (tree-mirrored paths)
     cards/_coverage.json  {nFiles, nDescribed, missing[]}
@@ -38,11 +39,15 @@ description: '流水线写出的每一个文件、它们的 schema，以及读�
     "generatedAt": "2026-08-02T10:00:00.000Z",
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
-    "scannedFiles": ["app/main.py", "…"],
+    "scannedFiles": ["app/main.py", "…"], // only files that were actually read and parsed
     "nInternalFunctions": 316,
     "nBoundaryNodes": 45,
     "nEdges": 903,
     "policy": "Edges are emitted only when the callee resolves …",
+    "unparsedFiles": [
+      // optional; [] means every scanned file parsed cleanly
+      { "file": "app/legacy.py", "reason": "partial", "detail": "…" },
+    ],
   },
   "nodes": {
     "app.main.main": {
@@ -116,6 +121,53 @@ internal_constructor · boundary · boundary_constructor`（绝不会是 `unreso
 
 类别：`inherited_method`、`self_attr_unknown`、`string_literal_method`、`builtin`、
 `local_var_method`、`bare_name`。
+
+## phase1/scan-coverage.json
+
+`dropped-calls.json` 往上一层的姊妹文件：那份文件交代的是分析器拒绝去猜的每一个**调用**，
+这份文件交代的是它拒绝声称自己分析过的每一个**文件**。
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "…",
+    "nScanned": 412, // files that reached the graph — i.e. graph.metadata.scannedFiles
+    "nUnparsed": 3,
+    "byReason": { "partial": 1, "unparsable": 1, "unreadable": 1 },
+  },
+  "files": [
+    // sorted by path, so an unchanged tree re-runs byte-identically
+    { "file": "app/legacy.py", "reason": "partial", "detail": "the parse tree contains syntax errors…" },
+    { "file": "scripts/deploy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
+    { "file": "vendor/dangling.py", "reason": "unreadable", "detail": "ENOENT: no such file or directory…" },
+  ],
+}
+```
+
+| `reason`     | 解析器拿到了什么     | 在 `scannedFiles` 里吗？ | 会有卡片吗？ |
+| ------------ | -------------------- | :----------------------: | :----------: |
+| `unreadable` | 什么都没有——读取失败 |            ❌            |      ❌      |
+| `unparsable` | 什么都没有——语法抛错 |            ❌            |      ❌      |
+| `partial`    | 真实的事实，但不完整 |            ✅            |      ✅      |
+
+- **`unreadable`**——发现阶段列出了这个路径，但读取失败了：权限位、悬空的符号链接、运行途中
+  被构建删掉的文件。`detail` 里带着 errno 消息。
+- **`unparsable`**——语法抛错，或者根本没返回语法树。零事实。今天，含 `case` 的 shell 脚本
+  就是这个结果。
+- **`partial`**——文件解析出来了，但 `rootNode.hasError`：tree-sitter 把它读不懂的文本停放进
+  一个错误节点里，然后继续往下走。从文件其余部分提取到的一切都是**真的**——缺的是落在那个
+  节点里的东西，而它从外面看不见。正因如此，在相信关于这个文件的某一页之前，值得你自己去读
+  一遍源码。
+
+**`files` 数组为空是一句正面的断言**——“每个扫描到的文件都干净地解析成功了”。而这份产物
+_不存在_，意思是这次分析早于这项记录，两者并不是一回事。
+
+<Callout title="为什么前两类会被移出 scannedFiles">
+  一个没产出任何事实的文件，从前会继续留在 `scannedFiles` 里，于是 Phase 2a 为它写了一张卡片，`_coverage.json`
+  也把它算作已描述。手册随后就以*解析器事实*的名义断言：一个没人读过的文件里有零个函数。把这些路径从这里剔除，才能让一份清单只表示一件事：`scannedFiles`
+  是分析器读到的，`scan-coverage.json` 是它没能读到的。
+</Callout>
 
 ## `phase2/cards/<rel>.json` — FileCard
 
@@ -236,10 +288,105 @@ coverage: { nFiles: 5, nOrganized: 5 }
   <sid>.md             one page per content-bearing stage (summary, sub-stages,
                        organization groups, per-file cards with function details,
                        📊 state-registers section when touched)
-  agent/               (--agent-site) how_to_use.md · index.md · disambiguation.md · <sid>.md
+  agent/               (--agent-site) index.md · symbols.tsv · files.tsv · calls.tsv · stages/<sid>.md
   html/                (--html) self-contained multi-page site (no external requests)
   handbook.html        (--html-single) one self-contained page
 ```
+
+## 智能体索引（`--agent-site`）
+
+```
+<out>/agent/
+  index.md            the only file meant to be read whole: lookup recipes, the stage
+                      table, the register table, coverage
+  symbols.tsv         name → path:startLine-endLine, kind, stage, nCalledBy, signature
+  files.tsv           path → stage, role, nSymbols, purpose[prose]
+  calls.tsv           call edges: the caller always located, the callee located or
+                      marked boundary:<import specifier>
+  stages/<sid>.md     second hop: the stage's file list and its co-change pairs
+```
+
+**人类产物负责解释，智能体产物负责定位。** 它们不是同一份文本的两种渲染。智能体需要那段解释
+时，解释就在一跳之外——每个阶段页面链接到对应的人类页面，而不是把它抄一遍。
+
+### 为什么用 TSV 而不是 markdown 表格
+
+- markdown 表格会**无声地毁掉本仓库里的 338 行签名**，因为 TypeScript 的联合类型里带 `|`。制表
+  符不会和源码里的文本撞车。
+- **一行一个事实，被截断之后依然成立。** 每条 grep 配方都在一行里给出完整答案——名字、位置、
+  kind、阶段、调用方和签名都在一起——所以哪怕结果被剪掉一截，照样能用。
+- **一个制表符就锚定一整列**：`grep "^scan\t"` 匹配的是名为 `scan` 的符号，而不是每一行含这个
+  词的内容。
+
+**列的顺序就是价值的顺序，文字放最后**，这样一个会剪掉长行的消费者，先吃掉的是文字，而不是路径。
+
+### 表头行
+
+每张表都以 `#` 注释行开头，写明各列的名字和信任边界——流水线在别处一直在做的同一件披露，被移
+到了真正承载它的那份产物上：
+
+```
+# name	location	kind	stage	nCalledBy	signature
+# parser facts. kind=fn is a function or method. kind=type:<class|interface|struct|record|enum|
+# trait|alias|other> is a parsed type DECLARATION, span read off the declaration itself.
+# kind=class-derived is the fallback where a language's adapter extracts no types: the SPAN is
+# min..max of the class's METHODS, not of the declaration. Which languages are indexed and which
+# fall back is stated in index.md under "coverage" — a miss here is not proof a name does not exist.
+# nCalledBy counts callers inside the scanned set PLUS callers that reach it through an import
+# (see calls.tsv boundary rows); a cross-package-only callee would otherwise read as dead code.
+```
+
+`calls.tsv` 写的是与之对应的一条，并且点明了它承载的两种行的区别：
+
+```
+# callerQualname	callerLocation	calleeQualname	calleeLocation
+# calleeLocation is path:line when the analyzer resolved it, or boundary:<import specifier>
+# when the call leaves the scanned set — the name is known, the location is not and is not guessed.
+# A call the analyzer could not pin down at all is in phase1/dropped-calls.json,
+# never guessed here — so absence is not proof nothing calls it.
+```
+
+### 边界边，以及为什么 monorepo 需要它们
+
+一个通过 import 离开被扫描范围的调用，其被调方位置写作 `boundary:<specifier>`，而绝不是一个路
+径。名字是事实；位置不是，也不去猜。
+
+在 monorepo 里这不是一个脚注——它几乎就是智能体最想知道的那部分。在本仓库上实测：**3,565 条边
+里有 1,063 条是边界边**，其中 284 条指向 `@handbook/core`。如果只收解析成功的边，
+`checkLanguage`——它被另一个包调用了四次——会显示**零个调用方**，而智能体会把这读成死代码。那
+是一个*错误的指针*，不是一处空白，而错误的指针正是这份产物要防的那种失败。
+
+出于同样的理由，`symbols.tsv` 的 `nCalledBy` 把边界调用方和包内调用方一起计数，表头里也这么写
+了。`boundary:` 不可能被误当成路径，所以把它们算进来并没有编造任何东西。
+
+### 类型行，以及它们下面的回退
+
+`symbols.tsv` 里有三种行。`fn` 是函数或方法。`type:<kind>` 是**解析出来的类型声明**——
+跨度是从声明本身读出来的——取自一个封闭的词表：`class`、`interface`、`struct`、`record`、
+`enum`、`trait`、`alias`、`other`。`record` 没有并进 `struct`，因为 Java 和 C# 的 `record` 是
+**引用**类型，而 `struct` 恰恰是这个词表里同时意味着值类型的那个词。`other` 是有承重作用的，
+不是垃圾桶：Go 的 defined type（`type Celsius float64`）不是别名，Rust 的 `union` 不是 struct，
+Java 的 `@interface` 不是 interface——而 `signature` 里带的是**原样写出的声明**，
+所以原生关键字永远不会丢。
+
+哪些语言真的抽取类型，是**按 adapter 声明**并在 `index.md` 里披露的，
+和分析保真度的做法一样（不变量 3）。`AdapterCapabilities.typeKinds` 是一个**列表**而不是布尔值，
+因为一个 adapter 可能找得到 class 却漏掉全部 interface；`[]` 是一个肯定的声明，
+而这个字段**不存在**意味着产物早于它，会被报成 _unknown_，绝不会报成零。
+
+`class-derived` 是 adapter 抽不出类型时的回退：跨度取该类**各个方法**的 `min…max`——
+那是成员所在的位置，不是声明所在的位置——所以它被明确标注，而不是当作解析出来的事实端上桌。
+在本仓库上，加入真正的类型抽取后 `class-derived` 从 45 行降到 19 行，
+而剩下的每一行都是对象字面量而不是类型声明——回退本来就该只抓这些。
+
+披露比覆盖率更重要：一个 agent grep 一个类型名、什么都没搜到、于是断定这个类型不存在，
+这正是这份产物要防的**错误指针**。常量、变量和宏在任何语言里都不被索引，`index.md` 写明了这一点。
+
+### 新鲜度
+
+`index.md` 的头部带着 `HandbookModel.provenance`——`{ commit?, generatedAt }`，从运行清单里读
+来。行号如今是主要的载荷，而过期的行号正是那种会**无声**出错的事实，所以这份产物会说清楚自己
+是什么时候、对着什么生成的。
 
 ## SKILL 包（`handbook skill`）
 
@@ -250,13 +397,16 @@ coverage: { nFiles: 5, nOrganized: 5 }
   references/
     overview.md  index.md  registers.md
     stages/<sid>.md
+    agent/                       (--agent-dir) index.md · symbols.tsv · files.tsv ·
+                                 calls.tsv · stages/<sid>.md
     coverage.json                (optional) {schemaVersion, summary, files:[{path,stage,sha256}]}
 ```
 
 校验约定（`handbook validate`）：frontmatter 恰好包含 `name` 与 `description`；description
 同时说明何时使用与何时不要使用；正文引用 `references/index.md` 并指向真正的源码；
 overview/index/registers/stages 都存在；index 链接到每一个阶段页面；coverage 路径没有重复；
-带上 `--source` 时，哈希必须与实时的源码树一致。
+带上 `--source` 时，哈希必须与实时的源码树一致。`references/agent/` 目录是可选的，但只要它存
+在，就必须带上 `index.md` 和全部三张表——索引和它的事实表要么一起交付，要么都不交付。
 
 ## 规划器输出（`handbook plan`）
 

@@ -22,7 +22,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -47,15 +47,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 值得专门看一看的东西：
 
-| 打开这个                              | 注意看                                             |
-| ------------------------------------- | -------------------------------------------------- |
-| `handbook/overview.md`                | 由调用图生成的 mermaid **阶段地图**                |
-| `handbook/index.md`                   | 每个阶段，层层嵌套，各配一段文字                   |
-| `handbook/register.md`                | 跨阶段状态，以及触碰每一项状态的阶段               |
-| `handbook/agent/index.md`             | 代理定位格式——没有叙述，只有地址                   |
-| `handbook/agent/disambiguation.md`    | 那些确实同时指向多个阶段的术语                     |
-| `skill/references/coverage.json`      | 每个文件一个内容哈希。这就是漂移信号。             |
-| `work/demo/phase1/dropped-calls.json` | 分析器**无法**解析的调用，被保留并分类，而不是靠猜 |
+| 打开这个                              | 注意看                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| `handbook/overview.md`                | 由调用图生成的 mermaid **阶段地图**                                       |
+| `handbook/index.md`                   | 每个阶段，层层嵌套，各配一段文字                                          |
+| `handbook/register.md`                | 跨阶段状态，以及触碰每一项状态的阶段                                      |
+| `handbook/agent/index.md`             | 代理索引——查找配方、阶段表、覆盖率。整篇读完                              |
+| `handbook/agent/symbols.tsv`          | 每个符号 → `path:startLine-endLine`。这是那些叙述页面从来没有过的东西     |
+| `skill/references/coverage.json`      | 每个文件一个内容哈希。这就是漂移信号。                                    |
+| `work/demo/phase1/dropped-calls.json` | 分析器**无法**解析的调用，被保留并分类，而不是靠猜                        |
+| `work/demo/phase1/scan-coverage.json` | 分析器**无法**读取或完整解析的文件。这里是 `[]`，说明五个文件全都解析成功 |
 
 ## 第 4 步——掀开引擎盖
 
@@ -92,7 +93,8 @@ pnpm mock-llm         # just the mock server, on port 8099
   />
 </div>
 
-1. **`analyze`** 用 tree-sitter 把每个文件解析成带类型的调用图。不用 LLM。
+1. **`analyze`** 用 tree-sitter 把每个读得进来的文件解析成带类型的调用图，并把读不进来的写进
+   `phase1/scan-coverage.json`。不用 LLM。
 2. **`generate`** 为每个文件写一张卡片，合成阶段骨架，把每个文件归入某个阶段，再分组排序，然后自底向上叙述，并提取跨阶段状态寄存器。
 3. **`render`** 把这些变成 markdown、一个 HTML 站点、一个自包含单页、代理定位索引和 `llms.txt`。不用 LLM。
 4. **`skill`** 把它重新打包成一个代理 SKILL，每个文件带内容哈希。不用 LLM。

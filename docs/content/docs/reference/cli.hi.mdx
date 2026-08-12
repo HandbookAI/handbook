@@ -83,10 +83,22 @@ handbook analyze --source <dir> --work <dir> [--lang <lang>]
 `typescript` `zig`. **`auto` एक ही पास में हर भाषा को पहचानकर मिला देता है** और लगभग हमेशा
 वही होता है जो आप चाहते हैं।
 
-**लिखता है** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`।
+**लिखता है** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`,
+`scan-coverage.json`।
+
+`files` वह गिनता है जो सचमुच पढ़ा और parse हुआ; `filesUnparsed` वह जो नहीं हुआ, और उनमें से
+हर एक का नाम एक reason के साथ `scan-coverage.json` में दर्ज होता है। देखें
+[Artifact प्रारूप](/docs/reference/artifacts)।
 
 ```json title="stdout"
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 ---
@@ -130,6 +142,7 @@ handbook generate --source <dir> --work <dir> [options]
 
 | Flag                        | डिफ़ॉल्ट                    | Env उपनाम           |
 | --------------------------- | --------------------------- | ------------------- |
+| `--provider <name>`         | `openai`                    | `OPENAI_PROVIDER`   |
 | `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
 | `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
 | `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
@@ -137,15 +150,26 @@ handbook generate --source <dir> --work <dir> [options]
 | `--llm-retries <n>`         | `6`                         | —                   |
 | `--llm-retry-backoff <sec>` | `3`                         | —                   |
 | `--llm-concurrency <n>`     | `16`                        | —                   |
-| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
 
 API key **कभी flag नहीं होती**। `OPENAI_API_KEY` (या `HANDBOOK_LLM_API_KEY`) को environment
 में या किसी `.env` फ़ाइल में सेट करें। config फ़ाइल में यह अस्वीकार कर दी जाती है, क्योंकि
 config फ़ाइलें commit होती हैं।
 
-`--extra-body` हर request body में vendor फ़ील्ड मिला देता है — जैसे
-`{"thinking":{"type":"disabled"}}`। इसके ज़रिये model, message और token फ़ील्ड override नहीं
-किए जा सकते।
+अतिरिक्त request body भी **कभी flag नहीं होती**, और उसी वजह से config फ़ाइल में अस्वीकार कर
+दी जाती है। इसके लिए `OPENAI_EXTRA_BODY` (या `HANDBOOK_LLM_EXTRA_BODY`) को environment में
+सेट करें: यह हर request body में vendor फ़ील्ड मिला देती है — जैसे
+`{"thinking":{"type":"disabled"}}` — और चूँकि यह free-form है, इसके भीतर किसी tuning फ़ील्ड
+को auth फ़ील्ड से अलग पहचानने का कोई तरीका ही नहीं है। इसके ज़रिये model, message और token
+फ़ील्ड override नहीं किए जा सकते।
+
+`--base-url` **flag है**, और config फ़ाइल में उसका पूरा स्वागत है — हर checkout को एक ही साझा
+gateway पर भेजने वाली टीम के लिए ही तो वह फ़ाइल बनी है। जिस URL में credentials बैठे हों
+(`https://user:pass@gw.internal/v1`) वह वहाँ अस्वीकार होता है, और सिर्फ़ वहीं; credential
+environment में ही रखें।
+
+`--provider` वेंडर नहीं, wire format चुनता है: `openai` (default) हर OpenAI-compatible
+endpoint से बात करता है — यानी लगभग सभी से; `anthropic` और `gemini` उन दो के लिए हैं जो
+OpenAI-compatible नहीं हैं।
 
 ```json title="stdout"
 {
@@ -168,16 +192,16 @@ Work directory → markdown, और चाहें तो और भी। **�
 handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
 ```
 
-| Flag                      | डिफ़ॉल्ट          | यह क्या करता है                                    |
-| ------------------------- | ----------------- | -------------------------------------------------- |
-| `--work <dir>`            | **आवश्यक**        | रेंडर करने के लिए work directory                   |
-| `--title <title>`         | `System Handbook` | आउटपुट में handbook का शीर्षक                      |
-| `--out <dir>`             | `<work>/handbook` | कहाँ लिखना है                                      |
-| `--html`                  | `false`           | साथ में बहु-पृष्ठ HTML साइट, `<out>/html` के नीचे  |
-| `--html-single`           | `false`           | साथ में एक स्वयं-निहित `<out>/handbook.html`       |
-| `--agent-site`            | `false`           | साथ में agent locator index, `<out>/agent` के नीचे |
-| `--llms-txt`              | `false`           | साथ में `llms.txt` और `llms-full.txt`              |
-| `--source-base-url <url>` | —                 | हर file card को `<url>/<relative path>` से जोड़ें  |
+| Flag                      | डिफ़ॉल्ट          | यह क्या करता है                                            |
+| ------------------------- | ----------------- | ---------------------------------------------------------- |
+| `--work <dir>`            | **आवश्यक**        | रेंडर करने के लिए work directory                           |
+| `--title <title>`         | `System Handbook` | आउटपुट में handbook का शीर्षक                              |
+| `--out <dir>`             | `<work>/handbook` | कहाँ लिखना है                                              |
+| `--html`                  | `false`           | साथ में बहु-पृष्ठ HTML साइट, `<out>/html` के नीचे          |
+| `--html-single`           | `false`           | साथ में एक स्वयं-निहित `<out>/handbook.html`               |
+| `--agent-site`            | `false`           | साथ में agent index + fact तालिकाएँ, `<out>/agent` के नीचे |
+| `--llms-txt`              | `false`           | साथ में `llms.txt` और `llms-full.txt`                      |
+| `--source-base-url <url>` | —                 | हर file card को `<url>/<relative path>` से जोड़ें          |
 
 <Callout type="info">
   `--source-base-url` के बिना आउटपुट में **कोई भी बाहरी URL नहीं** होता, जो तब मायने रखता है जब आप किसी निजी
@@ -197,16 +221,16 @@ handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-sit
 handbook skill --handbook <dir> --out <dir> --name <slug> [options]
 ```
 
-| Flag                | डिफ़ॉल्ट     | यह क्या करता है                                                  |
-| ------------------- | ------------ | ---------------------------------------------------------------- |
-| `--handbook <dir>`  | **आवश्यक**   | रेंडर किए गए handbook की directory                               |
-| `--out <dir>`       | **आवश्यक**   | SKILL पैकेज कहाँ जाएगा                                           |
-| `--name <slug>`     | **आवश्यक**   | छोटे अक्षरों-हाइफ़न वाला slug; `<slug>-handbook` बनाता है        |
-| `--project <name>`  | _(`--name`)_ | गद्य में इस्तेमाल होने वाला मानवीय प्रोजेक्ट नाम                 |
-| `--work <dir>`      | —            | phase 2 के assignment से `coverage.json` जोड़ता है               |
-| `--source <dir>`    | —            | `--work` के साथ, **हर फ़ाइल का content hash** जोड़ता है          |
-| `--agent-dir <dir>` | —            | locator पृष्ठ `references/agent/` के नीचे भेजता है               |
-| `--lang <l>`        | `en`         | SKILL.md के **मुख्य भाग** की भाषा। Frontmatter अंग्रेज़ी रहता है |
+| Flag                | डिफ़ॉल्ट     | यह क्या करता है                                                        |
+| ------------------- | ------------ | ---------------------------------------------------------------------- |
+| `--handbook <dir>`  | **आवश्यक**   | रेंडर किए गए handbook की directory                                     |
+| `--out <dir>`       | **आवश्यक**   | SKILL पैकेज कहाँ जाएगा                                                 |
+| `--name <slug>`     | **आवश्यक**   | छोटे अक्षरों-हाइफ़न वाला slug; `<slug>-handbook` बनाता है              |
+| `--project <name>`  | _(`--name`)_ | गद्य में इस्तेमाल होने वाला मानवीय प्रोजेक्ट नाम                       |
+| `--work <dir>`      | —            | phase 2 के assignment से `coverage.json` जोड़ता है                     |
+| `--source <dir>`    | —            | `--work` के साथ, **हर फ़ाइल का content hash** जोड़ता है                |
+| `--agent-dir <dir>` | —            | agent index और उसकी fact तालिकाएँ `references/agent/` के नीचे भेजता है |
+| `--lang <l>`        | `en`         | SKILL.md के **मुख्य भाग** की भाषा। Frontmatter अंग्रेज़ी रहता है       |
 
 <Callout type="warn" title="जानने लायक दो इनकार">
   `--out` न तो handbook directory होनी चाहिए और न ही उसकी कोई पूर्वज: build की शुरुआत `--out` को मिटाने से

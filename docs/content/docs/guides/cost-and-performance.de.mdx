@@ -10,7 +10,7 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611, "filesUnparsed": 3 }
 ```
 
 **Kostenlos.** Die Zahl `files` ist diejenige, die die Kosten treibt, denn Phase 2a — die
@@ -147,8 +147,9 @@ vorherige Manifest unangetastet; ein abgebrochener schreibt keines.
 handbook analyze --source $REPO --work $WORK
 ```
 
-Prüfen Sie die Dateianzahl und `dropped-calls.json`. Reparieren Sie den Scan, bevor Sie
-irgendetwas ausgeben.
+Prüfen Sie die Dateianzahl, `dropped-calls.json` und `scan-coverage.json`. Ein
+`filesUnparsed` ungleich null ist ein Loch in genau dem Handbuch, für das Sie gleich
+bezahlen. Reparieren Sie den Scan, bevor Sie irgendetwas ausgeben.
 
 </Step>
 

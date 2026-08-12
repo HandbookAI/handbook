@@ -13,6 +13,7 @@ erzeugt. Eines pro dokumentiertem Repository.
     functions.csv       every function, flat, for grepping or a spreadsheet
     graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
     dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+    scan-coverage.json  files we could NOT read or fully parse — not counted as covered
   phase2/
     cards/<rel>.json    one card per source file, mirroring the source tree
     cards/_coverage.json  how many files got prose, and which did not
@@ -50,7 +51,9 @@ Zwei bewusste Ausnahmen, beide aus Resilienz, nicht aus Nachlässigkeit:
   bringen.
 - **`languages`-Metadaten in `graph.json`** — optional, weil es hier keinen Mechanismus
   zur Artefakt-Migration gibt und jeder Graph, der vor der Einführung der
-  Treue-Deklarationen geschrieben wurde, weiterhin validieren muss.
+  Treue-Deklarationen geschrieben wurde, weiterhin validieren muss. `unparsedFiles` ist
+  aus demselben Grund optional: Fehlt es, ist die Analyse älter als dieser Nachweis — es
+  heißt **nicht**, dass nichts fehlgeschlagen ist.
 
 ### Jeder Schreibvorgang ist atomar
 
@@ -93,12 +96,31 @@ jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
 # what could not be resolved, by category
 jq '.metadata.byCategory' phase1/dropped-calls.json
 
+# which files the scan could not turn into facts, and why
+jq '.metadata.byReason, .files' phase1/scan-coverage.json
+
 # which files never got prose
 jq '.missing' phase2/cards/_coverage.json
 ```
 
 `functions.csv` existiert aus demselben Grund — manchmal ist das schnellste Werkzeug eine
 Tabellenkalkulation.
+
+### Die zwei Abdeckungsdateien beantworten verschiedene Fragen
+
+`_coverage.json` beantwortet _„welche Dateien konnte das Modell nicht beschreiben?“_.
+`scan-coverage.json` beantwortet die Frage darunter: _„welche Dateien hat der Parser
+überhaupt nie zu lesen geschafft?“_ — mit einem `reason` von `unreadable`, `unparsable`
+oder `partial`.
+
+Die ersten beiden steuern **keine** Fakten bei und fallen deshalb auch aus `scannedFiles`
+in `graph.json` heraus: Nichts Nachgelagertes schreibt eine Karte über eine Datei, die
+niemand geöffnet hat, und zählt sie danach als beschrieben. `partial`-Dateien bleiben —
+tree-sitter hat sich vom Syntaxfehler erholt, und die gefundenen Funktionen sind echt,
+bloß unvollständig.
+
+Ein leeres `files`-Array heißt: Jede gescannte Datei wurde sauber geparst. Das ist eine
+Aussage; ein schlicht fehlendes Artefakt ist keine.
 
 ## Wo sonst noch geschrieben wird
 

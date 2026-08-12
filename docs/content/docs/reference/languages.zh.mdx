@@ -88,6 +88,9 @@ node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work wor
 merely unresolved — install.sh, nvm.sh, …
 ```
 
+这些文件每一个还会在 `phase1/scan-coverage.json` 里被单独点名，`reason: "unparsable"`，并且被挡在
+图的 `scannedFiles` 之外——所以它们是一个*看得见*的缺口，而不是一个无声的缺口。
+
 </Callout>
 
 ## 到处都会被跳过的东西
@@ -121,6 +124,7 @@ handbook analyze --source ~/code/repo --work work/x -v
 ```bash
 jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
 jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+jq '.metadata.byReason, .files' work/x/phase1/scan-coverage.json  # what could not be parsed at all
 ```
 
 ## 新增一门语言

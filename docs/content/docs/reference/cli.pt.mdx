@@ -83,10 +83,22 @@ handbook analyze --source <dir> --work <dir> [--lang <lang>]
 `ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift` `typescript` `zig`.
 **`auto` detecta e mescla todas as linguagens em uma única passagem** e é quase sempre o que você quer.
 
-**Escreve** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+**Escreve** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`,
+`scan-coverage.json`.
+
+`files` conta o que de fato foi lido e parseado; `filesUnparsed` conta o que não foi, e
+cada um desses está nomeado, com um motivo, em `scan-coverage.json`. Veja
+[Formatos de artefato](/docs/reference/artifacts).
 
 ```json title="stdout"
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 ---
@@ -130,6 +142,7 @@ handbook generate --source <dir> --work <dir> [options]
 
 | Flag                        | Padrão                      | Alias de env        |
 | --------------------------- | --------------------------- | ------------------- |
+| `--provider <name>`         | `openai`                    | `OPENAI_PROVIDER`   |
 | `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
 | `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
 | `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
@@ -137,14 +150,27 @@ handbook generate --source <dir> --work <dir> [options]
 | `--llm-retries <n>`         | `6`                         | —                   |
 | `--llm-retry-backoff <sec>` | `3`                         | —                   |
 | `--llm-concurrency <n>`     | `16`                        | —                   |
-| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
 
 A chave de API **nunca é uma flag**. Defina `OPENAI_API_KEY` (ou `HANDBOOK_LLM_API_KEY`) no
 ambiente ou em um arquivo `.env`. Ela é rejeitada em um arquivo de configuração, porque
 arquivos de configuração são commitados.
 
-`--extra-body` mescla campos do fornecedor em todo corpo de requisição — `{"thinking":{"type":"disabled"}}`,
-por exemplo. Campos de modelo, mensagem e tokens não podem ser sobrescritos por ele.
+O corpo de requisição extra **também nunca é uma flag**, e é rejeitado em um arquivo de
+configuração pelo mesmo motivo. Defina `OPENAI_EXTRA_BODY` (ou `HANDBOOK_LLM_EXTRA_BODY`)
+no ambiente: ele mescla campos do fornecedor em todo corpo de requisição —
+`{"thinking":{"type":"disabled"}}`, por exemplo — e, por ser de formato livre, não há como
+distinguir ali dentro um campo de ajuste de um campo de autenticação. Campos de modelo,
+mensagem e tokens não podem ser sobrescritos por ele.
+
+`--base-url` **é** uma flag, e é bem-vinda em um arquivo de configuração — um time
+apontando todos os seus checkouts para um mesmo gateway compartilhado é exatamente para
+isso que esse arquivo serve. Uma URL que embute credenciais
+(`https://user:pass@gw.internal/v1`) é recusada ali, e só ali; deixe a credencial no
+ambiente.
+
+`--provider` escolhe o formato do protocolo, não o fornecedor: `openai` (o padrão) fala com
+qualquer endpoint compatível com OpenAI, que é a maioria; `anthropic` e `gemini` existem
+para os dois que não são.
 
 ```json title="stdout"
 {
@@ -167,16 +193,16 @@ Diretório de trabalho → markdown, e opcionalmente mais. **Sem LLM.**
 handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
 ```
 
-| Flag                      | Padrão            | O que faz                                                  |
-| ------------------------- | ----------------- | ---------------------------------------------------------- |
-| `--work <dir>`            | **obrigatório**   | O diretório de trabalho a renderizar                       |
-| `--title <title>`         | `System Handbook` | Título do handbook na saída                                |
-| `--out <dir>`             | `<work>/handbook` | Onde escrever                                              |
-| `--html`                  | `false`           | Também o site HTML de múltiplas páginas, em `<out>/html`   |
-| `--html-single`           | `false`           | Também um único `<out>/handbook.html` autocontido          |
-| `--agent-site`            | `false`           | Também o índice localizador para agentes, em `<out>/agent` |
-| `--llms-txt`              | `false`           | Também `llms.txt` e `llms-full.txt`                        |
-| `--source-base-url <url>` | —                 | Liga cada ficha de arquivo a `<url>/<relative path>`       |
+| Flag                      | Padrão            | O que faz                                                            |
+| ------------------------- | ----------------- | -------------------------------------------------------------------- |
+| `--work <dir>`            | **obrigatório**   | O diretório de trabalho a renderizar                                 |
+| `--title <title>`         | `System Handbook` | Título do handbook na saída                                          |
+| `--out <dir>`             | `<work>/handbook` | Onde escrever                                                        |
+| `--html`                  | `false`           | Também o site HTML de múltiplas páginas, em `<out>/html`             |
+| `--html-single`           | `false`           | Também um único `<out>/handbook.html` autocontido                    |
+| `--agent-site`            | `false`           | Também o índice para agentes + as tabelas de fatos, em `<out>/agent` |
+| `--llms-txt`              | `false`           | Também `llms.txt` e `llms-full.txt`                                  |
+| `--source-base-url <url>` | —                 | Liga cada ficha de arquivo a `<url>/<relative path>`                 |
 
 <Callout type="info">
   Sem `--source-base-url` a saída não contém **nenhuma URL externa**, o que importa se você está entregando um
@@ -196,16 +222,16 @@ Handbook renderizado → pacote SKILL para agentes. **Sem LLM.**
 handbook skill --handbook <dir> --out <dir> --name <slug> [options]
 ```
 
-| Flag                | Padrão          | O que faz                                                     |
-| ------------------- | --------------- | ------------------------------------------------------------- |
-| `--handbook <dir>`  | **obrigatório** | O diretório do handbook renderizado                           |
-| `--out <dir>`       | **obrigatório** | Para onde vai o pacote SKILL                                  |
-| `--name <slug>`     | **obrigatório** | Slug em minúsculas com hífens; produz `<slug>-handbook`       |
-| `--project <name>`  | _(`--name`)_    | Nome legível do projeto usado na prosa                        |
-| `--work <dir>`      | —               | Adiciona `coverage.json` da atribuição da Phase 2             |
-| `--source <dir>`    | —               | Com `--work`, adiciona um **hash de conteúdo por arquivo**    |
-| `--agent-dir <dir>` | —               | Entrega as páginas localizadoras em `references/agent/`       |
-| `--lang <l>`        | `en`            | Idioma do **corpo** do SKILL.md. O frontmatter fica em inglês |
+| Flag                | Padrão          | O que faz                                                                    |
+| ------------------- | --------------- | ---------------------------------------------------------------------------- |
+| `--handbook <dir>`  | **obrigatório** | O diretório do handbook renderizado                                          |
+| `--out <dir>`       | **obrigatório** | Para onde vai o pacote SKILL                                                 |
+| `--name <slug>`     | **obrigatório** | Slug em minúsculas com hífens; produz `<slug>-handbook`                      |
+| `--project <name>`  | _(`--name`)_    | Nome legível do projeto usado na prosa                                       |
+| `--work <dir>`      | —               | Adiciona `coverage.json` da atribuição da Phase 2                            |
+| `--source <dir>`    | —               | Com `--work`, adiciona um **hash de conteúdo por arquivo**                   |
+| `--agent-dir <dir>` | —               | Entrega o índice para agentes e suas tabelas de fatos em `references/agent/` |
+| `--lang <l>`        | `en`            | Idioma do **corpo** do SKILL.md. O frontmatter fica em inglês                |
 
 <Callout type="warn" title="Duas recusas que vale conhecer">
   `--out` não pode ser o diretório do handbook, nem um ancestral dele: a construção começa apagando `--out`, o

@@ -24,7 +24,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -50,15 +50,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 ख़ास तौर पर देखने लायक़ चीज़ें:
 
-| इसे खोलिए                             | और इस पर ग़ौर कीजिए                                                                         |
-| ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `handbook/overview.md`                | Call graph से generate किया गया mermaid **stage map**                                       |
-| `handbook/index.md`                   | हर stage, nested, हरेक के साथ एक paragraph                                                  |
-| `handbook/register.md`                | Cross-stage state, हर हिस्से को छूने वाले stages के साथ                                     |
-| `handbook/agent/index.md`             | Agent locator format — कोई prose नहीं, सिर्फ़ addresses                                     |
-| `handbook/agent/disambiguation.md`    | ऐसे terms जो वाजिब तौर पर कई stages की ओर इशारा करते हैं                                    |
-| `skill/references/coverage.json`      | हर file का एक content hash। यही drift का signal है।                                         |
-| `work/demo/phase1/dropped-calls.json` | वे calls जिन्हें analyzer resolve **नहीं** कर सका — guess करने के बजाय सहेजी और categorized |
+| इसे खोलिए                             | और इस पर ग़ौर कीजिए                                                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | Call graph से generate किया गया mermaid **stage map**                                                    |
+| `handbook/index.md`                   | हर stage, nested, हरेक के साथ एक paragraph                                                               |
+| `handbook/register.md`                | Cross-stage state, हर हिस्से को छूने वाले stages के साथ                                                  |
+| `handbook/agent/index.md`             | Agent index — lookup नुस्ख़े, stage तालिका, coverage। इसे पूरा पढ़िए                                     |
+| `handbook/agent/symbols.tsv`          | हर symbol → `path:startLine-endLine`। यही वह चीज़ है जो गद्य पृष्ठों के पास कभी नहीं थी                  |
+| `skill/references/coverage.json`      | हर file का एक content hash। यही drift का signal है।                                                      |
+| `work/demo/phase1/dropped-calls.json` | वे calls जिन्हें analyzer resolve **नहीं** कर सका — guess करने के बजाय सहेजी और categorized              |
+| `work/demo/phase1/scan-coverage.json` | वे files जिन्हें analyzer पढ़ या पूरी तरह parse **नहीं** कर सका। यहाँ `[]` का मतलब है, पाँचों parse हुईं |
 
 ## Step 4 — hood के नीचे झाँकिए
 
@@ -97,8 +98,8 @@ pnpm mock-llm         # just the mock server, on port 8099
   />
 </div>
 
-1. **`analyze`** ने हर file को tree-sitter से parse करके एक typed call graph बनाया। कोई LLM
-   नहीं।
+1. **`analyze`** ने जो-जो file पढ़ सका उसे tree-sitter से parse करके एक typed call graph
+   बनाया, और जो नहीं पढ़ सका उसे `phase1/scan-coverage.json` में लिख दिया। कोई LLM नहीं।
 2. **`generate`** ने हर file का एक card लिखा, एक stage skeleton synthesize किया, हर file को
    किसी stage में assign किया, उन्हें group और order किया, फिर bottom-up narration लिखा और
    cross-stage state registers निकाले।

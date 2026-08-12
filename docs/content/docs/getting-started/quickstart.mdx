@@ -24,7 +24,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -50,15 +50,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 Things worth looking at specifically:
 
-| Open this                             | And notice                                                                         |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| `handbook/overview.md`                | A mermaid **stage map** generated from the call graph                              |
-| `handbook/index.md`                   | Every stage, nested, each with a paragraph                                         |
-| `handbook/register.md`                | Cross-stage state, with the stages that touch each piece                           |
-| `handbook/agent/index.md`             | The agent locator format — no prose, just addresses                                |
-| `handbook/agent/disambiguation.md`    | Terms that legitimately point at several stages                                    |
-| `skill/references/coverage.json`      | A content hash per file. This is the drift signal.                                 |
-| `work/demo/phase1/dropped-calls.json` | Calls the analyzer could **not** resolve, kept and categorized rather than guessed |
+| Open this                             | And notice                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | A mermaid **stage map** generated from the call graph                                 |
+| `handbook/index.md`                   | Every stage, nested, each with a paragraph                                            |
+| `handbook/register.md`                | Cross-stage state, with the stages that touch each piece                              |
+| `handbook/agent/index.md`             | The agent index — lookup recipes, the stage table, coverage. Read whole               |
+| `handbook/agent/symbols.tsv`          | Every symbol → `path:startLine-endLine`. This is what the prose pages never had       |
+| `skill/references/coverage.json`      | A content hash per file. This is the drift signal.                                    |
+| `work/demo/phase1/dropped-calls.json` | Calls the analyzer could **not** resolve, kept and categorized rather than guessed    |
+| `work/demo/phase1/scan-coverage.json` | Files the analyzer could **not** read or fully parse. `[]` here means all five parsed |
 
 ## Step 4 — Look under the hood
 
@@ -97,12 +98,13 @@ packages, so the stage structure it produces is a genuine map of a genuine codeb
   />
 </div>
 
-1. **`analyze`** parsed every file with tree-sitter into a typed call graph. No LLM.
+1. **`analyze`** parsed every file it could read with tree-sitter into a typed call graph,
+   and wrote what it could not read to `phase1/scan-coverage.json`. No LLM.
 2. **`generate`** wrote a card per file, synthesized a stage skeleton, assigned every
    file to a stage, grouped and ordered them, then narrated bottom-up and extracted
    cross-stage state registers.
 3. **`render`** turned that into markdown, an HTML site, one self-contained page, the
-   agent locator index and `llms.txt`. No LLM.
+   agent index and `llms.txt`. No LLM.
 4. **`skill`** repackaged it as an agent SKILL with a content hash per file. No LLM.
 5. **`validate`** checked the structure, the frontmatter contract, the index ↔ stage-page
    links and hash freshness. No LLM.

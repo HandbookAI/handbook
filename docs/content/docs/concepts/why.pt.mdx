@@ -61,6 +61,7 @@ diz isso em sua primeira linha:
 | ----------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------- |
 | Arquivos, funções, intervalos de linhas, arestas de chamada | tree-sitter                        | Não — é um parse                                     |
 | Quais chamadas **não** puderam ser resolvidas               | tree-sitter                        | Não — elas são postas em quarentena, não adivinhadas |
+| Quais arquivos **não** puderam ser parseados                | tree-sitter                        | Não — eles são divulgados, não descartados           |
 | Estrutura de etapas                                         | LLM, depois validada mecanicamente | Estruturalmente, não; em julgamento, sim             |
 | Propósito, passo a passo, visões gerais                     | LLM                                | Sim — e está rotulado como prosa                     |
 
@@ -76,6 +77,9 @@ Cada escolha de design aqui segue uma regra: **quando algo não funciona, diga.*
   listado em `_coverage.json`. Nunca é descartado e nunca é inventado.
 - Uma chamada que o analisador não conseguiu resolver vai para `dropped-calls.json` com
   sua categoria e o texto bruto. Nunca é adivinhada como uma aresta plausível.
+- Um arquivo que o analisador não conseguiu ler, ou só conseguiu parsear em parte, vai
+  para `scan-coverage.json` com o motivo. Nunca é contado como coberto — um arquivo que
+  ninguém abriu não é "um arquivo sem funções".
 - Uma linguagem analisada pelo motor guiado por configuração é **nomeada na visão
   geral**, para que "relações de chamada de melhor esforço" não possam ser lidas como
   "exatas".

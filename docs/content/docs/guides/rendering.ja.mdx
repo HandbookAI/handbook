@@ -72,24 +72,44 @@ TOC、パンくずリスト、選択を保持するテーマ切り替え、そ�
 `--agent-site` → `<out>/agent/`
 
 ```text
-how_to_use.md      the agent-side search protocol
-index.md           every stage, as locator blocks
-disambiguation.md  terms that legitimately point at several stages
-<stage-id>.md      one locator page per stage
+index.md         lookup recipes, the stage table, registers, coverage — read whole
+symbols.tsv      name → path:startLine-endLine, kind, stage, nCalledBy, signature
+files.tsv        path → stage, role, nSymbols, purpose[prose]
+calls.tsv        call edges; callee located or boundary:<import specifier>
+stages/<id>.md   second hop: the stage's files and its co-change pairs
 ```
 
-各ステージには固定スキーマのブロックが与えられます: **duty**、**entry concepts**、
-**state**、**exemplar**、**core files**、**strong co-change** です。
+**人間向けアーティファクトは説明し、エージェント向けアーティファクトは位置を示します。**
+分かれ目はそれがすべてです。上の markdown ハンドブックは読まれるために書かれ、こちらは
+grep されるために書かれています。そして、文章のページが決して持たなかったものを 1 つ
+持っています — **すべてのシンボルがどこにあるか** です。
 
-17 の実在リポジトリで計測したところ、最初の 5 つはほとんどのページで埋まります。
-**strong co-change は意図的に最も疎です** — テストファイルがソースの _隣_ にある場合
+`index.md` は、まるごと読まれることを意図した唯一のファイルで、このリポジトリでは
+**3.2 KB** です。その `## lookup` セクションは、検索プロトコルへのリンクではなく、検索
+プロトコルそのものです。1 ホップ先にあるレシピは、たどられないレシピだからです:
+
+```text
+symbol -> location     grep -m5 "^NAME	" symbols.tsv
+file   -> its symbols  grep "	PATH:" symbols.tsv
+callers of a symbol    grep "	NAME	" calls.tsv
+callees of a symbol    grep "^NAME	" calls.tsv
+file   -> stage, role  grep "^PATH	" files.tsv
+stage  -> its files    read stages/<sid>.md
+```
+
+テーブルが markdown ではなく TSV なのは、`|` を含むシグネチャ — TypeScript の union 型は
+すべてそうです — が markdown テーブルを静かに壊してしまうからです。1 行 1 事実なら
+切り詰められても生き残り、タブは列全体を固定します。
+
+文章は **ファイルごとに切り詰めた 1 行** に絞られ、最後の列に置かれます。長い行を切り詰める
+消費側は、パスより先に文章を失います。詳しい説明は人間向けページに残り、各ステージページが
+そこへリンクします。
+
+**co-change は意図的に最も疎なシグナルです** — テストファイルがソースの _隣_ にある場合
 (`engine.go` + `engine_test.go`)にだけ発火しますが、多くのプロジェクトはテストを別ツリーに
-置いています。このフィールドが空なのはゲーティングが機能している証であって、欠落ではありません。
-
-不変条件はこうです: **フィールドが出力されるのは、その構造的シグナルが存在するとき、
-かつそのときに限ります。** プレースホルダも「N/A」もありません。空のフィールドは
-_「グラフにここのシグナルがない」_ という実際の情報を意味します — _「モデルが知らなかった」_
-というノイズではありません。後者はエージェントがその上で推論してしまうノイズです。
+置いています。このフィールドが空なのはゲーティングが機能している証であって、欠落では
+ありません: **フィールドが出力されるのは、その構造的シグナルが存在するとき、かつその
+ときに限ります。** プレースホルダも「N/A」もありません。
 
 このディレクトリを `handbook skill --agent-dir` に渡せば、SKILL パッケージの中に同梱できます。
 

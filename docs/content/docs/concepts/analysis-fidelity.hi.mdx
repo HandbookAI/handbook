@@ -102,8 +102,9 @@ lines पर हैं — वे दोनों tiers में exact है�
 **Shell।** `case` statement वाली script skip कर दी जाती है, क्योंकि वह grammar throw
 करती है — उसका external scanner एक ऐसा symbol import करता है जो pinned WASM linker नहीं
 देता। चूँकि `case` हर जगह है, इसका मतलब है ज़्यादातर non-trivial scripts (`nvm` पर मापा:
-सभी 6 files, सभी 122 functions), इसलिए **shell coverage को partial मानें**। Scan log
-कारण का नाम लेता है।
+सभी 6 files, सभी 122 functions), इसलिए **shell coverage को partial मानें**। Scan log कारण का नाम लेता है, और हर skip हुई script `reason: "unparsable"` के साथ
+`phase1/scan-coverage.json` में अलग-अलग दर्ज होती है — यह ऐसा gap है जिसे आप गिन सकते हैं,
+अंदाज़ा नहीं लगाना पड़ता।
 
 दोनों scan के दौरान logger के ज़रिये report होते हैं। इन्हें देखने के लिए `-v` के साथ
 चलाएँ।

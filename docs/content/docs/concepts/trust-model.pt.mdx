@@ -5,17 +5,18 @@ description: 'Quais partes de um handbook são fatos do parser, quais são saíd
 
 ## A versão curta
 
-| Afirmação                                 | Fonte                         | Pode estar errada?                                     |
-| ----------------------------------------- | ----------------------------- | ------------------------------------------------------ |
-| Este arquivo existe neste caminho         | parser                        | **Não**                                                |
-| Esta função está nas linhas 88–104        | parser                        | **Não**                                                |
-| Esta assinatura é `send(self, url, data)` | parser                        | **Não**                                                |
-| Esta função chama aquela                  | parser                        | **Não** no nível full; melhor esforço no nível generic |
-| Estas chamadas não puderam ser resolvidas | parser                        | **Não** — elas são listadas, não adivinhadas           |
-| Este arquivo pertence a esta etapa        | LLM, validado mecanicamente   | Em julgamento, sim. Estruturalmente, não               |
-| O propósito deste arquivo é "…"           | LLM                           | **Sim** — é prosa                                      |
-| Este subsistema funciona assim: "…"       | LLM                           | **Sim** — é prosa                                      |
-| Este estado flui por estas etapas         | LLM, sobre ids de etapa reais | **Sim**, embora os ids de etapa sejam reais            |
+| Afirmação                                          | Fonte                         | Pode estar errada?                                      |
+| -------------------------------------------------- | ----------------------------- | ------------------------------------------------------- |
+| Este arquivo existe neste caminho                  | parser                        | **Não**                                                 |
+| Esta função está nas linhas 88–104                 | parser                        | **Não**                                                 |
+| Esta assinatura é `send(self, url, data)`          | parser                        | **Não**                                                 |
+| Esta função chama aquela                           | parser                        | **Não** no nível full; melhor esforço no nível generic  |
+| Estas chamadas não puderam ser resolvidas          | parser                        | **Não** — elas são listadas, não adivinhadas            |
+| Estes arquivos não puderam ser lidos nem parseados | parser                        | **Não** — eles são listados, não contados como cobertos |
+| Este arquivo pertence a esta etapa                 | LLM, validado mecanicamente   | Em julgamento, sim. Estruturalmente, não                |
+| O propósito deste arquivo é "…"                    | LLM                           | **Sim** — é prosa                                       |
+| Este subsistema funciona assim: "…"                | LLM                           | **Sim** — é prosa                                       |
+| Este estado flui por estas etapas                  | LLM, sobre ids de etapa reais | **Sim**, embora os ids de etapa sejam reais             |
 
 **A regra que todo o design segue:** um agente roteia com a metade de cima dessa tabela e
 lê o código-fonte real antes de agir. O pacote SKILL diz isso em sua primeira linha, e
@@ -70,6 +71,10 @@ As recusas são a parte estrutural desta ferramenta. Em ordem de prioridade:
 
 - Uma chamada que o analisador não consegue resolver vai para `dropped-calls.json`.
   Nunca é adivinhada.
+- Um arquivo que o analisador não consegue ler nem parsear vai para `scan-coverage.json`
+  com o seu motivo, e fica **fora** de `scannedFiles`. Nunca é descrito como um arquivo
+  vazio. Um arquivo que parseou apenas em parte permanece, e mesmo assim é listado — seus
+  fatos são reais, porém incompletos, e você precisa saber quais páginas se apoiam neles.
 - Um arquivo cuja geração de ficha falhou recebe uma descrição **vazia**, nunca uma
   inventada, e é listado em `_coverage.json`.
 - Uma mudança estrutural proposta pelo laço doctor que nomeia uma etapa inexistente, ou
@@ -78,9 +83,16 @@ As recusas são a parte estrutural desta ferramenta. Em ordem de prioridade:
 
 ### Configuração
 
-- Um segredo (`llmApiKey` / `OPENAI_API_KEY`) **nunca** é uma flag de linha de comando, e
-  é **rejeitado** se aparecer em um arquivo de configuração — porque arquivos de
-  configuração acabam commitados.
+- Um segredo **nunca** é uma flag de linha de comando, e é **rejeitado** se aparecer em um
+  arquivo de configuração — porque arquivos de configuração acabam commitados. Duas
+  configurações são segredos: `llmApiKey` / `OPENAI_API_KEY` e `llmExtraBody` /
+  `OPENAI_EXTRA_BODY` — de formato livre, mesclado ao corpo de toda requisição, e gateways
+  de fato aceitam autenticação ali, então nada consegue distinguir um campo de ajuste de
+  uma credencial.
+- `llmBaseUrl` deliberadamente **não** é tratada como segredo de forma indiscriminada: um
+  time apontando todos os seus checkouts para um mesmo gateway compartilhado tem um motivo
+  legítimo para commitá-la. Só uma URL que embute credenciais
+  (`https://user:pass@host/v1`) é recusada em um arquivo de configuração.
 - Um valor fornecido mas inválido nunca cai para um padrão. Um erro de digitação é um
   erro.
 - Um valor vazio é lido como não definido, então `HANDBOOK_TITLE=` não pode produzir um

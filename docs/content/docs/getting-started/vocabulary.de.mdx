@@ -17,6 +17,18 @@ von einem Modell.**
 Liegt unter `<work>/phase1/graph.json`. Alles Nachgelagerte liest ihn, und nichts parst
 Quelltext erneut.
 
+### Scan-Abdeckung
+
+Die andere Hälfte der Ehrlichkeit von Phase 1: die Liste der Dateien, die der Analyzer
+**nicht** in Fakten verwandeln konnte, jede mit einem Grund — `unreadable` (das Lesen
+schlug fehl), `unparsable` (die Grammatik hat geworfen) oder `partial` (geparst, aber mit
+Syntaxfehlern, ihre Fakten sind also echt und trotzdem unvollständig).
+
+Die ersten beiden fallen zusätzlich aus `scannedFiles` im Graphen heraus, damit nichts
+Nachgelagertes eine Datei beschreibt, die der Parser nie geöffnet hat. Eine leere Liste
+ist die Aussage, dass alles geparst wurde; ein fehlendes Artefakt ist es nicht. Liegt unter
+`<work>/phase1/scan-coverage.json`.
+
 ### Karte
 
 Eine pro Quelldatei. Beantwortet _wozu ist diese Datei da?_ in drei Feldern —
@@ -86,7 +98,7 @@ Hier liegt jedes Pipeline-Artefakt. Eines pro dokumentiertem Repository.
 
 ```text
 <work>/
-  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
   phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
   phase3/   narration.json · registers.json · cache/
   handbook/ the rendered output, once you run `render`
@@ -136,13 +148,13 @@ Das, was `resync` bekommt, um eine Änderung zu beschreiben:
 
 ## Die Phasen
 
-| Phase | Erzeugt               | LLM? |
-| ----- | --------------------- | :--: |
-| `1`   | den Aufrufgraphen     |  ❌  |
-| `2a`  | eine Karte pro Datei  |  ✅  |
-| `2b`  | Skelett + Zuordnung   |  ✅  |
-| `2c`  | Organisation          |  ✅  |
-| `3`   | Erzähltext + Register |  ✅  |
+| Phase | Erzeugt                         | LLM? |
+| ----- | ------------------------------- | :--: |
+| `1`   | den Aufrufgraphen               |  ❌  |
+| `2a`  | eine Karte pro gescannter Datei |  ✅  |
+| `2b`  | Skelett + Zuordnung             |  ✅  |
+| `2c`  | Organisation                    |  ✅  |
+| `3`   | Erzähltext + Register           |  ✅  |
 
 `--phase` akzeptiert `all`, `1`, `2` (bedeutet 2a+2b+2c), jede einzelne Phase oder eine
 Kommaliste wie `2c,3`.

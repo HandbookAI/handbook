@@ -21,7 +21,14 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 **これは無料で、あなたのスモークテストです。** LLM なし、キーなし、トークンなし。
@@ -33,7 +40,10 @@ handbook analyze --source $REPO --work $WORK
   ビルドディレクトリを解析しています。よくあるものは自動でスキップされます。そうでない場合は、リポジトリの
   ルートではなく本当のソースルートに `--source` を向けてください。 - **`edgesDropped` が `edgesKept` に比べて
   非常に大きい?** 動的言語では正常です。`phase1/dropped-calls.json` を見てください —
-  解決できなかった呼び出しは すべてそこで分類されており、隠されてはいません。
+  解決できなかった呼び出しは すべてそこで分類されており、隠されてはいません。 - **`filesUnparsed` が 0
+  ではない?** それらのファイルは `phase1/scan-coverage.json` に理由付きで名指しされています。`unreadable` と
+  `unparsable` のものは何も生まず、ページも得られないため、 いま作るハンドブックにはちょうどそこに穴が空きます
+  — 文章にお金を払う前に直す価値があります。
 </Callout>
 
 上記の問題は**いま**直してください。ここでのすべての問題は、後でより高くつく問題になります。
@@ -103,8 +113,9 @@ handbook skill --handbook $WORK/handbook --out skills/myrepo \
 コンテンツハッシュです。**これがあることで、ハンドブックのドリフトは後から検出可能になります**
 — 黙って間違ったままになるのではなく。
 
-`--agent-dir` はロケータページを同梱し、SKILL のルーティングプロトコルに曖昧さ解消の
-ステップを追加します。
+`--agent-dir` はエージェントインデックスとその事実テーブルを同梱し、SKILL のルーティング
+プロトコルに grep レシピを与えます — エージェントは、文章を読んで推測する代わりに、
+シンボル名を 1 つのコマンドで `path:startLine-endLine` に変えられます。
 
 ## ステップ 5 — 検証する
 

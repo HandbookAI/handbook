@@ -75,6 +75,9 @@ constrói um grafo de chamadas tipado: funções, métodos, arestas de chamada r
 `self`/atributos/parâmetros/imports, chamadas que saem do seu código e chamadas que ele
 não conseguiu resolver — postas em quarentena em um arquivo próprio, nunca adivinhadas.
 
+Os arquivos que ele não conseguiu ler nem analisar ficam em quarentena do mesmo jeito —
+uma lacuna que você pode enumerar, nunca uma que some em silêncio.
+
 **Essa camada nunca toca um LLM.** Rode duas vezes, obtenha o mesmo grafo duas vezes.
 
 ### 2. A prosa é aplicada por cima dos fatos, e rotulada
@@ -100,14 +103,14 @@ emite um plano de edição exato ao byte, aplicável mecanicamente.
   className="rounded-xl border"
 />
 
-| Saída                                                                                                             | Para quem |
-| ----------------------------------------------------------------------------------------------------------------- | --------- |
-| Handbook em markdown — visão geral, índice de etapas, uma página por etapa, tabela de registradores de estado     | humanos   |
-| Site HTML multipágina — sumário fixo, breadcrumbs, alternância de tema, funciona via `file://`                    | humanos   |
-| Uma página HTML autocontida que você pode mandar por e-mail                                                       | humanos   |
-| Índice localizador para agentes — responsabilidade, conceitos de entrada, estado, exemplares, dicas de co-mudança | agentes   |
-| `llms.txt` + `llms-full.txt`                                                                                      | agentes   |
-| Um pacote SKILL com um hash de conteúdo por arquivo, tornando a deriva detectável                                 | agentes   |
+| Saída                                                                                                         | Para quem |
+| ------------------------------------------------------------------------------------------------------------- | --------- |
+| Handbook em markdown — visão geral, índice de etapas, uma página por etapa, tabela de registradores de estado | humanos   |
+| Site HTML multipágina — sumário fixo, breadcrumbs, alternância de tema, funciona via `file://`                | humanos   |
+| Uma página HTML autocontida que você pode mandar por e-mail                                                   | humanos   |
+| Índice para agentes — símbolo → `path:line-line`, tabelas de arquivos e chamadas, receitas de grep            | agentes   |
+| `llms.txt` + `llms-full.txt`                                                                                  | agentes   |
+| Um pacote SKILL com um hash de conteúdo por arquivo, tornando a deriva detectável                             | agentes   |
 
 ## Para quem é isto
 

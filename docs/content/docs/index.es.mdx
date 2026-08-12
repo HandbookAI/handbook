@@ -75,6 +75,9 @@ construye un grafo de llamadas tipado: funciones, métodos, aristas de llamada r
 través de `self`/atributos/parámetros/imports, llamadas que salen de tu código y llamadas
 que no pudo resolver — puestas en cuarentena en su propio archivo, nunca adivinadas.
 
+Los archivos que no pudo leer ni parsear en absoluto quedan en cuarentena igual: un
+hueco que puedes enumerar, nunca uno que desaparece en silencio.
+
 **Esta capa nunca toca un LLM.** Ejecútala dos veces y obtendrás el mismo grafo dos veces.
 
 ### 2. La prosa se superpone a los hechos, y va etiquetada
@@ -106,7 +109,7 @@ mecánicamente.
 | Handbook en markdown — visión general, índice de etapas, una página por etapa, tabla de registros de estado | humanos    |
 | Sitio HTML multipágina — TOC fijo, migas de pan, selector de tema, funciona sobre `file://`                 | humanos    |
 | Una página HTML autocontenida que puedes enviar por correo                                                  | humanos    |
-| Índice localizador para agentes — deber, conceptos de entrada, estado, ejemplares, pistas de co-cambio      | agentes    |
+| Índice para agentes — símbolo → `path:line-line`, tablas de archivos y llamadas, recetas de grep            | agentes    |
 | `llms.txt` + `llms-full.txt`                                                                                | agentes    |
 | Un paquete SKILL con un hash de contenido por archivo, para que la deriva sea detectable                    | agentes    |
 

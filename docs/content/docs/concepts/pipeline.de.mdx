@@ -9,7 +9,7 @@ sprechen mit Ihrem LLM-Endpunkt.
 | Phase  | Erzeugt                                            | LLM? | Einzeln wiederholbar? |
 | :----: | -------------------------------------------------- | :--: | :-------------------: |
 | **1**  | den Aufrufgraphen                                  |  ❌  |          ✅           |
-| **2a** | eine Karte pro Quelldatei                          |  ✅  |          ✅           |
+| **2a** | eine Karte pro gescannter Datei                    |  ✅  |          ✅           |
 | **2b** | Etappenskelett + Dateizuordnung                    |  ✅  |          ✅           |
 | **2c** | Gruppierung und Reihenfolge innerhalb der Etappen  |  ✅  |          ✅           |
 | **3**  | Erzähltext + etappenübergreifende Zustandsregister |  ✅  |          ✅           |
@@ -38,7 +38,32 @@ erlaubt es `resync` später, eine In-Place-Änderung am Funktionsrumpf zu erkenn
 Zeilennummern und Signaturen unberührt lässt — genau der Fall, den ein rein struktureller
 Diff komplett übersieht.
 
-**Ausgabe:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+### Was sie nicht lesen konnte
+
+Eine Datei, die die Erkennung aufgelistet hat, die der Analyzer aber nicht in Fakten
+verwandeln konnte, wird **festgehalten**, nie stillschweigend übersprungen. Jede landet
+mit einem Grund in `phase1/scan-coverage.json`:
+
+- **`unreadable`** — schon das Lesen schlug fehl (ein Zugriffsrecht, ein ins Leere
+  zeigender Symlink, eine Datei, die der Build mitten im Lauf gelöscht hat). Keine Fakten.
+- **`unparsable`** — die Grammatik hat geworfen oder gar keinen Baum geliefert. Keine
+  Fakten. Der Regelfall ist ein Shell-Skript mit `case`.
+- **`partial`** — die Datei wurde geparst, aber mit Syntaxfehlern. Die Funktionen und
+  Aufrufe im Rest der Datei sind **echt**; es fehlt, was im Fehlerknoten steckte.
+
+Dateien der ersten beiden Kategorien fallen zusätzlich aus `scannedFiles` heraus, denn
+eine Datei, die nichts ergeben hat, darf nicht an Phase 2a weitergereicht werden, als wäre
+sie leer. Phase 1 schließt damit, die Lücke im Log zu benennen:
+
+```text
+[scan] coverage: 409 files analyzed; 3 recorded in scan-coverage.json (partial=1 unparsable=1 unreadable=1)
+```
+
+Ein leeres `files`-Array in diesem Artefakt ist dieselbe Aussage in ihrer positiven Form:
+Alles wurde geparst.
+
+**Ausgabe:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`,
+`scan-coverage.json`.
 
 <Callout title="Das hier zuerst, immer">
   `handbook analyze` ist genau diese Phase. Sie kostet nichts und ist der einzige Weg herauszufinden, dass
@@ -51,7 +76,9 @@ Diff komplett übersieht.
 
 **LLM. Meist die teuerste Phase.**
 
-Jede Quelldatei bekommt eine Karte:
+Jede Datei, die Phase 1 tatsächlich gelesen hat, bekommt eine Karte — also `scannedFiles`
+aus `graph.json`, worin die in `scan-coverage.json` vermerkten unlesbaren und nicht
+parsebaren Pfade fehlen:
 
 - **purpose** — ein oder zwei allgemeinverständliche Sätze
 - **role** — aus einem geschlossenen Vokabular (`entrypoint`, `domain_logic`, `io_transport`, …)

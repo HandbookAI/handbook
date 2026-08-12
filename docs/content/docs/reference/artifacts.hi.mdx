@@ -17,6 +17,7 @@ Toolchain जो भी artifact पढ़ती या लिखती है, 
     functions.csv         one row per internal function
     graph.dot             Graphviz view (files as clusters; await edges colored)
     dropped-calls.json    unresolved calls, categorized
+    scan-coverage.json    files the scan could NOT turn into facts, and why
   phase2/
     cards/<rel>.json      one card per source file (tree-mirrored paths)
     cards/_coverage.json  {nFiles, nDescribed, missing[]}
@@ -39,11 +40,15 @@ Toolchain जो भी artifact पढ़ती या लिखती है, 
     "generatedAt": "2026-08-02T10:00:00.000Z",
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
-    "scannedFiles": ["app/main.py", "…"],
+    "scannedFiles": ["app/main.py", "…"], // only files that were actually read and parsed
     "nInternalFunctions": 316,
     "nBoundaryNodes": 45,
     "nEdges": 903,
     "policy": "Edges are emitted only when the callee resolves …",
+    "unparsedFiles": [
+      // optional; [] means every scanned file parsed cleanly
+      { "file": "app/legacy.py", "reason": "partial", "detail": "…" },
+    ],
   },
   "nodes": {
     "app.main.main": {
@@ -117,6 +122,56 @@ dropped-calls.json में रहते हैं)।
 
 श्रेणियाँ: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `builtin`,
 `local_var_method`, `bare_name`।
+
+## phase1/scan-coverage.json
+
+`dropped-calls.json` की सगी बहन, एक स्तर ऊपर: वह फ़ाइल हर उस **call** का हिसाब रखती है
+जिसका अनुमान लगाने से analyzer ने इनकार किया, और यह हर उस **फ़ाइल** का, जिसे विश्लेषित कर
+लेने का दावा करने से उसने इनकार किया।
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "…",
+    "nScanned": 412, // files that reached the graph — i.e. graph.metadata.scannedFiles
+    "nUnparsed": 3,
+    "byReason": { "partial": 1, "unparsable": 1, "unreadable": 1 },
+  },
+  "files": [
+    // sorted by path, so an unchanged tree re-runs byte-identically
+    { "file": "app/legacy.py", "reason": "partial", "detail": "the parse tree contains syntax errors…" },
+    { "file": "scripts/deploy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
+    { "file": "vendor/dangling.py", "reason": "unreadable", "detail": "ENOENT: no such file or directory…" },
+  ],
+}
+```
+
+| `reason`     | Parser को क्या मिला              | `scannedFiles` में? | Card मिलता है? |
+| ------------ | -------------------------------- | :-----------------: | :------------: |
+| `unreadable` | कुछ नहीं — पढ़ना विफल हुआ        |         ❌          |       ❌       |
+| `unparsable` | कुछ नहीं — grammar ने throw किया |         ❌          |       ❌       |
+| `partial`    | असली facts, पर अधूरे             |         ✅          |       ✅       |
+
+- **`unreadable`** — discovery ने रास्ता सूचीबद्ध तो किया, पर पढ़ना विफल रहा: कोई permission
+  mode, कोई dangling symlink, या ऐसी फ़ाइल जिसे build ने run के नीचे से मिटा दिया। `detail`
+  में errno का संदेश रहता है।
+- **`unparsable`** — grammar ने throw किया, या कोई tree लौटाया ही नहीं। शून्य facts। आज
+  `case` वाली shell स्क्रिप्ट यही पैदा करती है।
+- **`partial`** — फ़ाइल parse तो हुई, पर `rootNode.hasError`: tree-sitter ने जो पाठ उसकी
+  समझ में नहीं आया उसे एक error node में टिका दिया और आगे बढ़ गया। बाक़ी फ़ाइल से निकाली गई
+  हर चीज़ **असली** है — ग़ायब बस वही है जो उस node के भीतर बैठा था, और बाहर से वह दिखता ही
+  नहीं। इसी वजह से किसी पृष्ठ पर भरोसा करने से पहले फ़ाइल खुद पढ़ लेनी चाहिए।
+
+**ख़ाली `files` array एक सकारात्मक दावा है** — "हर scanned फ़ाइल साफ़-साफ़ parse हुई"। जबकि
+artifact का _न होना_ यह बताता है कि विश्लेषण इस record से पुराना है, और यह वही बात नहीं है।
+
+<Callout title="पहली दो scannedFiles से क्यों हटा दी जाती हैं">
+  जिस फ़ाइल से कोई facts नहीं निकले, वह पहले `scannedFiles` में बनी रहती थी — तो phase 2a उसका एक card लिखता
+  और `_coverage.json` उसे described गिन लेता। इसके बाद handbook एक *parser fact* के तौर पर यह दावा करता कि जिस
+  फ़ाइल को किसी ने पढ़ा तक नहीं, उसमें शून्य functions हैं। उन रास्तों को यहाँ हटा देने से हर सूची का एक ही
+  मतलब रहता है: `scannedFiles` वह है जो analyzer ने पढ़ा, `scan-coverage.json` वह जो वह नहीं पढ़ सका।
+</Callout>
 
 ## `phase2/cards/<rel>.json` — FileCard
 
@@ -237,10 +292,118 @@ coverage: { nFiles: 5, nOrganized: 5 }
   <sid>.md             one page per content-bearing stage (summary, sub-stages,
                        organization groups, per-file cards with function details,
                        📊 state-registers section when touched)
-  agent/               (--agent-site) how_to_use.md · index.md · disambiguation.md · <sid>.md
+  agent/               (--agent-site) index.md · symbols.tsv · files.tsv · calls.tsv · stages/<sid>.md
   html/                (--html) self-contained multi-page site (no external requests)
   handbook.html        (--html-single) one self-contained page
 ```
+
+## Agent index (`--agent-site`)
+
+```
+<out>/agent/
+  index.md            the only file meant to be read whole: lookup recipes, the stage
+                      table, the register table, coverage
+  symbols.tsv         name → path:startLine-endLine, kind, stage, nCalledBy, signature
+  files.tsv           path → stage, role, nSymbols, purpose[prose]
+  calls.tsv           call edges: the caller always located, the callee located or
+                      marked boundary:<import specifier>
+  stages/<sid>.md     second hop: the stage's file list and its co-change pairs
+```
+
+**मानवीय artifact समझाता है; agent artifact पता बताता है।** ये एक ही पाठ के दो रूप नहीं हैं।
+जहाँ किसी agent को व्याख्या चाहिए, वह वहाँ से सिर्फ़ एक hop दूर है — हर stage पृष्ठ उसकी नक़ल
+करने के बजाय मानवीय पृष्ठ से जोड़ देता है।
+
+### TSV क्यों, markdown तालिकाएँ क्यों नहीं
+
+- Markdown तालिका इस repo की **338 signature पंक्तियों को चुपचाप बिगाड़ देती**, क्योंकि
+  TypeScript union type में `|` होता है। Tab स्रोत पाठ से नहीं टकराता।
+- **प्रति पंक्ति एक तथ्य truncation के बाद भी बचा रहता है।** हर grep नुस्ख़ा एक ही पंक्ति में
+  पूरा जवाब लौटाता है — नाम, स्थान, kind, stage, callers और signature, सब साथ — इसलिए कटा हुआ
+  नतीजा भी काम का रहता है।
+- **एक tab पूरे column को बाँध देता है**: `grep "^scan\t"` सिर्फ़ `scan` नाम वाले symbol से
+  मेल खाता है, उस शब्द वाली हर पंक्ति से नहीं।
+
+**Columns का क्रम मूल्य का क्रम है, गद्य सबसे आख़िर में**, ताकि लंबी पंक्तियाँ काटने वाला कोई
+consumer किसी path से पहले गद्य खाए।
+
+### Header पंक्तियाँ
+
+हर तालिका `#` वाली comment पंक्तियों से शुरू होती है, जो columns और भरोसे की सीमा — दोनों
+बताती हैं। यह वही खुलासा है जो pipeline हर जगह करती है, बस उसी artifact पर ले आया गया जो उसे
+ढो रहा है:
+
+```
+# name	location	kind	stage	nCalledBy	signature
+# parser facts. kind=fn is a function or method. kind=type:<class|interface|struct|record|enum|
+# trait|alias|other> is a parsed type DECLARATION, span read off the declaration itself.
+# kind=class-derived is the fallback where a language's adapter extracts no types: the SPAN is
+# min..max of the class's METHODS, not of the declaration. Which languages are indexed and which
+# fall back is stated in index.md under "coverage" — a miss here is not proof a name does not exist.
+# nCalledBy counts callers inside the scanned set PLUS callers that reach it through an import
+# (see calls.tsv boundary rows); a cross-package-only callee would otherwise read as dead code.
+```
+
+`calls.tsv` इससे मेल खाती बात कहती है, और यह भी बताती है कि उसमें दो तरह की rows का फ़र्क़ क्या है:
+
+```
+# callerQualname	callerLocation	calleeQualname	calleeLocation
+# calleeLocation is path:line when the analyzer resolved it, or boundary:<import specifier>
+# when the call leaves the scanned set — the name is known, the location is not and is not guessed.
+# A call the analyzer could not pin down at all is in phase1/dropped-calls.json,
+# never guessed here — so absence is not proof nothing calls it.
+```
+
+### Boundary edges, और monorepo को इनकी ज़रूरत क्यों है
+
+जो call किसी import के ज़रिए scan किए गए दायरे से बाहर जाती है, उसके callee की जगह
+`boundary:<specifier>` लिखी जाती है — कभी कोई path नहीं। नाम एक तथ्य है; जगह नहीं है, और उसका
+अनुमान नहीं लगाया जाता।
+
+monorepo में यह कोई footnote नहीं है — यही वह हिस्सा है जो एक agent सबसे ज़्यादा जानना चाहता है।
+इस repository पर मापा गया: **3,565 edges में से 1,063 boundary edges हैं**, जिनमें 284
+`@handbook/core` की ओर जाती हैं। सिर्फ़ resolved edges के साथ `checkLanguage` — जिसे दूसरे
+package से चार बार बुलाया जाता है — **शून्य callers** के साथ दिखता था, और agent उसे dead code
+पढ़ता है। वह एक _ग़लत pointer_ है, कोई कमी नहीं, और ग़लत pointer ही वह विफलता है जिसे रोकने के
+लिए यह artifact मौजूद है।
+
+इसी कारण `symbols.tsv` का `nCalledBy` boundary callers को भी package-भीतर के callers के साथ
+गिनता है, और उसका header यह कहता भी है। `boundary:` को path समझा ही नहीं जा सकता, इसलिए उन्हें
+शामिल करने से कुछ गढ़ा नहीं जाता।
+
+### Type rows, और उनके नीचे का fallback
+
+`symbols.tsv` में तीन तरह की rows हैं। `fn` एक function या method है। `type:<kind>` एक
+**parse किया गया type declaration** है — span declaration से ही पढ़ा जाता है — और यह एक बंद
+शब्दावली से आता है: `class`, `interface`, `struct`, `record`, `enum`, `trait`, `alias`,
+`other`। `record` को `struct` में नहीं मिलाया गया, क्योंकि Java या C# का `record` एक
+**reference** type है, और इस शब्दावली में `struct` ही वह शब्द है जिसका मतलब value type भी है।
+`other` कूड़ेदान नहीं बल्कि भार उठाने वाला है: Go का defined type (`type Celsius float64`)
+alias नहीं है, Rust का `union` struct नहीं है, Java का `@interface` interface नहीं है — और
+`signature` declaration को **जैसा लिखा है वैसा** रखता है, इसलिए native keyword कभी खोता नहीं।
+
+कौन सी भाषाएँ असल में types निकालती हैं, यह **per adapter घोषित** है और `index.md` में
+disclose किया जाता है — ठीक वैसे ही जैसे analysis fidelity (invariant 3)।
+`AdapterCapabilities.typeKinds` boolean नहीं बल्कि एक **list** है, क्योंकि कोई adapter classes
+पा सकता है और हर interface चूक सकता है; `[]` एक सकारात्मक दावा है, और field के **अनुपस्थित**
+होने का अर्थ है कि artifact इससे पुराना है — उसे _unknown_ बताया जाता है, कभी शून्य नहीं।
+
+`class-derived` वह fallback है जहाँ adapter कोई type नहीं निकालता: span उस class के
+**methods** का `min…max` है — यानी members कहाँ हैं, declaration कहाँ है वह नहीं — इसलिए उसे
+label किया जाता है, parse किया हुआ तथ्य बताकर पेश नहीं किया जाता। इस repository पर असली type
+extraction जोड़ने से `class-derived` 45 rows से 19 पर आ गया, और बची हुई हर row एक object
+literal है, type declaration नहीं — fallback को ठीक यही पकड़ना चाहिए।
+
+Disclosure coverage से ज़्यादा मायने रखता है: एक agent किसी type नाम को grep करे, कुछ न पाए,
+और मान ले कि वह type मौजूद नहीं है — यही वह _ग़लत pointer_ है जिसे रोकने के लिए यह artifact है।
+Constants, variables और macros किसी भी भाषा में index नहीं होते, और `index.md` यह कहता है।
+
+### ताज़गी
+
+`index.md` का header `HandbookModel.provenance` ढोता है — `{ commit?, generatedAt }`, जो run
+manifest से पढ़ा जाता है। अब मुख्य payload line numbers हैं, और बासी line number ही वह इकलौता
+तथ्य है जो **चुपचाप** ग़लत होता है, इसलिए artifact ख़ुद बताता है कि वह कब और किसके सापेक्ष
+बना।
 
 ## SKILL पैकेज (`handbook skill`)
 
@@ -251,6 +414,8 @@ coverage: { nFiles: 5, nOrganized: 5 }
   references/
     overview.md  index.md  registers.md
     stages/<sid>.md
+    agent/                       (--agent-dir) index.md · symbols.tsv · files.tsv ·
+                                 calls.tsv · stages/<sid>.md
     coverage.json                (optional) {schemaVersion, summary, files:[{path,stage,sha256}]}
 ```
 
@@ -258,7 +423,8 @@ coverage: { nFiles: 5, nOrganized: 5 }
 description बताए कि कब इस्तेमाल करें और कब नहीं; मुख्य भाग `references/index.md` का हवाला
 दे और असली स्रोत की ओर भेजे; overview/index/registers/stages मौजूद हों; index हर stage पृष्ठ
 से जोड़े; coverage में कोई दोहरा रास्ता न हो; `--source` के साथ hashes जीवित वृक्ष से मेल
-खाएँ।
+खाएँ। `references/agent/` directory वैकल्पिक है, पर जब वह मौजूद हो तो उसमें `index.md` और
+तीनों तालिकाएँ होनी ही चाहिए — index और उसकी fact तालिकाएँ या तो साथ जाती हैं या बिल्कुल नहीं।
 
 ## Planner का आउटपुट (`handbook plan`)
 

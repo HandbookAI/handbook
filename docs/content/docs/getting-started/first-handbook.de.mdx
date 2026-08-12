@@ -22,7 +22,14 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 **Das kostet nichts und ist der Smoke-Test.** Kein LLM, kein Schlüssel, keine Tokens.
@@ -33,7 +40,10 @@ handbook analyze --source $REPO --work $WORK
   oder ein Build-Verzeichnis analysiert. Die üblichen werden automatisch übersprungen; andernfalls `--source`
   auf die echte Quellwurzel statt auf die Repo-Wurzel zeigen lassen. - **`edgesDropped` riesig im Verhältnis
   zu `edgesKept`?** Normal bei dynamischen Sprachen. Ein Blick in `phase1/dropped-calls.json` lohnt — jeder
-  unaufgelöste Aufruf ist dort kategorisiert, nicht versteckt.
+  unaufgelöste Aufruf ist dort kategorisiert, nicht versteckt. - **`filesUnparsed` nicht null?** Diese Dateien
+  stehen mit einem Grund in `phase1/scan-coverage.json`. Die mit `unreadable` oder `unparsable` steuern nichts
+  bei und bekommen keine Seite — ein jetzt gebautes Handbuch hat genau dort ein Loch, und das lohnt sich zu
+  stopfen, bevor Prosa bezahlt wird.
 </Callout>
 
 Diese Punkte **jetzt** beheben. Jedes Problem hier wird später ein teureres Problem.
@@ -103,8 +113,9 @@ handbook skill --handbook $WORK/handbook --out skills/myrepo \
 `--work` + `--source` zusammen erzeugen `coverage.json`: einen Content-Hash pro Datei.
 **Genau das macht Handbuch-Drift erkennbar**, statt später stillschweigend falsch zu sein.
 
-`--agent-dir` liefert die Locator-Seiten mit und ergänzt das Routing-Protokoll des
-SKILLs um einen Disambiguierungsschritt.
+`--agent-dir` liefert den Agenten-Index und seine Faktentabellen mit und gibt dem
+Routing-Protokoll des SKILLs seine grep-Rezepte — der Agent macht aus einem Symbolnamen so
+mit einem Befehl ein `path:startLine-endLine`, statt Prosa zu lesen und zu raten.
 
 ## Schritt 5 — Validieren
 

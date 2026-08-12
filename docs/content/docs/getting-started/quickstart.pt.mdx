@@ -24,7 +24,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -51,15 +51,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 Coisas que valem uma olhada em particular:
 
-| Abra isto                             | E repare em                                                                                          |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `handbook/overview.md`                | Um **mapa de etapas** em mermaid gerado a partir do grafo de chamadas                                |
-| `handbook/index.md`                   | Todas as etapas, aninhadas, cada uma com um parágrafo                                                |
-| `handbook/register.md`                | Estado que atravessa etapas, com as etapas que tocam cada item                                       |
-| `handbook/agent/index.md`             | O formato do localizador para agentes — sem prosa, só endereços                                      |
-| `handbook/agent/disambiguation.md`    | Termos que legitimamente apontam para várias etapas                                                  |
-| `skill/references/coverage.json`      | Um hash de conteúdo por arquivo. Este é o sinal de deriva.                                           |
-| `work/demo/phase1/dropped-calls.json` | Chamadas que o analisador **não** conseguiu resolver, mantidas e categorizadas em vez de adivinhadas |
+| Abra isto                             | E repare em                                                                                                           |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | Um **mapa de etapas** em mermaid gerado a partir do grafo de chamadas                                                 |
+| `handbook/index.md`                   | Todas as etapas, aninhadas, cada uma com um parágrafo                                                                 |
+| `handbook/register.md`                | Estado que atravessa etapas, com as etapas que tocam cada item                                                        |
+| `handbook/agent/index.md`             | O índice para agentes — receitas de busca, a tabela de etapas, cobertura. Leia inteiro                                |
+| `handbook/agent/symbols.tsv`          | Cada símbolo → `path:startLine-endLine`. É isto que as páginas em prosa nunca tiveram                                 |
+| `skill/references/coverage.json`      | Um hash de conteúdo por arquivo. Este é o sinal de deriva.                                                            |
+| `work/demo/phase1/dropped-calls.json` | Chamadas que o analisador **não** conseguiu resolver, mantidas e categorizadas em vez de adivinhadas                  |
+| `work/demo/phase1/scan-coverage.json` | Arquivos que o analisador **não** conseguiu ler ou parsear por inteiro. Um `[]` aqui significa que os cinco parsearam |
 
 ## Passo 4 — Olhe por baixo do capô
 
@@ -99,8 +100,9 @@ então a estrutura de etapas que produz é um mapa genuíno de uma base de códi
   />
 </div>
 
-1. **`analyze`** analisou cada arquivo com tree-sitter até um grafo de chamadas tipado.
-   Sem LLM.
+1. **`analyze`** analisou com tree-sitter cada arquivo que conseguiu ler, chegando a um
+   grafo de chamadas tipado, e escreveu o que não conseguiu ler em
+   `phase1/scan-coverage.json`. Sem LLM.
 2. **`generate`** escreveu uma ficha por arquivo, sintetizou um esqueleto de etapas,
    atribuiu cada arquivo a uma etapa, agrupou-os e ordenou-os, depois narrou de baixo
    para cima e extraiu os registradores de estado que atravessam etapas.

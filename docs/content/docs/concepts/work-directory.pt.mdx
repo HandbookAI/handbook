@@ -13,6 +13,7 @@ repositório que você está documentando.
     functions.csv       every function, flat, for grepping or a spreadsheet
     graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
     dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+    scan-coverage.json  files we could NOT read or fully parse — not counted as covered
   phase2/
     cards/<rel>.json    one card per source file, mirroring the source tree
     cards/_coverage.json  how many files got prose, and which did not
@@ -49,7 +50,9 @@ Duas exceções deliberadas, ambas por resiliência, não por frouxidão:
   resume, as Phases 2b/2c/3 e todo carregamento do modelo.
 - **Metadados `languages` em `graph.json`** — opcionais, porque não existe aqui um
   mecanismo de migração de artefatos, e todo grafo escrito antes de existirem as
-  declarações de fidelidade precisa continuar validando.
+  declarações de fidelidade precisa continuar validando. O `unparsedFiles` é opcional
+  pela mesma razão: ausente significa que a análise é anterior a esse registro, **não**
+  que nada falhou.
 
 ### Toda escrita é atômica
 
@@ -91,12 +94,31 @@ jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
 # what could not be resolved, by category
 jq '.metadata.byCategory' phase1/dropped-calls.json
 
+# which files the scan could not turn into facts, and why
+jq '.metadata.byReason, .files' phase1/scan-coverage.json
+
 # which files never got prose
 jq '.missing' phase2/cards/_coverage.json
 ```
 
 O `functions.csv` está lá pela mesma razão — às vezes a ferramenta mais rápida é uma
 planilha.
+
+### Os dois arquivos de cobertura respondem a perguntas diferentes
+
+O `_coverage.json` responde _"quais arquivos o modelo não conseguiu descrever?"_. O
+`scan-coverage.json` responde à pergunta que está por baixo dessa: _"quais arquivos o
+parser sequer chegou a conseguir ler?"_ — com um `reason` de `unreadable`, `unparsable`
+ou `partial`.
+
+Os dois primeiros não contribuem com **nenhum** fato, então também saem do `scannedFiles`
+do `graph.json`: nada a jusante escreve uma ficha sobre um arquivo que ninguém abriu para
+em seguida contá-lo como descrito. Os arquivos `partial` ficam — o tree-sitter se
+recuperou do erro de sintaxe, e as funções que ele encontrou são reais, apenas
+incompletas.
+
+Um array `files` vazio significa que todo arquivo varrido parseou sem problemas. Isso é
+uma afirmação; o artefato simplesmente não existir não é.
 
 ## Onde mais as coisas são escritas
 

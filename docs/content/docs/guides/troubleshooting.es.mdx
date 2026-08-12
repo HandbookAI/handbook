@@ -99,6 +99,30 @@ jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
 Los lenguajes del nivel genérico descartan más por diseño. Consulta
 [Fidelidad del análisis](/docs/concepts/analysis-fidelity).
 
+### Un archivo que sé que existe no tiene página en el handbook
+
+Pregúntale primero a la Phase 1 — un archivo que nunca llegó a ser hechos nunca llega a
+ser página:
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | Qué significa                                                 | Qué hacer                                                                               |
+| ------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `unreadable` | falló la lectura — permisos, un symlink colgante, una carrera | arregla el archivo o sus permisos y vuelve a ejecutar `analyze`                         |
+| `unparsable` | la gramática lanzó una excepción o no devolvió árbol          | casi siempre shell + `case`; consulta [Soporte de lenguajes](/docs/reference/languages) |
+| `partial`    | parseó, pero con errores de sintaxis                          | la página existe pero está **incompleta** — lee el archivo tú mismo                     |
+
+Los archivos `unreadable` e `unparsable` se quitan deliberadamente de los `scannedFiles`
+de `graph.json`, de modo que no se escriba ninguna ficha sobre un archivo que el parser
+nunca leyó y que `_coverage.json` no pueda contarlo como descrito. Los archivos `partial`
+conservan su página: los hechos que hay en ella son reales, solo que no están todos.
+
+Un array `files` vacío significa que todo parseó. Si el artefacto no está en absoluto, el
+directorio de trabajo es anterior a este registro — vuelve a ejecutar `analyze`.
+
 ### Swift mata el proceso
 
 ```text
@@ -280,6 +304,7 @@ handbook config --command <cmd> --json     # full resolved configuration
 cat work/api/run-manifest.json             # what the last good run did
 ls work/api/phase2/cards/_rejected/        # what the model actually replied
 jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
 ```
 
 Si es reproducible, los artefactos de arriba son exactamente lo que necesita un informe de

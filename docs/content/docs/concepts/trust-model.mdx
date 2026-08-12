@@ -12,6 +12,7 @@ description: Which parts of a handbook are parsed facts, which are model output,
 | This signature is `send(self, url, data)` | parser                      | **No**                                             |
 | This function calls that one              | parser                      | **No** for full tier; best-effort for generic tier |
 | These calls could not be resolved         | parser                      | **No** — they are listed, not guessed              |
+| These files could not be read or parsed   | parser                      | **No** — they are listed, not counted as covered   |
 | This file belongs to this stage           | LLM, mechanically validated | Judgment, yes. Structurally, no                    |
 | This file's purpose is "…"                | LLM                         | **Yes** — it is prose                              |
 | This subsystem works like "…"             | LLM                         | **Yes** — it is prose                              |
@@ -63,6 +64,10 @@ Refusals are the load-bearing part of this tool. In priority order:
 ### The pipeline
 
 - A call the analyzer cannot resolve goes to `dropped-calls.json`. It is never guessed.
+- A file the analyzer cannot read or parse goes to `scan-coverage.json` with its reason,
+  and is kept **out** of `scannedFiles`. It is never described as an empty file. A file
+  that parsed only partially stays, and is listed anyway — its facts are real but
+  incomplete, and you should know which pages rest on them.
 - A file whose card generation failed gets an **empty** description, never an invented
   one, and is listed in `_coverage.json`.
 - A structural change proposed by the doctor loop that names a non-existent stage, or
@@ -71,8 +76,14 @@ Refusals are the load-bearing part of this tool. In priority order:
 
 ### Configuration
 
-- A secret (`llmApiKey` / `OPENAI_API_KEY`) is **never** a command-line flag, and is
-  **rejected** if it appears in a config file — because config files get committed.
+- A secret is **never** a command-line flag, and is **rejected** if it appears in a config
+  file — because config files get committed. Two settings are secrets: `llmApiKey` /
+  `OPENAI_API_KEY`, and `llmExtraBody` / `OPENAI_EXTRA_BODY` — free-form, merged into every
+  request body, and gateways do take auth there, so nothing can tell a tuning field from a
+  credential.
+- `llmBaseUrl` is deliberately **not** a blanket secret: a team pointing every checkout at
+  one shared gateway has a legitimate reason to commit it. Only a URL that embeds
+  credentials (`https://user:pass@host/v1`) is refused in a config file.
 - A supplied-but-invalid value never falls through to a default. A typo is an error.
 - An empty value reads as unset, so `HANDBOOK_TITLE=` cannot produce an untitled handbook.
 

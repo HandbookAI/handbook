@@ -56,7 +56,7 @@ pnpm demo
 
 `pnpm demo` runs the entire toolchain against a bundled sample project using a bundled
 mock LLM server. When it finishes you will have a rendered handbook, an HTML site, an
-agent locator index and a validated SKILL package sitting on disk.
+agent index and a validated SKILL package sitting on disk.
 
 <Cards>
   <Card title="Install it properly" href="/docs/getting-started/installation" />
@@ -73,6 +73,9 @@ Handbook parses every source file with [tree-sitter](https://tree-sitter.github.
 builds a typed call graph: functions, methods, call edges resolved through
 `self`/attributes/parameters/imports, calls that leave your code, and calls it could not
 resolve — quarantined into their own file, never guessed at.
+
+Files it could not read or parse at all are quarantined the same way — a gap you can
+enumerate, never one that silently disappears.
 
 **This layer never touches an LLM.** Run it twice, get the same graph twice.
 
@@ -95,7 +98,7 @@ address it found, and emits an edit plan byte-exact enough to apply mechanically
 
 <img
   src="/diagrams/outputs.svg"
-  alt="Outputs: markdown handbook, HTML site, single page, agent locator index, llms.txt, SKILL package"
+  alt="Outputs: markdown handbook, HTML site, single page, agent index, llms.txt, SKILL package"
   className="rounded-xl border"
 />
 
@@ -104,7 +107,7 @@ address it found, and emits an edit plan byte-exact enough to apply mechanically
 | Markdown handbook — overview, stage index, one page per stage, state-register table | humans        |
 | Multi-page HTML site — sticky TOC, breadcrumbs, theme toggle, works over `file://`  | humans        |
 | One self-contained HTML page you can email                                          | humans        |
-| Agent locator index — duty, entry concepts, state, exemplars, co-change hints       | agents        |
+| Agent index — symbol → `path:line-line`, file and call tables, grep recipes         | agents        |
 | `llms.txt` + `llms-full.txt`                                                        | agents        |
 | A SKILL package with a content hash per file, so drift is detectable                | agents        |
 

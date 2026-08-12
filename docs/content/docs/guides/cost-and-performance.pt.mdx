@@ -10,7 +10,7 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611, "filesUnparsed": 3 }
 ```
 
 **Gratuito.** O número em `files` é o que determina o custo, porque a Phase 2a — a fase
@@ -146,8 +146,9 @@ anterior intocado; uma execução abortada não escreve nenhum.
 handbook analyze --source $REPO --work $WORK
 ```
 
-Confira a contagem de arquivos e o `dropped-calls.json`. Conserte a varredura antes de
-gastar qualquer coisa.
+Confira a contagem de arquivos, o `dropped-calls.json` e o `scan-coverage.json`. Um
+`filesUnparsed` diferente de zero é um buraco no handbook que você está prestes a pagar.
+Conserte a varredura antes de gastar qualquer coisa.
 
 </Step>
 

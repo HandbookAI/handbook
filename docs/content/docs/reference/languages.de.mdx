@@ -97,6 +97,10 @@ Das Scan-Log sagt das ausdrücklich und nennt den Grund:
 merely unresolved — install.sh, nvm.sh, …
 ```
 
+Jede dieser Dateien wird zusätzlich einzeln in `phase1/scan-coverage.json` mit
+`reason: "unparsable"` benannt und aus `scannedFiles` im Graphen herausgehalten — die
+Lücke ist damit _sichtbar_ statt still.
+
 </Callout>
 
 ## Was überall übersprungen wird
@@ -133,6 +137,7 @@ handbook analyze --source ~/code/repo --work work/x -v
 ```bash
 jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
 jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+jq '.metadata.byReason, .files' work/x/phase1/scan-coverage.json  # what could not be parsed at all
 ```
 
 ## Eine Sprache hinzufügen

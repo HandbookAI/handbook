@@ -30,11 +30,12 @@ export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
 
 ## 供应商别名
 
-有六个设置同时接受人们早已导出好的那些名字：
+有七个设置同时接受人们早已导出好的那些名字：
 
 | 设置           | 别名                |
 | -------------- | ------------------- |
 | `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmProvider`  | `OPENAI_PROVIDER`   |
 | `llmModel`     | `OPENAI_MODEL`      |
 | `llmBaseUrl`   | `OPENAI_BASE_URL`   |
 | `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
@@ -95,12 +96,21 @@ handbook generate --env prod --source ~/code/api --work work/api
 
 ## 密钥
 
-`llmApiKey` / `OPENAI_API_KEY` 在注册表里被标记为 `secret`，这意味着：
+注册表里有两个设置被标记为 `secret`——`llmApiKey` / `OPENAI_API_KEY` 和
+`llmExtraBody` / `OPENAI_EXTRA_BODY`。对这两者来说，这都意味着：
 
 - 它**绝不**是命令行标志（标志会落进 shell 历史和 `ps` 输出）；
 - 如果它出现在配置文件里就会被**拒绝**，并附上说明缘由的消息——配置文件是要提交
   的；
 - 它在 `handbook config` 的输出里会被**掩码**。
+
+`llmExtraBody` 之所以是密钥，是因为它的内容**完全自由**。你往里面放什么就会被合并进
+每一个请求体，而网关确实接受写在请求体里的鉴权信息——所以这个工具既没法枚举里面有
+什么，也分不出哪个是调参字段、哪个是凭据。它根本没有对应的命令行标志，请用环境变量。
+
+`llmBaseUrl` 则是刻意**不**当作密钥的：团队让所有本地检出都指向同一个共享网关，是有
+正当理由把它提交进仓库的。只有内嵌了凭据的 URL（`https://user:pass@gw.internal/v1`）
+会在配置文件里被拒绝——仅此一处，别无其他。
 
 ```text
 handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)

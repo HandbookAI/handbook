@@ -13,6 +13,7 @@ repository you are documenting.
     functions.csv       every function, flat, for grepping or a spreadsheet
     graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
     dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+    scan-coverage.json  files we could NOT read or fully parse — not counted as covered
   phase2/
     cards/<rel>.json    one card per source file, mirroring the source tree
     cards/_coverage.json  how many files got prose, and which did not
@@ -49,7 +50,8 @@ Two deliberate exceptions, both about resilience rather than laxity:
   and every model load.
 - **`languages` metadata in `graph.json`** — optional, because there is no artifact
   migration mechanism here and every graph written before fidelity declarations existed
-  must keep validating.
+  must keep validating. `unparsedFiles` is optional for the same reason: absent means the
+  analysis predates the record, **not** that nothing failed.
 
 ### Every write is atomic
 
@@ -91,12 +93,30 @@ jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
 # what could not be resolved, by category
 jq '.metadata.byCategory' phase1/dropped-calls.json
 
+# which files the scan could not turn into facts, and why
+jq '.metadata.byReason, .files' phase1/scan-coverage.json
+
 # which files never got prose
 jq '.missing' phase2/cards/_coverage.json
 ```
 
 `functions.csv` is there for the same reason — sometimes the fastest tool is a
 spreadsheet.
+
+### The two coverage files answer different questions
+
+`_coverage.json` answers _"which files did the model fail to describe?"_.
+`scan-coverage.json` answers the question underneath it: _"which files did the parser
+never manage to read in the first place?"_ — with a `reason` of `unreadable`, `unparsable`
+or `partial`.
+
+The first two contribute **no** facts, so they are also removed from
+`graph.json`'s `scannedFiles`: nothing downstream writes a card about a file nobody opened
+and then counts it as described. `partial` files stay — tree-sitter recovered from the
+syntax error and the functions it did find are real, merely incomplete.
+
+An empty `files` array means every scanned file parsed cleanly. That is a claim; the
+artifact simply being missing is not.
 
 ## Where else things are written
 

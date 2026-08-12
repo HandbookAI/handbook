@@ -601,15 +601,325 @@ usageMetadata 计量；十种畸形响应必须失败而非返回 `''`；Gemini 
 非数字 usage 记为 0 而不是 NaN。最后两条证明 provider 会**自动继承**共享的
 503 重试与 401 不重试。
 
-### 审计报告里仍未修的（按严重度，供下一轮）
-- H1/H2 分析器按裸名解析类型、首个声明胜出，猜出来的边直接当真实边发出，
-  `dropped-calls.json` 是空的——违反不变量 2。需要冲突名 sentinel。
-- H3 未分配文件从所有渲染输出里消失，但总数还算它。
-- H5 Studio 对 6 种收不到 signal 的 job 也接受 cancel，然后报 succeeded。
-- H7 读不了/解析失败的文件被静默抹掉，`scannedFiles` 仍然列着它。
-- H8 语言守卫尚未接进 pipeline（本轮只做了守卫本身 + 实测）。
-- H9 `skill --out` 几乎无保护地 rm -rf。
-- H12 Studio 无认证。
+### 审计报告 HIGH 项：全部已修
+
+- H1/H2 ✅ 冲突裸名进 `ambiguousTypes`，三处消费点一律 `unresolvedOf(...)`（`spine.ts`）。
+- H3/H7 ⏳ 后台 agent 在做（未分配文件在 8 语言渲染里披露；`unparsedFiles` → `scan-coverage.json`）。
+- H5 ✅ 收不到 signal 的 job 不再接受 cancel。
+- H8 ✅ 语言守卫已接进 pipeline，真实端点 7/7 恢复。
+- H9 ✅ `skill --out` 拒绝"非空且无 SKILL.md"的目录。
+- H12 ✅ **Studio 认证**（本轮完成，见下）。
+
+#### H12 落地细节
+`createStudioServer` 里 `options.authToken ?? mintToken()`——**默认安全**：忘了传就是 401，
+不是敞开。`randomBytes(24).toString('base64url')`，不落盘（一次启动一个）。
+服务端注入 `<meta name="hb-token">` 到 `index.html`；页面的 `api()` 助手给**每个**请求
+（含 GET）加 `authorization: Bearer`。`EventSource` 设不了头，所以 SSE 那一条路
+额外接受 `?token=`（同源，永不出机器）。`authToken: ''` 是显式敞开，给自带鉴权的嵌入方。
+
+顺序很关键：**Host 头检查在认证之前**，所以 `evil.example.com` 仍是 403 而不是 401。
+
+实测（不是 mock）：live server 上 `/api/repos` 无 token → 401、错 token → 401、
+bearer → 200、`?token=` → 200；POST 写操作无 token → 401；页面本身 200 且带 token。
+真浏览器：`studio-ui` 15/15，其中新增一条**驱动真实表单**走页面自己的 `api()`。
+非空洞验证：把 UI 的 token 摘掉后该套件 12/15（3 条失败正是预期的 401），恢复后 15/15。
+`cdp.mjs` 新增 `clickSel()`——按 CSS 选择器做真实指针点击（`clickLabel` 按文本，
+定位不了本地化/图标/字典加载前为空的控件）。
+
+### 审计报告 MEDIUM 项（本轮要全修 —— 用户："全部修复"）
+
+按包分组，避免多个 agent 撞同一个文件：
+
+| 组 | 项 | 主题 | 主要文件 |
+|---|---|---|---|
+| A | M12–M16 | 取消/中断没有贯通：planner、critic、analyzer 扫描、CLI SIGINT | `planner/`, `pipeline/`, `analyzer/`, `cli/main.ts` |
+| B | M17–M21 | 输入无上限：超大文件/超长行/超深目录/巨大 LLM 回复/巨大 diff | `analyzer/`, `llm/`, `patcher/` |
+| C | M23–M25 | 配置：`llmBaseUrl`/`llmExtraBody` 未标记为 secret；`handbook config` 在**配置文件本身**坏掉时直接死；未知配置键被静默忽略 | `core/src/config/` |
+| D | M26–M29 | 分析器解析缺口（同 H1/H2 家族的剩余部分） | `analyzer/src/` |
+| E | M30–M34 | 路径守卫：符号链接逃逸、`..`、绝对路径、写出沙箱 | 多处 |
+| F | M35–M37 | Studio 健壮性 | `studio/src/` |
+| — | M1 | 源文件读不出来时，编出来的散文被计为"已描述" | `pipeline/` |
+
+**本轮派发（按文件切分，互不重叠）**
+
+| agent | 范围 | 状态 |
+|---|---|---|
+| H3/H7 | analyzer + pipeline + renderer 的披露 | ✅ 完成，`pnpm check` 1576 测试全过 |
+| C | `core/src/config/**` + cli 的 `config` 子命令 | 🔄 |
+| F | `studio/**` | 🔄 |
+| E | `patcher/**` + `skill/**` | 🔄 |
+| docs | `docs/**`（8 语种补 `scan-coverage.json`） | 🔄 |
+| G | `planner/**` + `pipeline/**` + `llm/src/critic.ts`（取消贯通） | 🔄 |
+| 我 | `llm/src/client.ts`（已完成）+ `analyzer/**` + CLI SIGINT | 🔄 |
+
+已完成（我做的）：**llm 响应体上限**。`response.json()`/`response.text()` 原来无上限缓冲——
+baseUrl 写错指到文件服务器、或网关吐无尽错误页，进程会被内存打死。新增 `readBoundedBody()`：
+先看 `content-length` 短路（不读一个字节），再边流边计数（chunked 不报长度也拦得住），
+超限抛 `PermanentError`（不重试）并直接点名"检查 base URL"。按**字节**不按字符计
+（一个 emoji 是 2 个 UTF-16 单元、4 字节；按字符会让非拉丁文本超 4 倍）。
+顺带：200 但不是 JSON 现在报"这个 URL 不是 API 端点"，而不是"空补全"——
+后者会让人去查 prompt，而真正的问题在 URL。新增 10 个测试（client.test.ts 共 54）。
+
+已完成（我做的）：**发现阶段的三个缺口**（`core/util/fsx.ts` + `analyzer`）。
+1. `listFilesRecursive` 里 `readdirSync` 失败原来是 `catch { return; }`——**静默吞掉**。
+   一个 000 权限或 root 所有的子目录，其下所有文件直接从分析里消失，
+   下游分不清"那里没文件"和"我们没被允许看"。这就是 H7 那类违规，只是发生在目录层。
+   新增 `DiscoverOptions.onSkip(path, reason)`，一路接到 `discoverByExtension` →
+   `SpineAdapter.discover(root, {logger})` → `discoverAll`（`LanguageAdapter.discover`
+   的第二个参数是**可选的**，所以现有 adapter 不用改；Swift 的 override 已同步）。
+2. `walk` 是无上限递归。符号链接不跟随所以不会有环，但**真实的深树**会爆 JS 栈，
+   `RangeError` 直接掀掉整个 run。加 `MAX_WALK_DEPTH = 64`（真实源码树是个位数深度），
+   超了就报告并停在那一层，不是崩溃。
+3. `spine.ts` 读文件前先 `statSync`：超过 `MAX_SOURCE_BYTES = 8 MiB` 的不读。
+   一个几百 MB 的压缩包/生成表读成 UTF-8 字符串大约是两倍内存，再喂给 tree-sitter，
+   花掉的内存和分钟数换来一张没人看的卡片。记为 `unreadable`（这是实话——我们没读），
+   **`detail` 里写明尺寸**，否则读的人会去查文件权限。
+
+新增 `packages/core/src/util/fsx.test.ts`（7 个测试，真实临时目录，不 mock fs——
+符号链接、不可读目录、递归深度全是操作系统的性质，mock 只能证明 mock 写对了）。
+注意其中不可读目录那条同时断言了**两种结果**：以 root 跑时 000 权限无效，
+文件就是能看见、也就没什么可报告的——只断言一半会在容器里空洞地通过。
+spine.test.ts 新增 3 个（12.6 MiB 真实 fixture，余量足够）。
+三个包合计 973 测试全过。
+
+已完成（我做的）：**H1/H2 家族的剩余两张表**（就是 D 组 M26–M29）。
+H1/H2 只修了 `typeToModule`。同样的"首个声明胜出"还留在另外两张表里：
+- `scopedTypeToModule`——键是 (scope, 裸类型名)。**scope 在整个仓库里并不唯一**：
+  C++ 的 `namespace detail` 是每个需要私有 helper 的文件都会重开的惯用法，
+  所以两个 TU 里的 `detail::Impl` 是两个无关类型。
+- `directoryFunctions`——键是 (目录, 函数名)。Go 造不出冲突（同包同名编译不过），
+  但**Swift 共用这张表**，而 Swift 的 `private func` 是**文件作用域**的，
+  同目录两个文件各有一个 `Helper` 是完全正常的 Swift。
+
+三层修复（每层都有独立的失效证明）：
+1. 构建期：冲突就**撤销键**并记进 `ambiguousScopedTypes` / `ambiguousDirectoryFunctions`。
+   撤销后**后来者也不能重新拿到**——否则答案取决于扫描顺序，而那正是问题本身。
+2. `lookupScoped` 新增可选的歧义集参数：**遇到歧义就终止作用域外查**，不是跳过。
+   这是最微妙的一半：光撤销键的话，`detail::Impl` 查不到就继续往外层走，
+   找到全局的 `Impl` 然后自信地连过去——把"分不清这两个"变成"确定是第三个"，
+   比原来的 bug 更糟。已接进 cpp/php/ruby/swift 全部 6 个调用点（否则守卫在生产路径上是惰性的）。
+3. C++ `resolveOnType` 原来把"判不出类型"一律当 `boundary`。但 boundary 是一个
+   **断言**（这个调用离开了扫描集），而歧义类型明明就在集里、只是有两份。
+   新增 `typeSpellingIsAmbiguous()` 区分二者：不在集里 → `boundary`（C++ 要求先声明后使用，
+   这是事实）；在集里但有多份 → `unresolved`，进 `dropped-calls.json`。
+
+顺带补了 `lookupBareType()`——H1/H2 的注释里 `{@link}` 引用了它，但**从未被写出来**。
+
+真实 C++ mini-repo 测试（三个文件：alpha/beta 各声明一份 `detail::Impl`，
+gamma 两者都不声明只引用）。注意第一版 fixture 是**错的**：alpha 自己声明了那个类型，
+在 alpha 内部解析到本地那份是**正确**的——必须由第三个文件来提问。
+非空洞验证：单独撤 1 → 1 条失败；单独撤 2 → 3 条失败；端到端那条要两者都撤才失败（防御叠加）。
+analyzer 671 测试全过。
+
+已完成（我做的）：**CLI 的 Ctrl-C**。原来 `packages/cli` 里**一个信号处理都没有**——
+SIGINT 就是原地硬杀：在途的模型调用被中途抛弃（钱照付），work dir 可能留下
+一个看起来完整的半截产物。`runGenerate`/`runPlanner`/`resyncHandbook` 都接受
+`AbortSignal`，只是从来没人传过。
+
+`installCancellation()`：第一次按 → abort + "cancelling; press again to stop waiting"，
+让 run 自己收尾并记录做过什么；第二次按 → 直接走人。退出码 **130**（128+2，shell 惯例），
+非零，满足不变量 5。顶层 catch 现在区分 `AbortError`：取消**不是崩溃**，
+打印堆栈会让用户以为自己按 Ctrl-C 触发了 bug。
+
+实测放在 `scripts/smoke-cli.sh`（跑的是构建产物，不是 mock）——
+单元测试能断言 signal 传下去了，但**证明不了** CLI 装了处理器、run 会收尾而不是挂死、
+以及 shell 看到的是 130 而不是堆栈加 exit 1。四条断言：130、有取消提示、
+不报成 error、**取消的 run 不写 run-manifest**。
+
+两个坑（都栽过）：
+1. 第一版固定 `sleep 6` 后发信号——但 demo project 对着 mock LLM 两秒就跑完了，
+   信号发给了一具尸体，测试**空洞通过**。改成轮询日志确认 run 真的在跑，
+   并且如果 run 已经结束就**报失败**而不是当成通过。源也换成整个 `packages/`。
+2. `cmd | head -3` 之后 `$?` 是 `head` 的退出码，不是 cmd 的——一度让我以为
+   其他命令对坏配置返回 0。去掉管道后是 1，不变量 7 完好。
+
+顺带修了 M24 带来的两条 smoke 回归（**不是我的改动**，是 config agent 的）：
+`handbook config` 现在**故意**展示坏配置而不是死掉（CLAUDE.md 明确要求），
+所以它退 0；`config --check` 才是下判决的那个（退 2）。旧期望写的是 1。
+更新期望时**加了断言的牙齿**，不是单纯重新基线化：断言 `NOT LOADED` 出现、
+断言原因被写出来、断言**其他每个命令仍然拒绝运行**（退 1）、断言 `--check` 退 2。
+`smoke-cli.sh` 现在 **86/86**（原 75）。
+
+## Agent 索引重写（用户："写的太垃圾了，你根本没有深度调研"）
+
+调研报告在 `docs/internal/plans/agent-index-redesign.md`（1212 行，含 aider repo-map、
+llms.txt、ctags/SCIP/LSIF、Cursor rules 的实证对比）。它推翻/加强了我的初步诊断，
+并挖出几个我没看到的真 bug：
+- `coreFiles()` 先按 role 排序再按函数数 → 0 函数的 `html-assets.ts` 被列在 25 函数的
+  `html.ts` **之上**。
+- `fileStem()` 只剥一层扩展名 → 70 个"入口概念"里 10 个是 `*.test` 残渣；另有 35/70 的
+  裸名在仓库里对应多个文件。
+- **`model.cards` 有 169 条但只有 167 个文件**——多出来的是已删除文件的残留卡片。
+  任何以 `cards` 为键的产物都会输出**不存在的路径**，而这个产物的全部承诺就是"这个路径存在"。
+  新代码一律以 `assignment.fileStage` 为权威文件集。
+- **skill 打包根本不发 agent 索引**：`AGENT_LOCATOR_PAGES` 只有
+  `how_to_use.md` + `disambiguation.md`，715 KB 产出与主交付通道脱节。
+
+### 落地
+
+新文件集（`packages/renderer/src/agent-facts.ts` + 重写的 `agent-site.ts`）：
+
+| 文件 | 作用 |
+|---|---|
+| `index.md` **3.2 KB**（原 33 KB） | 唯一假定"总在上下文里"的文件：grep 配方 + 阶段表 + 寄存器 + 覆盖率 |
+| `symbols.tsv` | **符号 → `路径:起行-止行`**，这个查询以前根本不存在 |
+| `files.tsv` | 文件 → 阶段、role、符号数、**一行**散文 |
+| `calls.tsv` | 已解析的调用边，两端都带位置 |
+| `stages/<sid>.md` 0.8–7.4 KB | 第二跳（原 `analyzer_adapters.md` 是 **313 KB**） |
+
+选 TSV 不选 markdown 表格是有实测依据的：本仓库 338 行签名里含 `|`（TS 联合类型），
+表格会把它们**静默截断**。而且一行一个事实在被截断时仍然完整，`\\t` 能锚定整列。
+列序按**价值**排：查到的东西在前，散文在最后一列——因为消费方会截断长行
+（本仓库自己的 planner 就在 200 字符处截），截断必须先吃散文、绝不吃路径。
+
+删掉：职责段落（占索引 42.4% 字节、和人读那份**逐字节相同**）、"相关"（只有组标题和计数、
+**没有路径**，agent 根本无法据此行动）、"核心文件"（与"范本"86% 重叠且排序是错的）、
+"入口概念"、每个函数的四段散文、`how_to_use.md`（并进 index.md 的 `## lookup`——
+隔一跳的配方就是没人follow的配方）、`disambiguation.md`。
+
+保留：**寄存器表**（密集、有 id 锚点、grep 复现不了）和**强共变**（纯结构信号、
+回答"我还得动哪些文件"）。
+
+散文的处置：不是全砍。一行 ≤120 字符留在 `files.tsv` **最后一列**并标 `[prose]`；
+整段留在**人读那份**里，阶段页用 `../<sid>.md` 指过去而不是复制——
+复制正是两份产物变成同一堆字节的原因。
+
+新增 `HandbookModel.provenance?`（可选，旧 work dir 仍能加载），从 run manifest 的
+`finishedAt` 读，不在 render 时盖 `Date.now()`——读的人想知道的是**事实何时被提取**，
+不是何时被渲染。理由：行号成了主载荷，而行号是唯一会**静默出错**的事实
+（陈旧路径仍存在、陈旧符号名仍能 grep，陈旧行号指向错误代码且毫无信号）。
+
+类符号是**派生**的并明确标注：IR 里没有类型这种节点，所以 `class-derived` 行的跨度是
+其**方法**的 min..max——是成员在哪，不是声明在哪。不标就是在 agent 最信任的那一列里
+放一个编造的数字；完全不发则 `StageTree` 在一个类型占查询量一半的代码库里查不到。
+`index.md` 同时明写"types/interfaces/constants 未被索引"——
+agent grep 不到就断定该类型不存在，正是这套设计要避免的"错误指针"失败。
+
+实测（真实数据，非 mock）：`renderHtmlSite` → `renderer/src/html.ts:599-696`；
+`safeResolve` 在 patcher 和 studio **各自解析到自己的文件**（旧设计做不到的消歧）；
+demo 里两个 `__init__` 按文件区分。skill 现在真的发出 7 个 agent 文件，
+按 SKILL.md 给的配方逐字执行可以直接命中。
+
+`pnpm check` **1747 测试全绿**，renderer 覆盖率下限（96 行 / 78 分支）**没有下调**——
+补测试补上去的，其中 `calls.tsv` 的整个边生成逻辑原本一行都没测到。
+
+### 用户复看时发现的三件事（都已修）
+
+**1. 用户看到的还是旧文件。** `examples/work/self/handbook/agent/` 里 `how_to_use.md`
+在 21:01 被写了回去——我为浏览器测试起的 `studio` 进程还活着，跑的是**重建之前**的代码。
+旧渲染器只清 `.md` 不清 `.tsv`，于是目录里**混了两代文件**：一份指向已不存在协议的
+`how_to_use.md`，旁边是它从没听说过的 `symbols.tsv`。agent 读到会follow错的那份。
+
+修法：清理改成**清空整个目录**，不是按扩展名删。"只删本版本会写的文件"正是产生混代的原因。
+回归测试预置了旧格式的 4 个文件加一个 `prose/` 子目录，断言渲染后**只剩 5 个条目**。
+教训：改产物格式时，旧版本的清理逻辑不认识新文件，新版本的清理逻辑必须认识**所有**旧文件——
+唯一可靠的做法是整个目录归渲染器所有、每次清空。
+
+**2. 跨包调用查不到（monorepo 的真缺口）。** `checkLanguage` 在 `lang-guard.ts` 里被调 4 次，
+但 `calls.tsv` 里没有调用方、`nCalledBy` 显示 **0**。原因：跨包导入（`@handbook/core`）
+被分析器记成 boundary 边，而我只发已解析位置的边。
+**在 monorepo 里这恰恰是最该回答的问题**（"谁在用这个导出函数"），0 会被读成**死代码**——
+正是这套设计要避免的"错误指针"。
+
+修法：boundary 边也进 `calls.tsv`，callee 位置写 `boundary:<specifier>`。
+`boundary:` 前缀不可能被误当成路径，所以名字是事实、位置未知也不假装知道。
+`nCalledBy` 同时把这类调用方计入（表头写明了包含它们）。实测 `checkLanguage` 现在是 1。
+本仓库 3565 条边里 1063 条是 boundary，其中 284 条指向 `@handbook/core`、25 条指向
+`@handbook/analyzer`——这些正是跨包边。
+
+**3. studio 打的 skill 根本不含 agent 索引。** `server.ts` 用
+`fileExists(join(agentDir, 'how_to_use.md'))` 决定要不要把 `agentDir` 传给 `buildSkill`。
+那个文件已经不存在 → 探测永远为 false → **每次 studio 建 skill 都静默丢掉 agent 索引**，
+而且不报错，因为"没有 agent 产物"本来就是合法配置。
+这和调研发现的交付通道 bug 是同一个，只是在另一个调用点复发。
+
+修法不是改字符串，而是让漂移**不可能发生**：渲染器导出 `AGENT_INDEX_FILE`，
+studio 引用它。一个只有一行、失败模式是静默的探测，不该由两处各自硬编码文件名。
+实测：`buildSkill` 现在发出 23 个 agent 引用，`references/agent/index.md` 与
+`symbols.tsv` 都在。
+
+顺带把 `RESERVED_STAGE_IDS` 里的 `how_to_use`/`disambiguation` 换成
+`symbols`/`files`/`calls`——阶段 id 撞上产物文件名会覆盖它们。
+
+### 文档状态
+
+`docs/content/` 已经不含旧页面引用（0 处）。README 与包级 README 已更新：
+`README.md` / `README.zh-CN.md` 的"给 AI 的那本"改成 `符号 → 路径:行号`；
+`packages/renderer/README.md` 重写了 agent 产物那一节（含"人读那份解释、AI 那份定位"
+的划分、TSV 的实测理由、以及 `class-derived` 和 `boundary:` 两处"本可以编造但没有"）；
+`packages/skill/README.md` 记下了交付通道曾经断掉这件事。
+
+### 文档收尾（已完成）
+
+**更正上一条的判断**：我当时用 90 分钟的 mtime 窗口去查，得出"docs agent 没留下半成品"。
+错了——它在挂掉之前**已经把英文和 7 个译文都写完了**，只是工作发生在更早。
+教训：判断一个 agent 做到哪一步，要看**产物内容**，不要看 mtime 窗口。
+
+真正的缺口在别处：`boundary:` 边和 `nCalledBy` 计入跨包调用方是**在文档写完之后**才加的，
+所以文档还在说 calls.tsv"只含已解析的边"——现在是错的。已补：
+- `reference/artifacts.mdx` ×8：文件清单行、`symbols.tsv` 表头（补两行 nCalledBy 说明）、
+  `calls.tsv` 真实表头，以及新增一节**「边界边，以及为什么 monorepo 需要它们」**
+  （带实测数字：3565 条边里 1063 条是边界边、284 条指向 `@handbook/core`、
+  `checkLanguage` 曾显示零调用方）。
+- `guides/agent-skill.mdx` ×8、`guides/rendering.mdx` ×8：过期的"resolved call edges"描述，
+  以及第 5 步补上"包括在别的包里的调用方，它们以 `boundary:<specifier>` 行出现"。
+
+改译文时用**结构定位**（符号表围栏到下一个 `###` 之间整段替换），不靠我记得的措辞——
+第一次尝试按猜的原文匹配，6 个语种全部 MISS。另外 hi 那条一度没匹配上，
+因为我在匹配串里写了日文句号 `。` 而原文是天城文句号 `।`。
+
+### 踩到并修掉的 MDX 陷阱
+
+日文那段以 `import を通じて…` 开头 → **MDX 把行首的 `import` 当成 ESM 语句**交给 acorn，
+报 `Could not parse import/exports with acorn` + `Unexpected character '、'`。
+报错只给行号，完全不提示原因是**句子的第一个词**，而且只在构建时出现——
+译文可以通过全部结构检查却把站点搞挂。
+
+已在 `docs/scripts/check-translations.mjs` 加守卫：非围栏行以 `import`/`export` 开头
+且后面不接标识符/`{`/`*`/引号时报错，并提示改写。
+非空洞验证：把原写法放回去 → 报
+`artifacts.ja.mdx:361: a paragraph starting with "import" is parsed as an ESM statement`。
+
+**另一个坑**：根 prettier 和 `docs/` 自己的 prettier 配置**不一致**。我先用 docs 的格式化，
+`pnpm check` 的 `prettier --check .` 就红了 6 个文件。以**根配置**为准，改完后两边都过。
+
+### 最终验收（本轮）
+
+- `pnpm check` **1750 测试全绿**，覆盖率下限无一下调
+- `docs` 构建 **358 页**
+- `check-translations` **238 页**结构一致 + locale 覆盖检查
+- `smoke-cli.sh` **86/86**（含 4 条真实 SIGINT 断言）
+- `pnpm demo` 全流程通过，skill 真的发出 agent 索引
+
+### H12 的两个后续（都是我自己引入的问题）
+
+**1. 认证绕过**（studio agent 发现，已修）。我的守卫用**原始 `req.url`** 做
+`startsWith('/api/')`，而路由用 `new URL().pathname`。于是 `/./api/repos`、
+`//evil/api/repos`、`/%2e/api/repos`、`/\evil/api/repos` 全都能到达 `/api/repos`
+而没有一个以 `/api/` 开头——**整个 API 无 token 应答**。已改成一次解析、一个 pathname、
+一个判断。教训：任何"路径前缀判断"必须和路由用**同一个**解析结果，否则两者之间的缝隙就是洞。
+
+**2. 手册预览被我打死了**（我发现并修）。渲染出的手册挂在
+`/api/repos/<name>/handbook/...` 下，UI 用 `<iframe src=...>` 加载它——
+而 **iframe 导航带不了 `Authorization` 头**。加上 agent F 把 `?token=` 收窄到只剩 SSE，
+预览就是纯 401。注意：`?token=` 也**救不了**——手册页面内部还会相对加载
+`search-index.js`、图片等子资源，那些同样带不了任何凭据。
+
+正确机制是 **cookie**：浏览器对导航和子资源会自动带上。服务 shell 时
+`Set-Cookie: hb_token=…; Path=/; SameSite=Strict; HttpOnly`。
+`HttpOnly` 让脚本读不到（meta tag 是给页面自己的 `fetch` 用的），
+`SameSite=Strict` 加上已有的 Host/Origin 检查构成 CSRF 防线。
+
+**顺带修了一个真实的越权路径**（studio agent 报的跨界项）：手册 HTML 与 UI **同源**，
+而手册是从**任意源仓库**构建的、散文由模型读那个仓库写出——所以它的 HTML 不是可信输入。
+一段活下来的脚本可以 `fetch('/')` 把 token 从 meta tag 里读走。
+新增 `HANDBOOK_CSP`，关键是 **`connect-src 'none'`**：脚本就算跑起来也**发不出任何东西**。
+`script-src` 必须保留 `'unsafe-inline'`（内联是手册的立身之本——双击即开、无服务器无构建）
+和 `'self'`（多页渲染把搜索索引单独放成 `search-index.js`）。
+
+实测（真浏览器 CDP）：手册在 iframe 里正常渲染（2398 字内容、无 401），
+而从手册页面内 `fetch('/')` → `TypeError: Failed to fetch`（被 CSP 拦死）。
+studio 测试 **85 → 102**。
 
 ### 仍可继续（非阻塞）
 - `logLevel: debug` 目前几乎无输出——若要它有用，需要在 pipeline 里补 `.debug()` 调用点。
@@ -687,3 +997,149 @@ usageMetadata 计量；十种畸形响应必须失败而非返回 `''`；Gemini 
 - full 层（手写适配器）：python, typescript(含 js/jsx/mjs/cjs), go, rust, shell, java, csharp, cpp(含 C), ruby, php, swift, dart, solidity
 - generic 层（配置驱动 `GENERIC_LANGUAGES`）：kotlin, scala, zig, objc, ocaml
 - 已知坑：swift 语法在 V8≥13 会 abort（适配器在 discovery 阶段拒绝并提示 `--liftoff-only`）；shell 含 `case` 的脚本被跳过
+
+## 收尾五项（用户："都做完吧"）
+
+| # | 项 | 状态 |
+|---|---|---|
+| 1 | 陈旧卡片不淘汰（真 bug） | ✅ 我做完 |
+| 2 | 272 个文件未提交 + `check:all` 未跑 | ⏳ 等两个 agent 收工 |
+| 3 | SSE 写入无背压 | ✅ agent 做完 |
+| 3b | Studio render/skill/validate 对话框无真浏览器测试 | ✅ 同一个 agent 做完 |
+| 4 | IR 没有类型节点（`symbols.tsv` 只有函数） | 🔄 agent |
+| 5 | `logLevel: debug` 几乎无输出 | ✅ 我做完 |
+
+### 第 1 项：卡片淘汰
+
+`WorkDir.evictCardsOutside(keep)` + 在 cards pass 收尾处调用。
+实测本仓库 work dir：**182 → 180 张卡片**，清掉 `cli/src/args.ts` 和它的测试
+（被 config 重构删掉的文件）。
+
+**设计上最容易搞错的一点**，写进注释了：键必须是 `files`（图里的全量文件集），
+**不是** `todo`（`onlyFiles` 窄化后的 resync 子集）。用错会删掉整个手册并报告成功。
+`files` 之所以权威：phase 1 是走源码树建图的，被删的文件不在图里。
+
+我一度加了 `if (!options.onlyFiles)` 的门禁，后来**去掉了**——`files` 本来就是全量集，
+门禁不但多余，还会让 resync pass 永不淘汰（删掉的文件卡片要等到下次全量跑才消失）。
+
+非空洞验证的教训：门禁在时，把它改成 `if (true)` **17 条测试全过**——
+说明我那条"子集不会误删"的测试根本没测到门禁。真正咬得住的做法是把
+`files` 换成 `todo`（那才是会毁掉手册的写法），这时该条测试单独变红。
+**一个测试要能区分正确实现和最危险的错误实现，而不是区分"有代码"和"没代码"。**
+
+### 第 5 项：debug 日志
+
+实测起点：`-v` 跑一次 analyze 只产出 **1 行** debug（`[env] loaded from .env`）。
+
+补了两处，都是排查时最先要看的：
+- **LLM 每次调用**：`POST <url> model=… prompt=…ch max_tokens=…` 和 `<status> in …ms`。
+  URL 记，**key 永不记**（key 在 headers 里，而 headers 故意不进这行）。
+  为什么是这两个数：慢和贵都由它们解释，而别处看不到——`usage()` 只报总量。
+- **启动时的有效配置**：每个设置的值 + **来源**（`--source` / `HANDBOOK_X` /
+  `路径:keyPath` / `default`）。这是"它到底用的是我以为的那个设置吗"的答案，
+  而 `handbook config` 只能回答**另一次调用**的情况（不同 cwd、不同 env、或者文件已被改过）。
+
+两个坑：
+1. `logLevel` **没有对应的 flag**（只走 env/config），所以我最初传 `opts.logLevel` 永远是
+   undefined——`HANDBOOK_LOG_LEVEL=debug` 到不了这行，而 `-v` 恰好能用。
+   改成让 `resolveOrThrow` 用**它刚解析出来的值**建 logger。
+   半能用比不能用更糟，因为它看起来是对的。
+2. 摘要里 `logLevel` 一度显示 `info`，而那次运行明明在 debug 输出——
+   因为 `-v` 是在解析**之后**覆盖的。这是整行里读者最会立刻怀疑的一个字段，
+   一个字段不可信整行就不可信。改成显示实际生效的值，来源标 `-v/-q`。
+   `-v`/`-q` 是顶层 flag、解析前已知，所以直接传进来；
+   没有给 `Logger` 接口加 `.level`——那会弄坏测试里所有手写的假 logger。
+
+实测：`-v` 和 `HANDBOOK_LOG_LEVEL=debug` 两条路都生效；
+`OPENAI_API_KEY=sk-do-not-print-me-12345` 在输出里出现 **0 次**，摘要里是 `llmApiKey=***`。
+
+### 第 3 项：SSE 背压
+
+上一轮的结论是"真问题，但我造不出确定性的离线测试，而任务书要求先证明再修"。
+测试是能造出来的：**服务器和测试在同一个进程里**，所以直接读服务器自己的
+`res.writableLength` / `writableNeedDrain` 就行；客户端用 `node:net` 裸 socket 发请求，
+**永不注册 `data` 监听**（socket 默认是 paused 的，内核接收窗口就一直关着）。
+
+先量出来再改：4000 行日志（约 8 MB）灌给一个不读的 socket，
+旧代码在本进程里囤了 **8,030,890 字节**，而且只要 job 还在说话就会一直涨。
+`job.log` 上限 2000 行 × 2000 字符，所以**光是重放**就有 4 MB 一次性写出。
+
+**策略选的是"有界队列 + 丢最旧 + 明确告知"**，另外两个都更糟：
+
+- **暂停生产端**：不行。job 不能因为某个人的标签页在后台就跑得更慢。
+- **断开订阅者**：看起来诚实，其实更坏——这个 UI 把流断开当成**运行结束**
+  （`onerror` 会去 `/api/jobs/<id>` 把抽屉收尾），所以对一个还在跑的 job 挂电话，
+  等于把"还在跑"报成"跑完了"。比留个洞更糟。
+
+洞是**以 `dropped` 事件单独告知**的，不是往日志里插一行合成文本——
+理由和"事实与文案永不混"一样：我们编的一行，对下游来说和 job 真说过的一行分不出来。
+告知落在**洞发生的位置**（下一个存活帧之前），放到流末尾等于不说洞在哪。
+
+两个承重细节：
+
+1. **重放走索引，不入队。** `job.log` 本来就在内存里、本来就有界，
+   随 socket 排空按下标走一遍不额外占内存，也**永不会被丢**。
+   这才是"一个完全健康的订阅者"能拿到全部积压的原因——它的 4 MB 重放
+   在**前 33 行**就踩到 `writableNeedDrain` 了。把重放入队的写法我实测过：
+   2000 行只剩 **545 行**到达。
+2. **progress 合并，不入队。** progress 是快照，旧的一份毫无价值；
+   只留最新一份，运行期高频 tick 就不会把读者真正要看的日志行挤掉。
+
+非空洞验证（4 处变异，逐个确认变红）：
+
+| 变异 | 结果 |
+|---|---|
+| 恢复成原来的裸 `res.write` | `writes` 4000（上限 800）红；单独看内存断言是 8,030,890 > 2,000,000 红 |
+| 队列不淘汰（无界） | "等不到 drop 披露"超时红 |
+| 重放入队而非索引 | 健康订阅者只收到 545/2000 行，红 |
+| `drain` 后不重新 pump | 两条测试红（流永远不恢复） |
+
+UI 侧：`index.html` 加了 `dropped` 监听，八种语言各加 `job.linesDropped`。
+`ui-drift.test.ts` 新增两条把两边钉在一起：服务器发出的**每个**具名 SSE 事件
+（`progress` / `done` / `dropped`）页面都得有监听器，且八个词典都得有这个 key ——
+`t()` 缺 key 时会回显 key 本身，那会在最需要一句话的时候印出 `job.linesDropped`。
+
+### 第 3b 项：render / skill / validate 的浏览器测试
+
+`scripts/browser/studio-dialogs.mjs`，31 条断言，全绿，已接进 CI 的 demo job
+（跟在 `studio-ui` / `studio-progress` 后面）。完全离线：这三个命令本来就不碰模型，
+它们要的输入就是 `pnpm demo` 刚产出的那份手册。
+
+断言都盯**结果**，不是"没崩"：
+
+- 取消勾选的框必须让对应产物**依然不存在**（`handbook.html`），
+  勾上的框必须让产物**出现**（`llms.txt`）。只验证 `true` 的表单，
+  和一个正确的表单长得一模一样——这条是唯一能区分它们的断言。
+- 手打的标题必须出现在重渲染后的 `<title>` 里；手打的 slug 和项目名必须出现在
+  `SKILL.md` 里；语言下拉必须变成请求里的 `bodyLang: zh`。
+- `validate` 先在合法包上验（抽屉是 ice 不是红，文案和 API 判定一致），
+  再删掉 `references/index.md` 让它失败——必须**变红并说出原因**
+  （退出码 2 的语义："工具没坏，答案是不"）。
+- 最后把 repo 从注册表里删掉（另一个标签页/重启的场景），再提交两个对话框：
+  两个都得把 `unknown repo` 送进抽屉。对话框提交后**自己就关了**，
+  所以这条不成立时用户面前什么迹象都没有。
+
+两个夹具都**先复制再用**：work dir 因为这套测试会重渲染、打包、还故意破坏 skill；
+source tree 因为 studio（正确地）拒绝两个 repo 共用一棵树，
+直接注册真路径会让第二次运行撞车，看起来像 UI 坏了而不是测试没清干净。
+
+非空洞验证（11 处变异，全部只改 `index.html`，逐个确认变红）：
+
+| 变异 | 变红条数 |
+|---|---|
+| render 按钮 `data-act` 改名（不可达） | 8 |
+| 四个 checkbox 被硬编码 | 3 |
+| 标题字段被丢掉 | 3 |
+| `render-submit` 的 catch 吞掉错误 | 1（就是那条"必须送进抽屉"） |
+| `skill-submit` 的 catch 吞掉错误 | 1 |
+| skill 的 name/project 被丢掉 | 1 |
+| 失败的 validate 报成中性 `notice` | 1 |
+| validate 的 `disabled` 门禁去掉 | 1 |
+| add 对话框忽略 `fWork` | 16 |
+| `sLang` 被硬编码成 en | 1 |
+| `render-cancel` 变成空函数 | 1 |
+
+第一次跑变异时发现一个测试自身的缺陷：等待就绪的探针用的是
+`[data-act="render-open"]` 存在——而那正是下一条断言要测的控件，
+一处坏掉会连带把"添加仓库"也报红。改成等 `#ovCov`（覆盖率卡片）。
+**就绪探针不能等在它下一条断言要测的那个东西上。**

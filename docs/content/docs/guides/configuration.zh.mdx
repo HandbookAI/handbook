@@ -69,8 +69,9 @@ studio:
   提交进仓库的配置文件无论你在哪里运行命令都能正常工作。
 
 <Callout type="warn" title="机密在这里会被拒收">
-  `llmApiKey` / `OPENAI_API_KEY` 绝不能出现在配置文件里——配置文件是要提交的。加载器会直接拒绝
-  整个文件并说明原因。把它放进 `.env` 或 shell 环境变量。
+  `llmApiKey` / `OPENAI_API_KEY` 和 `llmExtraBody` / `OPENAI_EXTRA_BODY` 绝不能出现在配置文件里——配置文件
+  是要提交的。加载器会直接拒绝整个文件并说明原因。把它们放进 `.env` 或 shell 环境变量。`baseUrl` 提交进去
+  没问题，除非 URL 本身就带着凭据（`https://user:pass@host/v1`）——那出于同样的原因会被拒绝。
 </Callout>
 
 起步时复制一份 `handbook.config.example.yaml`；它由注册表生成，所以列出了真实存

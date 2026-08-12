@@ -23,12 +23,12 @@ handbook skill \
   --agent-dir work/api/handbook/agent
 ```
 
-| Flag                  | Why you want it                                                                 |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `--work` + `--source` | Produces `coverage.json` with a **content hash per file** — the drift signal    |
-| `--agent-dir`         | Ships the locator pages, and adds a disambiguation step to the routing protocol |
-| `--project`           | The human name used in the prose. Defaults to `--name`                          |
-| `--lang zh`           | Chinese **body**. The frontmatter stays English — see below                     |
+| Flag                  | Why you want it                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `--work` + `--source` | Produces `coverage.json` with a **content hash per file** — the drift signal               |
+| `--agent-dir`         | Ships the agent index and its fact tables, and gives the routing protocol its grep recipes |
+| `--project`           | The human name used in the prose. Defaults to `--name`                                     |
+| `--lang zh`           | Chinese **body**. The frontmatter stays English — see below                                |
 
 ## What you get
 
@@ -41,13 +41,23 @@ skills/api/
     index.md                  every subsystem → its files
     registers.md              cross-stage state
     stages/<id>.md            one page per stage
-    agent/how_to_use.md
-    agent/disambiguation.md
+    agent/index.md            lookup recipes, stage table, registers, coverage
+    agent/symbols.tsv         name → path:startLine-endLine
+    agent/files.tsv           path → stage, role, purpose
+    agent/calls.tsv           call edges (callee located, or boundary:<specifier>)
+    agent/stages/<id>.md      second hop per stage
     coverage.json             file → stage + sha256
 ```
 
 The package is **self-contained and shareable**, and it never embeds source code. It ships
 the map, not the territory.
+
+**Two audiences, one package.** `references/` is the human handbook — it explains.
+`references/agent/` locates: it answers "where is `sendPayment` defined" in one grep, which
+no amount of prose does. They are not two renderings of the same text, and the agent side no
+longer copies the prose side; where an agent needs the explanation, the stage page links to
+it. Before `--agent-dir` existed as a shipping route the whole index was generated and then
+never delivered — it now goes through the product's primary channel.
 
 ## The SKILL.md contract
 
@@ -74,7 +84,10 @@ The body is a numbered protocol:
 2. Route through `references/index.md` — the stage index maps every subsystem to its files.
 3. Open only the relevant `references/stages/<id>.md` pages.
 4. Check `references/registers.md` for cross-cutting state — invaluable for fan-out changes.
-5. _(with `--agent-dir`)_ Disambiguate when a term is ambiguous.
+5. _(with `--agent-dir`)_ Grep the fact tables instead of guessing: `symbols.tsv` turns a
+   name into `path:startLine-endLine`, `calls.tsv` turns it into its callers — including the
+   ones in other packages, which arrive as `boundary:<specifier>` rows.
+   `references/agent/index.md` lists every recipe.
 6. **`read_file` the actual source at every cited path before proposing or making changes.**
 
 And its first line says the thing that matters most:
@@ -162,8 +175,9 @@ handbook plan --source ~/code/api --handbook skills/api/references \
 - **`--out` must not be the handbook directory, or an ancestor of it.** The build starts
   by wiping `--out`; that would delete the very thing being packaged and then quietly
   produce an empty skill.
-- **Locator pages ship as a pair or not at all.** `SKILL.md` must never route to a file
-  that is not there.
+- **The agent index and its fact tables ship as a set or not at all.** `SKILL.md` must never
+  route to a file that is not there, so a `references/agent/` missing any of `index.md`,
+  `symbols.tsv`, `files.tsv` or `calls.tsv` is refused rather than shipped half-built.
 - **The register page always exists**, even for a handbook with zero registers, because a
   stable reference layout is part of the contract.
 

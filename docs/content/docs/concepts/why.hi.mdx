@@ -54,12 +54,13 @@ _नहीं_ है जिस पर agent को अमल करना च�
 
 ### यह facts और prose को construction से ही अलग रखता है
 
-|                                           | कहाँ से आता है               | क्या यह ग़लत हो सकता है?                  |
-| ----------------------------------------- | ---------------------------- | ----------------------------------------- |
-| Files, functions, line ranges, call edges | tree-sitter                  | नहीं — यह parse है                        |
-| कौन-सी calls resolve **नहीं** हो सकीं     | tree-sitter                  | नहीं — वे quarantine होती हैं, guess नहीं |
-| Stage structure                           | LLM, फिर यांत्रिक validation | संरचना में नहीं; judgment में हाँ         |
-| Purpose, walkthroughs, overviews          | LLM                          | हाँ — और उस पर prose का label है          |
+|                                           | कहाँ से आता है               | क्या यह ग़लत हो सकता है?                      |
+| ----------------------------------------- | ---------------------------- | --------------------------------------------- |
+| Files, functions, line ranges, call edges | tree-sitter                  | नहीं — यह parse है                            |
+| कौन-सी calls resolve **नहीं** हो सकीं     | tree-sitter                  | नहीं — वे quarantine होती हैं, guess नहीं     |
+| कौन-सी files parse **नहीं** हो सकीं       | tree-sitter                  | नहीं — वे disclose होती हैं, गिराई नहीं जातीं |
+| Stage structure                           | LLM, फिर यांत्रिक validation | संरचना में नहीं; judgment में हाँ             |
+| Purpose, walkthroughs, overviews          | LLM                          | हाँ — और उस पर prose का label है              |
 
 यह अलगाव **package boundary** से लागू होता है, convention से नहीं: analyzer, renderer,
 skill packager और patcher LLM package पर निर्भर ही नहीं करते।
@@ -73,6 +74,9 @@ skill packager और patcher LLM package पर निर्भर ही न�
 - जो call analyzer resolve नहीं कर सका, वह अपनी category और raw text के साथ
   `dropped-calls.json` में जाती है। उसे कभी किसी plausible edge के रूप में guess नहीं किया
   जाता।
+- जो file analyzer पढ़ नहीं सका, या सिर्फ़ आंशिक parse कर सका, वह अपने reason के साथ
+  `scan-coverage.json` में जाती है। उसे कभी covered नहीं गिना जाता — जिस file को किसी ने
+  खोला ही नहीं, वह "बिना functions वाली file" नहीं होती।
 - Config-driven engine से analyze हुई language का **overview में नाम लिया जाता है**, ताकि
   "best-effort call relations" को "exact" न पढ़ लिया जाए।
 - हार मान चुका planner run non-zero exit करता है, ताकि कोई script उसके माफ़ीनामे को plan न

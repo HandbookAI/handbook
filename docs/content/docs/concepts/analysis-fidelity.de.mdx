@@ -109,7 +109,9 @@ reißen.
 wirft — ihr externer Scanner importiert ein Symbol, das der gepinnte WASM-Linker nicht
 bereitstellt. Da `case` allgegenwärtig ist, betrifft das die meisten nicht-trivialen
 Skripte (gemessen an `nvm`: alle 6 Dateien, alle 122 Funktionen) — **Shell-Abdeckung
-also als partiell behandeln**. Das Scan-Log nennt die Ursache.
+also als partiell behandeln**. Das Scan-Log nennt die Ursache, und jedes übersprungene
+Skript steht einzeln mit `reason: "unparsable"` in `phase1/scan-coverage.json` — eine
+Lücke, die sich aufzählen lässt, statt geraten werden zu müssen.
 
 Beide Fälle werden während des Scans über den Logger gemeldet. Mit `-v` ausführen, um sie
 zu sehen.

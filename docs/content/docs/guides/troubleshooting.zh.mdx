@@ -1,0 +1,290 @@
+---
+title: '疑难排查'
+description: '实际会出问题的那些事、报错是什么意思，以及该拿它怎么办。'
+---
+
+<Callout title="每次都从这里开始">
+```bash
+handbook config --command <the-command-that-failed>
+```
+它会打印出当前生效的环境、加载过的每一个 `.env` 文件、解析到的配置文件，以及每项设置
+一行，并附上**这个值是从哪来的**。大多数“它没理会我的设置”的问题，看那张表十秒钟就有
+答案。
+</Callout>
+
+## 配置
+
+### `source is required: pass --source, set HANDBOOK_GENERATE_SOURCE, or add it to handbook.config.yaml`
+
+就是字面意思——而且它把每一种提供方式都列了出来。必填与否是在所有层级都查过之*后*才
+检查的，所以这条消息意味着它们全都没有。
+
+### 我的环境变量被忽略了
+
+```bash
+handbook config --command generate | grep -i <setting>
+```
+
+`FROM` 那一列会告诉你实际是哪一层赢了。常见原因：
+
+- 有一个**标志**盖过了它。标志压过一切。
+- 你设的是扁平写法，但存在一个**限定了作用域**的——`HANDBOOK_GENERATE_DETAIL` 赢过
+  `HANDBOOK_DETAIL`。
+- 你设了一个**空值**。空值视为未设置，这是刻意的。
+- 你是在另一个目录下运行的：**`.env` 级联只看 cwd**，不像 `handbook.config.yaml` 那样
+  靠向上查找来发现。
+
+### `llmApiKey must not appear in a config file (it gets committed)`
+
+把它挪到 `.env` 或 shell 环境里。这个拒绝是刻意的。
+
+### `node: /some/path.env: not found`，以及退出码 9
+
+这根本不是 Handbook 的错误。Node >= 20.6 有它自己的 `--env-file` 标志，而且会预先扫描
+整条命令行去找它，于是在 Handbook 启动**之前**就因为路径不存在而死掉。改用那个变量，
+没有任何东西能拦截它：
+
+```bash
+HANDBOOK_ENV_FILE=/some/path.env handbook config
+# handbook: error: ENOENT: no such file or directory, open '/some/path.env'
+```
+
+只要文件确实存在，这个标志就没问题。
+
+### `handbook.config.yaml: must contain a mapping of settings, not a list or a scalar`
+
+文件能按 YAML 解析，但顶层不是一个对象。检查第一个键的缩进。
+
+## 分析
+
+### `no analyzable files found under <dir>`
+
+`--source` 指到了一个分析器认不出任何东西的地方。检查有没有拼错，也检查一下你指的是
+源码根目录，而不是一个装着构建产物的目录。
+
+```bash
+handbook analyze --source $REPO --work $WORK -v      # see the per-language scan
+```
+
+### 文件数远低于预期
+
+带 `-v` 跑一遍，读那些 `[scan]` 行。可能的原因：
+
+- 整门语言都不在列表里 → 见[语言支持](/docs/reference/languages)。
+- 你的代码在共用跳过清单里的某个目录下（`vendor`、`build`、`dist`、`out`、`target`
+  ……）。把 `--source` 指向真正的源码根目录。
+- Node ≥ 24 上的 Swift → 适配器在发现阶段就拒绝了。用 `node --liftoff-only`。
+
+### 文件数远高于预期
+
+你扫到了 `node_modules`、一棵 vendored 目录树，或者生成的代码。常见的那些目录会自动
+跳过；其余的就需要一个更窄的 `--source`。
+
+### `edgesDropped` 大得吓人
+
+对动态语言来说很正常，而且**不是**错误——每一个被丢弃的调用都在
+`phase1/dropped-calls.json` 里归了类，而不是靠猜：
+
+```bash
+jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
+```
+
+generic 层级的语言按设计会丢得更多。见[分析保真度](/docs/concepts/analysis-fidelity)。
+
+### 我确定存在的某个文件在手册里没有页面
+
+先去问 Phase 1——一个从没变成事实的文件，也永远不会变成页面：
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | 含义                                   | 怎么办                                                            |
+| ------------ | -------------------------------------- | ----------------------------------------------------------------- |
+| `unreadable` | 读取失败——权限位、悬空的符号链接、竞态 | 修好文件或它的权限位，然后重跑 `analyze`                          |
+| `unparsable` | 语法抛错，或者没有返回语法树           | 通常是含 `case` 的 shell；见[语言支持](/docs/reference/languages) |
+| `partial`    | 解析出来了，但带着语法错误             | 页面是有的，但**不完整**——自己去读那个文件                        |
+
+`unreadable` 和 `unparsable` 的文件会被刻意从 `graph.json` 的 `scannedFiles` 中移除，
+这样就不会有卡片去写一个解析器根本没读过的文件，`_coverage.json` 也无法把它算作已描述。
+`partial` 的文件保留自己的页面：里面的事实是真的，只是没有全部。
+
+`files` 数组为空，意思是一切都解析成功了。如果这份工件干脆不存在，说明这个工作目录早于
+这项记录——重跑 `analyze`。
+
+### Swift 把进程杀掉了
+
+```text
+Fatal process out of memory: Zone
+```
+
+内置的 Swift 语法在 V8 ≥ 13 上会 abort。适配器在这样的运行时上会在发现阶段就拒绝，而
+不是任由它发生——如果你看到了 abort 本身，说明你走的是一条绕开了它的代码路径。改用：
+
+```bash
+node --liftoff-only $(which handbook) analyze --source $REPO --work $WORK
+```
+
+## 生成
+
+### `phases 2/3 need an LLM client (set OPENAI_API_KEY or pass --phase 1)`
+
+没有解析到 API key。看 `handbook config --command generate`——`llmApiKey` 那一行会写着
+`— unset (required)`。对于不需要 key 的本地端点，显式设 `OPENAI_API_KEY=EMPTY`。
+
+### 端点返回的是 HTML
+
+```text
+the endpoint returned an HTML page rather than JSON — this is usually a proxy or gateway login page
+```
+
+有个企业代理拦下了请求，并用一个 `200` 返回了登录页。修好代理，或者把 `--base-url` 指
+向一个真正能到达的地址。
+
+### 卡片回来是空的
+
+看看模型到底说了什么：
+
+```bash
+ls work/api/phase2/cards/_rejected/
+cat work/api/phase2/cards/_rejected/*.txt | head -50
+```
+
+那些是没能产出可用卡片的回复。常见原因：模型太小、跟不上 schema，模型拒绝作答，或者
+回复被截断。试试 `--detail brief`、更小的 `--read-batch-size`，或者更强的 `--model`。
+
+哪些文件最后没有文字：
+
+```bash
+jq '.missing' work/api/phase2/cards/_coverage.json
+```
+
+### 限流报错，或者跑得非常慢
+
+先**调低** `--llm-concurrency`。撞上限流还更用力地重试，只会把同样的 token 花两遍。
+
+```bash
+handbook generate --source $REPO --work $WORK \
+  --llm-concurrency 4 --llm-retries 8 --llm-retry-backoff 5
+```
+
+### 阶段划分毫无道理
+
+```bash
+handbook generate --source $REPO --work $WORK --phase 2b,2c,3 --synth-mode doctor
+```
+
+actor–critic 循环存在的意义正是于此。如果还是不行，就自己写一份 `skeleton.yaml`，用
+`--skeleton` 传进去。
+
+### `work dir was generated with strategy "member" but --strategy file was given`
+
+刻意为之。重跑 phase 2b 来切换策略：
+
+```bash
+handbook generate --source $REPO --work $WORK --strategy file --phase 2b,2c,3
+```
+
+### `another handbook run is already using <work>`
+
+一把锁。要么确实有一次运行正在进行——包括 Studio 作业——要么是上一次运行硬崩了。等一
+等，或者在确认没有东西在跑之后，删掉消息里指名的那个锁目录。
+
+## 渲染与打包
+
+### `<dir> is not a rendered handbook (missing index.md)`
+
+`--handbook` 必须指向**渲染后**的目录（`<work>/handbook`），而不是工作目录。
+
+### `outDir must not be the handbook directory or an ancestor of it`
+
+技能包的构建以清空 `--out` 开始。把它指向手册，就会把输入删掉。用一个单独的目录：
+`--handbook work/api/handbook --out skills/api`。
+
+### `validate` 报告哈希已陈旧
+
+符合预期：打包之后源码往前走了。把手册滚动到最新：
+
+```bash
+handbook resync --case cases/latest --work work/api
+handbook skill --handbook work/api/handbook --out skills/api --name api \
+  --work work/api --source $REPO --agent-dir work/api/handbook/agent
+```
+
+## 规划与应用
+
+### `planner produced no usable plan (fabrication) after N turn(s)`
+
+模型凭空捏造了 `## Tool result` 小节——它是在基于想象出来的文件内容推理。那次运行的任
+何产物都不可信。**换更强的模型。**
+
+### `planner reached the turn limit without producing a plan`
+
+调高 `--max-turns`，或者把请求收窄。含糊的请求会让规划器到处探索，而不是定位。
+
+### `apply` 报 `no-match`
+
+计划写下之后，代码变了。重跑 `plan`。**不要**手工改锚点让它匹配上——锚点就是那道安全
+机制。
+
+### `apply` 报 `ambiguous`
+
+`old` 那段文本出现了不止一次。重跑 `plan`，或者手工编辑计划，在 `old` 里多带上一些周
+围的上下文，让它唯一。
+
+### `EDIT 1: content between the fenced blocks`
+
+`old` 或 `new` 的内容里含有一个代码围栏，把块提前关闭了。用**更长**的围栏来开启这些块：
+
+`````markdown
+### EDIT 1
+
+- file: `README.md`
+
+````old
+```bash
+echo hi
+```
+````
+
+````new
+```bash
+echo hello
+```
+````
+`````
+
+### `rollback` 拒绝了某个文件
+
+它当前的哈希和打完补丁时的哈希对不上——有人在打完补丁之后编辑过它，恢复会毁掉那份工
+作。先看清楚改了什么，确定之后再用 `--force`。
+
+## Studio
+
+### 打开 Studio 时出现 `403`
+
+你用的不是 `localhost`。CSRF 防护检查的是 `Host` 请求头，所以 LAN IP 或容器名会**按设
+计**被拒绝。用 `http://localhost:4860`，或者开一条 SSH 隧道：
+
+```bash
+ssh -L 4860:localhost:4860 user@host
+```
+
+### `repo "x" already has a running job`
+
+同一个仓库同一时间只有一个作业，因为这些工件承受不了并发写入。等一等，或者在 UI 里取
+消正在运行的作业。
+
+## 还是卡住了
+
+```bash
+handbook <command> -v                      # debug logging
+handbook config --command <cmd> --json     # full resolved configuration
+cat work/api/run-manifest.json             # what the last good run did
+ls work/api/phase2/cards/_rejected/        # what the model actually replied
+jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
+```
+
+如果它能复现，上面这些工件正是一份 bug 报告需要的东西。

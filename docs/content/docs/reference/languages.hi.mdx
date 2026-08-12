@@ -96,6 +96,10 @@ Scan log यह साफ़-साफ़ कहता है, और कार�
 merely unresolved — install.sh, nvm.sh, …
 ```
 
+उनमें से हर फ़ाइल का नाम `phase1/scan-coverage.json` में `reason: "unparsable"` के साथ
+अलग-अलग भी दर्ज होता है, और उसे graph की `scannedFiles` से बाहर रखा जाता है — ताकि वह चूक
+चुपचाप छिपी हुई नहीं, बल्कि _दिखती_ हुई चूक बने।
+
 </Callout>
 
 ## हर जगह क्या छोड़ा जाता है
@@ -131,6 +135,7 @@ handbook analyze --source ~/code/repo --work work/x -v
 ```bash
 jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
 jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+jq '.metadata.byReason, .files' work/x/phase1/scan-coverage.json  # what could not be parsed at all
 ```
 
 ## एक भाषा जोड़ना

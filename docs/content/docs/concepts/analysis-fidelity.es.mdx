@@ -108,7 +108,9 @@ nombra el remedio (`node --liftoff-only`), en lugar de tumbar tu ejecución ente
 lanza una excepción — su escáner externo importa un símbolo que el enlazador WASM fijado
 no proporciona. Como `case` es omnipresente, esto afecta a la mayoría de los scripts no
 triviales (medido sobre `nvm`: los 6 archivos, las 122 funciones), así que **trata la
-cobertura de shell como parcial**. El log de escaneo nombra la causa.
+cobertura de shell como parcial**. El log de escaneo nombra la causa, y cada script omitido queda listado
+individualmente en `phase1/scan-coverage.json` con `reason: "unparsable"`: un hueco que
+puedes enumerar, no uno que tengas que adivinar.
 
 Ambos casos se informan a través del logger durante el escaneo. Ejecuta con `-v` para
 verlos.

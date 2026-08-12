@@ -108,7 +108,9 @@ adaptador **recusa na descoberta** em um runtime desses e nomeia o remédio
 lança uma exceção — seu scanner externo importa um símbolo que o linker WASM travado não
 fornece. Como `case` é onipresente, isso atinge a maioria dos scripts não triviais
 (medido no `nvm`: todos os 6 arquivos, todas as 122 funções), então **trate a cobertura
-de shell como parcial**. O log de varredura nomeia a causa.
+de shell como parcial**. O log de varredura nomeia a causa, e cada script pulado fica listado individualmente em
+`phase1/scan-coverage.json` com `reason: "unparsable"` — uma lacuna que você pode
+enumerar, não uma que precise adivinhar.
 
 Ambos são reportados pelo logger durante a varredura. Rode com `-v` para vê-los.
 

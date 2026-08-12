@@ -75,6 +75,9 @@ baut einen typisierten Aufrufgraphen: Funktionen, Methoden, über
 verlassen, und Aufrufe, die nicht aufgelöst werden konnten — in eine eigene Datei in
 Quarantäne gestellt, niemals geraten.
 
+Dateien, die es gar nicht lesen oder parsen konnte, landen genauso in Quarantäne — eine
+Lücke, die sich aufzählen lässt, statt einer, die stillschweigend verschwindet.
+
 **Diese Schicht berührt nie ein LLM.** Zweimal ausführen, zweimal denselben Graphen bekommen.
 
 ### 2. Prosa liegt über den Fakten — und ist als solche gekennzeichnet
@@ -107,7 +110,7 @@ diesen Index, liest an jeder gefundenen Adresse den echten Quelltext und erzeugt
 | Markdown-Handbuch — Überblick, Etappenindex, eine Seite pro Etappe, Zustandsregister-Tabelle                  | Menschen |
 | Mehrseitige HTML-Site — Sticky-Inhaltsverzeichnis, Breadcrumbs, Theme-Umschalter, funktioniert über `file://` | Menschen |
 | Eine eigenständige HTML-Seite, die sich per E-Mail verschicken lässt                                          | Menschen |
-| Agenten-Locator-Index — Zuständigkeit, Einstiegskonzepte, Zustand, Beispiele, Co-Change-Hinweise              | Agenten  |
+| Agenten-Index — Symbol → `path:line-line`, Datei- und Aufruftabellen, grep-Rezepte                            | Agenten  |
 | `llms.txt` + `llms-full.txt`                                                                                  | Agenten  |
 | Ein SKILL-Paket mit einem Content-Hash pro Datei, damit Drift erkennbar ist                                   | Agenten  |
 

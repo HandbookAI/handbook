@@ -73,6 +73,9 @@ Handbook हर source file को [tree-sitter](https://tree-sitter.github.io/)
 नहीं हो सकीं — उन्हें अपनी अलग file में quarantine किया जाता है, उनके बारे में कभी अंदाज़ा नहीं
 लगाया जाता।
 
+जिन files को यह पढ़ ही नहीं सका या parse ही नहीं कर सका, वे भी इसी तरह quarantine होती
+हैं — ऐसा gap जिसे आप गिन सकते हैं, न कि जो चुपचाप ग़ायब हो जाए।
+
 **यह layer कभी किसी LLM को नहीं छूती।** दो बार चलाइए, दोनों बार वही graph मिलेगा।
 
 ### 2. Prose facts के ऊपर की परत है, और labelled है
@@ -103,7 +106,7 @@ Output आपके code की summary नहीं है। यह एक ऐ
 | Markdown handbook — overview, stage index, हर stage का एक page, state-register table  | इंसान     |
 | Multi-page HTML site — sticky TOC, breadcrumbs, theme toggle, `file://` पर भी चलती है | इंसान     |
 | एक self-contained HTML page, जिसे आप email कर सकते हैं                                | इंसान     |
-| Agent locator index — duty, entry concepts, state, exemplars, co-change hints         | agents    |
+| Agent index — symbol → `path:line-line`, file और call tables, grep recipes            | agents    |
 | `llms.txt` + `llms-full.txt`                                                          | agents    |
 | हर file के content hash वाला SKILL package, ताकि drift detect किया जा सके             | agents    |
 

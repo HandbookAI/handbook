@@ -5,17 +5,18 @@ description: 'Qué partes de un handbook son hechos parseados, cuáles son salid
 
 ## La versión corta
 
-| Afirmación                             | Fuente                         | ¿Puede estar mal?                                        |
-| -------------------------------------- | ------------------------------ | -------------------------------------------------------- |
-| Este archivo existe en esta ruta       | parser                         | **No**                                                   |
-| Esta función está en las líneas 88–104 | parser                         | **No**                                                   |
-| Esta firma es `send(self, url, data)`  | parser                         | **No**                                                   |
-| Esta función llama a aquella           | parser                         | **No** en el nivel full; best-effort en el nivel generic |
-| Estas llamadas no pudieron resolverse  | parser                         | **No** — se listan, no se adivinan                       |
-| Este archivo pertenece a esta etapa    | LLM, validado mecánicamente    | Como juicio, sí. Estructuralmente, no                    |
-| El propósito de este archivo es "…"    | LLM                            | **Sí** — es prosa                                        |
-| Este subsistema funciona como "…"      | LLM                            | **Sí** — es prosa                                        |
-| Este estado fluye por estas etapas     | LLM, sobre ids de etapa reales | **Sí**, aunque los ids de etapa son reales               |
+| Afirmación                                    | Fuente                         | ¿Puede estar mal?                                        |
+| --------------------------------------------- | ------------------------------ | -------------------------------------------------------- |
+| Este archivo existe en esta ruta              | parser                         | **No**                                                   |
+| Esta función está en las líneas 88–104        | parser                         | **No**                                                   |
+| Esta firma es `send(self, url, data)`         | parser                         | **No**                                                   |
+| Esta función llama a aquella                  | parser                         | **No** en el nivel full; best-effort en el nivel generic |
+| Estas llamadas no pudieron resolverse         | parser                         | **No** — se listan, no se adivinan                       |
+| Estos archivos no se pudieron leer ni parsear | parser                         | **No** — se listan, no se cuentan como cubiertos         |
+| Este archivo pertenece a esta etapa           | LLM, validado mecánicamente    | Como juicio, sí. Estructuralmente, no                    |
+| El propósito de este archivo es "…"           | LLM                            | **Sí** — es prosa                                        |
+| Este subsistema funciona como "…"             | LLM                            | **Sí** — es prosa                                        |
+| Este estado fluye por estas etapas            | LLM, sobre ids de etapa reales | **Sí**, aunque los ids de etapa son reales               |
 
 **La regla que sigue todo el diseño:** un agente se orienta con la mitad superior de esa
 tabla y lee el código fuente real antes de actuar. El paquete SKILL lo dice en su primera
@@ -72,6 +73,10 @@ Los rechazos son la parte estructural de esta herramienta. En orden de prioridad
 
 - Una llamada que el analizador no puede resolver va a `dropped-calls.json`. Nunca se
   adivina.
+- Un archivo que el analizador no puede leer ni parsear va a `scan-coverage.json` con su
+  motivo, y se queda **fuera** de `scannedFiles`. Nunca se describe como un archivo vacío.
+  Un archivo que solo parseó a medias sí se queda, y aun así se lista — sus hechos son
+  reales pero incompletos, y conviene que sepas qué páginas se apoyan en ellos.
 - Un archivo cuya generación de ficha falló recibe una descripción **vacía**, nunca una
   inventada, y queda listado en `_coverage.json`.
 - Un cambio estructural propuesto por el bucle doctor que nombra una etapa inexistente, o
@@ -80,9 +85,16 @@ Los rechazos son la parte estructural de esta herramienta. En orden de prioridad
 
 ### Configuración
 
-- Un secreto (`llmApiKey` / `OPENAI_API_KEY`) **nunca** es un flag de línea de comandos,
-  y se **rechaza** si aparece en un archivo de configuración — porque los archivos de
-  configuración acaban commiteados.
+- Un secreto **nunca** es un flag de línea de comandos, y se **rechaza** si aparece en un
+  archivo de configuración — porque los archivos de configuración acaban commiteados. Dos
+  ajustes son secretos: `llmApiKey` / `OPENAI_API_KEY` y `llmExtraBody` /
+  `OPENAI_EXTRA_BODY` — de formato libre, fusionado en el cuerpo de cada petición, y los
+  gateways sí aceptan autenticación ahí, así que nada permite distinguir un campo de ajuste
+  de una credencial.
+- `llmBaseUrl`, deliberadamente, **no** es un secreto general: un equipo que apunta todos
+  sus checkouts a un mismo gateway compartido tiene un motivo legítimo para commitearlo. Solo
+  se rechaza en un archivo de configuración una URL que lleve credenciales incrustadas
+  (`https://user:pass@host/v1`).
 - Un valor proporcionado pero inválido nunca cae a un valor por defecto. Un typo es un
   error.
 - Un valor vacío se lee como no establecido, así que `HANDBOOK_TITLE=` no puede producir

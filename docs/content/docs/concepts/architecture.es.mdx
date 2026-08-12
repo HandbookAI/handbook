@@ -71,6 +71,7 @@ interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  provenance?: { commit?: string; generatedAt: string };
 }
 ```
 
@@ -84,7 +85,7 @@ manera, ese es todo el contrato que tienes que satisfacer.
 source tree
    │  analyzer — tree-sitter WASM, one adapter per language
    ▼
-phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
    │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
    ▼
 phase2/cards/<rel>.json + _coverage.json
@@ -109,6 +110,23 @@ y escribe solo los suyos, todos validados contra un esquema al leerse, con un ca
 `version`. Cualquier fase puede re-ejecutarse sola. Los crashes se reanudan — las fichas
 se escriben por lote, la narración se cachea por hash de contenido.
 
+### El artefacto humano explica; el artefacto para agentes ubica
+
+Un solo `HandbookModel`, dos salidas con trabajos genuinamente distintos — y esa división
+es el diseño, no un detalle de empaquetado.
+
+Los handbooks en markdown y HTML están escritos para **leerse**: prosa, orden, un hilo
+narrativo. `agent/` está escrito para **hacerle grep**: `symbols.tsv` responde a _"dónde
+está definido `sendPayment`"_ en una sola línea, cosa que ninguna cantidad de prosa
+consigue.
+
+Antes eran la misma prosa en dos formas, y el coste era concreto: el índice para agentes
+salía con **2.1× el tamaño del índice humano sin contener ni una sola ubicación de
+símbolo**, porque el 42% de él era prosa del modelo copiada byte a byte de las páginas
+humanas. Ahora el lado del agente lleva hechos y una línea de prosa recortada por archivo;
+donde hace falta la explicación, cada página de etapa **enlaza** a la página humana en
+lugar de duplicarla.
+
 ## Dentro del analizador
 
 Cada lenguaje implementa un `LanguageAdapter`: `discover`, `analyze` y, opcionalmente,
@@ -128,6 +146,12 @@ Los adaptadores hacen **dos pasadas** por módulo:
 
 **El grafo conservado solo contiene llamados resueltos y con nombre.** Eso es lo que hace
 confiable una arista suya.
+
+La misma regla rige un nivel más arriba, con los archivos enteros. Un archivo que el
+adaptador no pudo leer, cuya gramática lanzó una excepción, o que parseó con errores de
+sintaxis, queda registrado en `scan-coverage.json` junto con su motivo — y los dos primeros
+casos se dejan **fuera** de `scannedFiles`, de modo que ninguna fase posterior pueda
+describir un archivo que el parser nunca llegó a ver.
 
 El **nav-pack** es un resumen de orientación determinista derivado del grafo — agregados
 por directorio, candidatos a punto de entrada, fan-out, subsistemas externos. Es la

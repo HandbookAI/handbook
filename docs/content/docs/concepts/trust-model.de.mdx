@@ -5,17 +5,18 @@ description: 'Welche Teile eines Handbooks geparste Fakten sind, welche Modellau
 
 ## Die Kurzfassung
 
-| Aussage                                       | Quelle                      | Kann sie falsch sein?                              |
-| --------------------------------------------- | --------------------------- | -------------------------------------------------- |
-| Diese Datei existiert unter diesem Pfad       | Parser                      | **Nein**                                           |
-| Diese Funktion steht in den Zeilen 88–104     | Parser                      | **Nein**                                           |
-| Diese Signatur lautet `send(self, url, data)` | Parser                      | **Nein**                                           |
-| Diese Funktion ruft jene auf                  | Parser                      | **Nein** im Full-Tier; Best-Effort im Generic-Tier |
-| Diese Aufrufe ließen sich nicht auflösen      | Parser                      | **Nein** — sie werden aufgelistet, nicht geraten   |
-| Diese Datei gehört zu dieser Etappe           | LLM, mechanisch validiert   | Als Urteil: ja. Strukturell: nein                  |
-| Der Zweck dieser Datei ist „…"                | LLM                         | **Ja** — es ist Prosa                              |
-| Dieses Subsystem funktioniert so: „…"         | LLM                         | **Ja** — es ist Prosa                              |
-| Dieser Zustand fließt über diese Etappen      | LLM, über reale Etappen-Ids | **Ja**, die Etappen-Ids allerdings sind real       |
+| Aussage                                           | Quelle                      | Kann sie falsch sein?                                          |
+| ------------------------------------------------- | --------------------------- | -------------------------------------------------------------- |
+| Diese Datei existiert unter diesem Pfad           | Parser                      | **Nein**                                                       |
+| Diese Funktion steht in den Zeilen 88–104         | Parser                      | **Nein**                                                       |
+| Diese Signatur lautet `send(self, url, data)`     | Parser                      | **Nein**                                                       |
+| Diese Funktion ruft jene auf                      | Parser                      | **Nein** im Full-Tier; Best-Effort im Generic-Tier             |
+| Diese Aufrufe ließen sich nicht auflösen          | Parser                      | **Nein** — sie werden aufgelistet, nicht geraten               |
+| Diese Dateien ließen sich nicht lesen oder parsen | Parser                      | **Nein** — sie werden aufgelistet, nicht als abgedeckt gezählt |
+| Diese Datei gehört zu dieser Etappe               | LLM, mechanisch validiert   | Als Urteil: ja. Strukturell: nein                              |
+| Der Zweck dieser Datei ist „…"                    | LLM                         | **Ja** — es ist Prosa                                          |
+| Dieses Subsystem funktioniert so: „…"             | LLM                         | **Ja** — es ist Prosa                                          |
+| Dieser Zustand fließt über diese Etappen          | LLM, über reale Etappen-Ids | **Ja**, die Etappen-Ids allerdings sind real                   |
 
 **Die Regel, der das ganze Design folgt:** Ein Agent routet über die obere Hälfte dieser
 Tabelle und liest die echte Quelle, bevor er handelt. Das SKILL-Paket sagt das in seiner
@@ -73,6 +74,11 @@ Verweigerungen sind der tragende Teil dieses Werkzeugs. In Prioritätsreihenfolg
 
 - Ein Aufruf, den der Analyzer nicht auflösen kann, wandert nach `dropped-calls.json`. Er
   wird nie geraten.
+- Eine Datei, die der Analyzer nicht lesen oder nicht parsen kann, wandert mit ihrem Grund
+  nach `scan-coverage.json` und bleibt **aus** `scannedFiles` heraus. Sie wird nie als
+  leere Datei beschrieben. Eine nur teilweise geparste Datei bleibt drin und wird trotzdem
+  aufgeführt — ihre Fakten sind echt, aber unvollständig, und Sie sollen wissen, welche
+  Seiten darauf ruhen.
 - Eine Datei, deren Kartengenerierung fehlschlug, bekommt eine **leere** Beschreibung,
   nie eine erfundene, und wird in `_coverage.json` aufgeführt.
 - Eine von der Doctor-Schleife vorgeschlagene Strukturänderung, die eine nicht
@@ -82,9 +88,16 @@ Verweigerungen sind der tragende Teil dieses Werkzeugs. In Prioritätsreihenfolg
 
 ### Konfiguration
 
-- Ein Secret (`llmApiKey` / `OPENAI_API_KEY`) ist **niemals** ein Kommandozeilen-Flag und
-  wird **zurückgewiesen**, wenn es in einer Konfigurationsdatei auftaucht — denn
-  Konfigurationsdateien landen in Git.
+- Ein Secret ist **niemals** ein Kommandozeilen-Flag und wird **zurückgewiesen**, wenn es
+  in einer Konfigurationsdatei auftaucht — denn Konfigurationsdateien landen in Git. Zwei
+  Einstellungen sind Secrets: `llmApiKey` / `OPENAI_API_KEY` und `llmExtraBody` /
+  `OPENAI_EXTRA_BODY` — frei formulierbar, in jeden Anfrage-Body gemischt, und Gateways
+  nehmen Auth-Daten dort durchaus entgegen; nichts kann also ein Tuning-Feld von
+  Zugangsdaten unterscheiden.
+- `llmBaseUrl` ist bewusst **kein** pauschales Secret: Ein Team, das jeden Checkout auf
+  dasselbe gemeinsame Gateway richtet, hat einen legitimen Grund, den Wert zu committen.
+  Nur eine URL mit eingebetteten Zugangsdaten (`https://user:pass@host/v1`) wird in einer
+  Konfigurationsdatei zurückgewiesen.
 - Ein angegebener, aber ungültiger Wert fällt nie auf einen Standard zurück. Ein
   Tippfehler ist ein Fehler.
 - Ein leerer Wert gilt als nicht gesetzt — `HANDBOOK_TITLE=` kann also kein Handbook ohne

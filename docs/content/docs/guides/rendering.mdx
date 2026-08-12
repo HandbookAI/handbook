@@ -1,6 +1,6 @@
 ---
 title: Rendering outputs
-description: Markdown, an HTML site, one self-contained page, the agent locator index and llms.txt — all deterministic, all free to re-run.
+description: Markdown, an HTML site, one self-contained page, the agent index and llms.txt — all deterministic, all free to re-run.
 ---
 
 ```bash
@@ -70,24 +70,42 @@ dependencies of any kind.
 `--agent-site` → `<out>/agent/`
 
 ```text
-how_to_use.md      the agent-side search protocol
-index.md           every stage, as locator blocks
-disambiguation.md  terms that legitimately point at several stages
-<stage-id>.md      one locator page per stage
+index.md         lookup recipes, the stage table, registers, coverage — read whole
+symbols.tsv      name → path:startLine-endLine, kind, stage, nCalledBy, signature
+files.tsv        path → stage, role, nSymbols, purpose[prose]
+calls.tsv        call edges; callee located or boundary:<import specifier>
+stages/<id>.md   second hop: the stage's files and its co-change pairs
 ```
 
-Each stage gets a fixed-schema block: **duty**, **entry concepts**, **state**,
-**exemplar**, **core files**, and **strong co-change**.
+**The human artifact explains; the agent artifact locates.** That is the whole split. The
+markdown handbook above is written to be read; this one is written to be grepped, and it
+carries the one thing the prose pages never did — **where every symbol is**.
 
-Measured across seventeen real repositories, the first five populate on most pages;
-**strong co-change is deliberately the sparsest** — it fires only where a test file sits
+`index.md` is the only file meant to be read whole, and on this repo it is **3.2 KB**. Its
+`## lookup` section is the search protocol itself rather than a link to one, because a recipe
+one hop away is a recipe not followed:
+
+```text
+symbol -> location     grep -m5 "^NAME	" symbols.tsv
+file   -> its symbols  grep "	PATH:" symbols.tsv
+callers of a symbol    grep "	NAME	" calls.tsv
+callees of a symbol    grep "^NAME	" calls.tsv
+file   -> stage, role  grep "^PATH	" files.tsv
+stage  -> its files    read stages/<sid>.md
+```
+
+The tables are TSV, not markdown, because a signature containing `|` — every TypeScript union
+type — would silently corrupt a markdown table. One fact per line survives truncation, and a
+tab anchors a whole column.
+
+Prose is reduced to **one clipped line per file, in the last column**, so a consumer that
+clips long lines eats prose before it eats a path. The full explanation stays in the human
+page, which each stage page links to.
+
+**Co-change is deliberately the sparsest signal** — it fires only where a test file sits
 _beside_ its source (`engine.go` + `engine_test.go`), and most projects put tests in a
-separate tree instead. An absent field there is the gating working, not a gap.
-
-The invariant: **a field is emitted if and only if its structural signal exists.** No
-placeholders, no "N/A". An empty field means _"the graph has no signal here"_ — real
-information — rather than _"the model did not know"_, which is noise an agent will reason
-on top of.
+separate tree instead. An absent field there is the gating working, not a gap: **a field is
+emitted if and only if its structural signal exists.** No placeholders, no "N/A".
 
 Pass this directory to `handbook skill --agent-dir` to ship it inside the SKILL package.
 

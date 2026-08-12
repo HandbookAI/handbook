@@ -25,7 +25,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -51,15 +51,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 Ein paar Stellen, die sich gezielt anzusehen lohnen:
 
-| Öffnen                                | Und beachten                                                                                   |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `handbook/overview.md`                | Eine mermaid-**Etappenkarte**, generiert aus dem Aufrufgraphen                                 |
-| `handbook/index.md`                   | Jede Etappe, verschachtelt, jeweils mit einem Absatz                                           |
-| `handbook/register.md`                | Etappenübergreifender Zustand, mit den Etappen, die jedes Stück anfassen                       |
-| `handbook/agent/index.md`             | Das Agenten-Locator-Format — keine Prosa, nur Adressen                                         |
-| `handbook/agent/disambiguation.md`    | Begriffe, die legitim auf mehrere Etappen zeigen                                               |
-| `skill/references/coverage.json`      | Ein Content-Hash pro Datei. Das ist das Drift-Signal.                                          |
-| `work/demo/phase1/dropped-calls.json` | Aufrufe, die der Analyzer **nicht** auflösen konnte — behalten und kategorisiert statt geraten |
+| Öffnen                                | Und beachten                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | Eine mermaid-**Etappenkarte**, generiert aus dem Aufrufgraphen                                                      |
+| `handbook/index.md`                   | Jede Etappe, verschachtelt, jeweils mit einem Absatz                                                                |
+| `handbook/register.md`                | Etappenübergreifender Zustand, mit den Etappen, die jedes Stück anfassen                                            |
+| `handbook/agent/index.md`             | Der Agenten-Index — grep-Rezepte, die Etappentabelle, die Abdeckung. Ganz lesen                                     |
+| `handbook/agent/symbols.tsv`          | Jedes Symbol → `path:startLine-endLine`. Genau das hatten die Prosaseiten nie                                       |
+| `skill/references/coverage.json`      | Ein Content-Hash pro Datei. Das ist das Drift-Signal.                                                               |
+| `work/demo/phase1/dropped-calls.json` | Aufrufe, die der Analyzer **nicht** auflösen konnte — behalten und kategorisiert statt geraten                      |
+| `work/demo/phase1/scan-coverage.json` | Dateien, die der Analyzer **nicht** lesen oder vollständig parsen konnte. `[]` heißt hier: alle fünf wurden geparst |
 
 ## Schritt 4 — Unter die Haube schauen
 
@@ -101,8 +102,9 @@ Codebasis.
   />
 </div>
 
-1. **`analyze`** hat jede Datei mit tree-sitter in einen typisierten Aufrufgraphen
-   geparst. Kein LLM.
+1. **`analyze`** hat jede lesbare Datei mit tree-sitter in einen typisierten Aufrufgraphen
+   geparst und die nicht lesbaren Dateien nach `phase1/scan-coverage.json` geschrieben.
+   Kein LLM.
 2. **`generate`** hat eine Karte pro Datei geschrieben, ein Etappenskelett synthetisiert,
    jede Datei einer Etappe zugeordnet, gruppiert und geordnet, dann von unten nach oben
    erzählt und etappenübergreifende Zustandsregister extrahiert.

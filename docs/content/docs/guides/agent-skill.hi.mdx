@@ -23,12 +23,12 @@ handbook skill \
   --agent-dir work/api/handbook/agent
 ```
 
-| फ़्लैग                | यह आपके काम का क्यों है                                                                       |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| `--work` + `--source` | `coverage.json` बनाता है, जिसमें **हर फ़ाइल का content hash** होता है — यही drift का संकेत है |
-| `--agent-dir`         | locator पेज साथ भेजता है, और routing protocol में एक disambiguation चरण जोड़ता है             |
-| `--project`           | गद्य में प्रयुक्त होने वाला मानवीय नाम। डिफ़ॉल्ट `--name` है                                  |
-| `--lang zh`           | चीनी **body**। frontmatter अंग्रेज़ी में ही रहता है — नीचे देखें                              |
+| फ़्लैग                | यह आपके काम का क्यों है                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `--work` + `--source` | `coverage.json` बनाता है, जिसमें **हर फ़ाइल का content hash** होता है — यही drift का संकेत है    |
+| `--agent-dir`         | agent index और उसकी fact तालिकाएँ साथ भेजता है, और routing protocol को उसके grep नुस्ख़े देता है |
+| `--project`           | गद्य में प्रयुक्त होने वाला मानवीय नाम। डिफ़ॉल्ट `--name` है                                     |
+| `--lang zh`           | चीनी **body**। frontmatter अंग्रेज़ी में ही रहता है — नीचे देखें                                 |
 
 ## आपको क्या मिलता है
 
@@ -41,13 +41,23 @@ skills/api/
     index.md                  every subsystem → its files
     registers.md              cross-stage state
     stages/<id>.md            one page per stage
-    agent/how_to_use.md
-    agent/disambiguation.md
+    agent/index.md            lookup recipes, stage table, registers, coverage
+    agent/symbols.tsv         name → path:startLine-endLine
+    agent/files.tsv           path → stage, role, purpose
+    agent/calls.tsv           call edges (callee located, or boundary:<specifier>)
+    agent/stages/<id>.md      second hop per stage
     coverage.json             file → stage + sha256
 ```
 
 यह पैकेज **आत्मनिर्भर और साझा करने योग्य** है, और इसमें कभी source code नहीं जोड़ा जाता। यह
 नक्शा भेजता है, इलाक़ा नहीं।
+
+**दो श्रोता, एक पैकेज।** `references/` मानवीय handbook है — वह समझाता है। `references/agent/`
+पता बताता है: वह एक ही grep में जवाब दे देता है कि `sendPayment` कहाँ परिभाषित है, जो कितना भी
+गद्य नहीं कर पाता। ये एक ही पाठ के दो रूप नहीं हैं, और agent वाला पक्ष अब गद्य वाले की नक़ल
+नहीं करता; जहाँ किसी agent को व्याख्या चाहिए, stage पृष्ठ उससे जोड़ देता है। `--agent-dir` के
+भेजने का रास्ता बनने से पहले पूरा index बनता तो था, पर कभी पहुँचता नहीं था — अब वह product के
+प्राथमिक channel से जाता है।
 
 ## SKILL.md का contract
 
@@ -74,7 +84,10 @@ body एक क्रमांकित protocol है:
 2. `references/index.md` से route करें — stage index हर subsystem को उसकी files से जोड़ता है।
 3. केवल प्रासंगिक `references/stages/<id>.md` पेज खोलें।
 4. cross-cutting state के लिए `references/registers.md` देखें — fan-out बदलावों के लिए अमूल्य।
-5. _(`--agent-dir` के साथ)_ जब कोई शब्द अस्पष्ट हो तो disambiguate करें।
+5. _(`--agent-dir` के साथ)_ अंदाज़ा लगाने के बजाय fact तालिकाओं को grep करें: `symbols.tsv`
+   किसी नाम को `path:startLine-endLine` में बदल देता है, `calls.tsv` उसे उसके callers में — उन callers सहित जो दूसरे
+   packages में हैं और `boundary:<specifier>` rows के रूप में आते हैं।
+   हर नुस्ख़ा `references/agent/index.md` में सूचीबद्ध है।
 6. **कोई भी बदलाव प्रस्तावित करने या करने से पहले हर उद्धृत path पर वास्तविक source को `read_file` करें।**
 
 और इसकी पहली पंक्ति ही वह बात कहती है जो सबसे अधिक मायने रखती है:
@@ -163,8 +176,10 @@ handbook plan --source ~/code/api --handbook skills/api/references \
 - **`--out` handbook directory या उसका कोई ancestor नहीं होना चाहिए।** build की शुरुआत
   `--out` को मिटाने से होती है; ऐसा होने पर वही चीज़ मिट जाती जो package की जा रही है, और
   फिर चुपचाप एक खाली skill बन जाती।
-- **Locator पेज या तो जोड़े में जाते हैं या बिल्कुल नहीं।** `SKILL.md` को कभी ऐसी फ़ाइल की ओर
-  route नहीं करना चाहिए जो मौजूद ही न हो।
+- **Agent index और उसकी fact तालिकाएँ या तो एक सेट के रूप में जाती हैं या बिल्कुल नहीं।**
+  `SKILL.md` को कभी ऐसी फ़ाइल की ओर route नहीं करना चाहिए जो मौजूद ही न हो, इसलिए ऐसा
+  `references/agent/` जिसमें `index.md`, `symbols.tsv`, `files.tsv` या `calls.tsv` में से कोई
+  भी न हो, अधबना भेजे जाने के बजाय अस्वीकार कर दिया जाता है।
 - **Register पेज हमेशा मौजूद रहता है**, शून्य registers वाले handbook के लिए भी, क्योंकि एक
   स्थिर reference layout contract का हिस्सा है।
 

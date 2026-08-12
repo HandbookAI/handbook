@@ -97,6 +97,29 @@ jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
 Generic-tier भाषाएँ design के तहत ही अधिक drop करती हैं। देखें
 [Analysis fidelity](/docs/concepts/analysis-fidelity)।
 
+### जिस फ़ाइल का होना मुझे पता है, handbook में उसका कोई पृष्ठ नहीं है
+
+पहले phase 1 से पूछें — जो फ़ाइल कभी facts बनी ही नहीं, वह कभी पृष्ठ भी नहीं बनती:
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | मतलब                                                        | क्या करें                                                                |
+| ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `unreadable` | पढ़ना ही विफल — permissions, कोई dangling symlink, कोई race | फ़ाइल या उसका mode ठीक करें, फिर `analyze` दोबारा चलाएँ                  |
+| `unparsable` | grammar ने throw किया, या कोई tree नहीं लौटाया              | आम तौर पर shell + `case`; देखें [भाषा समर्थन](/docs/reference/languages) |
+| `partial`    | parse तो हुई, पर syntax errors के साथ                       | पृष्ठ मौजूद है पर **अधूरा** — फ़ाइल खुद पढ़ें                            |
+
+`unreadable` और `unparsable` फ़ाइलें जानबूझकर `graph.json` की `scannedFiles` से हटा दी जाती
+हैं, ताकि जिस फ़ाइल को parser ने पढ़ा ही नहीं उसका कोई card न लिखा जाए और `_coverage.json`
+उसे described न गिन सके। `partial` फ़ाइलें अपना पृष्ठ रखती हैं: उसमें दिए facts असली हैं,
+बस पूरे नहीं।
+
+खाली `files` array का मतलब है, सब कुछ parse हो गया। अगर artifact सिरे से ही गायब है, तो वह
+work directory इस record से पुरानी है — `analyze` दोबारा चलाएँ।
+
 ### Swift process को मार देता है
 
 ```text
@@ -279,6 +302,7 @@ handbook config --command <cmd> --json     # full resolved configuration
 cat work/api/run-manifest.json             # what the last good run did
 ls work/api/phase2/cards/_rejected/        # what the model actually replied
 jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
 ```
 
 अगर समस्या reproducible है, तो ऊपर के artifacts ठीक वही हैं जिनकी एक bug report को

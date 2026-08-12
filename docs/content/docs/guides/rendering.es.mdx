@@ -72,25 +72,45 @@ No tiene dependencias de ningún tipo.
 `--agent-site` → `<out>/agent/`
 
 ```text
-how_to_use.md      the agent-side search protocol
-index.md           every stage, as locator blocks
-disambiguation.md  terms that legitimately point at several stages
-<stage-id>.md      one locator page per stage
+index.md         lookup recipes, the stage table, registers, coverage — read whole
+symbols.tsv      name → path:startLine-endLine, kind, stage, nCalledBy, signature
+files.tsv        path → stage, role, nSymbols, purpose[prose]
+calls.tsv        call edges; callee located or boundary:<import specifier>
+stages/<id>.md   second hop: the stage's files and its co-change pairs
 ```
 
-Cada etapa recibe un bloque de esquema fijo: **responsabilidad**, **conceptos de
-entrada**, **estado**, **ejemplar**, **archivos centrales** y **co-cambio fuerte**.
+**El artefacto humano explica; el artefacto para agentes ubica.** Esa es toda la
+división. El handbook en markdown de arriba está escrito para leerse; este está escrito
+para hacerle grep, y lleva lo único que las páginas en prosa nunca llevaron — **dónde
+está cada símbolo**.
 
-Medido sobre diecisiete repositorios reales, los primeros cinco se rellenan en la mayoría
-de las páginas; **el co-cambio fuerte es deliberadamente el más escaso** — solo se activa
-donde un archivo de test está _junto a_ su fuente (`engine.go` + `engine_test.go`), y la
-mayoría de los proyectos colocan los tests en un árbol separado. Un campo ausente ahí es
-la restricción funcionando, no una carencia.
+`index.md` es el único archivo pensado para leerse entero, y en este repositorio ocupa
+**3.2 KB**. Su sección `## lookup` es el protocolo de búsqueda en sí, y no un enlace a
+él, porque una receta a un salto de distancia es una receta que no se sigue:
 
-El invariante: **un campo se emite si y solo si existe su señal estructural.** Sin
-marcadores de posición, sin "N/A". Un campo vacío significa _"el grafo no tiene señal
-aquí"_ — información real — en lugar de _"el modelo no lo sabía"_, que es ruido sobre el
-que un agente razonará.
+```text
+symbol -> location     grep -m5 "^NAME	" symbols.tsv
+file   -> its symbols  grep "	PATH:" symbols.tsv
+callers of a symbol    grep "	NAME	" calls.tsv
+callees of a symbol    grep "^NAME	" calls.tsv
+file   -> stage, role  grep "^PATH	" files.tsv
+stage  -> its files    read stages/<sid>.md
+```
+
+Las tablas son TSV y no markdown porque una firma que contenga `|` — todo tipo unión de
+TypeScript — corrompería en silencio una tabla markdown. Un hecho por línea sobrevive al
+truncamiento, y un tabulador ancla una columna entera.
+
+La prosa queda reducida a **una línea recortada por archivo, en la última columna**, de
+modo que un consumidor que recorte las líneas largas se coma la prosa antes que una ruta.
+La explicación completa se queda en la página humana, a la que enlaza cada página de
+etapa.
+
+**El co-cambio es deliberadamente la señal más escasa** — solo se activa donde un archivo
+de test está _junto a_ su fuente (`engine.go` + `engine_test.go`), y la mayoría de los
+proyectos colocan los tests en un árbol separado. Un campo ausente ahí es la restricción
+funcionando, no una carencia: **un campo se emite si y solo si existe su señal
+estructural.** Sin marcadores de posición, sin "N/A".
 
 Pasa este directorio a `handbook skill --agent-dir` para incluirlo dentro del paquete
 SKILL.

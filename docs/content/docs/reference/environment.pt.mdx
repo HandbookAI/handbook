@@ -30,11 +30,12 @@ o `--lang` do `skill` (`HANDBOOK_SKILL_BODY_LANG`) e o `--detail` /
 
 ## Aliases de fornecedor
 
-Seis configurações também aceitam os nomes que as pessoas já têm exportados:
+Sete configurações também aceitam os nomes que as pessoas já têm exportados:
 
 | Configuração   | Alias               |
 | -------------- | ------------------- |
 | `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmProvider`  | `OPENAI_PROVIDER`   |
 | `llmModel`     | `OPENAI_MODEL`      |
 | `llmBaseUrl`   | `OPENAI_BASE_URL`   |
 | `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
@@ -99,13 +100,24 @@ handbook sem título.
 
 ## Segredos
 
-`llmApiKey` / `OPENAI_API_KEY` é marcada como `secret` no registro, o que significa que:
+Duas configurações são marcadas como `secret` no registro — `llmApiKey` / `OPENAI_API_KEY`
+e `llmExtraBody` / `OPENAI_EXTRA_BODY`. Para as duas, isso significa que:
 
-- ela **nunca** é uma flag de linha de comando (flags vão parar no histórico do shell e na
+- elas **nunca** são flags de linha de comando (flags vão parar no histórico do shell e na
   saída do `ps`);
-- ela é **rejeitada** se aparecer em um arquivo de configuração, com uma mensagem dizendo
-  por quê — arquivos de configuração são versionados;
-- ela é **mascarada** na saída de `handbook config`.
+- elas são **rejeitadas** se aparecerem em um arquivo de configuração, com uma mensagem
+  dizendo por quê — arquivos de configuração são versionados;
+- elas são **mascaradas** na saída de `handbook config`.
+
+`llmExtraBody` é um segredo porque é de **formato livre**. Ele mescla o que quer que você
+coloque nele em todo corpo de requisição, e gateways de fato aceitam autenticação no
+corpo — então a ferramenta não tem como enumerar o que está ali, nem como distinguir um
+campo de ajuste de uma credencial. Ele não tem flag alguma; use a variável de ambiente.
+
+`llmBaseUrl` deliberadamente **não** é um segredo: um time apontando todos os seus
+checkouts para um mesmo gateway compartilhado tem um motivo legítimo para versioná-la. Só
+uma URL que carrega credenciais embutidas (`https://user:pass@gw.internal/v1`) é recusada
+em um arquivo de configuração — ali e em nenhum outro lugar.
 
 ```text
 handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
