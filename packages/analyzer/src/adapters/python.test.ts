@@ -223,3 +223,69 @@ describe('PythonAdapter — module-alias calls (round-1 review)', () => {
     expect(edge?.calleeId).toBe('pkg.helpers.do');
   });
 });
+
+/**
+ * Python's one type declaration, and the two inferences deliberately not made.
+ */
+describe('PythonAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `from enum import Enum
+from dataclasses import dataclass
+
+
+class Outer:
+    class Inner:
+        class Deepest:
+            pass
+
+    def go(self):
+        pass
+
+
+@dataclass
+class Config:
+    name: str
+
+
+class Color(Enum):
+    RED = 1
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-py-types-'));
+    writeFileSync(join(root, 'model.py'), SRC);
+    analysis = await new PythonAdapter().analyze(['model.py'], root);
+  });
+
+  it('records every class, at every nesting depth', () => {
+    expect((analysis.types ?? []).map((t) => t.qualname).sort()).toEqual([
+      'Color',
+      'Config',
+      'Outer',
+      'Outer.Inner',
+      'Outer.Inner.Deepest',
+    ]);
+  });
+
+  it('carries the WHOLE enclosing chain, so two same-named inner classes cannot collide', () => {
+    expect(find('Deepest')?.container).toBe('Outer.Inner');
+    expect(find('Deepest')?.id).toBe('type:model.Outer.Inner.Deepest');
+  });
+
+  it('puts a decorator inside the span, so the row points where a reader jumps', () => {
+    const config = find('Config');
+    expect(lines[(config?.lineStart ?? 0) - 1]).toContain('@dataclass');
+    expect(config?.signature).toContain('@dataclass');
+  });
+
+  it('does NOT infer `enum` from a base class name', () => {
+    // `class Color(Enum)` is an enum to a reader, and the only evidence is a base
+    // name any module may define and any import may rename. Inferring from it would
+    // be a guess wearing a parse's clothes.
+    expect(find('Color')?.kind).toBe('class');
+    expect(new PythonAdapter().capabilities.typeKinds).toEqual(['class']);
+  });
+});

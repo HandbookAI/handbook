@@ -1,10 +1,15 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
+import type { CallEdge, CallType, FunctionNode, ModuleAnalysis, TypeNode } from '@handbook/core';
+import { codeGraphSchema, scanCoverageSchema } from '@handbook/core';
 import {
   buildGraph,
   categorizeDropped,
   functionsCsv,
   synthesizeBoundary,
+  writeGraphArtifacts,
   type BuildGraphOptions,
 } from './graph.js';
 
@@ -89,6 +94,7 @@ describe('buildGraph — degree annotation', () => {
       edgesDropped: 0,
       internalNodes: 3,
       boundaryNodes: 0,
+      filesUnparsed: 0,
     });
   });
 
@@ -292,5 +298,169 @@ describe('buildGraph — dropped-call classification', () => {
     expect(categorizeDropped("unresolved:'fmt'.format")).toBe('string_literal_method');
     expect(categorizeDropped('unresolved:handler.dispatch')).toBe('local_var_method');
     expect(categorizeDropped('unresolved:frobnicate')).toBe('bare_name');
+  });
+});
+
+describe('buildGraph — scan coverage', () => {
+  const analysis: ModuleAnalysis = {
+    functions: [fn('app.main.main', 'app/main.py')],
+    edges: [],
+    unparsedFiles: [
+      { file: 'app/zeta.py', reason: 'partial', detail: 'the parse tree contains syntax errors' },
+      { file: 'app/locked.py', reason: 'unreadable', detail: 'EACCES: permission denied' },
+    ],
+  };
+
+  it('carries the record into graph.metadata so a graph.json reader sees the gap', () => {
+    const { graph } = buildGraph(analysis, options({ unparsedFiles: analysis.unparsedFiles }));
+    expect(graph.metadata.unparsedFiles).toEqual(analysis.unparsedFiles);
+  });
+
+  it('counts by reason and sorts by path, so an unchanged tree re-runs byte-identically', () => {
+    const { scanCoverage, stats } = buildGraph(analysis, options({ unparsedFiles: analysis.unparsedFiles }));
+    expect(scanCoverage.metadata.nUnparsed).toBe(2);
+    expect(scanCoverage.metadata.nScanned).toBe(2); // the default options' scannedFiles
+    expect(scanCoverage.metadata.byReason).toEqual({ partial: 1, unreadable: 1 });
+    expect(scanCoverage.files.map((f) => f.file)).toEqual(['app/locked.py', 'app/zeta.py']);
+    expect(stats.filesUnparsed).toBe(2);
+  });
+
+  it('states "nothing failed" rather than staying silent when the caller passes an empty list', () => {
+    // Absent means "this analysis predates the record"; `[]` is a positive claim.
+    const { graph, scanCoverage } = buildGraph(analysis, options({ unparsedFiles: [] }));
+    expect(graph.metadata.unparsedFiles).toEqual([]);
+    expect(scanCoverage.metadata.nUnparsed).toBe(0);
+    expect(scanCoverage.metadata.byReason).toEqual({});
+  });
+
+  it('omits the field for a caller that says nothing at all', () => {
+    const { graph } = buildGraph(analysis, options());
+    expect(graph.metadata.unparsedFiles).toBeUndefined();
+  });
+
+  it('writes scan-coverage.json beside dropped-calls.json', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hb-graph-artifacts-'));
+    try {
+      writeGraphArtifacts(buildGraph(analysis, options({ unparsedFiles: analysis.unparsedFiles })), dir);
+      const coverage = scanCoverageSchema.parse(
+        JSON.parse(readFileSync(join(dir, 'scan-coverage.json'), 'utf8')),
+      );
+      expect(coverage.files.map((f) => f.reason)).toEqual(['unreadable', 'partial']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('buildGraph — parsed type declarations', () => {
+  const type = (name: string, file: string, lineStart: number): TypeNode => ({
+    id: `type:${file.replace(/\//g, '.').replace(/\.py$/, '')}.${name}`,
+    name,
+    qualname: name,
+    file,
+    lineStart,
+    lineEnd: lineStart + 3,
+    kind: 'class',
+    signature: `class ${name}`,
+    container: null,
+  });
+
+  it('leaves the graph without a `types` field when no adapter looked for any', () => {
+    // Absent and empty are DIFFERENT statements: absent means nobody looked, and
+    // writing `[]` instead would tell every consumer the codebase declares none.
+    const result = buildGraph({ functions: [fn('app.main.main', 'app/main.py')], edges: [] }, options());
+    expect(result.graph.types).toBeUndefined();
+    expect(result.graph.metadata.nTypes).toBeUndefined();
+    expect(result.stats.types).toBeUndefined();
+  });
+
+  it('keeps an EMPTY array when the adapter looked and found nothing', () => {
+    const result = buildGraph(
+      { functions: [fn('app.main.main', 'app/main.py')], edges: [], types: [] },
+      options(),
+    );
+    expect(result.graph.types).toEqual([]);
+    expect(result.graph.metadata.nTypes).toBe(0);
+  });
+
+  it('sorts by (file, lineStart, name) so an unchanged tree re-serializes identically', () => {
+    // Adapters are driven one language at a time and `discoverAll`s iteration order
+    // is nobody's promise, so a multi-language run could otherwise reorder the
+    // array between two runs over the same source.
+    const result = buildGraph(
+      {
+        functions: [],
+        edges: [],
+        types: [
+          type('Zebra', 'app/engine.py', 40),
+          type('Apple', 'app/engine.py', 40),
+          type('Mid', 'app/engine.py', 10),
+          type('First', 'app/aaa.py', 99),
+        ],
+      },
+      options(),
+    );
+    expect((result.graph.types ?? []).map((t) => `${t.file}:${t.lineStart}:${t.name}`)).toEqual([
+      'app/aaa.py:99:First',
+      'app/engine.py:10:Mid',
+      'app/engine.py:40:Apple',
+      'app/engine.py:40:Zebra',
+    ]);
+  });
+
+  it('counts types separately from functions, and never folds them in', () => {
+    // `nInternalFunctions` is quoted as THE function count in every summary the
+    // toolchain prints; a type added to it would silently inflate all of them.
+    const result = buildGraph(
+      {
+        functions: [fn('app.main.main', 'app/main.py')],
+        edges: [],
+        types: [type('Engine', 'app/engine.py', 3), type('Wheel', 'app/engine.py', 20)],
+      },
+      options(),
+    );
+    expect(result.graph.metadata.nInternalFunctions).toBe(1);
+    expect(result.graph.metadata.nTypes).toBe(2);
+    expect(result.stats.types).toBe(2);
+  });
+
+  it('keeps types out of the call graph vertex set entirely', () => {
+    // The design decision, asserted: `nodes` is what `edges` reference by id and
+    // what thirteen consumers walk asking "is this a function?". A type in there
+    // would be drawn in graphDots boundary cluster and counted as a function.
+    const result = buildGraph(
+      {
+        functions: [fn('app.main.main', 'app/main.py')],
+        edges: [],
+        types: [type('Engine', 'app/engine.py', 3)],
+      },
+      options(),
+    );
+    expect(Object.keys(result.graph.nodes)).toEqual(['app.main.main']);
+    expect(functionsCsv(result.graph)).not.toContain('Engine');
+  });
+
+  it('survives its own schema, so a written graph.json can be read back', () => {
+    const result = buildGraph(
+      {
+        functions: [fn('app.main.main', 'app/main.py')],
+        edges: [],
+        types: [type('Engine', 'app/engine.py', 3)],
+      },
+      options(),
+    );
+    const parsed = codeGraphSchema.safeParse(JSON.parse(JSON.stringify(result.graph)));
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(parsed.data?.types).toHaveLength(1);
+  });
+
+  it('refuses a type whose span was never parsed, rather than loading a fabricated range', () => {
+    // `lineStart` is `.positive()` on purpose. A synthesized span is the one kind of
+    // wrong an agent cannot detect — a stale path fails to open and a stale name
+    // greps nothing, while a made-up line range opens the wrong code in silence.
+    const bad = { ...type('Ghost', 'app/engine.py', 3), lineStart: 0 };
+    const result = buildGraph({ functions: [], edges: [], types: [bad] }, options());
+    const parsed = codeGraphSchema.safeParse(JSON.parse(JSON.stringify(result.graph)));
+    expect(parsed.success).toBe(false);
   });
 });

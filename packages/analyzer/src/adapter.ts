@@ -45,8 +45,15 @@ export interface LanguageAdapter {
    * from nodes and edges alone — so every adapter must say so out loud.
    */
   readonly capabilities: AdapterCapabilities;
-  /** Find analyzable files under `sourceRoot` (relative POSIX paths, sorted). */
-  discover(sourceRoot: string): string[];
+  /**
+   * Find analyzable files under `sourceRoot` (relative POSIX paths, sorted).
+   *
+   * The optional logger reports directories discovery could not enter. Without
+   * it every path beneath an unreadable directory simply disappears, and
+   * nothing downstream can tell that apart from "there was nothing there" —
+   * the same silent-erasure defect the unparsed-file record exists to prevent.
+   */
+  discover(sourceRoot: string, options?: { logger?: Logger }): string[];
   /** Parse `files` (relative POSIX paths) into the IR. */
   /**
    * Parse `files` into the IR. The optional logger lets a driver report files
@@ -71,9 +78,15 @@ export function discoverByExtension(
   extensions: readonly string[],
   extraSkipDirs: readonly string[] = [],
   filter?: (relPath: string) => boolean,
+  logger?: Logger,
 ): string[] {
   const skipDirs = new Set([...COMMON_SKIP_DIRS, ...extraSkipDirs]);
-  return listFilesRecursive(sourceRoot, { skipDirs, extensions, filter });
+  return listFilesRecursive(sourceRoot, {
+    skipDirs,
+    extensions,
+    filter,
+    onSkip: (path, reason) => logger?.warn(`[scan] ${path}/: not searched (${reason})`),
+  });
 }
 
 /**
@@ -140,7 +153,7 @@ export function discoverAll(
   for (const name of availableLanguages()) {
     try {
       const files = getAdapter(name)
-        .discover(sourceRoot)
+        .discover(sourceRoot, { logger: logger as Logger | undefined })
         .filter((f) => !claimed.has(f));
       if (files.length > 0) {
         result[name] = files;

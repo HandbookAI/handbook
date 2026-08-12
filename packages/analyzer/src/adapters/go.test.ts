@@ -197,3 +197,70 @@ describe('GoAdapter — duplicate-id defense (adversarial round)', () => {
     expect(result.edges.filter((e) => e.callerId === 'a.T.M')).toHaveLength(2);
   });
 });
+
+/**
+ * Go's four flavours of `type`, and the one that must NOT be called an alias.
+ */
+describe('GoAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `package m
+
+type Engine struct {
+	Name string
+}
+
+type Runner interface {
+	Run() error
+}
+
+type Celsius float64
+
+type Alias = Engine
+
+type (
+	A struct{ x int }
+	B interface{ Go() }
+)
+`;
+  const lines = SRC.split('\n');
+  const kind = (name: string): string | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name)?.kind;
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-go-types-'));
+    writeFileSync(join(root, 'm.go'), SRC);
+    analysis = await new GoAdapter().analyze(['m.go'], root);
+  });
+
+  it('separates struct from interface from alias', () => {
+    expect(kind('Engine')).toBe('struct');
+    expect(kind('Runner')).toBe('interface');
+    expect(kind('Alias')).toBe('alias');
+  });
+
+  it('calls a DEFINED type `other`, never `alias`', () => {
+    // `type Celsius float64` creates a distinct type with its own method set;
+    // `type Alias = Engine` creates a second name for one. Filing the first as an
+    // alias would state the opposite of Go's own rule, so it gets the escape
+    // hatch plus a signature showing exactly what was written.
+    expect(kind('Celsius')).toBe('other');
+    expect((analysis.types ?? []).find((t) => t.name === 'Celsius')?.signature).toBe('type Celsius float64');
+  });
+
+  it('gives each member of a grouped declaration its own span', () => {
+    // One span covering the whole `type ( … )` block would point A and B at the
+    // same lines, which is a wrong pointer for at least one of them.
+    const a = (analysis.types ?? []).find((t) => t.name === 'A');
+    const b = (analysis.types ?? []).find((t) => t.name === 'B');
+    expect(a?.lineStart).not.toBe(b?.lineStart);
+    expect(lines[(a?.lineStart ?? 0) - 1]).toContain('A struct');
+    expect(lines[(b?.lineStart ?? 0) - 1]).toContain('B interface');
+  });
+
+  it('keeps the `type` keyword in a single declaration and stops before the fields', () => {
+    expect((analysis.types ?? []).find((t) => t.name === 'Engine')?.signature).toBe('type Engine struct');
+    const engine = (analysis.types ?? []).find((t) => t.name === 'Engine');
+    expect(lines[(engine?.lineStart ?? 0) - 1]).toContain('type Engine struct');
+    expect(engine?.lineEnd).toBeGreaterThan(engine?.lineStart ?? 0);
+  });
+});

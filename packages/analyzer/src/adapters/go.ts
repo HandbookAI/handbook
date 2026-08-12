@@ -13,11 +13,12 @@
  * nowhere else.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
-import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
+import { fieldText, firstOfType, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
+  recordType,
   boundaryOf,
   resolveFieldType,
   resolveOwnMethod,
@@ -113,11 +114,64 @@ function collectImports(node: Node, imports: Map<string, string>): void {
   });
 }
 
-function scanTypeSpec(scan: ModuleScan, spec: Node): void {
+/**
+ * The {@link TypeKind} a `type_spec`'s right-hand side declares.
+ *
+ * Go's `type` keyword covers four different things and the grammar tells them
+ * apart only by what follows the name, so this reads the child rather than the
+ * node type:
+ *
+ * - `struct_type`    → `struct`
+ * - `interface_type` → `interface`
+ * - a `type_alias` node (`type A = B`) → `alias`, handled by the caller since
+ *   the grammar gives it its OWN node type, not a `type_spec`
+ * - anything else (`type Celsius float64`, `type Handler func(int) error`) →
+ *   `other`, because a Go DEFINED type is neither an alias nor an aggregate: it
+ *   is a brand-new type with its own method set that happens to share a
+ *   representation. Filing it as `alias` would state the opposite of the
+ *   language's rule, so the honest answer is the escape hatch plus a signature
+ *   that shows exactly what was written.
+ */
+function typeSpecKind(spec: Node): TypeKind {
+  const type = spec.childForFieldName('type')?.type;
+  if (type === 'struct_type') return 'struct';
+  if (type === 'interface_type') return 'interface';
+  return 'other';
+}
+
+/**
+ * Every kind {@link typeSpecKind} and its caller can emit, sorted.
+ *
+ * Written out rather than derived from a node-type map, because Go's kind is
+ * decided by a declaration's right-hand SIDE, not by its node type — a map keyed
+ * by node type would have to invent keys to look derived. `register.test.ts`
+ * checks the claim against a real fixture in both directions instead, which is
+ * the guard that actually matters.
+ */
+const GO_TYPE_KINDS: readonly TypeKind[] = ['alias', 'interface', 'other', 'struct'];
+
+function scanTypeSpec(scan: ModuleScan, spec: Node, file: string, declaration: Node): void {
   const name = fieldText(spec, 'name');
   if (!name) return;
   scan.typeModules.set(name, scan.moduleId);
   if (!scan.ownerMethods.has(name)) scan.ownerMethods.set(name, new Set());
+  recordType(scan, {
+    name,
+    kind: spec.type === 'type_alias' ? 'alias' : typeSpecKind(spec),
+    // `declaration` is the whole `type …` statement when it holds ONE spec, so the
+    // signature keeps the `type` keyword and the span starts where a reader would
+    // look. Inside a grouped `type ( A …; B … )` the caller passes the spec
+    // itself, because one span covering the whole group would point every member
+    // at the same lines.
+    node: declaration,
+    // A struct's field list, so the signature keeps the `struct` keyword and stops
+    // before the fields — `type Engine struct`, not 200 characters of members.
+    // Everything else has no wrapper node to stop at and shows whole (truncated),
+    // which is what makes `type Celsius float64` readable at all.
+    body: firstOfType(spec.childForFieldName('type') ?? spec, 'field_declaration_list') ?? null,
+    file,
+    container: null,
+  });
   const type = spec.childForFieldName('type');
   if (type?.type !== 'struct_type') return;
   walk(type, (n) => {
@@ -320,6 +374,7 @@ const CAPABILITIES: AdapterCapabilities = {
   callTypes: ['self_method', 'self_attr_method', 'param_method', 'internal_func', 'boundary', 'unresolved'],
   selfAttrs: true,
   statementSpans: false,
+  typeKinds: GO_TYPE_KINDS,
 };
 
 const GO_SPEC: LanguageSpec<ModuleScan> = {
@@ -352,9 +407,11 @@ const GO_SPEC: LanguageSpec<ModuleScan> = {
       if (child.type === 'import_declaration') {
         collectImports(child, scan.imports);
       } else if (child.type === 'type_declaration') {
-        for (const spec of child.namedChildren) {
-          if (!spec || spec.type !== 'type_spec') continue;
-          scanTypeSpec(scan, spec);
+        const specs = child.namedChildren.filter(
+          (n): n is Node => n !== null && (n.type === 'type_spec' || n.type === 'type_alias'),
+        );
+        for (const spec of specs) {
+          scanTypeSpec(scan, spec, file, specs.length === 1 ? child : spec);
         }
       } else if (child.type === 'function_declaration') {
         recordFunction(scan, child, null, file);

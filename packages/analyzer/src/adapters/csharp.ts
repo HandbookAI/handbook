@@ -41,11 +41,13 @@
  * (target-typed) yields no constructor edge because the type is not at the call.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
+  declaredTypeKinds,
+  recordType,
   boundaryOf,
   resolveFieldType,
   resolveOwnMethod,
@@ -64,6 +66,31 @@ const TYPE_DECLS = new Set([
   'struct_declaration',
   'record_declaration',
   'record_struct_declaration',
+]);
+
+/**
+ * Node type → {@link TypeKind}, for this grammar.
+ *
+ * A superset of {@link TYPE_DECLS}: `enum_declaration` is here and not there
+ * because an enum declares no members this adapter can call, so call resolution
+ * has never needed it — while a reader looks enums up constantly.
+ *
+ * `record_struct_declaration` is `record`, not `struct`: `record` is what the
+ * declaration says and what a reader searches for, and the value/reference
+ * distinction survives in the signature (`record struct Point` vs `record Point`).
+ *
+ * `delegate_declaration` is deliberately absent. A delegate is a named type, so
+ * it belongs in a type index — but it is neither an aggregate nor a contract nor
+ * an alias, and `other` for something that common would say less than nothing.
+ * Left unclaimed rather than mis-bucketed; the coverage note names the gap.
+ */
+const CSHARP_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_declaration', 'class'],
+  ['interface_declaration', 'interface'],
+  ['struct_declaration', 'struct'],
+  ['record_declaration', 'record'],
+  ['record_struct_declaration', 'record'],
+  ['enum_declaration', 'enum'],
 ]);
 
 /** Declarations whose children are more declarations. */
@@ -576,9 +603,28 @@ function scanAccessors(scan: ModuleScan, owner: string, member: Node, file: stri
   if (value?.type === 'arrow_expression_clause') record('get', member, value);
 }
 
-function scanTypeDeclaration(scan: ModuleScan, node: Node, file: string): void {
+/**
+ * Emit the {@link TypeNode} for one type declaration. Separate from
+ * `scanTypeDeclaration` so an enum — which declares nothing callable and so never
+ * enters the call-resolution path — can be indexed by the same rules.
+ */
+function recordTypeDeclaration(scan: ModuleScan, node: Node, file: string, container: string | null): void {
+  const kind = CSHARP_TYPE_KINDS.get(node.type);
+  if (!kind) return;
+  recordType(scan, {
+    name: fieldText(node, 'name'),
+    kind,
+    node,
+    body: node.childForFieldName('body'),
+    file,
+    container,
+  });
+}
+
+function scanTypeDeclaration(scan: ModuleScan, node: Node, file: string, container: string | null): void {
   const owner = fieldText(node, 'name');
   if (!owner) return;
+  recordTypeDeclaration(scan, node, file, container);
   if (!scan.ownerMethods.has(owner)) scan.ownerMethods.set(owner, new Set());
   if (!scan.ownerFields.has(owner)) scan.ownerFields.set(owner, new Set());
 
@@ -889,6 +935,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  typeKinds: declaredTypeKinds(CSHARP_TYPE_KINDS),
 };
 
 const CSHARP_SPEC: LanguageSpec<ModuleScan, CSharpIndexes> = {
@@ -924,23 +971,37 @@ const CSHARP_SPEC: LanguageSpec<ModuleScan, CSharpIndexes> = {
   scan(scan, root, file) {
     // Containers worklist rather than recursion: namespaces and nested types
     // both nest, and an explicit stack cannot overflow on pathological input.
-    const containers: Node[] = [root];
+    // Each frame carries the enclosing TYPE's qualname, which is null under a
+    // namespace: a namespace is a scope, not a type, so `A.B.Outer.Inner` would
+    // put a package path in a field that means "the type this one is declared
+    // inside". Nested types therefore come out as `Outer.Inner`, which is both
+    // unique within the module and how C# source refers to them.
+    const containers: Array<{ node: Node; owner: string | null }> = [{ node: root, owner: null }];
     while (containers.length > 0) {
-      const container = containers.pop();
-      if (!container) continue;
-      for (const child of container.namedChildren) {
+      const frame = containers.pop();
+      if (!frame) continue;
+      for (const child of frame.node.namedChildren) {
         if (!child) continue;
         if (child.type === 'using_directive') {
           collectUsing(child, scan);
         } else if (NAMESPACE_DECLS.has(child.type)) {
           // A file-scoped namespace has no body: its members are its children.
-          containers.push(child.childForFieldName('body') ?? child);
+          containers.push({ node: child.childForFieldName('body') ?? child, owner: frame.owner });
         } else if (TYPE_DECLS.has(child.type)) {
-          scanTypeDeclaration(scan, child, file);
+          scanTypeDeclaration(scan, child, file, frame.owner);
+          const name = fieldText(child, 'name');
           const body = child.childForFieldName('body');
           // Re-visiting the body only picks up NESTED type declarations; its
           // ordinary members are not container children.
-          if (body) containers.push(body);
+          if (body) {
+            containers.push({
+              node: body,
+              owner: name ? (frame.owner ? `${frame.owner}.${name}` : name) : frame.owner,
+            });
+          }
+        } else if (child.type === 'enum_declaration') {
+          // Indexed but never scanned for members: an enum has none to call.
+          recordTypeDeclaration(scan, child, file, frame.owner);
         }
       }
     }

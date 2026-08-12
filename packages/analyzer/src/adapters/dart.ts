@@ -1613,6 +1613,11 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  // No type extraction yet — an EMPTY list is the positive declaration, not a
+  // gap in this object. The agent artifact reads it and says so on the page, and
+  // the `class-derived` fallback row (a span inferred from a class's methods,
+  // labelled as inferred) is what covers Dart classes, mixins and enums in the meantime.
+  typeKinds: [],
 };
 
 const DART_SPEC: LanguageSpec<ModuleScan, DartIndexes> = {

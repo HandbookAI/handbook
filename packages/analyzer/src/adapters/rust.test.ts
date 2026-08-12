@@ -195,3 +195,76 @@ mod outer {
     expect(result.functions.find((f) => f.id === 'lib::outer::use_inner')).toBeDefined();
   });
 });
+
+/**
+ * Rust's item kinds, including the one that looks like a struct and is not.
+ */
+describe('RustAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `pub struct Engine {
+    pub rpm: u32,
+}
+
+pub enum Gear {
+    Low,
+    High,
+}
+
+pub trait Spinner {
+    fn spin(&self) -> u32;
+}
+
+pub type Rpm = u32;
+
+pub union Payload {
+    pub a: u32,
+    pub b: f32,
+}
+
+pub mod inner {
+    pub struct Nested {
+        pub x: u8,
+    }
+}
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-rs-types-'));
+    writeFileSync(join(root, 'lib.rs'), SRC);
+    analysis = await new RustAdapter().analyze(['lib.rs'], root);
+  });
+
+  it('maps struct, enum, trait and type onto the vocabulary', () => {
+    expect(find('Engine')?.kind).toBe('struct');
+    expect(find('Gear')?.kind).toBe('enum');
+    expect(find('Spinner')?.kind).toBe('trait');
+    expect(find('Rpm')?.kind).toBe('alias');
+  });
+
+  it('calls a union `other`, not a struct', () => {
+    // Identical-looking source, opposite semantics: a union is overlapping storage
+    // read through `unsafe`, not an aggregate of independent fields.
+    expect(find('Payload')?.kind).toBe('other');
+    expect(find('Payload')?.signature).toBe('pub union Payload');
+  });
+
+  it('qualifies a type inside an inline mod, and does not double the prefix', () => {
+    // `mod` is a module, not an enclosing type, so it belongs in the qualname and
+    // not in `container` — and it must appear exactly once in the id.
+    const nested = find('Nested');
+    expect(nested?.qualname).toBe('inner::Nested');
+    expect(nested?.id).toBe('type:lib::inner::Nested');
+    expect(nested?.container).toBeNull();
+    expect(lines[(nested?.lineStart ?? 0) - 1]).toContain('pub struct Nested');
+  });
+
+  it('emits nothing for an impl block, which declares no type', () => {
+    // An `impl` attaches methods to a type declared elsewhere; a row for it would
+    // put a second, different span on a name whose declaration is somewhere else.
+    expect((analysis.types ?? []).filter((t) => t.name === 'impl')).toEqual([]);
+    expect((analysis.types ?? []).filter((t) => t.name === 'Engine')).toHaveLength(1);
+  });
+});

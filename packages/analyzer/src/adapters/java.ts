@@ -45,11 +45,13 @@
  *     inference is attempted.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, CallType } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, CallType, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
+  declaredTypeKinds,
+  recordType,
   boundaryOf,
   resolveOwnMethod,
   resolveViaImport,
@@ -103,13 +105,26 @@ const GENERIC_TYPES = new Set([
 /** Build outputs; Gradle/Maven put generated sources under these too. */
 const EXTRA_SKIP_DIRS = ['target', 'build', 'out', '.gradle'];
 
-const TYPE_DECLARATIONS = new Set([
-  'class_declaration',
-  'interface_declaration',
-  'enum_declaration',
-  'record_declaration',
-  'annotation_type_declaration',
+/**
+ * Node type → {@link TypeKind}, for this grammar. Its keys ARE the set of Java
+ * declarations that introduce a type, so `TYPE_DECLARATIONS` is derived from it
+ * and the two cannot fall out of step.
+ *
+ * `annotation_type_declaration` is `other`, not `interface`. A Java annotation is
+ * spelled `@interface` and the grammar files it near one, but it is not
+ * implementable, not a supertype, and never appears in an `implements` clause —
+ * calling it an interface would be a wrong fact in the column an agent filters
+ * on. The signature still reads `@interface Nullable`, so nothing is lost.
+ */
+const JAVA_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_declaration', 'class'],
+  ['interface_declaration', 'interface'],
+  ['enum_declaration', 'enum'],
+  ['record_declaration', 'record'],
+  ['annotation_type_declaration', 'other'],
 ]);
+
+const TYPE_DECLARATIONS = new Set(JAVA_TYPE_KINDS.keys());
 
 /**
  * Scopes skipped while walking a body. Local and anonymous class bodies rebind
@@ -488,12 +503,30 @@ function recordFunction(scan: ModuleScan, opts: RecordOptions): void {
 
 /** One top-level type declaration and, iteratively, the types nested in it. */
 function scanTypeDeclaration(scan: ModuleScan, root: Node, file: string): void {
-  const stack: Node[] = [root];
+  // The enclosing type's qualname travels with each frame: `Outer.Inner` is what
+  // makes a nested type's id unique, where the bare `Inner` two classes deep
+  // would collide. Call resolution below still keys on the SIMPLE name, which is
+  // how Java source refers to a nested type from inside its enclosing one — the
+  // two indexes want different keys and now each gets its own.
+  const stack: Array<{ decl: Node; container: string | null }> = [{ decl: root, container: null }];
   while (stack.length > 0) {
-    const decl = stack.pop();
-    if (!decl) continue;
+    const frame = stack.pop();
+    if (!frame) continue;
+    const { decl, container } = frame;
     const className = fieldText(decl, 'name');
     if (!className) continue;
+    const kind = JAVA_TYPE_KINDS.get(decl.type);
+    if (kind) {
+      recordType(scan, {
+        name: className,
+        kind,
+        node: decl,
+        body: decl.childForFieldName('body'),
+        file,
+        container,
+      });
+    }
+    const qualname = container ? `${container}.${className}` : className;
     // Nested types are keyed by their simple name, like every other type: that
     // is also how Java source refers to them once inside the enclosing type.
     if (!scan.ownerMethods.has(className)) scan.ownerMethods.set(className, new Set());
@@ -516,7 +549,7 @@ function scanTypeDeclaration(scan: ModuleScan, root: Node, file: string): void {
     if (!body) continue;
     for (const member of membersOf(body)) {
       if (TYPE_DECLARATIONS.has(member.type)) {
-        stack.push(member);
+        stack.push({ decl: member, container: qualname });
       } else if (member.type === 'field_declaration') {
         scanFieldDeclaration(scan, member, className, typeVars);
       } else if (
@@ -842,6 +875,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  typeKinds: declaredTypeKinds(JAVA_TYPE_KINDS),
 };
 
 const JAVA_SPEC: LanguageSpec<ModuleScan, JavaIndexes> = {

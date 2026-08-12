@@ -408,3 +408,82 @@ describe('CSharpAdapter — duplicate-id defense', () => {
     expect(result.edges.filter((e) => e.callerId === 'A.T.M')).toHaveLength(2);
   });
 });
+
+/**
+ * C#'s type declarations, including the enum the call-resolution path never
+ * needed and the two spellings of `record`.
+ */
+describe('CSharpAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `namespace Demo.Engines;
+
+public class Outer
+{
+    public void Go() {}
+
+    public class Inner
+    {
+        public void Deep() {}
+    }
+}
+
+public interface ISpinner
+{
+    void Spin();
+}
+
+public struct Rpm
+{
+    public int Value;
+}
+
+public record Reading(int Value);
+
+public record struct Sample(int Value);
+
+public enum Gear
+{
+    Low,
+    High
+}
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-cs-types-'));
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'Kinds.cs'), SRC);
+    analysis = await new CSharpAdapter().analyze(['src/Kinds.cs'], root);
+  });
+
+  it('maps class, interface and struct onto the obvious buckets', () => {
+    expect(find('Outer')?.kind).toBe('class');
+    expect(find('ISpinner')?.kind).toBe('interface');
+    expect(find('Rpm')?.kind).toBe('struct');
+  });
+
+  it('indexes an enum, which call resolution never had a reason to see', () => {
+    // `enum_declaration` is deliberately absent from `TYPE_DECLS`: an enum declares
+    // nothing callable. It is still one of the names a reader looks up most.
+    expect(find('Gear')?.kind).toBe('enum');
+    expect(lines[(find('Gear')?.lineStart ?? 0) - 1]).toContain('enum Gear');
+  });
+
+  it('calls both spellings of record `record`, keeping the difference in the signature', () => {
+    expect(find('Reading')?.kind).toBe('record');
+    expect(find('Sample')?.kind).toBe('record');
+    expect(find('Reading')?.signature).toContain('record Reading');
+    expect(find('Sample')?.signature).toContain('record struct Sample');
+  });
+
+  it('qualifies a nested type by its enclosing type, and not by its namespace', () => {
+    // A namespace is a scope, not a type. Folding `Demo.Engines` into `container`
+    // would put a package path in a field that means "the type this is inside".
+    const inner = find('Inner');
+    expect(inner?.qualname).toBe('Outer.Inner');
+    expect(inner?.container).toBe('Outer');
+    expect(find('Outer')?.container).toBeNull();
+  });
+});

@@ -707,3 +707,70 @@ describe('CppAdapter — pure C', () => {
     expect(analysis.functions.every((f) => f.className === null)).toBe(true);
   });
 });
+
+describe('a type name two files declare in the same namespace', () => {
+  /**
+   * `namespace detail` is re-opened in every file that wants a private helper —
+   * ordinary, idiomatic C++. Two files each declaring `detail::Impl` therefore
+   * declare two UNRELATED types, and the shared scoped index used to award the
+   * name to whichever file was scanned first. A THIRD file referring to
+   * `detail::Impl` then resolved to that one and shipped a real
+   * `internal_method` edge, with `dropped-calls.json` empty — invariant 2's
+   * exact prohibition.
+   *
+   * The third file is the whole point. Inside `alpha.cpp` the reference is NOT
+   * ambiguous: that translation unit declares its own `detail::Impl` and
+   * resolving to it is correct. Only a caller that declares neither has to
+   * choose, and that is the call that must be refused.
+   *
+   * Real source in a temp dir, because the question is what tree-sitter and the
+   * two-pass resolver actually do with it.
+   */
+  const body = `namespace detail {
+class Impl {
+public:
+  void run();
+};
+void Impl::run() {}
+}
+`;
+  let analysis: ModuleAnalysis;
+
+  beforeAll(async () => {
+    const root = writeRepo(
+      {
+        'src/alpha.cpp': body,
+        'src/beta.cpp': body,
+        'src/gamma.cpp': `namespace gamma {
+void go(detail::Impl& impl) {
+  impl.run();
+}
+}
+`,
+      },
+      'cpp-ambiguous-',
+    );
+    const adapter = new CppAdapter();
+    analysis = await adapter.analyze(adapter.discover(root), root);
+  });
+
+  const fromGamma = (): ModuleAnalysis['edges'] => analysis.edges.filter((e) => /gamma/.test(e.callerId));
+
+  it('does not invent an edge from the file that declares neither', () => {
+    const resolved = fromGamma().filter((e) => e.callType !== 'unresolved' && /run/.test(e.calleeId));
+    expect(resolved).toEqual([]);
+  });
+
+  it('quarantines that call as unresolved, so the ambiguity is visible downstream', () => {
+    // Refusing silently would be its own failure: `dropped-calls.json` is how a
+    // reader learns the analyzer could not choose, rather than assuming the
+    // call does not exist.
+    expect(fromGamma().some((e) => e.callType === 'unresolved' && /run/.test(e.raw ?? ''))).toBe(true);
+  });
+
+  it('still records both definitions as real functions', () => {
+    // Only the EDGE is refused. Both `Impl::run` bodies were parsed and both
+    // are facts; dropping them would trade one invariant violation for another.
+    expect(analysis.functions.filter((f) => f.name === 'run')).toHaveLength(2);
+  });
+});

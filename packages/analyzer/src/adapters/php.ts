@@ -408,7 +408,12 @@ function resolveTypeRef(
 ): TypeRef | undefined {
   const candidate = candidatesFor(spelling, scan, scope);
   if (!candidate) return undefined;
-  const hit = lookupScoped(std.scopedTypeToModule, candidate.scopes, candidate.name);
+  const hit = lookupScoped(
+    std.scopedTypeToModule,
+    candidate.scopes,
+    candidate.name,
+    std.ambiguousScopedTypes,
+  );
   return hit ? { scope: hit.scope, name: candidate.name, module: hit.value } : undefined;
 }
 
@@ -1178,6 +1183,11 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  // No type extraction yet — an EMPTY list is the positive declaration, not a
+  // gap in this object. The agent artifact reads it and says so on the page, and
+  // the `class-derived` fallback row (a span inferred from a class's methods,
+  // labelled as inferred) is what covers PHP classes, interfaces, traits and enums in the meantime.
+  typeKinds: [],
 };
 
 const PHP_SPEC: LanguageSpec<ModuleScan, PhpIndexes> = {

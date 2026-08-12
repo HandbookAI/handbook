@@ -771,8 +771,47 @@ function scanRoot(scan: ModuleScan, root: Node, file: string): void {
 /* ----------------------------------------------------------------- scopes */
 
 /**
+ * Was this spelling refused because the scan set declares the name MORE than
+ * once, rather than not at all?
+ *
+ * The difference decides `boundary` vs `unresolved`, and those are opposite
+ * claims. C++ requires a declaration before use, so a type no scanned file
+ * declares provably came from a header we did not read — `boundary` is a fact.
+ * A type two scanned files declare is the opposite situation: it is right here,
+ * twice, and the analyzer cannot say which. Calling that a boundary tells the
+ * reader it is third-party code.
+ */
+function typeSpellingIsAmbiguous(
+  spelling: string,
+  scan: ModuleScan,
+  scope: string,
+  std: StandardIndexes,
+): boolean {
+  if (!spelling) return false;
+  let name = tailOf(spelling);
+  let qualifier = qualifierOf(spelling);
+  if (!qualifier) {
+    const aliased = scan.imports.get(name);
+    if (aliased && aliased !== spelling) {
+      name = tailOf(aliased);
+      qualifier = qualifierOf(aliased);
+    }
+  }
+  for (const candidate of candidateScopes(scope, qualifier, scan.usingNamespaces)) {
+    const key = scopedKey(candidate, name);
+    if (std.ambiguousScopedTypes.has(key)) return true;
+    // The walk stops at the first scope that HAS the name, ambiguous or not —
+    // mirroring `lookupScoped`, or this would report an ambiguity in an outer
+    // scope that the real lookup never reached.
+    if (std.scopedTypeToModule.has(key)) return false;
+  }
+  return false;
+}
+
+/**
  * The type a written spelling names, or undefined when it is outside the scan
- * set. This is the call the bare-name `typeToModule` cannot make: `Config` from
+ * set — or, per {@link typeSpellingIsAmbiguous}, declared in it more than once.
+ * This is the call the bare-name `typeToModule` cannot make: `Config` from
  * inside `namespace alpha` is `alpha::Config`, never `beta::Config`.
  */
 function resolveTypeSpelling(
@@ -796,6 +835,7 @@ function resolveTypeSpelling(
     std.scopedTypeToModule,
     candidateScopes(scope, qualifier, scan.usingNamespaces),
     name,
+    std.ambiguousScopedTypes,
   );
   return hit ? { scope: hit.scope, name, module: hit.value } : undefined;
 }
@@ -1117,6 +1157,7 @@ function ownerOf(
       std.scopedTypeToModule,
       candidateScopes(record.scope, '', scan.usingNamespaces),
       record.className,
+      std.ambiguousScopedTypes,
     );
     return hit
       ? { scope: hit.scope, name: record.className, module: hit.value }
@@ -1137,8 +1178,12 @@ function resolveOnType(
   callType: Resolved['callType'],
   scan: ModuleScan,
   own: CppIndexes,
+  ambiguous = false,
 ): Resolved {
-  if (!ref) return boundaryOf(spelling, method);
+  // Ambiguous is NOT a boundary. The type is in the scan set twice, so claiming
+  // the call leaves the scan set is false; the honest answer is that we could
+  // not resolve it, which is what `dropped-calls.json` is for.
+  if (!ref) return ambiguous ? unresolvedOf(`${spelling}.${method}`) : boundaryOf(spelling, method);
   const id = memberIdOf(ref, method, scan, own);
   // Scanned type, member we never saw: still internal, so point into its module.
   return { calleeId: id ?? fallbackMemberId(ref, method), callType };
@@ -1268,7 +1313,15 @@ function resolveMember(
     const spelling = context.owner ? fieldTypeOf(context.owner, field, own) : '';
     if (!spelling) return unresolvedOf(`this->${field}.${method}`);
     const ref = resolveTypeSpelling(spelling, scan, context.scope, std);
-    return resolveOnType(ref, spelling, method, 'self_attr_method', scan, own);
+    return resolveOnType(
+      ref,
+      spelling,
+      method,
+      'self_attr_method',
+      scan,
+      own,
+      typeSpellingIsAmbiguous(spelling, scan, context.scope, std),
+    );
   }
 
   // C. one bare name: a typed value in scope, then own state, then a type.
@@ -1277,13 +1330,29 @@ function resolveMember(
     const scoped = context.scopeTypes.get(base);
     if (scoped) {
       const ref = resolveTypeSpelling(scoped, scan, context.scope, std);
-      return resolveOnType(ref, scoped, method, 'param_method', scan, own);
+      return resolveOnType(
+        ref,
+        scoped,
+        method,
+        'param_method',
+        scan,
+        own,
+        typeSpellingIsAmbiguous(scoped, scan, context.scope, std),
+      );
     }
     if (context.owner && !context.declaredNames.has(base)) {
       const spelling = fieldTypeOf(context.owner, base, own);
       if (spelling) {
         const ref = resolveTypeSpelling(spelling, scan, context.scope, std);
-        return resolveOnType(ref, spelling, method, 'self_attr_method', scan, own);
+        return resolveOnType(
+          ref,
+          spelling,
+          method,
+          'self_attr_method',
+          scan,
+          own,
+          typeSpellingIsAmbiguous(spelling, scan, context.scope, std),
+        );
       }
     }
     // A capitalized receiver that names no value in scope is a type or a
@@ -1438,6 +1507,11 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  // No type extraction yet — an EMPTY list is the positive declaration, not a
+  // gap in this object. The agent artifact reads it and says so on the page, and
+  // the `class-derived` fallback row (a span inferred from a class's methods,
+  // labelled as inferred) is what covers `class`, `struct` and `union` here in the meantime.
+  typeKinds: [],
 };
 
 const CPP_SPEC: LanguageSpec<ModuleScan, CppIndexes> = {

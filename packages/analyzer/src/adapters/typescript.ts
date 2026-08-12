@@ -15,12 +15,14 @@
  * unreadable line) are excluded from discovery.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
+  recordType,
   resolveFieldType,
   resolveOwnMethod,
   resolveSameFileFree,
@@ -124,6 +126,54 @@ function importOptions(scan: ModuleScan): ImportResolveOptions {
     capitalizedIsConstructor: true,
     moduleOf: (source) => resolveRelativeModule(file, source),
   };
+}
+
+/**
+ * Node type → the {@link TypeKind} it declares, for THIS grammar.
+ *
+ * Read off real parse trees, like every other node-type list in this package.
+ * `abstract` and `const` are modifiers rather than separate kinds, so
+ * `abstract_class_declaration` is a class and a `const enum` is an enum — the
+ * modifier survives in the signature, which is where it belongs.
+ *
+ * Deliberately absent, and named so the omission is a decision rather than an
+ * oversight:
+ * - `internal_module` / `module` (a `namespace X { … }`): its members are types
+ *   nested one level down, which needs a container-aware descent this adapter's
+ *   flat top-level scan does not do. Nothing is emitted for them at all rather
+ *   than emitting the namespace and pretending its contents were seen.
+ * - a `const` object used as an enum (`const Colors = {…} as const`): a value,
+ *   not a type declaration, and calling it an enum would be a guess.
+ */
+const TYPESCRIPT_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_declaration', 'class'],
+  ['abstract_class_declaration', 'class'],
+  ['interface_declaration', 'interface'],
+  ['enum_declaration', 'enum'],
+  ['type_alias_declaration', 'alias'],
+]);
+
+/**
+ * Record a top-level type declaration.
+ *
+ * The span comes from the UNWRAPPED declaration, not from the `export` statement
+ * around it, matching what `recordFunction` does for `export function` — so a
+ * signature column reads `interface HandbookModel`, never
+ * `export interface HandbookModel`, whichever kind of symbol it is.
+ */
+function scanTypeDeclaration(scan: ModuleScan, decl: Node, file: string): void {
+  const kind = TYPESCRIPT_TYPE_KINDS.get(decl.type);
+  if (!kind) return;
+  recordType(scan, {
+    name: fieldText(decl, 'name'),
+    kind,
+    node: decl,
+    // A type alias has a `value`, not a `body`; passing null makes the signature
+    // the whole declaration, which for `type StageId = string` is the useful part.
+    body: decl.childForFieldName('body'),
+    file,
+    container: null,
+  });
 }
 
 function unwrapExport(node: Node): Node {
@@ -521,6 +571,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  typeKinds: declaredTypeKinds(TYPESCRIPT_TYPE_KINDS),
 };
 
 const TYPESCRIPT_SPEC: LanguageSpec<ModuleScan> = {
@@ -554,6 +605,11 @@ const TYPESCRIPT_SPEC: LanguageSpec<ModuleScan> = {
         continue;
       }
       const decl = unwrapExport(child);
+      // Before the dispatch below, because a class is BOTH a type declaration and
+      // a method owner and both facts are wanted. An interface or an alias falls
+      // through the rest of the chain untouched, which is why this is not an
+      // `else if`.
+      scanTypeDeclaration(scan, decl, file);
       if (decl.type === 'class_declaration' || decl.type === 'abstract_class_declaration') {
         scanClass(scan, decl, file);
       } else if (decl.type === 'function_declaration') {
