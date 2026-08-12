@@ -1,3 +1,4 @@
+import { join, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, coerceValue } from './coerce.js';
 import type { Setting } from './types.js';
@@ -120,10 +121,18 @@ describe('coerceValue: path', () => {
   const p = s({ key: 'work', type: 'path' });
 
   it('resolves a relative path against the supplied base', () => {
-    expect(coerceValue(p, './out', 'x', '/repo')).toBe('/repo/out');
+    // Both sides go through `join`, because a `path` setting resolves for THIS
+    // machine — the base is a real directory and the result is handed to `fs`.
+    // A literal '/repo/out' asserts the host is POSIX: on Windows `resolve`
+    // completes a rooted path with the current drive and answers 'D:\repo\out',
+    // which is the correct answer to a differently-shaped question.
+    const base = resolve(sep, 'repo');
+    expect(coerceValue(p, './out', 'x', base)).toBe(join(base, 'out'));
   });
 
   it('leaves an absolute path alone', () => {
+    // '/tmp/w' is absolute under both platforms' rules (a Windows rooted path
+    // needs no drive), so this one literal is portable as written.
     expect(coerceValue(p, '/tmp/w', 'x', '/repo')).toBe('/tmp/w');
   });
 
