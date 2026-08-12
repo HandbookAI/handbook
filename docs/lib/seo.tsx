@@ -18,35 +18,29 @@
  */
 import type { Metadata } from 'next';
 import { BCP47, i18n, LOCALES, type Locale } from './i18n';
-import {
-  appName,
-  brand,
-  description,
-  keywords,
-  repoUrl,
-  shortDescription,
-  siteUrl,
-  social,
-  tagline,
-  verification,
-} from './shared';
+import { appName, brand, keywords, repoUrl, siteUrl, social, siteCopy, verification } from './shared';
 
-const ogImage = {
+/**
+ * Card art. The alt text is per locale because a screen reader in the reader's
+ * language is the whole point of alt text, and these two objects are what every
+ * Open Graph and Twitter card embeds.
+ */
+const ogImage = (locale: string) => ({
   url: '/og.png',
   width: 1200,
   height: 630,
-  alt: `${appName} — ${tagline}`,
+  alt: `${appName} — ${siteCopy(locale).tagline}`,
   type: 'image/png',
-};
+});
 
 /** Square art, for the platforms that crop a wide card into a thumbnail. */
-const squareImage = {
+const squareImage = (locale: string) => ({
   url: '/og-square.png',
   width: 1200,
   height: 1200,
-  alt: `${appName} — ${tagline}`,
+  alt: `${appName} — ${siteCopy(locale).tagline}`,
   type: 'image/png',
-};
+});
 
 /**
  * `locale` drives more than the `lang` attribute: the canonical URL, the
@@ -57,14 +51,18 @@ const squareImage = {
 export function siteMetadata(locale: string = i18n.defaultLanguage): Metadata {
   const home = (code: string): string => (code === i18n.defaultLanguage ? siteUrl : `${siteUrl}/${code}`);
   const bcp47 = BCP47[locale as Locale] ?? locale;
+  // The locale was already in hand and spent only on URLs: `title` and
+  // `description` read module-level English, so every non-English route
+  // advertised itself in English to search engines and link unfurlers.
+  const copy = siteCopy(locale);
 
   return {
     metadataBase: new URL(siteUrl),
     title: {
-      default: `${appName} — ${tagline}`,
+      default: `${appName} — ${copy.tagline}`,
       template: `%s · ${appName}`,
     },
-    description,
+    description: copy.description,
     keywords,
     applicationName: appName,
     category: 'technology',
@@ -93,21 +91,21 @@ export function siteMetadata(locale: string = i18n.defaultLanguage): Metadata {
     openGraph: {
       type: 'website',
       siteName: appName,
-      title: `${appName} — ${tagline}`,
-      description,
+      title: `${appName} — ${copy.tagline}`,
+      description: copy.description,
       url: home(locale),
       locale: bcp47.replace('-', '_'),
       alternateLocale: LOCALES.filter((l) => l.code !== locale).map((l) =>
         (BCP47[l.code as Locale] ?? l.code).replace('-', '_'),
       ),
-      images: [ogImage, squareImage],
+      images: [ogImage(locale), squareImage(locale)],
     },
 
     twitter: {
       card: 'summary_large_image',
-      title: `${appName} — ${tagline}`,
-      description: shortDescription,
-      images: [ogImage.url],
+      title: `${appName} — ${copy.tagline}`,
+      description: copy.shortDescription,
+      images: [ogImage(locale).url],
       ...(social.twitter ? { site: social.twitter, creator: social.twitter } : {}),
     },
 
@@ -181,7 +179,7 @@ export function PlatformMeta({ locale = i18n.defaultLanguage }: { locale?: strin
       {/* WeChat / QQ share cards read itemprop, not og:, when the page is not
           registered with an official account. */}
       <meta itemProp="name" content={appName} />
-      <meta itemProp="description" content={shortDescription} />
+      <meta itemProp="description" content={siteCopy(locale).shortDescription} />
       <meta itemProp="image" content={`${siteUrl}/og.png`} />
 
       {/* ── Pinterest ────────────────────────────────────────────────────── */}
@@ -226,14 +224,17 @@ export function PlatformMeta({ locale = i18n.defaultLanguage }: { locale?: strin
  * to a crawler as before. The payload is built from module constants — no user
  * input reaches it — and `<` is escaped so no content can close the tag early.
  */
-export function StructuredData() {
-  const json = JSON.stringify(structuredData()).replace(/</g, '\\u003c');
+export function StructuredData({ locale = i18n.defaultLanguage }: { locale?: string } = {}) {
+  const json = JSON.stringify(structuredData(locale)).replace(/</g, '\\u003c');
   return (
     <div hidden dangerouslySetInnerHTML={{ __html: `<script type="application/ld+json">${json}</script>` }} />
   );
 }
 
-function structuredData() {
+function structuredData(locale: string) {
+  // A search engine reads this per URL, so the description here must match the
+  // page it sits on rather than the default language's.
+  const copy = siteCopy(locale);
   return {
     '@context': 'https://schema.org',
     '@graph': [
@@ -241,7 +242,7 @@ function structuredData() {
         '@type': 'SoftwareApplication',
         '@id': `${siteUrl}/#software`,
         name: appName,
-        description,
+        description: copy.description,
         applicationCategory: 'DeveloperApplication',
         operatingSystem: 'macOS, Linux, Windows',
         url: siteUrl,
@@ -257,8 +258,12 @@ function structuredData() {
         '@id': `${siteUrl}/#website`,
         url: siteUrl,
         name: appName,
-        description: tagline,
-        inLanguage: 'en',
+        description: copy.tagline,
+        // Was hardcoded `'en'`: the Chinese page's JSON-LD told a search engine
+        // it was English, which is a stronger wrong signal than a missing one —
+        // the whole point of the hreflang set above is to keep eight
+        // translations from competing with each other.
+        inLanguage: BCP47[locale as Locale] ?? locale,
         potentialAction: {
           '@type': 'SearchAction',
           target: { '@type': 'EntryPoint', urlTemplate: `${siteUrl}/docs?q={search_term_string}` },

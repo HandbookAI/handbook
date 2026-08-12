@@ -26,12 +26,24 @@ export const source = loader({
   plugins: [lucideIconsPlugin()],
 });
 
+/**
+ * The social card's URL, with the locale INSIDE the route rather than in front
+ * of it.
+ *
+ * It used to be `/<locale>/og/docs/<slug…>/image.png`, but the route lives at
+ * `app/og/docs/[...slug]` with no `[lang]` segment — so only the default locale
+ * resolved, and then only because the i18n middleware had already stripped its
+ * prefix. Every other locale's card 404'd: an English docs link unfurled in
+ * Slack or WeChat and a Chinese one showed nothing. The card is also
+ * locale-independent as a ROUTE (one implementation, eight languages of copy),
+ * so the locale belongs in its parameters, not in its path prefix.
+ */
 export function getPageImageUrl(page: (typeof source)['$inferPage']) {
   const segments = [...page.slugs, 'image.png'];
 
   return {
     segments,
-    url: '/' + [page.locale, ...docsImageRoute.split('/'), ...segments].filter(Boolean).join('/'),
+    url: '/' + [...docsImageRoute.split('/'), page.locale, ...segments].filter(Boolean).join('/'),
   };
 }
 
