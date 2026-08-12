@@ -124,13 +124,15 @@
  * `#elseif` / `#else` nesting at file, type-body and expression level.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, Logger } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, Logger, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
   lookupScoped,
+  recordType,
   resolveOwnMethod,
   resolveSameFileFree,
   resolveSiblingPackage,
@@ -148,6 +150,50 @@ import {
  * is its own node type.
  */
 const EXTENSION_KIND = 'extension';
+
+/**
+ * Discriminator → the {@link TypeKind} it declares, for THIS grammar.
+ *
+ * Keyed by `declaration_kind` for a `class_declaration` and by NODE TYPE for the
+ * two declarations that have their own — which is what makes the capability
+ * derivable from the mapping instead of hand-listed. The two key spaces cannot
+ * collide: a `declaration_kind` is a bare keyword, a node type ends in
+ * `_declaration`.
+ *
+ * `actor` is `class`. It is nominal, instantiable, and owns methods and state —
+ * every clause of the definition — and its one distinguishing property (actor
+ * isolation) is a rule about how its members may be CALLED, not about the shape of
+ * the declaration. Same call the vocabulary already makes for a Kotlin `object`.
+ *
+ * `protocol` is `interface`, which the vocabulary states outright.
+ *
+ * `extension` is deliberately absent, and this is the one omission that matters:
+ * `extension Engine { … }` declares NO type. Its `name` field is the extended
+ * type, declared somewhere else entirely — usually in another file, often in
+ * another module — so a row for it would report `Engine` as being declared at a
+ * line where it is not, and an agent that opened that span would read an
+ * extension block believing it was the definition. That is a wrong pointer, which
+ * is worse than a missing one. Extension MEMBERS are still recorded, attached to
+ * the type they extend; it is only the type row that would be a lie.
+ *
+ * Also absent: `associatedtype` (a placeholder inside a protocol, not a
+ * declaration of a concrete type) and `enum case` / a `case`'s payload.
+ */
+const SWIFT_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class', 'class'],
+  ['actor', 'class'],
+  ['struct', 'struct'],
+  ['enum', 'enum'],
+  ['protocol_declaration', 'interface'],
+  ['typealias_declaration', 'alias'],
+]);
+
+/** The kind a declaration node declares, or undefined for an `extension`. */
+function swiftTypeKind(node: Node): TypeKind | undefined {
+  const key =
+    node.type === 'class_declaration' ? (node.childForFieldName('declaration_kind')?.text ?? '') : node.type;
+  return SWIFT_TYPE_KINDS.get(key);
+}
 
 /** Bodies whose children are a type's members. */
 const TYPE_BODIES = new Set(['class_body', 'enum_class_body', 'protocol_body']);
@@ -717,6 +763,10 @@ function scanMember(
       return undefined;
     case 'class_declaration':
     case 'protocol_declaration':
+    // A nested `typealias` declares no member, but the container walk is what
+    // reaches it — without this the body is never re-visited and a type nested
+    // inside one would be silently missing rather than reported.
+    case 'typealias_declaration':
       return member;
     default:
       return undefined;
@@ -783,6 +833,34 @@ interface Frame {
   scope: string;
 }
 
+/**
+ * Emit the {@link TypeNode} for one declaration. Returns without recording for an
+ * `extension`, whose name belongs to a type declared elsewhere.
+ */
+function recordTypeDeclaration(
+  scan: ModuleScan,
+  node: Node,
+  name: string,
+  scope: string,
+  file: string,
+): void {
+  const kind = swiftTypeKind(node);
+  if (!kind) return;
+  recordType(scan, {
+    name,
+    kind,
+    node,
+    // `class_body`, `enum_class_body` or `protocol_body`; a typealias has none, so
+    // its whole text is the signature — which for `typealias Rpm = Int` is the point.
+    body: node.childForFieldName('body'),
+    file,
+    // The enclosing TYPE path. Swift has no namespaces, so a top-level declaration
+    // has no container at all, and a nested one comes out as `Outer.Inner` — the
+    // same path its members already use.
+    container: scope || null,
+  });
+}
+
 function scanFile(scan: ModuleScan, root: Node, file: string): void {
   // Worklist rather than recursion: types nest without bound, and an explicit
   // stack cannot overflow on pathological input.
@@ -794,6 +872,13 @@ function scanFile(scan: ModuleScan, root: Node, file: string): void {
       if (!child) continue;
       if (child.type === 'import_declaration') {
         collectImport(child, scan);
+        continue;
+      }
+      if (child.type === 'typealias_declaration') {
+        // `typealias Rpm = Int` declares a type but no member, so it never enters
+        // call resolution — it is indexed here and nowhere else. The FIRST `name`
+        // field is the alias; the second is the type it aliases.
+        recordTypeDeclaration(scan, child, coreTypeName(child.childForFieldName('name')), frame.scope, file);
         continue;
       }
       if (child.type !== 'class_declaration' && child.type !== 'protocol_declaration') continue;
@@ -810,6 +895,7 @@ function scanFile(scan: ModuleScan, root: Node, file: string): void {
 
       if (!scan.ownerMethods.has(owner)) scan.ownerMethods.set(owner, new Set());
       if (!scan.ownerFields.has(owner)) scan.ownerFields.set(owner, new Set());
+      recordTypeDeclaration(scan, child, written, frame.scope, file);
       if (kind !== EXTENSION_KIND) {
         if (!scan.typeModules.has(owner)) scan.typeModules.set(owner, scan.moduleId);
         let siblings = scan.scopedTypes.get(frame.scope);
@@ -1204,11 +1290,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
-  // No type extraction yet — an EMPTY list is the positive declaration, not a
-  // gap in this object. The agent artifact reads it and says so on the page, and
-  // the `class-derived` fallback row (a span inferred from a class's methods,
-  // labelled as inferred) is what covers Swift classes, structs, enums and protocols in the meantime.
-  typeKinds: [],
+  typeKinds: declaredTypeKinds(SWIFT_TYPE_KINDS),
 };
 
 const SWIFT_SPEC: LanguageSpec<ModuleScan, SwiftIndexes> = {

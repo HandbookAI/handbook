@@ -105,14 +105,16 @@
  *     `[[attributes]]` are not collected — `decorators` is always empty.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, FunctionNode } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, FunctionNode, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
   dirOf,
   lookupScoped,
+  recordType,
   scopedKey,
   unresolvedOf,
   SpineAdapter,
@@ -164,6 +166,37 @@ const DECLARATOR_LIKE = new Set([
 
 /** Type declarations that own a member list. */
 const TYPE_SPECIFIERS = new Set(['class_specifier', 'struct_specifier', 'union_specifier']);
+
+/**
+ * Node type → the {@link TypeKind} it declares. Both grammars in this adapter (`c`
+ * and `cpp`) use the same names for all six — verified on real headers of each.
+ *
+ * `union_specifier` is `other`, NOT `struct`. A union is overlapping storage read
+ * through exactly one member at a time; an aggregate of named fields it is not, and
+ * a reader who takes `union Payload` for a struct will read every field as though
+ * all of them held a value at once. That is a wrong fact, so it goes in the escape
+ * hatch with `union Payload` verbatim in the signature. (The Rust adapter files
+ * `union` the same way, for the same reason.)
+ *
+ * `enum class Mode` is an `enum`; `class`/`struct` here is a modifier that changes
+ * scoping and implicit conversion, not the kind of thing being declared, and it
+ * survives in the signature. Likewise `struct` and `class` in C++ differ ONLY in
+ * default member access, but they stay separate buckets because the keyword is what
+ * a reader searched for and both words exist in the vocabulary.
+ *
+ * Both spellings of a type alias are `alias`: `using Rpm = int` (`alias_declaration`)
+ * and `typedef int Rpm` (`type_definition`) mean the same thing, and unlike Go's
+ * defined type or Solidity's user-defined value type, a C++ alias really is a second
+ * name for the same type — the language forbids overloading on it.
+ */
+const CPP_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_specifier', 'class'],
+  ['struct_specifier', 'struct'],
+  ['union_specifier', 'other'],
+  ['enum_specifier', 'enum'],
+  ['alias_declaration', 'alias'],
+  ['type_definition', 'alias'],
+]);
 
 /**
  * Preprocessor conditionals whose branches are scanned as ordinary containers.
@@ -514,18 +547,110 @@ function collectUsing(scan: ModuleScan, node: Node): void {
   scan.imports.set(tailOf(spelling), spelling);
 }
 
-function collectAlias(scan: ModuleScan, node: Node): void {
+/**
+ * `demo::inner` → `demo.inner.`, ready to prefix a qualname. Empty for the global
+ * scope, so a global type's qualname is its bare name.
+ */
+function dottedScope(scope: string): string {
+  return scope ? `${scope.split('::').join('.')}.` : '';
+}
+
+/**
+ * Emit the {@link TypeNode} for one declaration, and return its qualname so a
+ * declaration nested inside it can name it as its container.
+ *
+ * A class/struct/union/enum specifier with NO body is refused: `class Fwd;` and the
+ * `struct Engine` of `struct Engine* e;` are the same node type as a definition, and
+ * both are references to a type declared somewhere else. A row for one would send a
+ * reader to a line that declares no members — and in the common
+ * forward-declare-in-header, define-in-source layout, to the wrong file entirely.
+ * The type is not lost: wherever its definition IS scanned, that is the row.
+ */
+function recordTypeSpecifier(
+  scan: ModuleScan,
+  node: Node,
+  name: string,
+  file: string,
+  scope: string,
+  container: string | null,
+): string {
+  const kind = CPP_TYPE_KINDS.get(node.type);
+  const qualname = `${container ? `${container}.` : dottedScope(scope)}${name}`;
+  if (!kind || !name) return qualname;
+  const body = node.childForFieldName('body');
+  if (TYPE_SPECIFIERS.has(node.type) || node.type === 'enum_specifier') {
+    if (!body) return qualname;
+  }
+  recordType(scan, {
+    name,
+    kind,
+    node,
+    // The member list (or enumerator list), so `class Engine : public Base` stops
+    // before its members. An alias has none and shows whole, which is right:
+    // `using Rpm = int` IS its own header.
+    body,
+    file,
+    container,
+    // Only one of the two carries the namespace: `container` is already a full
+    // qualname, so prefixing again would double it.
+    namePrefix: container ? '' : dottedScope(scope),
+  });
+  return qualname;
+}
+
+/**
+ * The name a `typedef` introduces. `coreDeclarator` stops at a
+ * `function_declarator`, so `typedef int (*Handler)(int)` needs a descent: the
+ * declared name always precedes the parameter list, which is why the FIRST
+ * `type_identifier` in the subtree is the alias and never a parameter's type.
+ */
+function typedefName(node: Node): string {
+  const declarator = node.childForFieldName('declarator');
+  if (!declarator) return '';
+  const core = coreDeclarator(declarator);
+  if (core?.type === 'type_identifier') return core.text;
+  let found = '';
+  walk(declarator, (n) => {
+    if (found) return false;
+    if (n.type !== 'type_identifier') return undefined;
+    found = n.text;
+    return false;
+  });
+  return found;
+}
+
+function collectAlias(
+  scan: ModuleScan,
+  node: Node,
+  file: string,
+  scope: string,
+  container: string | null,
+): void {
   // `using Alias = demo::Engine;`
   const alias = fieldText(node, 'name');
   const target = typeSpelling(node.childForFieldName('type'));
+  recordTypeSpecifier(scan, node, alias, file, scope, container);
   if (alias && target && alias !== target) scan.imports.set(alias, target);
 }
 
-function collectTypedef(scan: ModuleScan, node: Node): void {
+function collectTypedef(
+  scan: ModuleScan,
+  node: Node,
+  file: string,
+  scope: string,
+  container: string | null,
+): void {
   // `typedef struct Point Point;` / `typedef demo::Engine E;`
   const target = typeSpelling(node.childForFieldName('type'));
-  const core = coreDeclarator(node.childForFieldName('declarator'));
-  const alias = core?.type === 'type_identifier' ? core.text : '';
+  const alias = typedefName(node);
+  // `typedef struct Node { … } Node;` DEFINES a type and names it in one statement.
+  // The definition is recorded first, so when the two names are identical it is the
+  // struct that survives the id dedupe — the definition is what a reader wants.
+  const inner = node.childForFieldName('type');
+  if (inner && CPP_TYPE_KINDS.has(inner.type)) {
+    recordTypeSpecifier(scan, inner, fieldText(inner, 'name'), file, scope, container);
+  }
+  recordTypeSpecifier(scan, node, alias, file, scope, container);
   if (alias && target && alias !== target) scan.imports.set(alias, target);
 }
 
@@ -615,11 +740,19 @@ function membersOf(body: Node): Node[] {
   return members;
 }
 
-function scanTypeDeclaration(scan: ModuleScan, node: Node, scope: string, file: string): void {
+function scanTypeDeclaration(
+  scan: ModuleScan,
+  node: Node,
+  scope: string,
+  file: string,
+  container: string | null,
+): void {
   const name = fieldText(node, 'name');
   const body = node.childForFieldName('body');
   // No body = a reference to the type (`struct Engine* e`), not a declaration.
   if (!name || !body) return;
+
+  const qualname = recordTypeSpecifier(scan, node, name, file, scope, container);
 
   const key = scopedKey(scope, name);
   let info = scan.types.get(key);
@@ -652,8 +785,21 @@ function scanTypeDeclaration(scan: ModuleScan, node: Node, scope: string, file: 
   for (const member of membersOf(body)) {
     if (TYPE_SPECIFIERS.has(member.type)) {
       // A nested type keeps the enclosing NAMESPACE as its scope; see the header
-      // note on bare-name keying of nested types.
-      scanTypeDeclaration(scan, member, scope, file);
+      // note on bare-name keying of nested types. Its TYPE row, by contrast, is
+      // qualified by the enclosing type — that is what `container` means.
+      scanTypeDeclaration(scan, member, scope, file, qualname);
+      continue;
+    }
+    if (member.type === 'alias_declaration') {
+      collectAlias(scan, member, file, scope, qualname);
+      continue;
+    }
+    if (member.type === 'type_definition') {
+      collectTypedef(scan, member, file, scope, qualname);
+      continue;
+    }
+    if (member.type === 'enum_specifier') {
+      recordTypeSpecifier(scan, member, fieldText(member, 'name'), file, scope, qualname);
       continue;
     }
     if (member.type === 'function_definition') {
@@ -671,6 +817,18 @@ function scanTypeDeclaration(scan: ModuleScan, node: Node, scope: string, file: 
       continue;
     }
     if (member.type !== 'field_declaration' && member.type !== 'declaration') continue;
+
+    // A nested type declared with no trailing declarator (`class Inner { … };`)
+    // reaches us WRAPPED in a `field_declaration` whose `type` field is the
+    // specifier — the bare form above only happens at namespace level. Without this
+    // a nested type is invisible, which is how the interim's derived rows came to be
+    // the only trace of one.
+    const inner = member.childForFieldName('type');
+    if (inner && TYPE_SPECIFIERS.has(inner.type)) {
+      scanTypeDeclaration(scan, inner, scope, file, qualname);
+    } else if (inner?.type === 'enum_specifier') {
+      recordTypeSpecifier(scan, inner, fieldText(inner, 'name'), file, scope, qualname);
+    }
 
     const declaredType = typeSpelling(member.childForFieldName('type'));
     const isStatic = hasSpecifier(member, 'static');
@@ -719,10 +877,14 @@ function scanRoot(scan: ModuleScan, root: Node, file: string): void {
           collectUsing(scan, child);
           break;
         case 'alias_declaration':
-          collectAlias(scan, child);
+          collectAlias(scan, child, file, scope, null);
           break;
         case 'type_definition':
-          collectTypedef(scan, child);
+          collectTypedef(scan, child, file, scope, null);
+          break;
+        case 'enum_specifier':
+          // Indexed but never scanned for members: an enum has none to call.
+          recordTypeSpecifier(scan, child, fieldText(child, 'name'), file, scope, null);
           break;
         case 'namespace_definition': {
           const named = child.childForFieldName('name');
@@ -753,7 +915,7 @@ function scanRoot(scan: ModuleScan, root: Node, file: string): void {
         case 'class_specifier':
         case 'struct_specifier':
         case 'union_specifier':
-          scanTypeDeclaration(scan, child, scope, file);
+          scanTypeDeclaration(scan, child, scope, file, null);
           break;
         case 'function_definition':
           scanFunctionDefinition(scan, child, scope, file);
@@ -1507,11 +1669,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
-  // No type extraction yet — an EMPTY list is the positive declaration, not a
-  // gap in this object. The agent artifact reads it and says so on the page, and
-  // the `class-derived` fallback row (a span inferred from a class's methods,
-  // labelled as inferred) is what covers `class`, `struct` and `union` here in the meantime.
-  typeKinds: [],
+  typeKinds: declaredTypeKinds(CPP_TYPE_KINDS),
 };
 
 const CPP_SPEC: LanguageSpec<ModuleScan, CppIndexes> = {

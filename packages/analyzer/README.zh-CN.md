@@ -140,26 +140,50 @@ readonly capabilities: AdapterCapabilities = {
 类型抽取**是局部的，而且这个边界是声明出来的**。`typeKinds` 列出适配器真正解析的种类；
 空数组是一句肯定的声明——"它不解析任何类型"。
 
-| 语言                                             | 是否抽取 | 映射                                                                                               |
-| ------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
-| TypeScript                                       | 是       | `class`（含 `abstract`）· `interface` · `enum`（含 `const enum`）· `alias`（`type X = …`）         |
-| Python                                           | 是       | `class`                                                                                            |
-| Go                                               | 是       | `struct` · `interface` · `alias`（`type A = B`）· `other`（_定义类型_，如 `type Celsius float64`） |
-| Rust                                             | 是       | `struct` · `enum` · `trait` · `alias`（`type`）· `other`（`union`）                                |
-| Java                                             | 是       | `class` · `interface` · `enum` · `record` · `other`（`@interface`）                                |
-| C#                                               | 是       | `class` · `interface` · `struct` · `record`（含 `record struct`）· `enum`                          |
-| C/C++、Ruby、PHP、Swift、Dart、Solidity          | **否**   | —                                                                                                  |
-| Shell                                            | **否**   | 该语言没有命名类型                                                                                 |
-| Kotlin、Scala、Zig、Objective-C、OCaml（通用层） | **否**   | —                                                                                                  |
+| 语言                                             | 是否抽取 | 映射                                                                                                    |
+| ------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------- |
+| TypeScript                                       | 是       | `class`（含 `abstract`）· `interface` · `enum`（含 `const enum`）· `alias`（`type X = …`）              |
+| Python                                           | 是       | `class`                                                                                                 |
+| Go                                               | 是       | `struct` · `interface` · `alias`（`type A = B`）· `other`（_定义类型_，如 `type Celsius float64`）      |
+| Rust                                             | 是       | `struct` · `enum` · `trait` · `alias`（`type`）· `other`（`union`）                                     |
+| Java                                             | 是       | `class` · `interface` · `enum` · `record` · `other`（`@interface`）                                     |
+| C#                                               | 是       | `class` · `interface` · `struct` · `record`（含 `record struct`）· `enum` · `other`（`delegate`）       |
+| C/C++                                            | 是       | `class` · `struct` · `enum`（含 `enum class`）· `alias`（`using X = …`、`typedef`）· `other`（`union`） |
+| Ruby                                             | 是       | `class` · `other`（`module`——一个关键字两种用途，见下）                                                 |
+| PHP                                              | 是       | `class` · `interface` · `trait` · `enum`                                                                |
+| Swift                                            | 是       | `class`（含 `actor`）· `struct` · `enum` · `interface`（`protocol`）· `alias`（`typealias`）            |
+| Dart                                             | 是       | `class` · `enum` · `trait`（`mixin`）· `alias`（`typedef`）· `other`（`extension type`）                |
+| Solidity                                         | 是       | `class`（`contract`）· `interface` · `struct` · `enum` · `other`（`library`、`type X is Y`）            |
+| Shell                                            | **否**   | 该语言没有命名类型                                                                                      |
+| Kotlin、Scala、Zig、Objective-C、OCaml（通用层） | **否**   | 靠模式匹配而非精确解析，见下                                                                            |
+
+通用层**故意**不抽取类型。两层产出的 IR 长得一样，所以一行模式匹配来的类型
+与精确解析的类型在下游无从分辨——而这正是保真度声明要防的事。
+那五种语言继续用标注为推导所得的 `class-derived` 兜底。
 
 已覆盖语言内部仍有的缺口，写在这里，好让"查不到"不被当成"不存在"：
 
 - **TypeScript**：`namespace` 内部的类型不会产出（扫描是对顶层声明的平铺遍历）。
-- **C#**：`delegate` 不产出——它是命名类型，但放进任何一个桶都不对，
-  而对这么常见的东西标 `other`，说的比不说还少。
 - **Python**：`class Color(Enum)` 记为 `class`。判定 `enum` 的唯一依据是一个基类名，
   而任何模块都能定义它、任何 import 都能改名，所以不做这个推断。
-- **所有语言**：常量、变量和宏完全不进索引。
+- **Ruby**：`module` 归入 `other`，既不是 `trait` 也不是 `interface`。一个关键字干两件
+  不相干的事——命名空间（包住一个文件里所有类的 `module Demo`）和带实现的 mixin
+  （`include Comparable`）——而声明本身并不说明是哪一件。写在 `describe`/`do` 块里的
+  `class`/`module` 完全不产出：扫描不进 DSL 块，和它不记录 `define_method` 是同一个理由。
+- **Swift、Dart**：`extension` 不声明类型，因此不产出行。它的 `name` 是别处（通常是另一个
+  文件）声明的类型，产出一行就会把读者指到 extension 而不是声明处。extension 的**成员**
+  仍然记在被扩展的类型上。
+- **C/C++**：前向声明（`class Fwd;`）不产出行——它不声明任何成员，而在常见的头文件/源文件
+  拆分里它甚至不是那个文件。函数体内的 `using` 别名不进索引（遍历不进函数体）。
+- **Swift、C++、Ruby**：函数体内声明的类型不产出，同样的理由。
+- **Solidity**：`event` 和自定义 `error` 不产出行。两者都有名字，但都不是类型：
+  既不能标注变量，也不能被继承。
+- **所有带注解的语言**（C#、Java、Swift、Dart、Python）：跨度从前置的注解/特性开始，
+  因为语法的声明节点就是从那里开始的。于是一段很长的注解可能把类型自己的名字挤出被截断的
+  `signature`——在 `flutter/packages` 上实测 58/7212 行，在 Newtonsoft.Json 上 4/1756 行。
+- **所有语言**：常量、变量和宏完全不进索引。同名的重载集合或同名不同泛型元数的家族共用
+  一个 id，因此只有第一行留存（`Func<T>`/`Func<T1,T2>` → 一个 `Func`），
+  和函数用的 id 模型一致。
 
 词表是封闭的（`class` `interface` `struct` `record` `enum` `trait` `alias` `other`），
 和 `FILE_ROLES` 一样。前七个都装不下的构造归入 `other`，而不是塞进"最像"的那个桶——

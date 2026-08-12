@@ -36,9 +36,12 @@ while a made-up range opens the wrong code in silence.
 **Coverage is partial and declared, per invariant 3.** `AdapterCapabilities` grows
 `typeKinds`, a list rather than a boolean because the honest answer is per kind — Go has no
 `class`, and an adapter could easily find classes and miss every interface. Real extraction
-ships for **TypeScript, Python, Go, Rust, Java and C#**; the other seven full-tier adapters
-and the whole generic tier declare `typeKinds: []`, which is a positive statement, not a
-silence. `register.test.ts` runs every adapter against a fixture and compares the
+ships for **all twelve full-tier adapters with types**: TypeScript, Python, Go, Rust, Java,
+C#, C/C++, Ruby, PHP, Swift, Dart and Solidity. Shell declares `typeKinds: []` because the
+language has no named types, and the whole generic tier declares `[]` on purpose — a
+pattern-matched type row would be indistinguishable from a parsed one at a lower fidelity,
+which is the trap invariant 3 exists to prevent. An empty list is a positive statement, not
+a silence. `register.test.ts` runs every adapter against a fixture and compares the
 declaration to what was emitted **in both directions**, so an under-claim and an over-claim
 both fail the build. `agent/index.md` names which languages are indexed (with their kinds)
 and which are not, so an agent that greps a Kotlin interface and finds nothing knows it has
@@ -48,7 +51,12 @@ a gap rather than an answer. Where an adapter extracts no types, the labelled
 **The vocabulary is closed** — `class` `interface` `struct` `record` `enum` `trait` `alias`
 `other` — like `FILE_ROLES`. A construct that fits none of the first seven gets `other`
 rather than the nearest-looking bucket: a Go _defined_ type (`type Celsius float64`) is not
-an alias, a Rust `union` is not a struct, and a Java `@interface` is not an interface.
+an alias, a Rust or C++ `union` is not a struct, a Java `@interface` is not an interface, a
+C# `delegate` is not an alias (two with the same signature are distinct types), a Solidity
+`library` is not a class (not instantiable, no state) and a Solidity `type X is Y` is not an
+alias (it needs wrap/unwrap). A Ruby `module` is `other` for a different reason — one
+keyword doing two unrelated jobs, namespace and mixin, with nothing in the declaration
+saying which — whereas a Dart `mixin`, whose keyword has exactly one job, is a `trait`.
 `TypeNode.signature` carries the declaration **as written**, so `other` never loses the
 native keyword.
 

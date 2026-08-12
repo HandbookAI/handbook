@@ -30,6 +30,14 @@ export interface BuildGraphOptions {
   /** Language label for metadata (`multi` for merged graphs). */
   language: string;
   /**
+   * Which adapter scanned each file — relative POSIX path → language name.
+   *
+   * Optional because a single-language caller can leave it out and lose
+   * nothing; a polyglot one must pass it, or fidelity can only be disclosed as
+   * a global footnote rather than on the rows it governs.
+   */
+  fileLanguages?: Readonly<Record<string, string>>;
+  /**
    * Files the analysis could not fully turn into facts. Pass `[]` to state that
    * every scanned file parsed cleanly; omit it only when the caller genuinely
    * does not know (an out-of-tree adapter that predates the record).
@@ -88,6 +96,11 @@ export function buildGraph(analysis: ModuleAnalysis, options: BuildGraphOptions)
       sourceRoot: options.sourceRoot,
       scannedFiles: [...options.scannedFiles],
       fileHashes: options.fileHashes,
+      // Sorted, so an unchanged tree re-renders byte-identically — the same rule
+      // every other map in this artifact follows.
+      fileLanguages: options.fileLanguages
+        ? Object.fromEntries(Object.entries(options.fileLanguages).sort(([a], [b]) => (a < b ? -1 : 1)))
+        : undefined,
       nInternalFunctions: internalCount,
       nBoundaryNodes: boundaryCount,
       nEdges: kept.length,

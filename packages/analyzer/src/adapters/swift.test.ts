@@ -598,6 +598,141 @@ describe.skipIf(!SAFE)('SwiftAdapter — extension-only module', () => {
   });
 });
 
+describe.skipIf(!SAFE)('SwiftAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `import Foundation
+
+public protocol Runner {
+    func start()
+}
+
+public class Engine: Runner {
+    var rpm: Int = 0
+
+    public func start() { }
+
+    struct Nested {
+        var x: Int
+    }
+
+    typealias Inner = Int
+}
+
+struct Point {
+    var x: Int
+}
+
+enum Gear {
+    case low
+    case high
+}
+
+actor Counter {
+    var n = 0
+}
+
+typealias Rpm = Int
+
+@available(macOS 10.15, *)
+public final class Annotated {
+    var x = 0
+}
+`;
+  // The extension lives in its OWN file, which is both how Swift is written and
+  // what makes the "no row for an extension" test bite: in the same file a bogus
+  // row would collide with the class's id and be swallowed by the dedupe, so the
+  // test would pass for the wrong reason.
+  const EXTRA = `extension Engine {
+    public func idle() -> Int {
+        return self.rpm
+    }
+}
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-swift-types-'));
+    writeFileSync(join(root, 'Kinds.swift'), SRC);
+    writeFileSync(join(root, 'More.swift'), EXTRA);
+    analysis = await new SwiftAdapter().analyze(['Kinds.swift', 'More.swift'], root);
+  });
+
+  it('tells the four `class_declaration` spellings apart by declaration_kind', () => {
+    // One node type carries class, struct, enum, actor AND extension; only the
+    // `declaration_kind` field distinguishes them.
+    expect(find('Engine')?.kind).toBe('class');
+    expect(find('Point')?.kind).toBe('struct');
+    expect(find('Gear')?.kind).toBe('enum');
+  });
+
+  it('calls an actor a class', () => {
+    // Nominal, instantiable, owns methods and state. Actor isolation is a rule
+    // about calling its members, not about the shape of the declaration.
+    expect(find('Counter')?.kind).toBe('class');
+    expect(find('Counter')?.signature).toBe('actor Counter');
+  });
+
+  it('calls a protocol an interface and a typealias an alias', () => {
+    expect(find('Runner')?.kind).toBe('interface');
+    expect(find('Runner')?.signature).toBe('public protocol Runner');
+    expect(find('Rpm')?.kind).toBe('alias');
+    // The node has TWO `name` fields; the first is the alias, the second is `Int`.
+    expect(find('Rpm')?.signature).toBe('typealias Rpm = Int');
+    expect(find('Int')).toBeUndefined();
+  });
+
+  it('emits no type for an extension, whose members it still attaches', () => {
+    // `extension Engine` names a type declared ABOVE it, and in real code usually
+    // in another file. A row for it would report Engine as declared at the
+    // extension's line — a pointer to code that is not the declaration.
+    expect((analysis.types ?? []).filter((t) => t.name === 'Engine')).toHaveLength(1);
+    expect(find('Engine')?.file).toBe('Kinds.swift');
+    expect(find('Engine')?.lineStart).toBe(7);
+    expect((analysis.types ?? []).some((t) => t.file === 'More.swift')).toBe(false);
+    expect(analysis.functions.some((f) => f.qualname === 'Engine.idle')).toBe(true);
+  });
+
+  it('qualifies a nested type and a nested typealias by the enclosing type', () => {
+    expect(find('Nested')?.qualname).toBe('Engine.Nested');
+    expect(find('Nested')?.container).toBe('Engine');
+    // Reached only because the container walk re-visits a body that holds one.
+    expect(find('Inner')?.qualname).toBe('Engine.Inner');
+    expect(find('Inner')?.kind).toBe('alias');
+    expect(find('Point')?.container).toBeNull();
+  });
+
+  it('spans the declaration, never the members', () => {
+    const engine = find('Engine');
+    expect(lines[(engine?.lineStart ?? 0) - 1]).toBe('public class Engine: Runner {');
+    expect(engine?.signature).toBe('public class Engine: Runner');
+    expect(engine?.lineEnd).toBeGreaterThan(engine?.lineStart ?? 0);
+  });
+
+  it('starts an attributed declaration span at the attribute, as the grammar does', () => {
+    // Pinned rather than tolerated: the attribute is INSIDE `class_declaration`, so
+    // this IS the declaration node's span, and it matches what the C# and Java
+    // adapters already do. Measured on Alamofire: 43 of 424 rows start on an
+    // attribute or `@available` line. The README discloses the one cost — a long
+    // attribute can push the name past the truncated signature.
+    const annotated = find('Annotated');
+    expect(lines[(annotated?.lineStart ?? 0) - 1]).toBe('@available(macOS 10.15, *)');
+    expect(annotated?.signature).toBe('@available(macOS 10.15, *) public final class Annotated');
+    expect(annotated?.kind).toBe('class');
+  });
+
+  it('declares exactly the kinds it emits', () => {
+    expect(new SwiftAdapter().capabilities.typeKinds).toEqual([
+      'alias',
+      'class',
+      'enum',
+      'interface',
+      'struct',
+    ]);
+  });
+});
+
 describe('SwiftAdapter — grammar hazard disclosure', () => {
   it('reports whether this runtime can parse Swift at all', () => {
     // Not an assertion about SAFE: it is false on Node >= 22 by design. The

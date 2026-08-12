@@ -110,13 +110,15 @@
  *   - PHP has no `async`/`await`, so `isAsync` and `isAwait` are always false.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
   lookupScoped,
+  recordType,
   scopedKey,
   unresolvedOf,
   SpineAdapter,
@@ -138,13 +140,36 @@ const EXTENSION_RE = /\.(php|phtml)$/;
  */
 const BLADE_RE = /\.blade\.php$/;
 
-/** Declarations that introduce a named type with members. */
-const TYPE_DECLS = new Set([
-  'class_declaration',
-  'interface_declaration',
-  'trait_declaration',
-  'enum_declaration',
+/**
+ * Node type → the {@link TypeKind} it declares, for THIS grammar.
+ *
+ * PHP is the one language whose four declaration keywords land on four distinct
+ * vocabulary members with nothing forced: a `trait` is the word the vocabulary
+ * borrowed (a contract that carries implementation), and PHP's is the canonical
+ * one — `use Loggable;` composes its bodies into a class exactly as Rust's and
+ * Scala's do.
+ *
+ * Deliberately absent, so each omission is a decision rather than an oversight:
+ * - an anonymous class (`new class extends Base {}`) has no `name` field and no
+ *   name a reader could search for. `recordType` refuses it either way.
+ * - a `const` or `define()` — a value, not a type.
+ * - PHP has no type aliases at all, so `alias` is not claimed. `class_alias()` is
+ *   a runtime function call, and reading one as a declaration would state a fact
+ *   the parser cannot see (its arguments may be variables).
+ */
+const PHP_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_declaration', 'class'],
+  ['interface_declaration', 'interface'],
+  ['trait_declaration', 'trait'],
+  ['enum_declaration', 'enum'],
 ]);
+
+/**
+ * Declarations that introduce a named type with members. Derived from
+ * {@link PHP_TYPE_KINDS} so the call-resolution walk and the declared capability
+ * cannot drift apart — in PHP they are exactly the same four nodes.
+ */
+const TYPE_DECLS = new Set(PHP_TYPE_KINDS.keys());
 
 /**
  * Statement nodes walked as containers when hunting for declarations. Real code
@@ -793,6 +818,22 @@ function scanTypeDeclaration(scan: ModuleScan, node: Node, scope: string, file: 
   if (!name) return;
   const body = node.childForFieldName('body');
 
+  const kind = PHP_TYPE_KINDS.get(node.type);
+  if (kind) {
+    recordType(scan, {
+      name,
+      kind,
+      node,
+      body,
+      file,
+      // The namespace, like every PHP id in this adapter — `App.Billing.App`, so a
+      // type and its methods sort together. `container` stays null: PHP has no
+      // nested type declarations, and a namespace is a scope, not a type.
+      namePrefix: scope ? `${dotted(scope)}.` : '',
+      container: null,
+    });
+  }
+
   const key = scopedKey(scope, name);
   let info = scan.types.get(key);
   if (!info) {
@@ -1183,11 +1224,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
-  // No type extraction yet — an EMPTY list is the positive declaration, not a
-  // gap in this object. The agent artifact reads it and says so on the page, and
-  // the `class-derived` fallback row (a span inferred from a class's methods,
-  // labelled as inferred) is what covers PHP classes, interfaces, traits and enums in the meantime.
-  typeKinds: [],
+  typeKinds: declaredTypeKinds(PHP_TYPE_KINDS),
 };
 
 const PHP_SPEC: LanguageSpec<ModuleScan, PhpIndexes> = {

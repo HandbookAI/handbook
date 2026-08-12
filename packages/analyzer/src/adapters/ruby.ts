@@ -102,14 +102,16 @@
  *     `decorators` is always empty.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
   dirOf,
   lookupScoped,
+  recordType,
   scopedKey,
   unresolvedOf,
   SpineAdapter,
@@ -136,6 +138,37 @@ const DEFINITION_NODES: ReadonlySet<string> = new Set([
   'class',
   'module',
   'singleton_class',
+]);
+
+/**
+ * Node type → the {@link TypeKind} it declares, for THIS grammar.
+ *
+ * `module` is `other`, and this is the one bucket in this repo argued from the
+ * language's ambiguity rather than its semantics. A Ruby `module` is ONE keyword
+ * doing two unrelated jobs: `module Demo` wrapping a file's classes is a
+ * namespace — not a type at all — while `module Comparable` that a class
+ * `include`s is a mixin carrying implementation, which is precisely `trait`. The
+ * analyzer cannot tell which job a given module does without seeing whether
+ * anything, anywhere, includes it. Calling every module a `trait` would label
+ * every top-level namespace in a Rails app a contract; calling it an `interface`
+ * would be worse still, since a Ruby module's whole point is that it carries
+ * method bodies. `other` plus `module Demo` verbatim in the signature is the only
+ * claim with no lie in it — the same reasoning that puts a C++ `union` and a Go
+ * defined type there. (Contrast Dart, whose `mixin` keyword has exactly one job
+ * and is therefore `trait`.)
+ *
+ * `singleton_class` (`class << self`) is deliberately absent: it declares no new
+ * type, it reopens the class-level side of the enclosing one, and it has no name.
+ * A row for it would be a type nobody can search for.
+ *
+ * `Alias = Engine` is absent too. A Ruby constant assignment is not a type
+ * declaration — the right-hand side is an arbitrary expression evaluated at load
+ * time, and `Alias = compute_class()` is legal. Reading one as an `alias` would
+ * state a parser fact the parser cannot see.
+ */
+const RUBY_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class', 'class'],
+  ['module', 'other'],
 ]);
 
 const ATTR_MACROS: ReadonlySet<string> = new Set(['attr_accessor', 'attr_reader', 'attr_writer']);
@@ -638,8 +671,20 @@ function emptyTypeInfo(scope: string, name: string, isModule: boolean, outerScop
   };
 }
 
+/**
+ * The `end` that closes a declaration, used as the signature's stop when the
+ * declaration has no body node to stop at.
+ */
+function endKeyword(node: Node): Node | null {
+  for (let i = node.childCount - 1; i >= 0; i -= 1) {
+    const child = node.child(i);
+    if (child && !child.isNamed && child.text === 'end') return child;
+  }
+  return null;
+}
+
 /** `class Foo` / `module Foo` / `class A::B` — declare it and return its body frame. */
-function scanTypeDeclaration(scan: ModuleScan, node: Node, frame: Frame): Frame | undefined {
+function scanTypeDeclaration(scan: ModuleScan, node: Node, frame: Frame, file: string): Frame | undefined {
   const spelling = nameSpelling(node.childForFieldName('name'));
   if (!spelling) return undefined;
   const absolute = spelling.startsWith('::');
@@ -665,6 +710,24 @@ function scanTypeDeclaration(scan: ModuleScan, node: Node, frame: Frame): Frame 
   }
 
   const body = node.childForFieldName('body');
+  const kind = RUBY_TYPE_KINDS.get(node.type);
+  if (kind) {
+    recordType(scan, {
+      name,
+      kind,
+      node,
+      // An empty `class Sub < Engine; end` has NO body node, so the signature
+      // would otherwise be the whole declaration including `end`. The `end`
+      // keyword is the stop instead, which makes the header come out the same for
+      // an empty type as for a full one.
+      body: body ?? endKeyword(node),
+      file,
+      // The lexical nesting, dotted like every Ruby id here. It is the enclosing
+      // MODULE's qualname, and a module is itself emitted above — so `container`
+      // points at a row that exists, which is what the field promises.
+      container: scope ? scope.split('::').join('.') : null,
+    });
+  }
   if (!body) return undefined;
   return {
     node: body,
@@ -880,7 +943,7 @@ function scanRoot(scan: ModuleScan, root: Node, file: string): void {
       switch (child.type) {
         case 'class':
         case 'module': {
-          const inner = scanTypeDeclaration(scan, child, frame);
+          const inner = scanTypeDeclaration(scan, child, frame, file);
           if (inner) nested.push(inner);
           break;
         }
@@ -1400,11 +1463,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
-  // No type extraction yet — an EMPTY list is the positive declaration, not a
-  // gap in this object. The agent artifact reads it and says so on the page, and
-  // the `class-derived` fallback row (a span inferred from a class's methods,
-  // labelled as inferred) is what covers Ruby classes and modules in the meantime.
-  typeKinds: [],
+  typeKinds: declaredTypeKinds(RUBY_TYPE_KINDS),
 };
 
 const RUBY_SPEC: LanguageSpec<ModuleScan, RubyIndexes> = {

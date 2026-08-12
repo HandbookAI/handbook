@@ -408,6 +408,22 @@ export const codeGraphSchema = z.object({
      */
     languages: z.record(z.string(), adapterCapabilitiesSchema).optional(),
     /**
+     * Which adapter scanned each file — relative POSIX path → language name.
+     *
+     * `languages` above declares what each adapter can deliver, but without
+     * this the declaration cannot be attached to the rows it governs: a
+     * polyglot repository could only be told "call relations for Kotlin are
+     * best-effort" as a global footnote, leaving a reader to guess which of 180
+     * rows that sentence is about. Invariant 3 asks for fidelity to be
+     * disclosed in the output, and a disclosure a reader cannot connect to a
+     * fact is barely one.
+     *
+     * Costs nothing to produce — `discoverAll` already returns language → files
+     * and phase 1 simply inverts it. Optional so an artifact written before
+     * this still loads.
+     */
+    fileLanguages: z.record(z.string(), z.string()).optional(),
+    /**
      * Files whose facts are missing or incomplete — see {@link UnparsedFile}.
      * An EMPTY array is a positive statement ("every scanned file parsed
      * cleanly"); the field being absent means the analysis predates the record,
