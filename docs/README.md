@@ -64,6 +64,26 @@ Set these in the deployment environment — everything else has a sensible defau
 Any Node host works (`pnpm build && pnpm start`), as does Vercel, and the output is
 static enough for most CDNs.
 
+### On Vercel, Root Directory must be `docs`
+
+This directory is its own pnpm workspace, but `prebuild` copies the shared diagrams
+from the repository root's `assets/` — 32 files that 48 content pages reference. So
+the build needs the **whole tree checked out** with Root Directory set to `docs`.
+Deploying this directory alone fails at `prebuild` with a missing `assets/`; the
+script says exactly that rather than leaving you an `ENOENT` to interpret.
+
+Two settings that are easy to miss, both of which produce a green build and a
+subtly wrong site:
+
+- **`NEXT_PUBLIC_SITE_URL` is genuinely required in production.** Without it the
+  code falls back to `VERCEL_URL`, which is the _per-deployment_ hostname — so
+  every canonical URL, `og:url` and sitemap entry pointed at
+  `project-8yu9ph5wr-org.vercel.app`, an address that stops existing on the next
+  deploy. A search engine indexing that is worse than indexing nothing.
+- **Preview deployments are SSO-protected by default.** Every path returns `200`
+  — with Vercel's login page as the body. Probing status codes to check a deploy
+  will tell you it worked.
+
 ## SEO surfaces
 
 `lib/seo.tsx` is the single place all of this lives:
