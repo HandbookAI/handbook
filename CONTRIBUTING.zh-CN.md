@@ -183,10 +183,12 @@ grammar 必须已存在于 `tree-sitter-wasms`——本项目从不需要原生�
   当初的判断——这和本仓库注释对自己的要求是同一条标准。
 - **写清你怎么验证的。** `pnpm check` 通过只是底线。如果改动影响生成、渲染或 planner，说明
   你跑了哪个 demo、看了什么。
-- **CI 必须是绿的。** 六个互相独立的 job：`check`（Linux 上 Node 20 与 24，外加 macOS、
-  Windows 的 24）、`packaging`、`smoke`、`demo`、`shellcheck`、`commitlint`。Windows 那两条不是
-  凑数：patcher 的符号链接逃逸防护、core 基于 mkdir 的目录锁、analyzer 归一化的每一条路径，
-  在那里的行为都不一样。
+- **CI 必须是绿的。** 九个互相独立的 job：`check`（Linux 上 Node 20 与 24，外加 macOS、
+  Windows 的 24）、`packaging`、`smoke`、`cli surface`、`docs site`、`demo`、`shellcheck`、
+  `container`、`commitlint`。Windows 那两条不是凑数：patcher 的符号链接逃逸防护、core 基于
+  mkdir 的目录锁、analyzer 归一化的每一条路径，在那里的行为都不一样。`main` 只要求一个检查
+  `ci`，它只有在上面九个全过时才通过；要求各个 job 的名字，会在矩阵新增一个平台的那天悄悄
+  不再覆盖它。
 - **预期会收到 Review 意见，包括对文字的意见。** 在这个仓库里，注释和文档是产品的一部分。
 
 维护者可能会直接往你的分支推一个小 fixup，而不是为一个细节多走一轮。如果你不希望这样，
