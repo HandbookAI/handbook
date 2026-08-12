@@ -5,40 +5,22 @@ import { Inter } from 'next/font/google';
 import '../global.css';
 import { PlatformMeta, StructuredData, siteMetadata } from '@/lib/seo';
 import { brand } from '@/lib/shared';
-import { BCP47, i18n, LOCALES, type Locale } from '@/lib/i18n';
-import { UI } from '@/lib/ui-strings';
+import { BCP47, i18n, type Locale } from '@/lib/i18n';
+import { FUMADOCS_TRANSLATIONS } from '@/lib/fumadocs-strings';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 /**
- * Fumadocs' own chrome (search box, table of contents, theme and language
- * menus) in each locale. Its keys are a subset of ours, so the table in
- * `ui-strings.ts` stays the single place a translator has to look.
+ * Fumadocs' own chrome (search, table of contents, page actions, theme and
+ * language menus, sidebar, pagination) in each locale.
+ *
+ * Handed over whole, and deliberately NOT reshaped here. `defineI18nUI` accepts
+ * `Record<string, string>`, so any key this file invented would type-check and
+ * then render English — which is precisely the bug that shipped. The table in
+ * `lib/fumadocs-strings.ts` is annotated with the library's own `Translations`
+ * type, and this call site's job is only to pass it through unchanged.
  */
-const localeTranslations: Partial<Record<string, Record<string, string> & { displayName?: string }>> =
-  Object.fromEntries(
-    LOCALES.map((locale) => {
-      const t = UI[locale.code as Locale];
-      return [
-        locale.code,
-        {
-          displayName: locale.name as string,
-          search: t.search,
-          searchNoResult: t.searchNoResult,
-          toc: t.toc,
-          tocNoHeadings: t.tocNoHeadings,
-          lastUpdate: t.lastUpdate,
-          chooseLanguage: t.chooseLanguage,
-          nextPage: t.nextPage,
-          previousPage: t.previousPage,
-          chooseTheme: t.chooseTheme,
-          editOnGithub: t.editOnGithub,
-        },
-      ];
-    }),
-  );
-
-const { provider } = defineI18nUI(i18n, localeTranslations);
+const { provider } = defineI18nUI(i18n, FUMADOCS_TRANSLATIONS);
 
 export function generateStaticParams() {
   return i18n.languages.map((lang) => ({ lang }));
@@ -70,7 +52,7 @@ export default async function Layout({ children, params }: LayoutProps<'/[lang]'
       </head>
       <body className="flex min-h-screen flex-col">
         <RootProvider i18n={provider(lang)}>{children}</RootProvider>
-        <StructuredData />
+        <StructuredData locale={lang} />
       </body>
     </html>
   );

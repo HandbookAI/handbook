@@ -215,6 +215,26 @@ jobs:
       - name: Browser-test the docs site
         run: node scripts/browser/docs-site.mjs http://127.0.0.1:3000
 
+      # "Renders in the wrong language" passes every other gate in this repo:
+      # hardcoded English JSX type-checks, lints, builds, and is invisible to
+      # `check-translations.mjs`, which only reads MDX. The landing page shipped
+      # exactly that way — locale switch changed the URL and the nav bar, and
+      # left all 42 body strings in English. This reads the rendered page in all
+      # eight locales and fails on English copy found inside `<main>`.
+      - name: Browser-test the homepage in all eight locales
+        run: node scripts/browser/home-i18n.mjs http://127.0.0.1:3000
+
+      # The other half of the same failure, and the one that actually shipped:
+      # fumadocs 16 keys its dictionary by the English source string plus a
+      # context suffix, and a key that does not match renders English instead of
+      # failing. Every label the LIBRARY draws — the table of contents, search,
+      # page actions, theme, language, sidebar, code-block copy — was English on
+      # all eight localized routes while tsc, eslint and `next build` were green.
+      # This reads each label off the rendered DOM per locale, because the
+      # translated strings were present in the serialized props the whole time.
+      - name: Browser-test Fumadocs' own chrome in all eight locales
+        run: node scripts/browser/docs-i18n.mjs http://127.0.0.1:3000
+
       - name: Upload the server log
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4

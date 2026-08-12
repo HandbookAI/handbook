@@ -1,7 +1,8 @@
 import { ImageResponse } from 'next/og';
 import { notFound } from 'next/navigation';
 import { getPageImageUrl, source } from '@/lib/source';
-import { appName, brand, tagline } from '@/lib/shared';
+import { appName, brand, siteCopy } from '@/lib/shared';
+import { i18n, LOCALES } from '@/lib/i18n';
 
 export const revalidate = false;
 
@@ -19,8 +20,25 @@ export const revalidate = false;
  */
 export async function GET(_req: Request, { params }: RouteContext<'/og/docs/[...slug]'>) {
   const { slug } = await params;
-  const page = source.getPage(slug.slice(0, -1));
+  // `getPageImageUrl` builds `/og/docs/<locale>/<slug…>/image.png`, so the
+  // locale is the FIRST slug segment and `image.png` the last.
+  //
+  // Two defects met here. The URL used to put the locale in FRONT of the route
+  // (`/zh/og/docs/…`) while the route has no `[lang]` segment, so every
+  // non-default locale 404'd — an English docs link unfurled a card in Slack or
+  // WeChat and a Chinese one showed nothing. And `getPage` was called with no
+  // locale, so the card that did render was always the English page's title and
+  // the English tagline. A wrong card is worse than a missing one.
+  //
+  // The locale is trusted only when it names one we actually have; anything else
+  // is treated as part of the slug, so a stray segment cannot silently select
+  // the default language.
+  const [first, ...restOfSlug] = slug;
+  const locale = LOCALES.some((l) => l.code === first) ? first : undefined;
+  const pageSlugs = (locale ? restOfSlug : slug).slice(0, -1);
+  const page = source.getPage(pageSlugs, locale);
   if (!page) notFound();
+  const copy = siteCopy(locale ?? i18n.defaultLanguage);
 
   // The breadcrumb a reader would see in the sidebar: "Reference · CLI reference".
   const section = page.slugs.length > 1 ? (page.slugs[0] as string).replace(/-/g, ' ') : 'docs';
@@ -108,7 +126,7 @@ export async function GET(_req: Request, { params }: RouteContext<'/og/docs/[...
           <div style={{ width: 18, height: 40, borderRadius: 5, backgroundColor: brand.agent }} />
         </div>
         <div style={{ fontSize: 30, fontWeight: 800, marginRight: 22 }}>{appName}</div>
-        <div style={{ fontSize: 21, color: '#8C9AC4', display: 'flex' }}>{tagline}</div>
+        <div style={{ fontSize: 21, color: '#8C9AC4', display: 'flex' }}>{copy.tagline}</div>
       </div>
     </div>,
     { width: 1200, height: 630 },
