@@ -293,6 +293,18 @@ jobs:
       - name: Browser-test the Studio UI
         run: |
           set -euo pipefail
+          # `pnpm demo` starts its own mock LLM and kills it on exit (trap EXIT),
+          # and exports OPENAI_* only into that subshell. So this step inherits
+          # neither: a `generate` started from studio had no endpoint at all, and
+          # `studio-progress` — whose whole job is to watch a real run report —
+          # saw zero events and failed on Linux while passing locally, where a
+          # developer's own .env supplies a real key.
+          node examples/mock-llm-server.mjs 8123 > /tmp/mock-llm.log 2>&1 &
+          MOCK_PID=$!
+          trap 'kill $MOCK_PID 2>/dev/null || true' EXIT
+          export OPENAI_BASE_URL=http://127.0.0.1:8123/v1
+          export OPENAI_API_KEY=EMPTY
+          export OPENAI_MODEL=mock-model
           node packages/cli/dist/main.js studio --port 4860 --state-dir "$(mktemp -d)" \
             > /tmp/studio.log 2>&1 &
           for _ in $(seq 1 40); do
