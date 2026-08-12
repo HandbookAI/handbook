@@ -31,16 +31,16 @@ catalog:
   # --- toolchain ---
   '@arethetypeswrong/cli': ^0.18.0
   '@changesets/cli': ^2.29.0
-  '@commitlint/cli': ^20.0.0
-  '@commitlint/config-conventional': ^20.0.0
-  '@eslint/js': ^9.0.0
+  '@commitlint/cli': ^21.2.1
+  '@commitlint/config-conventional': ^21.2.0
+  '@eslint/js': ^10.0.1
   '@vitest/coverage-v8': ^4.0.0
-  eslint: ^9.0.0
+  eslint: ^10.8.1
   globals: ^16.0.0
   husky: ^9.1.0
-  lint-staged: ^16.0.0
+  lint-staged: ^17.3.0
   publint: ^0.3.0
-  prettier: ^3.3.0
-  typescript: ^5.7.0
-  typescript-eslint: ^8.0.0
+  prettier: ^3.9.6
+  typescript: ^7.0.2
+  typescript-eslint: ^8.66.0
   vitest: ^4.0.0
