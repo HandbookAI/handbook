@@ -30,5 +30,14 @@
   },
   "engines": {
     "node": ">=20.11"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HandbookAI/handbook.git",
+    "directory": "packages/renderer"
+  },
+  "homepage": "https://github.com/HandbookAI/handbook/tree/main/packages/renderer#readme",
+  "bugs": {
+    "url": "https://github.com/HandbookAI/handbook/issues"
   }
 }

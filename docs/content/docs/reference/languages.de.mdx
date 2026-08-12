@@ -16,21 +16,26 @@ handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
 Handgeschriebene Adapter: typgetriebene Aufrufauflösung, geerbte Member, Zustandsverfolgung
 pro Attribut, Anweisungsbereiche.
 
-| Sprache                       | Endungen                                                 | Registry-Schlüssel |
-| ----------------------------- | -------------------------------------------------------- | ------------------ |
-| Python                        | `.py`                                                    | `python`           |
-| TypeScript _(und JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`       |
-| Go                            | `.go`                                                    | `go`               |
-| Rust                          | `.rs`                                                    | `rust`             |
-| Java                          | `.java`                                                  | `java`             |
-| C#                            | `.cs`                                                    | `csharp`           |
-| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`              |
-| Ruby                          | `.rb` `.rake` `.gemspec`                                 | `ruby`             |
-| PHP                           | `.php` `.phtml`                                          | `php`              |
-| Swift                         | `.swift`                                                 | `swift`            |
-| Dart                          | `.dart`                                                  | `dart`             |
-| Solidity                      | `.sol`                                                   | `solidity`         |
-| Shell                         | `.sh` `.bash`                                            | `shell`            |
+| Sprache                       | Endungen                                                 | Registry-Schlüssel | Indexierte Typen                                     |
+| ----------------------------- | -------------------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| Python                        | `.py`                                                    | `python`           | `class`                                              |
+| TypeScript _(und JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`       | `class` `interface` `enum` `alias`                   |
+| Go                            | `.go`                                                    | `go`               | `struct` `interface` `alias` `other`                 |
+| Rust                          | `.rs`                                                    | `rust`             | `struct` `enum` `trait` `alias` `other`              |
+| Java                          | `.java`                                                  | `java`             | `class` `interface` `enum` `record` `other`          |
+| C#                            | `.cs`                                                    | `csharp`           | `class` `interface` `struct` `record` `enum` `other` |
+| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`              | `class` `struct` `enum` `alias` `other`              |
+| Ruby                          | `.rb` `.rake` `.gemspec`                                 | `ruby`             | `class` `other`                                      |
+| PHP                           | `.php` `.phtml`                                          | `php`              | `class` `interface` `enum` `trait`                   |
+| Swift                         | `.swift`                                                 | `swift`            | `class` `struct` `enum` `interface` `alias`          |
+| Dart                          | `.dart`                                                  | `dart`             | `class` `enum` `trait` `alias` `other`               |
+| Solidity                      | `.sol`                                                   | `solidity`         | `class` `interface` `struct` `enum` `other`          |
+| Shell                         | `.sh` `.bash`                                            | `shell`            | —                                                    |
+
+Die letzte Spalte ist `AdapterCapabilities.typeKinds` — was jeder Adapter wirklich findet,
+nicht was er anstrebt. Shell hat überhaupt keine Typdeklarationen, das `—` dort ist also eine
+positive Aussage und keine Lücke. Konstanten, Variablen und Makros werden in keiner Sprache
+indexiert.
 
 <Callout type="info" title="JavaScript hat keinen eigenen Adapter">
   Es wird vom TypeScript-Adapter abgedeckt. Es gibt nichts zu wählen — `.js`, `.jsx`, `.mjs` und `.cjs` werden

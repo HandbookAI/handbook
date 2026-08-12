@@ -14,21 +14,25 @@ handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
 
 手書きのアダプタ: 型駆動の呼び出し解決、継承メンバー、属性ごとの状態追跡、ステートメントスパン。
 
-| 言語                             | 拡張子                                                   | レジストリキー |
-| -------------------------------- | -------------------------------------------------------- | -------------- |
-| Python                           | `.py`                                                    | `python`       |
-| TypeScript _(および JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`   |
-| Go                               | `.go`                                                    | `go`           |
-| Rust                             | `.rs`                                                    | `rust`         |
-| Java                             | `.java`                                                  | `java`         |
-| C#                               | `.cs`                                                    | `csharp`       |
-| C/C++                            | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`          |
-| Ruby                             | `.rb` `.rake` `.gemspec`                                 | `ruby`         |
-| PHP                              | `.php` `.phtml`                                          | `php`          |
-| Swift                            | `.swift`                                                 | `swift`        |
-| Dart                             | `.dart`                                                  | `dart`         |
-| Solidity                         | `.sol`                                                   | `solidity`     |
-| Shell                            | `.sh` `.bash`                                            | `shell`        |
+| 言語                             | 拡張子                                                   | レジストリキー | 索引される型                                         |
+| -------------------------------- | -------------------------------------------------------- | -------------- | ---------------------------------------------------- |
+| Python                           | `.py`                                                    | `python`       | `class`                                              |
+| TypeScript _(および JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript`   | `class` `interface` `enum` `alias`                   |
+| Go                               | `.go`                                                    | `go`           | `struct` `interface` `alias` `other`                 |
+| Rust                             | `.rs`                                                    | `rust`         | `struct` `enum` `trait` `alias` `other`              |
+| Java                             | `.java`                                                  | `java`         | `class` `interface` `enum` `record` `other`          |
+| C#                               | `.cs`                                                    | `csharp`       | `class` `interface` `struct` `record` `enum` `other` |
+| C/C++                            | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`          | `class` `struct` `enum` `alias` `other`              |
+| Ruby                             | `.rb` `.rake` `.gemspec`                                 | `ruby`         | `class` `other`                                      |
+| PHP                              | `.php` `.phtml`                                          | `php`          | `class` `interface` `enum` `trait`                   |
+| Swift                            | `.swift`                                                 | `swift`        | `class` `struct` `enum` `interface` `alias`          |
+| Dart                             | `.dart`                                                  | `dart`         | `class` `enum` `trait` `alias` `other`               |
+| Solidity                         | `.sol`                                                   | `solidity`     | `class` `interface` `struct` `enum` `other`          |
+| Shell                            | `.sh` `.bash`                                            | `shell`        | —                                                    |
+
+最後の列は `AdapterCapabilities.typeKinds` です。各アダプタが**実際に見つけられるもの**で、
+見つけたいものではありません。Shell には型宣言が存在しないので、その行の `—` は欠落ではなく
+肯定的な主張です。定数・変数・マクロはどの言語でも索引されません。
 
 <Callout type="info" title="JavaScript に専用のアダプタはありません">
   TypeScript のアダプタがまとめて担当します。選ぶものは何もなく、`.js`、`.jsx`、`.mjs`、`.cjs` は

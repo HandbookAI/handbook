@@ -4,13 +4,13 @@
 # vulnerabilities go to a private advisory, not to the tracker.
 #
 # MAINTAINER: `contact_links` only accepts absolute URLs, so the owner/repo below
-# is a placeholder — replace `ylmin/handbook` with the real slug once the remote
+# points at the real remote (git@github.com:HandbookAI/handbook.git); update it
 # exists, and enable Discussions, or GitHub renders these as dead links.
 blank_issues_enabled: false
 contact_links:
   - name: Question, or "how do I …"
-    url: https://github.com/ylmin/handbook/discussions
+    url: https://github.com/HandbookAI/handbook/discussions
     about: Usage questions and design discussion. Read docs/architecture.md first — it explains why the boundaries sit where they do.
   - name: Report a security vulnerability
-    url: https://github.com/ylmin/handbook/security/advisories/new
+    url: https://github.com/HandbookAI/handbook/security/advisories/new
     about: Private advisory, never a public issue. See SECURITY.md for what is in scope.

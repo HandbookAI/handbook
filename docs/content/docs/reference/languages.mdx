@@ -16,21 +16,25 @@ handbook analyze --source ~/code/repo --work work/x --lang python # or pin one
 Hand-written adapters: type-driven call resolution, inherited members, per-attribute state
 tracking, statement spans.
 
-| Language                      | Extensions                                               | Registry key |
-| ----------------------------- | -------------------------------------------------------- | ------------ |
-| Python                        | `.py`                                                    | `python`     |
-| TypeScript _(and JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` |
-| Go                            | `.go`                                                    | `go`         |
-| Rust                          | `.rs`                                                    | `rust`       |
-| Java                          | `.java`                                                  | `java`       |
-| C#                            | `.cs`                                                    | `csharp`     |
-| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        |
-| Ruby                          | `.rb` `.rake` `.gemspec`                                 | `ruby`       |
-| PHP                           | `.php` `.phtml`                                          | `php`        |
-| Swift                         | `.swift`                                                 | `swift`      |
-| Dart                          | `.dart`                                                  | `dart`       |
-| Solidity                      | `.sol`                                                   | `solidity`   |
-| Shell                         | `.sh` `.bash`                                            | `shell`      |
+| Language                      | Extensions                                               | Registry key | Types indexed                                        |
+| ----------------------------- | -------------------------------------------------------- | ------------ | ---------------------------------------------------- |
+| Python                        | `.py`                                                    | `python`     | `class`                                              |
+| TypeScript _(and JavaScript)_ | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  | `typescript` | `class` `interface` `enum` `alias`                   |
+| Go                            | `.go`                                                    | `go`         | `struct` `interface` `alias` `other`                 |
+| Rust                          | `.rs`                                                    | `rust`       | `struct` `enum` `trait` `alias` `other`              |
+| Java                          | `.java`                                                  | `java`       | `class` `interface` `enum` `record` `other`          |
+| C#                            | `.cs`                                                    | `csharp`     | `class` `interface` `struct` `record` `enum` `other` |
+| C/C++                         | `.c` `.h` `.cpp` `.cc` `.cxx` `.c++` `.hpp` `.hh` `.hxx` | `cpp`        | `class` `struct` `enum` `alias` `other`              |
+| Ruby                          | `.rb` `.rake` `.gemspec`                                 | `ruby`       | `class` `other`                                      |
+| PHP                           | `.php` `.phtml`                                          | `php`        | `class` `interface` `enum` `trait`                   |
+| Swift                         | `.swift`                                                 | `swift`      | `class` `struct` `enum` `interface` `alias`          |
+| Dart                          | `.dart`                                                  | `dart`       | `class` `enum` `trait` `alias` `other`               |
+| Solidity                      | `.sol`                                                   | `solidity`   | `class` `interface` `struct` `enum` `other`          |
+| Shell                         | `.sh` `.bash`                                            | `shell`      | —                                                    |
+
+The last column is `AdapterCapabilities.typeKinds` — what each adapter actually finds, not
+what it aspires to. Shell has no type declarations at all, so `—` there is a positive claim
+rather than a gap. Constants, variables and macros are indexed in no language.
 
 <Callout type="info" title="JavaScript has no separate adapter">
   It is covered by the TypeScript one. There is nothing to pick — `.js`, `.jsx`, `.mjs` and `.cjs` are claimed

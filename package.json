@@ -76,5 +76,13 @@
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HandbookAI/handbook.git"
+  },
+  "homepage": "https://github.com/HandbookAI/handbook#readme",
+  "bugs": {
+    "url": "https://github.com/HandbookAI/handbook/issues"
   }
 }
