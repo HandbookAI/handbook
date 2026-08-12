@@ -2,6 +2,7 @@
 
 <img src="assets/hero.zh.svg" alt="Handbooks —— 一个代码库进去，两本手册出来：一本团队读的叙述式文档站，一份智能体用来定位的机器可读索引" width="100%">
 
+[![Documentation](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-docshandbook.vercel.app-06b6d4.svg?style=flat-square)](https://docshandbook.vercel.app/zh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
 [![Tests](https://img.shields.io/badge/tests-offline%2C%20no%20API%20key-2dd4bf.svg?style=flat-square)](#开发)
@@ -9,7 +10,7 @@
 [![Outputs](https://img.shields.io/badge/outputs-human%20%2B%20AI-f472b6.svg?style=flat-square)](#你会得到什么)
 [![LLM](https://img.shields.io/badge/LLM-any%20OpenAI--compatible-fbbf24.svg?style=flat-square)](#环境要求)
 
-[English](README.md) · **中文**
+**[文档](https://docshandbook.vercel.app/zh)** · [English](README.md) · **中文**
 
 </div>
 
