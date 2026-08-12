@@ -1,7 +1,7 @@
 {
   "name": "@handbooks/analyzer",
-  "version": "1.1.0",
-  "description": "Multi-language static call-graph extraction via tree-sitter (WASM) \u2014 no LLM",
+  "version": "1.2.0",
+  "description": "Multi-language static call-graph extraction via tree-sitter (WASM) — no LLM",
   "type": "module",
   "exports": {
     ".": {
