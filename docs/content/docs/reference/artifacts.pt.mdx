@@ -395,12 +395,33 @@ encontrar classes e perder todas as interfaces; `[]` é uma afirmação positiva
 **ausente** significa que o artefato é anterior a ele — reportado como _unknown_, nunca como
 zero.
 
+Todas as doze linguagens analisadas com precisão os extraem: C++, C#, Dart, Go, Java, PHP,
+Python, Ruby, Rust, Solidity, Swift e TypeScript. O Shell declara `[]` porque não tem
+declarações de tipo. As cinco de nível genérico (Kotlin, Objective-C, OCaml, Scala, Zig)
+declaram `[]` **de propósito**: o adaptador delas reconhece padrões em vez de fazer um parse
+preciso, então uma linha de tipo vinda dali seria **indistinguível no IR de uma analisada com
+precisão, com fidelidade menor** — exatamente o que o invariante 3 existe para evitar. Elas
+mantêm o fallback `class-derived`.
+
+Medido em repositórios reais, comparando linhas com as declarações que um `grep` enxerga: PHP e
+Solidity 100%, C# 98,9%, Swift 97,0%, Dart 96,1%, Ruby 92,7%, C++ 87,5% (apenas dos arquivos
+que fizeram parse limpo; os headers cheios de macros do `spdlog` derrotam a própria gramática, o
+que o `scan-coverage.json` registra). Cada diferença é uma declaração que o adaptador **se
+recusou** a adivinhar — um tipo declarado dentro do corpo de uma função, ou um nome que colide
+sob o modelo de ids sem aridade — nunca um intervalo inventado.
+
 `class-derived` é o fallback para quando um adaptador não extrai tipos: o intervalo é o
 `min…max` dos **métodos** da classe — onde os membros estão, não onde está a declaração — então
 ele é rotulado em vez de apresentado como um fato parseado. Neste repositório, acrescentar
 extração real de tipos derrubou `class-derived` de 45 linhas para 19, e cada uma das restantes
 é um objeto literal e não uma declaração de tipo, que é exatamente o que o fallback deveria
 estar pegando.
+
+Um custo de usar o intervalo da própria declaração: quando ela leva um atributo ou uma anotação
+à frente, o intervalo começa ali, porque é ali que o nó da gramática começa. A assinatura está
+protegida disso: se o limite fosse cortar o nome do tipo, os **atributos são elididos** com um
+`…` inicial, porque uma assinatura que não nomeia o que declara não é uma assinatura mais
+curta, e sim uma assinatura inútil.
 
 A divulgação importa mais do que a cobertura: um agente que faz grep de um nome de tipo, não
 obtém nada e conclui que o tipo não existe é o _ponteiro errado_ que este artefato existe para

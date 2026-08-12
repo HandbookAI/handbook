@@ -388,11 +388,32 @@ disclose किया जाता है — ठीक वैसे ही ज�
 पा सकता है और हर interface चूक सकता है; `[]` एक सकारात्मक दावा है, और field के **अनुपस्थित**
 होने का अर्थ है कि artifact इससे पुराना है — उसे _unknown_ बताया जाता है, कभी शून्य नहीं।
 
+सभी बारह precisely-parsed भाषाएँ इन्हें निकालती हैं — C++, C#, Dart, Go, Java, PHP, Python,
+Ruby, Rust, Solidity, Swift, TypeScript। Shell `[]` घोषित करता है क्योंकि उसमें type
+declaration ही नहीं होते। पाँच generic-tier भाषाएँ (Kotlin, Objective-C, OCaml, Scala, Zig)
+**जान-बूझकर** `[]` घोषित करती हैं: उनका adapter patterns मिलाता है, precisely parse नहीं
+करता, इसलिए उनसे आई type row IR में **precisely-parsed row से अलग पहचानी ही नहीं जा सकेगी,
+जबकि उसकी fidelity एक दर्जा नीचे है** — ठीक वही चीज़ जिसे रोकने के लिए invariant 3 है।
+उनके लिए `class-derived` fallback बना रहता है।
+
+असली repositories पर मापा गया, rows की तुलना उन declarations से जो `grep` देख सकता है:
+PHP और Solidity 100%, C# 98.9%, Swift 97.0%, Dart 96.1%, Ruby 92.7%, C++ 87.5% (केवल उन
+files में जो साफ़ parse हुईं; `spdlog` के macro-भारी headers grammar को ही हरा देते हैं, जो
+`scan-coverage.json` दर्ज करता है)। हर कमी एक ऐसा declaration है जिस पर adapter ने अनुमान
+लगाने से **इनकार** किया — function body के भीतर घोषित type, या arity-मुक्त id model में
+टकराने वाला नाम — कभी कोई अनुमानित span नहीं।
+
 `class-derived` वह fallback है जहाँ adapter कोई type नहीं निकालता: span उस class के
 **methods** का `min…max` है — यानी members कहाँ हैं, declaration कहाँ है वह नहीं — इसलिए उसे
 label किया जाता है, parse किया हुआ तथ्य बताकर पेश नहीं किया जाता। इस repository पर असली type
 extraction जोड़ने से `class-derived` 45 rows से 19 पर आ गया, और बची हुई हर row एक object
 literal है, type declaration नहीं — fallback को ठीक यही पकड़ना चाहिए।
+
+Declaration का अपना span लेने की एक कीमत: जब किसी declaration के आगे attribute या annotation
+हो, तो span वहीं से शुरू होता है — क्योंकि grammar का node वहीं से शुरू होता है। Signature को
+इससे बचाया गया है: अगर cap type का नाम काट देगा, तो उसके बजाय **attributes हटा दिए जाते हैं**
+और आगे एक `…` लगता है, क्योंकि जो signature यह नहीं बताता कि वह क्या declare करता है, वह छोटा
+signature नहीं बल्कि बेकार signature है।
 
 Disclosure coverage से ज़्यादा मायने रखता है: एक agent किसी type नाम को grep करे, कुछ न पाए,
 और मान ले कि वह type मौजूद नहीं है — यही वह _ग़लत pointer_ है जिसे रोकने के लिए यह artifact है।

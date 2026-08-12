@@ -289,6 +289,46 @@ for (const page of walk(root)) {
   }
 }
 
+/**
+ * A character from the wrong writing system, which means text leaked between
+ * languages while editing.
+ *
+ * Caught for real: a Chinese `記` ended up mid-sentence in the Russian page,
+ * pasted in while syncing the same passage across eight locales. It rendered,
+ * it passed every structural check, prettier was happy, and the build was
+ * green — a Russian reader would simply have found a Chinese character in the
+ * middle of a sentence about C++ headers.
+ *
+ * Scripts, not words: this cannot judge whether a translation is GOOD, only that
+ * it is written in the alphabet it claims. Latin is allowed everywhere, because
+ * every locale legitimately quotes identifiers, paths and flags.
+ */
+const FOREIGN_SCRIPTS = {
+  es: /[\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff\u0900-\u097f]/gu,
+  pt: /[\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff\u0900-\u097f]/gu,
+  de: /[\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff\u0900-\u097f]/gu,
+  ru: /[\u4e00-\u9fff\u3040-\u30ff\u0900-\u097f]/gu,
+  hi: /[\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff]/gu,
+  // Japanese legitimately uses Han; Cyrillic and Devanagari it does not.
+  ja: /[\u0400-\u04ff\u0900-\u097f]/gu,
+  // Chinese legitimately uses Han; kana, Cyrillic and Devanagari it does not.
+  zh: /[\u3040-\u30ff\u0400-\u04ff\u0900-\u097f]/gu,
+};
+
+for (const page of walk(root)) {
+  const locale = /\.([a-z]{2})\.mdx?$/.exec(page)?.[1];
+  const pattern = locale ? FOREIGN_SCRIPTS[locale] : undefined;
+  if (!pattern) continue;
+  const text = readFileSync(page, 'utf8');
+  for (const match of text.matchAll(pattern)) {
+    const line = text.slice(0, match.index).split('\n').length;
+    problems.push(
+      `${relative(root, page)}:${line}: ${JSON.stringify(match[0])} is not from this locale's ` +
+        'writing system — text leaked in from another translation',
+    );
+  }
+}
+
 console.log(
   `checked ${checked} translated page(s) against their English sources, ` +
     `and ${englishPages.length} English page(s) for locale coverage`,

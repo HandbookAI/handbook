@@ -387,11 +387,33 @@ rather than a boolean, because an adapter could find classes and miss every inte
 a positive claim, and the field being absent means the artifact predates it and is reported as
 _unknown_, never as zero.
 
+All twelve precisely-parsed languages extract them — C++, C#, Dart, Go, Java, PHP, Python,
+Ruby, Rust, Solidity, Swift, TypeScript. Shell declares `[]` because it has no type
+declarations at all. The five generic-tier languages (Kotlin, Objective-C, OCaml, Scala, Zig)
+declare `[]` deliberately: their adapter matches patterns rather than parsing precisely, so a
+type row from one would be **indistinguishable in the IR from a precisely-parsed one at a
+lower fidelity** — which is exactly what invariant 3 exists to prevent. They keep the
+`class-derived` fallback instead.
+
+Measured against real repositories, counting rows against the declarations a `grep` can see:
+PHP and Solidity 100%, C# 98.9%, Swift 97.0%, Dart 96.1%, Ruby 92.7%, C++ 87.5% (of files
+that parsed cleanly; `spdlog`'s macro-heavy headers defeat the grammar itself, which
+`scan-coverage.json` records). Every shortfall is a declaration the adapter refused to guess
+at — a type declared inside a function body, or a name that collides under the arity-free id
+model — never a guessed span.
+
 `class-derived` is the fallback where an adapter extracts no types: the span is `min…max` of
 the class's **methods** — where the members are, not where the declaration is — so it is
 labelled rather than presented as a parsed fact. On this repository, adding real type
 extraction dropped `class-derived` from 45 rows to 19, and every remaining one is an object
-literal rather than a type declaration, which is exactly what the fallback should be catching.
+literal (`TYPESCRIPT_SPEC`, `silentLogger`) rather than a type declaration — which is exactly
+what the fallback should be catching.
+
+One cost of taking the declaration's own span: where a declaration carries a leading attribute
+or annotation, the span starts there, because that is where the grammar's node starts. The
+signature is protected from it — if the cap would cut the type's name away, the attributes are
+elided with a leading `…` instead, because a signature that does not name what it declares is
+not a shorter signature but a useless one.
 
 The disclosure matters more than the coverage: an agent that greps a type name, gets nothing,
 and concludes the type does not exist is the _wrong pointer_ this artifact exists to prevent.
