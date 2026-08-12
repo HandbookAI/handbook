@@ -53,6 +53,41 @@ describe('StateStore overlap refusals', () => {
     expect(() => store.add({ name: 'a', sourceRoot: src, workDir: link })).toThrow(/outside sourceRoot/);
   });
 
+  it('refuses one whose link target does not exist yet, which is the normal case', () => {
+    // studio creates the work dir AFTER the entry is accepted, so at this moment
+    // `src/generated` is a name and nothing more — and the run that gives it a
+    // body is the very run that would put artifacts inside the source tree.
+    // Before this, `realpath` failed on the dangling link, the check fell back
+    // to comparing the link's own path, and the entry was accepted; Windows
+    // reached the same fallback for a link that was NOT dangling, because a
+    // file-typed symlink to a directory does not resolve there.
+    const root = scratch('dangling');
+    const store = new StateStore(scratch('dangling-state'));
+    const src = sourceTree(root, 'src');
+    const link = join(root, 'link-into-src');
+    symlinkSync(join(src, 'generated'), link);
+    expect(() => store.add({ name: 'a', sourceRoot: src, workDir: link })).toThrow(/outside sourceRoot/);
+  });
+
+  it('resolves a chain of links, and survives one that points at itself', () => {
+    // `realOf` follows links by hand once realpath gives up, so the loop
+    // realpath would have reported as ELOOP is this function's to count.
+    const root = scratch('chain');
+    const store = new StateStore(scratch('chain-state'));
+    const src = sourceTree(root, 'src');
+    const hop = join(root, 'hop');
+    const link = join(root, 'link-into-src');
+    symlinkSync(join(src, 'generated'), hop);
+    symlinkSync(hop, link);
+    expect(() => store.add({ name: 'a', sourceRoot: src, workDir: link })).toThrow(/outside sourceRoot/);
+
+    const loop = join(root, 'loop');
+    symlinkSync(loop, loop);
+    expect(() =>
+      store.add({ name: 'b', sourceRoot: sourceTree(root, 'src-b'), workDir: loop }),
+    ).not.toThrow();
+  });
+
   it('still allows a work dir that only shares a name prefix', () => {
     // `/w/handbook` and `/w/handbook-2` are different directories. Refusing the
     // second would be the containment check reading a prefix as a parent.

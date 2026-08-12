@@ -173,6 +173,38 @@ function stagingSuffix(): string {
 }
 
 /**
+ * Move `tmp` over `target`, even when `target` itself is read-only.
+ *
+ * A rename needs a writable PARENT directory — on POSIX, where the replaced
+ * file's own mode is irrelevant. Windows also consults the destination's
+ * read-only attribute and refuses with EPERM, so a single `mode 444` file in the
+ * tree failed the entire apply there while the same plan applied cleanly
+ * everywhere else, and the caller was handed a raw errno rather than an outcome.
+ *
+ * The write bit is added only after the OS has actually refused, so no platform
+ * pays for it on the path where the rename works, and the mode is put back
+ * either way: the caller re-applies the mode the verify phase recorded for every
+ * target it found on disk, and a second refusal restores it before rethrowing.
+ */
+function replaceFile(tmp: string, target: string): void {
+  try {
+    renameSync(tmp, target);
+    return;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if ((code !== 'EPERM' && code !== 'EACCES') || !existsSync(target)) throw error;
+  }
+  const mode = statSync(target).mode;
+  chmodSync(target, mode | 0o200);
+  try {
+    renameSync(tmp, target);
+  } catch (error) {
+    chmodSync(target, mode & 0o7777);
+    throw error;
+  }
+}
+
+/**
  * Cross-process exclusive lock for the verify+write window: two `handbook apply`
  * runs on one tree would otherwise interleave and silently lose an edit.
  */
@@ -275,7 +307,14 @@ function withTreeLock<T>(sourceRoot: string, logger: Logger, work: () => T): T {
 
 /** The first ancestor of `relPath` under `root` that exists but is not a directory. */
 function blockingAncestor(root: string, relPath: string): string | undefined {
-  const parts = normalize(relPath)
+  // `normalize` hands back NATIVE separators, so on Windows `app/x.py` became
+  // `app\x.py`: one segment, `slice(0, -1)` empty, and this guard silently
+  // inspected nothing for every nested path. The refusal it owes the caller
+  // then arrived as a raw EEXIST thrown out of the write phase instead of a
+  // `not-a-file` outcome. Converting back is lossless — a plan path is POSIX by
+  // rule (parse.ts rejects a backslash as "must use forward slashes"), and on
+  // POSIX a backslash is a legal filename character that must NOT split.
+  const parts = toPosix(normalize(relPath))
     .split('/')
     .filter((p) => p !== '' && p !== '.');
   let probe = resolve(root);
@@ -642,7 +681,7 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
   const renamed: string[] = [];
   try {
     for (const { tmp, target } of staged) {
-      renameSync(tmp, target);
+      replaceFile(tmp, target);
       renamed.push(target);
       const mode = modeByPath.get(target);
       if (mode !== undefined) chmodSync(target, mode & 0o7777); // preserve the executable bit
