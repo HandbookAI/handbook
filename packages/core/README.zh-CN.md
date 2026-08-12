@@ -11,7 +11,7 @@
 
 ## 这是什么
 
-`@handbooks/core` 是 [Handbook](../../README.zh-CN.md) 工具链的地基层。它只包含四样东西，
+`@handbooks/core` 是 [Handbooks](../../README.zh-CN.md) 工具链的地基层。它只包含四样东西，
 **刻意不多一样**：
 
 1. **数据模型** —— 调用图*是什么*、手册*是什么*，用 zod schema 表达。
@@ -210,5 +210,5 @@ pnpm --filter @handbooks/core test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/content/docs/concepts/architecture.mdx) ·
+[Handbooks](../../README.zh-CN.md) 的一部分 · [架构](../../docs/content/docs/concepts/architecture.mdx) ·
 [配置参考](../../docs/content/docs/reference/configuration.md) · MIT

@@ -14,9 +14,9 @@ import { home } from '@/lib/home-strings';
  * copy, one layer up. One producer only.
  *
  * `title` is dropped rather than passed through, because the layout above
- * already sets `title.default` plus a `%s · Handbook` template for its children.
+ * already sets `title.default` plus a `%s · Handbooks` template for its children.
  * A page that supplies ANY title counts as such a child, so the template wraps
- * it and the wordmark lands twice — `Handbook — … · Handbook`, which is what
+ * it and the wordmark lands twice — `Handbooks — … · Handbooks`, which is what
  * this page's `<title>` has always said. With no title here, the layout's
  * default is used verbatim and the template does not apply to it.
  */

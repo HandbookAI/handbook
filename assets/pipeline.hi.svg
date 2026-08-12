@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbook end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
-  <title>Handbook — the end-to-end pipeline</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbooks end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
+  <title>Handbooks — the end-to-end pipeline</title>
   <desc>Source code is analyzed into a call graph, generated into a handbook, rendered to markdown and HTML, packaged as an agent skill, used to plan a change, applied byte-exactly, and then resynced back into the handbook.</desc>
 
   <defs>

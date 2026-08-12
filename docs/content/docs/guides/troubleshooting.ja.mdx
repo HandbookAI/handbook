@@ -41,8 +41,8 @@ handbook config --command generate | grep -i <setting>
 
 ### `node: /some/path.env: not found` と終了コード 9
 
-Handbook のエラーではまったくありません。Node >= 20.6 は独自の `--env-file` フラグを持ち、
-コマンドライン全体を事前スキャンするため、Handbook が起動する **前に** 存在しないパスで
+Handbooks のエラーではまったくありません。Node >= 20.6 は独自の `--env-file` フラグを持ち、
+コマンドライン全体を事前スキャンするため、Handbooks が起動する **前に** 存在しないパスで
 落ちます。何にも横取りされない変数を代わりに使ってください:
 
 ```bash

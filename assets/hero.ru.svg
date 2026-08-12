@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="320" viewBox="0 0 1120 320" role="img" aria-label="Handbooks — одна кодовая база на входе, два руководства на выходе">
+  <title>Handbooks — одна кодовая база на входе, два руководства на выходе</title>
+  <desc>Одна разобранная карта репозитория, записанная дважды: сайт документации с описаниями для команды и машинно-ориентированный индекс, по которому ориентируется агент.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="55%" stop-color="#101733"/>
+      <stop offset="100%" stop-color="#0C1226"/>
+    </linearGradient>
+    <linearGradient id="cardA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16233F"/>
+      <stop offset="100%" stop-color="#131C34"/>
+    </linearGradient>
+    <linearGradient id="cardB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E1B3C"/>
+      <stop offset="100%" stop-color="#161431"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#2DD4BF" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .t    { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .mark { fill:#F2F5FF; font-size:54px; font-weight:800; letter-spacing:-1.2px; }
+      .tag  { fill:#8C9AC4; font-size:20px; }
+      .tagB { fill:#E6ECFF; font-weight:600; }
+      .lblA { fill:#2DD4BF; font-size:11.5px; font-weight:700; letter-spacing:0.9px; }
+      .lblB { fill:#A78BFA; font-size:11.5px; font-weight:700; letter-spacing:0.9px; }
+      .hl   { fill:#F2F5FF; font-size:18px; font-weight:700; }
+      .sb   { fill:#8C9AC4; font-size:13px; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="320" rx="18" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="1119" height="319" rx="18" fill="none" stroke="#232C4E"/>
+
+  <!-- soft light behind each panel, so the two readers read as two zones -->
+  <ellipse cx="304" cy="238" rx="300" ry="120" fill="url(#glowA)"/>
+  <ellipse cx="816" cy="238" rx="300" ry="120" fill="url(#glowB)"/>
+
+  <!-- the mark: two book spines, one per reader, leaning apart -->
+  <g transform="translate(0 -2)">
+    <rect x="542" y="24" width="15" height="26" rx="4" fill="#2DD4BF" transform="rotate(-8 549.5 37)"/>
+    <rect x="563" y="24" width="15" height="26" rx="4" fill="#A78BFA" transform="rotate(8 570.5 37)"/>
+    <path d="M 546 30 V 44" stroke="#0B1020" stroke-width="1.4" opacity="0.28" transform="rotate(-8 549.5 37)"/>
+    <path d="M 567 30 V 44" stroke="#0B1020" stroke-width="1.4" opacity="0.28" transform="rotate(8 570.5 37)"/>
+  </g>
+
+  <text class="t mark" x="560" y="106" text-anchor="middle">Handbooks</text>
+  <text class="t tag" x="560" y="142" text-anchor="middle">Одна кодовая база на входе — <tspan class="tagB">два руководства на выходе.</tspan></text>
+
+  <!-- one map, written down twice: the fork is the whole point -->
+  <circle cx="560" cy="157" r="3" fill="#4A588C"/>
+  <path d="M 560 160 V 170 M 304 170 H 816 M 304 170 V 179 M 816 170 V 179"
+        fill="none" stroke="#2E3A66" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- ── for humans ─────────────────────────────────────────────────────── -->
+  <rect x="64" y="182" width="480" height="112" rx="14" fill="url(#cardA)" stroke="#2A3A5E"/>
+  <rect x="64" y="182" width="480" height="3" rx="1.5" fill="#2DD4BF"/>
+  <rect x="96" y="203" width="14" height="18" rx="2.5" fill="none" stroke="#2DD4BF" stroke-width="1.5"/>
+  <path d="M 99.5 209 H 106.5 M 99.5 213 H 106.5 M 99.5 217 H 104" stroke="#2DD4BF" stroke-width="1.3" opacity="0.85"/>
+  <text class="t lblA" x="122" y="217">ДЛЯ КОМАНДЫ</text>
+  <text class="t hl" x="96" y="248">Сайт документации, который читают</text>
+  <text class="t sb" x="96" y="272">этапы с описанием · поиск · глубокие ссылки · file://</text>
+
+  <!-- ── for agents ─────────────────────────────────────────────────────── -->
+  <rect x="576" y="182" width="480" height="112" rx="14" fill="url(#cardB)" stroke="#332E5E"/>
+  <rect x="576" y="182" width="480" height="3" rx="1.5" fill="#A78BFA"/>
+  <rect x="608" y="203" width="17" height="17" rx="2.5" fill="none" stroke="#A78BFA" stroke-width="1.5"/>
+  <path d="M 608 208.5 H 625 M 614 208.5 V 220" stroke="#A78BFA" stroke-width="1.3" opacity="0.85"/>
+  <text class="t lblB" x="634" y="217">ДЛЯ АГЕНТА</text>
+  <text class="t hl" x="608" y="248">Индекс навигации, а не текст для чтения</text>
+  <text class="t sb" x="608" y="272">таблицы файл→этап · факты вызовов · llms.txt · SKILL</text>
+</svg>

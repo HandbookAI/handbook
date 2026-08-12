@@ -17,17 +17,17 @@ sofort und funktioniert mit gezogenem Netzwerkkabel.
 
 ## Was Sie darin tun können
 
-| Bereich              | Was es tut                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------- |
-| **Repositories**     | Einen Quellbaum + ein Arbeitsverzeichnis unter einem URL-sicheren Namen registrieren          |
-| **Generate**         | Der volle Parametersatz, Logs live über SSE gestreamt, mitten im Lauf abbrechbar              |
-| **Handbook-Browser** | Das gerenderte Handbook an Ort und Stelle lesen                                               |
-| **Impact-Graph**     | Welche Dateien einer Etappe gehören, was hineinruft, was sie nach außen aufruft               |
-| **Quell-Viewer**     | Die echte Datei hinter jeder Karte öffnen, an der zitierten Zeile                             |
-| **Plan**             | Eine Anfrage eintippen, dem rein lesenden Agenten bei der Arbeit zusehen, den Plan lesen      |
-| **Apply / Rollback** | Dry-Run, Anwenden, jedes Backup aufgelistet, Rollback mit einem Klick                         |
-| **Resync**           | Das Handbook gegen den lebenden Baum nach vorn rollen — kein Case-Verzeichnis zusammenstellen |
-| **History**          | Evolution pro Repo: was jeder Lauf geändert hat, und wann                                     |
+| Bereich               | Was es tut                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| **Repositories**      | Einen Quellbaum + ein Arbeitsverzeichnis unter einem URL-sicheren Namen registrieren          |
+| **Generate**          | Der volle Parametersatz, Logs live über SSE gestreamt, mitten im Lauf abbrechbar              |
+| **Handbooks-Browser** | Das gerenderte Handbooks an Ort und Stelle lesen                                              |
+| **Impact-Graph**      | Welche Dateien einer Etappe gehören, was hineinruft, was sie nach außen aufruft               |
+| **Quell-Viewer**      | Die echte Datei hinter jeder Karte öffnen, an der zitierten Zeile                             |
+| **Plan**              | Eine Anfrage eintippen, dem rein lesenden Agenten bei der Arbeit zusehen, den Plan lesen      |
+| **Apply / Rollback**  | Dry-Run, Anwenden, jedes Backup aufgelistet, Rollback mit einem Klick                         |
+| **Resync**            | Das Handbook gegen den lebenden Baum nach vorn rollen — kein Case-Verzeichnis zusammenstellen |
+| **History**           | Evolution pro Repo: was jeder Lauf geändert hat, und wann                                     |
 
 ## Jobs
 
@@ -95,7 +95,7 @@ ist (`HANDBOOK_STUDIO_HOST=0.0.0.0` in `docker-compose.yml`).
   work/<name>/       auto-created work dirs for repos that did not bring their own
 ```
 
-`--state-dir` verlegt ihn. Alles andere — Handbook-Artefakte, Evolutionshistorie — lebt
+`--state-dir` verlegt ihn. Alles andere — Handbooks-Artefakte, Evolutionshistorie — lebt
 im eigenen Arbeitsverzeichnis jedes Repositorys; das Löschen des Zustandsverzeichnisses
 kostet also die Registry und nichts, was zählt.
 

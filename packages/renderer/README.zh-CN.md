@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-[Handbook](../../README.zh-CN.md) 工具链的呈现层。它拿 `@handbooks/pipeline` 产出的
+[Handbooks](../../README.zh-CN.md) 工具链的呈现层。它拿 `@handbooks/pipeline` 产出的
 边界类型 `HandbookModel`，写出：
 
 | 函数                     | 输出                                                               | 受众  |
@@ -222,4 +222,4 @@ pnpm --filter @handbooks/renderer test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/content/docs/reference/artifacts.mdx) · MIT
+[Handbooks](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/content/docs/reference/artifacts.mdx) · MIT

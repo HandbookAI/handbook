@@ -35,7 +35,7 @@ export interface ConfigFileData {
   /** Already flattened by camelCase join — see `file.ts`. */
   readonly flat: Record<string, unknown>;
   /**
-   * Reported, never fatal: a file written for a newer Handbook must keep
+   * Reported, never fatal: a file written for a newer Handbooks release must keep
    * working, so an unrecognised key cannot fail the load. Optional because
    * callers (studio, tests) construct this shape by hand.
    */

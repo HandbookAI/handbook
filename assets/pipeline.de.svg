@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbook end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
-  <title>Handbook — die End-to-End-Pipeline</title>
-  <desc>Quellcode wird zu einem Aufrufgraphen analysiert, in ein Handbook generiert, nach Markdown und HTML gerendert, als Agenten-SKILL paketiert, zum Planen einer Änderung genutzt, byte-exakt angewendet und per resync in das Handbook zurückgespielt.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbooks end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
+  <title>Handbooks — die End-to-End-Pipeline</title>
+  <desc>Quellcode wird zu einem Aufrufgraphen analysiert, in ein Handbooks generiert, nach Markdown und HTML gerendert, als Agenten-SKILL paketiert, zum Planen einer Änderung genutzt, byte-exakt angewendet und per resync in das Handbooks zurückgespielt.</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -44,7 +44,7 @@
   <rect x="0.5" y="0.5" width="1119" height="659" rx="18" fill="none" stroke="#232C4E"/>
 
   <!-- ── header ─────────────────────────────────────────────────────────── -->
-  <text class="t h1" x="40" y="48">Vom Quellcode zum Handbook, mit dem Ihr Agent wirklich navigieren kann</text>
+  <text class="t h1" x="40" y="48">Vom Quellcode zum Handbooks, mit dem Ihr Agent wirklich navigieren kann</text>
   <text class="t sub" x="40" y="72">Türkis = deterministisch, kein LLM, kein Netzwerk  ·  Gelb = LLM-gestützt, gecacht &amp; fortsetzbar</text>
 
   <!-- ── source band ────────────────────────────────────────────────────── -->
@@ -102,7 +102,7 @@
   <text class="m cmd" x="90" y="439">skill</text>
   <rect x="272" y="422" width="70" height="20" rx="10" fill="#2DD4BF"/>
   <text class="t tagT" x="307" y="436" text-anchor="middle">KEIN LLM</text>
-  <text class="t body" x="40" y="468"><tspan x="68">Verpackt das Handbook als Agenten-</tspan><tspan x="68" dy="18">SKILL mit Inhalts-Hashes, damit Drift</tspan><tspan x="68" dy="18">gegenüber dem Code erkennbar ist.</tspan></text>
+  <text class="t body" x="40" y="468"><tspan x="68">Verpackt das Handbooks als Agenten-</tspan><tspan x="68" dy="18">SKILL mit Inhalts-Hashes, damit Drift</tspan><tspan x="68" dy="18">gegenüber dem Code erkennbar ist.</tspan></text>
   <text class="m out" x="68" y="533">→ SKILL.md + references/</text>
 
   <!-- card 5: plan -->
@@ -113,7 +113,7 @@
   <text class="m cmd" x="450" y="439">plan</text>
   <rect x="646" y="422" width="52" height="20" rx="10" fill="#FBBF24"/>
   <text class="t tagT" x="672" y="436" text-anchor="middle">LLM</text>
-  <text class="t body" x="400" y="468"><tspan x="428">Ein Nur-Lese-Agent navigiert mit dem</tspan><tspan x="428" dy="18">Handbook, liest den echten Quellcode</tspan><tspan x="428" dy="18">und erzeugt byte-exakte EDIT-Blöcke.</tspan></text>
+  <text class="t body" x="400" y="468"><tspan x="428">Ein Nur-Lese-Agent navigiert mit dem</tspan><tspan x="428" dy="18">Handbooks, liest den echten Quellcode</tspan><tspan x="428" dy="18">und erzeugt byte-exakte EDIT-Blöcke.</tspan></text>
   <text class="m out" x="428" y="533">→ plan.md</text>
 
   <!-- card 6: apply -->

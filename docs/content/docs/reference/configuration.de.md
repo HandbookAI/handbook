@@ -1,6 +1,6 @@
 ---
 title: 'Konfigurationsreferenz'
-description: 'Jede Handbook-Einstellung mit ihrem Flag, ihrer Umgebungsvariable, ihrem Konfigurationsdatei-Schlüssel, Typ und Standardwert — generiert aus der Registry.'
+description: 'Jede Handbooks-Einstellung mit ihrem Flag, ihrer Umgebungsvariable, ihrem Konfigurationsdatei-Schlüssel, Typ und Standardwert — generiert aus der Registry.'
 ---
 
 Diese Seite ist die **Übersetzung einer generierten Seite**. Das englische Original wird von `pnpm run config:docs` aus der Einstellungs-Registry generiert und durch einen Drift-Test geschützt; diese Übersetzung wird von Hand gepflegt — ändert sich das Original, aktualisiere sie mit.

@@ -1,7 +1,7 @@
 {
   "name": "@handbooks/pipeline",
   "version": "1.2.0",
-  "description": "Handbook generation pipeline: static graph -> cards -> skeleton -> assignment -> narration",
+  "description": "Handbooks generation pipeline: static graph -> cards -> skeleton -> assignment -> narration",
   "type": "module",
   "exports": {
     ".": {

@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Pipeline de ponta a ponta do Handbook: analyze, generate, render, skill, plan, apply e o laço de retroalimentação do resync">
-  <title>Handbook — o pipeline de ponta a ponta</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Pipeline de ponta a ponta do Handbooks: analyze, generate, render, skill, plan, apply e o laço de retroalimentação do resync">
+  <title>Handbooks — o pipeline de ponta a ponta</title>
   <desc>O código-fonte é analisado num grafo de chamadas, gerado num handbook, renderizado em markdown e HTML, empacotado como skill de agente, usado para planejar uma mudança, aplicado byte a byte e então ressincronizado de volta ao handbook.</desc>
 
   <defs>

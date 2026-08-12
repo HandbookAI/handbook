@@ -29,17 +29,17 @@ from a CDN. It loads instantly and it works with the network cable unplugged.
 
 ## What you can do in it
 
-| Area                 | What it does                                                                                                                                                         |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Repositories**     | Register a source tree + work dir under a URL-safe name. Persisted in one `studio.json`, so the server is stateless across restarts.                                 |
-| **Generate**         | Kick off a run with the full parameter set (phase, strategy, detail, synth mode, narration language, worker counts). Logs stream live over SSE. Cancellable mid-run. |
-| **Handbook browser** | Read the rendered handbook in place — overview, stage index, stage pages, register table.                                                                            |
-| **Impact graph**     | Which files a stage owns, what calls into it, and what it calls out to.                                                                                              |
-| **Source viewer**    | Open the real file behind any card, at the line the handbook cited.                                                                                                  |
-| **Plan**             | Type a change request, watch the read-only agent work, read the resulting plan.                                                                                      |
-| **Apply / rollback** | Dry-run first, then apply, with every backup listed and one-click rollback.                                                                                          |
-| **Resync**           | Roll the handbook forward against the live tree — no case directory to assemble by hand.                                                                             |
-| **History**          | Per-repo evolution: what each run changed, and when.                                                                                                                 |
+| Area                  | What it does                                                                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Repositories**      | Register a source tree + work dir under a URL-safe name. Persisted in one `studio.json`, so the server is stateless across restarts.                                 |
+| **Generate**          | Kick off a run with the full parameter set (phase, strategy, detail, synth mode, narration language, worker counts). Logs stream live over SSE. Cancellable mid-run. |
+| **Handbooks browser** | Read the rendered handbook in place — overview, stage index, stage pages, register table.                                                                            |
+| **Impact graph**      | Which files a stage owns, what calls into it, and what it calls out to.                                                                                              |
+| **Source viewer**     | Open the real file behind any card, at the line the handbook cited.                                                                                                  |
+| **Plan**              | Type a change request, watch the read-only agent work, read the resulting plan.                                                                                      |
+| **Apply / rollback**  | Dry-run first, then apply, with every backup listed and one-click rollback.                                                                                          |
+| **Resync**            | Roll the handbook forward against the live tree — no case directory to assemble by hand.                                                                             |
+| **History**           | Per-repo evolution: what each run changed, and when.                                                                                                                 |
 
 ---
 
@@ -132,7 +132,7 @@ and a stuck script does the same damage as a hostile one.
 | A second job on one repo         | `409`                            |
 
 Job logs are capped per line and per job, so a model that answers with a megabyte cannot
-grow this process without limit. Handbook files are streamed, not read whole.
+grow this process without limit. Handbooks files are streamed, not read whole.
 
 ### Running it in a container
 
@@ -160,7 +160,7 @@ The UI is just a client; the API is stable enough to script against.
 | `DELETE` | `/api/repos/:name`            | Unregister                                                                |
 | `GET`    | `/api/repos/:name`            | One repo's state                                                          |
 | `POST`   | `/api/repos/:name`            | Start a job: `analyze`, `generate`, `plan`, `resync`, `apply`, `rollback` |
-| `GET`    | `/api/repos/:name/overview`   | Handbook overview + stage index                                           |
+| `GET`    | `/api/repos/:name/overview`   | Handbooks overview + stage index                                          |
 | `GET`    | `/api/repos/:name/graph`      | Impact graph data                                                         |
 | `GET`    | `/api/repos/:name/source`     | A source file, sandboxed                                                  |
 | `GET`    | `/api/repos/:name/handbook/*` | Rendered handbook files                                                   |
@@ -199,4 +199,4 @@ is also a UI-drift test that keeps the hand-written HTML in step with the API it
 
 ---
 
-Part of [Handbook](../../README.md) · MIT
+Part of [Handbooks](../../README.md) · MIT

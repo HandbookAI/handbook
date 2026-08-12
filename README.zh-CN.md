@@ -1,10 +1,6 @@
 <div align="center">
 
-# Handbook
-
-### 一个代码库进来，**两本手册出去。**
-
-**📖 一本给团队真正读。 🤖 一本给 AI 真正用。**
+<img src="assets/hero.zh.svg" alt="Handbooks —— 一个代码库进去，两本手册出来：一本团队读的叙述式文档站，一份智能体用来定位的机器可读索引" width="100%">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
@@ -18,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="assets/pipeline.zh.svg" alt="Handbook 全流程：analyze、generate、render、skill、plan、apply、resync" width="100%">
+  <img src="assets/pipeline.zh.svg" alt="Handbooks 全流程：analyze、generate、render、skill、plan、apply、resync" width="100%">
 </p>
 
 <table>
@@ -55,7 +51,7 @@
 找到了七处里的三处，改完这三处，然后交出了一个只改了一半的补丁。与此同时，团队的 wiki
 上一次说真话还是八个月前。
 
-**Handbook 一次跑通，两个问题一起解。** 它用真正的语法解析器读你的代码，画出一张地图，
+**Handbooks 一次跑通，两个问题一起解。** 它用真正的语法解析器读你的代码，画出一张地图，
 然后把这张地图写成两份：一份是人愿意读下去的叙述，一份是 agent 能拿来路由的位置索引。
 之后代码变了，两份一起跟着变。
 
@@ -103,7 +99,7 @@ AI 编码助手很擅长**改**代码，很不擅长**找**该改的代码。你
 ### 答案由三件事构成
 
 **1. 事实来自解析器，不来自模型。**
-Handbook 用 tree-sitter 解析每个源文件，构建带类型的调用图：函数、方法、
+Handbooks 用 tree-sitter 解析每个源文件，构建带类型的调用图：函数、方法、
 通过 `self`/属性/参数/import 解析出的调用边、离开你代码边界的调用，以及**解析不出来的调用**
 （单独隔离到 `dropped-calls.json`，绝不瞎猜）。这一层完全不碰 LLM，跑多少次结果都一样。
 

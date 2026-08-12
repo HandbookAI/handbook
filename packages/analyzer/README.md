@@ -13,7 +13,7 @@
 
 ## What it is
 
-`@handbooks/analyzer` is the static-analysis engine of the [Handbook](../../README.md)
+`@handbooks/analyzer` is the static-analysis engine of the [Handbooks](../../README.md)
 toolchain — and it is genuinely useful on its own. Give it a source root and it returns
 the same language-agnostic IR no matter what the code is written in:
 
@@ -340,5 +340,5 @@ proves nothing about a grammar.
 
 ---
 
-Part of [Handbook](../../README.md) · [Architecture](../../docs/content/docs/concepts/architecture.mdx) ·
+Part of [Handbooks](../../README.md) · [Architecture](../../docs/content/docs/concepts/architecture.mdx) ·
 [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) · MIT

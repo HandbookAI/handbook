@@ -41,12 +41,12 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` は Node のフラグと衝突します">
   Node >= 20.6 は独自の `--env-file` を持っており、**コマンドライン全体を事前スキャン**
   します — 実際にはファイルを適用しない、スクリプトパスより後ろの部分も含めてです。
-  存在するパスはそのまま Handbook に渡されますが、存在**しない**パスは、その前に
+  存在するパスはそのまま Handbooks に渡されますが、存在**しない**パスは、その前に
   プロセスを終了させます:
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 つまり、このフラグが大きな声で報告すると約束している唯一のケースこそ、報告できない
@@ -194,7 +194,7 @@ handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-sit
 | フラグ                    | デフォルト        | 内容                                                                    |
 | ------------------------- | ----------------- | ----------------------------------------------------------------------- |
 | `--work <dir>`            | **必須**          | レンダリング対象の作業ディレクトリ                                      |
-| `--title <title>`         | `System Handbook` | 出力に使う Handbook のタイトル                                          |
+| `--title <title>`         | `System Handbook` | 出力に使う Handbooks のタイトル                                         |
 | `--out <dir>`             | `<work>/handbook` | 書き出し先                                                              |
 | `--html`                  | `false`           | 複数ページの HTML サイトも `<out>/html` の下に出力します                |
 | `--html-single`           | `false`           | 自己完結した `<out>/handbook.html` も出力します                         |

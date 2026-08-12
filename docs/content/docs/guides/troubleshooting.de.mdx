@@ -44,9 +44,9 @@ Verschieben Sie ihn in `.env` oder die Shell-Umgebung. Diese Verweigerung ist Ab
 
 ### `node: /some/path.env: not found`, und Exit-Code 9
 
-Gar kein Handbook-Fehler. Node >= 20.6 hat ein eigenes `--env-file`-Flag und scannt die
+Gar kein Handbooks-Fehler. Node >= 20.6 hat ein eigenes `--env-file`-Flag und scannt die
 gesamte Kommandozeile vorab danach, es stirbt also an einem fehlenden Pfad, **bevor**
-Handbook überhaupt startet. Verwenden Sie stattdessen die Variable, die nichts abfangen
+Handbooks überhaupt startet. Verwenden Sie stattdessen die Variable, die nichts abfangen
 kann:
 
 ```bash

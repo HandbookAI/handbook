@@ -205,4 +205,4 @@ correction lines, member-strategy work dirs, and abort mid-run.
 
 ---
 
-Part of [Handbook](../../README.md) · MIT
+Part of [Handbooks](../../README.md) · MIT

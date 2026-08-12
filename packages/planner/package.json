@@ -1,7 +1,7 @@
 {
   "name": "@handbooks/planner",
   "version": "1.2.0",
-  "description": "Handbook-guided read-only planning agent that localizes code changes into a precise edit plan",
+  "description": "Handbooks-guided read-only planning agent that localizes code changes into a precise edit plan",
   "type": "module",
   "exports": {
     ".": {

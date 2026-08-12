@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-`@handbooks/analyzer` 是 [Handbook](../../README.zh-CN.md) 工具链的静态分析引擎——
+`@handbooks/analyzer` 是 [Handbooks](../../README.zh-CN.md) 工具链的静态分析引擎——
 而且它**单独拿出来用也很有价值**。给它一个源码根目录，不管代码是什么语言写的，
 它都返回同一套与语言无关的 IR：
 
@@ -318,5 +318,5 @@ pnpm --filter @handbooks/analyzer test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [架构](../../docs/content/docs/concepts/architecture.mdx) ·
+[Handbooks](../../README.zh-CN.md) 的一部分 · [架构](../../docs/content/docs/concepts/architecture.mdx) ·
 [产物格式](../../docs/content/docs/reference/artifacts.mdx) · MIT

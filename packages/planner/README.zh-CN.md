@@ -209,5 +209,5 @@ pnpm --filter @handbooks/planner test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/content/docs/reference/prompts.mdx) ·
+[Handbooks](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/content/docs/reference/prompts.mdx) ·
 产物由 [`@handbooks/patcher`](../patcher/README.zh-CN.md) 执行 · MIT

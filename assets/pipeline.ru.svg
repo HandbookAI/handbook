@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbook end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
-  <title>Handbook — сквозной конвейер</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbooks end-to-end pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop">
+  <title>Handbooks — сквозной конвейер</title>
   <desc>Исходный код анализируется в граф вызовов, из него генерируется хендбук, который рендерится в markdown и HTML, упаковывается как навык агента, используется для планирования правки, применяется байт-точно, а затем ресинхронизируется обратно в хендбук.</desc>
 
   <defs>

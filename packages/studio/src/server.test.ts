@@ -242,7 +242,7 @@ describe('studio server (integration, mock LLM)', () => {
   it('serves the UI shell', async () => {
     const res = await fetch(`${base}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('Handbook Studio');
+    expect(await res.text()).toContain('Handbooks Studio');
   });
 
   it('serves the locale dictionaries from a fixed allowlist', async () => {

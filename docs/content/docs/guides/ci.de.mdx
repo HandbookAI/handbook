@@ -1,6 +1,6 @@
 ---
 title: 'CI-Integration'
-description: 'Welche Befehle günstig genug sind, um bei jedem Commit zu laufen, welche einen Schlüssel brauchen, und wie ein Build bei Handbook-Drift fehlschlägt.'
+description: 'Welche Befehle günstig genug sind, um bei jedem Commit zu laufen, welche einen Schlüssel brauchen, und wie ein Build bei Handbooks-Drift fehlschlägt.'
 ---
 
 ## Was kostet was
@@ -117,7 +117,7 @@ Zwei Details, auf die es ankommt:
 - **`concurrency` mit `cancel-in-progress: false`.** Ein Lauf pro Arbeitsverzeichnis wird
   durch eine Sperre erzwungen; zwei überlappende CI-Läufe würden nur dazu führen, dass
   einer von beiden fehlschlägt.
-- **Einen PR öffnen statt zu pushen.** Ein regeneriertes Handbook ist ein Diff, den es
+- **Einen PR öffnen statt zu pushen.** Ein regeneriertes Handbooks ist ein Diff, den es
   sich zu lesen lohnt.
 
 ## Die HTML-Site veröffentlichen
@@ -159,7 +159,7 @@ jobs:
 
 Rendern ist kostenlos und deterministisch, also kann das bei jedem Push laufen. Wenn
 `--source-base-url` auf `${{ github.sha }}` statt auf `main` zeigt, verweist jeder Link
-im veröffentlichten Handbook auf exakt den Code, aus dem es gerendert wurde.
+im veröffentlichten Handbooks auf exakt den Code, aus dem es gerendert wurde.
 
 ## Das Arbeitsverzeichnis committen
 
@@ -200,5 +200,5 @@ case $? in
 esac
 ```
 
-Behandeln Sie `2` als Planungssignal statt als Build-Bruch. Ein veraltetes Handbook ist
+Behandeln Sie `2` als Planungssignal statt als Build-Bruch. Ein veraltetes Handbooks ist
 eine Wartungsaufgabe; ein _kaputtes_ (Exit `1`) ist ein Bug.

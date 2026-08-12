@@ -1,12 +1,20 @@
 ---
-title: 'Handbook क्या है?'
+title: 'Handbooks क्या है?'
 description: एक कोडबेस अंदर, दो handbooks बाहर — एक narrated documentation site जो आपकी टीम पढ़ती है, और एक location index जिससे आपका coding agent route करता है। एक ही parsed नक्शे से, कोड के साथ हमेशा अद्यतन।
 icon: House
 ---
 
+<div className="not-prose mb-8">
+  <img
+    src="/diagrams/hero.hi.svg"
+    alt="Handbooks — एक codebase अंदर, दो handbooks बाहर: टीम के लिए एक narrated documentation site, और आपके coding agent के लिए एक machine-shaped location index"
+    className="rounded-xl border"
+  />
+</div>
+
 ## एक कोडबेस अंदर, दो handbooks बाहर।
 
-Handbook आपके कोड के एक ही नक्शे को **दो बार** लिखता है, क्योंकि इसके दो बिल्कुल अलग पाठक हैं:
+Handbooks आपके कोड के एक ही नक्शे को **दो बार** लिखता है, क्योंकि इसके दो बिल्कुल अलग पाठक हैं:
 
 <Cards>
   <Card
@@ -37,7 +45,7 @@ constant, batch worker में मौजूद mirrored implementation, attemp
 यह reasoning की विफलता नहीं है। यह **routing** की विफलता है। Agent ने कोई map देखा ही नहीं।
 
 <Callout title="एक वाक्य में पूरी बात">
-  Handbook आपका code एक असली parser से पढ़ता है, उसका एक map बनाता है, वह map agent को **location index** के
+  Handbooks आपका code एक असली parser से पढ़ता है, उसका एक map बनाता है, वह map agent को **location index** के
   रूप में सौंपता है — summary के रूप में नहीं — और code के बदलते रहने पर map को current रखता है।
 </Callout>
 
@@ -67,7 +75,7 @@ index और एक validated SKILL package मौजूद होगा।
 
 ### 1. Facts parser से आते हैं, model से नहीं
 
-Handbook हर source file को [tree-sitter](https://tree-sitter.github.io/) से parse करता है
+Handbooks हर source file को [tree-sitter](https://tree-sitter.github.io/) से parse करता है
 और एक typed call graph बनाता है: functions, methods, `self`/attributes/parameters/imports
 के ज़रिये resolve हुए call edges, आपके code से बाहर जाने वाली calls, और वे calls जो resolve
 नहीं हो सकीं — उन्हें अपनी अलग file में quarantine किया जाता है, उनके बारे में कभी अंदाज़ा नहीं

@@ -42,9 +42,9 @@ handbook config --command generate | grep -i <setting>
 
 ### `node: /some/path.env: not found` и код выхода 9
 
-Это вообще не ошибка Handbook. Node >= 20.6 имеет собственный флаг `--env-file` и заранее
+Это вообще не ошибка Handbooks. Node >= 20.6 имеет собственный флаг `--env-file` и заранее
 сканирует всю командную строку в его поисках, поэтому умирает на отсутствующем пути
-**до** старта Handbook. Используйте переменную — её ничто не может перехватить:
+**до** старта Handbooks. Используйте переменную — её ничто не может перехватить:
 
 ```bash
 HANDBOOK_ENV_FILE=/some/path.env handbook config

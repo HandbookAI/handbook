@@ -41,12 +41,12 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` एक Node flag से टकराता है">
   Node >= 20.6 का अपना `--env-file` है, और वह उसके लिए **पूरी command line को पहले से स्कैन
   करता है** — उस हिस्से समेत जो script path के बाद आता है, जहाँ वह फ़ाइल को असल में लागू नहीं
-  करता। मौजूद रास्ता Handbook तक बिना छेड़े पहुँच जाता है, पर जो रास्ता मौजूद **नहीं** है वह
+  करता। मौजूद रास्ता Handbooks तक बिना छेड़े पहुँच जाता है, पर जो रास्ता मौजूद **नहीं** है वह
   प्रक्रिया को पहले ही मार देता है:
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 तो जिस एक मामले को ज़ोर से बताने का वादा यह flag करता है, वही एकमात्र मामला है जिसे वह बता
@@ -261,7 +261,7 @@ handbook validate --skill <dir> [--source <dir>]
 
 ## `plan`
 
-Handbook-निर्देशित परिवर्तन स्थानीयकरण। **एक LLM endpoint चाहिए। केवल पढ़ने वाला।**
+Handbooks-निर्देशित परिवर्तन स्थानीयकरण। **एक LLM endpoint चाहिए। केवल पढ़ने वाला।**
 
 ```bash
 handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]

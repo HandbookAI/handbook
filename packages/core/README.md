@@ -12,7 +12,7 @@
 
 ## What it is
 
-`@handbooks/core` is the foundation layer of the [Handbook](../../README.md) toolchain.
+`@handbooks/core` is the foundation layer of the [Handbooks](../../README.md) toolchain.
 It contains four things and deliberately nothing else:
 
 1. **The data model** — what a call graph _is_, and what a handbook _is_, as zod schemas.
@@ -226,5 +226,5 @@ Fully offline, no fixtures beyond temp dirs. Coverage floor is enforced in
 
 ---
 
-Part of [Handbook](../../README.md) · [Architecture](../../docs/content/docs/concepts/architecture.mdx) ·
+Part of [Handbooks](../../README.md) · [Architecture](../../docs/content/docs/concepts/architecture.mdx) ·
 [Configuration reference](../../docs/content/docs/reference/configuration.md) · MIT

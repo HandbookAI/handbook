@@ -40,8 +40,8 @@ handbook config --command generate | grep -i <setting>
 
 ### `node: /some/path.env: not found`，以及退出码 9
 
-这根本不是 Handbook 的错误。Node >= 20.6 有它自己的 `--env-file` 标志，而且会预先扫描
-整条命令行去找它，于是在 Handbook 启动**之前**就因为路径不存在而死掉。改用那个变量，
+这根本不是 Handbooks 的错误。Node >= 20.6 有它自己的 `--env-file` 标志，而且会预先扫描
+整条命令行去找它，于是在 Handbooks 启动**之前**就因为路径不存在而死掉。改用那个变量，
 没有任何东西能拦截它：
 
 ```bash

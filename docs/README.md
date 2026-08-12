@@ -1,6 +1,6 @@
-# Handbook documentation site
+# Handbooks documentation site
 
-The public documentation for [Handbook](../README.md) — a Next.js app using
+The public documentation for [Handbooks](../README.md) — a Next.js app using
 [Fumadocs](https://fumadocs.dev). Content is MDX under `content/docs/`.
 
 This directory is **not** part of the repo's pnpm workspace (it has its own

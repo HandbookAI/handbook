@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbook 端到端流水线：analyze、generate、render、skill、plan、apply，以及 resync 反馈回路">
-  <title>Handbook — 端到端流水线</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-label="Handbooks 端到端流水线：analyze、generate、render、skill、plan、apply，以及 resync 反馈回路">
+  <title>Handbooks — 端到端流水线</title>
   <desc>源代码被分析成调用图，生成为手册，渲染成 markdown 与 HTML，打包为 agent 技能，用于规划一次变更，逐字节精确地应用，再由 resync 同步回手册。</desc>
 
   <defs>

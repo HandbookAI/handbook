@@ -41,12 +41,12 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` конфликтует с флагом Node">
   У Node >= 20.6 есть собственный `--env-file`, и он **предварительно сканирует всю
   командную строку** в его поисках — включая часть после пути к скрипту, где на самом
-  деле файл не применяется. Существующий путь проходит в Handbook нетронутым, а вот путь,
+  деле файл не применяется. Существующий путь проходит в Handbooks нетронутым, а вот путь,
   которого **не** существует, убивает процесс раньше:
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 Так что единственный случай, о котором флаг обещает сообщить громко, — это как раз тот,

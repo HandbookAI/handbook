@@ -1,6 +1,6 @@
 ---
 title: 'Configuration संदर्भ'
-description: 'Handbook की हर setting, उसके flag, environment variable, config-फ़ाइल key, प्रकार और डिफ़ॉल्ट के साथ — registry से जनरेट की गई।'
+description: 'Handbooks की हर setting, उसके flag, environment variable, config-फ़ाइल key, प्रकार और डिफ़ॉल्ट के साथ — registry से जनरेट की गई।'
 ---
 
 यह पृष्ठ एक **जनरेटेड पेज का अनुवाद** है। अंग्रेज़ी मूल `pnpm run config:docs` द्वारा settings registry से जनरेट होता है और drift test से सुरक्षित है; यह अनुवाद हाथ से बनाए रखा जाता है — अंग्रेज़ी मूल बदलने पर इसे भी अपडेट करें।

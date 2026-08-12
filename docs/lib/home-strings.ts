@@ -116,7 +116,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'Your coding agent greps for a symbol, finds three of the seven places that matter, and ships a half-change. That is a ',
     heroEmphasis: 'routing',
-    heroRest: ' failure, not a reasoning one. Handbook gives it the map.',
+    heroRest: ' failure, not a reasoning one. Handbooks gives it the map.',
     ctaDemo: 'Run the offline demo',
     ctaDocs: 'Read the docs',
     snippetComment: '# full pipeline, offline, no API key, ~30s',
@@ -136,7 +136,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: 'How each phase works',
     pipelineDiagramAlt:
-      'The Handbook pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop',
+      'The Handbooks pipeline: analyze, generate, render, skill, plan, apply, and the resync feedback loop',
     pillarsTitle: 'Why you can trust what you read',
     pillars: {
       parser: {
@@ -209,7 +209,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       '你的编码智能体 grep 一个符号，在真正相关的七处里找到三处，然后交付了一个只改了一半的改动。这不是推理出了问题，而是',
     heroEmphasis: '路由',
-    heroRest: '出了问题。Handbook 把地图交给它。',
+    heroRest: '出了问题。Handbooks 把地图交给它。',
     ctaDemo: '运行离线演示',
     ctaDocs: '阅读文档',
     snippetComment: '# 完整流水线，离线运行，无需 API key，约 30 秒',
@@ -229,7 +229,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: '每个阶段是怎么工作的',
     pipelineDiagramAlt:
-      'Handbook 流水线：analyze、generate、render、skill、plan、apply，以及 resync 反馈回路',
+      'Handbooks 流水线：analyze、generate、render、skill、plan、apply，以及 resync 反馈回路',
     pillarsTitle: '为什么你可以信任读到的内容',
     pillars: {
       parser: {
@@ -287,7 +287,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'आपका coding agent किसी symbol को grep करता है, जो सात जगहें मायने रखती हैं उनमें से तीन ढूँढता है, और आधा-अधूरा बदलाव ship कर देता है। यह reasoning की विफलता नहीं, ',
     heroEmphasis: 'routing',
-    heroRest: ' की विफलता है। Handbook उसे नक़्शा थमा देता है।',
+    heroRest: ' की विफलता है। Handbooks उसे नक़्शा थमा देता है।',
     ctaDemo: 'Offline demo चलाएँ',
     ctaDocs: 'Documentation पढ़ें',
     snippetComment: '# पूरी pipeline, offline, बिना API key, ~30 सेकंड',
@@ -303,11 +303,11 @@ export const HOME: Record<Locale, HomeStrings> = {
       skill: 'आपके coding agent के लिए इसे package करता है।',
       plan: 'एक बदलाव को byte-exact edits में बदल देता है।',
       apply: 'सब-या-कुछ-नहीं patch, rollback के साथ।',
-      resync: 'Handbook को आगे बढ़ाता है। कोई rebuild नहीं।',
+      resync: 'Handbooks को आगे बढ़ाता है। कोई rebuild नहीं।',
     },
     pipelineMore: 'हर phase कैसे काम करता है',
     pipelineDiagramAlt:
-      'Handbook pipeline: analyze, generate, render, skill, plan, apply, और resync का feedback loop',
+      'Handbooks pipeline: analyze, generate, render, skill, plan, apply, और resync का feedback loop',
     pillarsTitle: 'आप जो पढ़ते हैं उस पर भरोसा क्यों कर सकते हैं',
     pillars: {
       parser: {
@@ -377,7 +377,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'Tu agente de código hace grep de un símbolo, encuentra tres de los siete lugares que importan y entrega media modificación. Eso no es un fallo de razonamiento: es un fallo de ',
     heroEmphasis: 'enrutamiento',
-    heroRest: '. Handbook le da el mapa.',
+    heroRest: '. Handbooks le da el mapa.',
     ctaDemo: 'Ejecuta la demo sin red',
     ctaDocs: 'Lee la documentación',
     snippetComment: '# pipeline completo, sin red, sin clave de API, ~30 s',
@@ -397,7 +397,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: 'Cómo funciona cada fase',
     pipelineDiagramAlt:
-      'El pipeline de Handbook: analyze, generate, render, skill, plan, apply y el bucle de realimentación de resync',
+      'El pipeline de Handbooks: analyze, generate, render, skill, plan, apply y el bucle de realimentación de resync',
     pillarsTitle: 'Por qué puedes confiar en lo que lees',
     pillars: {
       parser: {
@@ -430,7 +430,7 @@ export const HOME: Record<Locale, HomeStrings> = {
       'La generación es la parte cara y ocurre una vez. Todo lo de abajo es un re-render determinista que puedes ejecutar en cada commit.',
     formats: {
       markdown: {
-        title: 'Handbook en Markdown',
+        title: 'Handbooks en Markdown',
         body: 'visión general · índice · una página por etapa · tabla de registros de estado',
       },
       html: {
@@ -467,7 +467,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'Seu agente de codificação faz grep de um símbolo, encontra três dos sete lugares que importam e entrega meia mudança. Isso não é falha de raciocínio: é falha de ',
     heroEmphasis: 'roteamento',
-    heroRest: '. O Handbook dá a ele o mapa.',
+    heroRest: '. O Handbooks dá a ele o mapa.',
     ctaDemo: 'Rode a demo offline',
     ctaDocs: 'Leia a documentação',
     snippetComment: '# pipeline inteiro, offline, sem chave de API, ~30 s',
@@ -487,7 +487,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: 'Como cada fase funciona',
     pipelineDiagramAlt:
-      'O pipeline do Handbook: analyze, generate, render, skill, plan, apply e o laço de realimentação do resync',
+      'O pipeline do Handbooks: analyze, generate, render, skill, plan, apply e o laço de realimentação do resync',
     pillarsTitle: 'Por que você pode confiar no que lê',
     pillars: {
       parser: {
@@ -520,7 +520,7 @@ export const HOME: Record<Locale, HomeStrings> = {
       'A geração é a parte cara e acontece uma vez. Tudo abaixo é re-renderização determinística que você pode rodar a cada commit.',
     formats: {
       markdown: {
-        title: 'Handbook em Markdown',
+        title: 'Handbooks em Markdown',
         body: 'visão geral · índice · uma página por etapa · tabela de registradores de estado',
       },
       html: {
@@ -559,7 +559,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'Ваш кодинг-агент делает grep по символу, находит три из семи важных мест и отдаёт половину изменения. Это сбой не рассуждения, а ',
     heroEmphasis: 'маршрутизации',
-    heroRest: '. Handbook даёт ему карту.',
+    heroRest: '. Handbooks даёт ему карту.',
     ctaDemo: 'Запустить офлайн-демо',
     ctaDocs: 'Читать документацию',
     snippetComment: '# весь конвейер, офлайн, без API-ключа, ~30 с',
@@ -579,7 +579,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: 'Как работает каждая фаза',
     pipelineDiagramAlt:
-      'Конвейер Handbook: analyze, generate, render, skill, plan, apply и контур обратной связи resync',
+      'Конвейер Handbooks: analyze, generate, render, skill, plan, apply и контур обратной связи resync',
     pillarsTitle: 'Почему прочитанному можно доверять',
     pillars: {
       parser: {
@@ -649,7 +649,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'コーディングエージェントはシンボルを grep し、本当に重要な 7 箇所のうち 3 箇所を見つけ、半分だけ直した変更を出荷します。これは推論の失敗ではなく、',
     heroEmphasis: 'ルーティング',
-    heroRest: 'の失敗です。Handbook はそのためのマップを渡します。',
+    heroRest: 'の失敗です。Handbooks はそのためのマップを渡します。',
     ctaDemo: 'オフラインのデモを実行',
     ctaDocs: 'ドキュメントを読む',
     snippetComment: '# パイプライン全体、オフライン、API キー不要、約 30 秒',
@@ -669,7 +669,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: '各フェーズの仕組み',
     pipelineDiagramAlt:
-      'Handbook のパイプライン: analyze、generate、render、skill、plan、apply、そして resync のフィードバックループ',
+      'Handbooks のパイプライン: analyze、generate、render、skill、plan、apply、そして resync のフィードバックループ',
     pillarsTitle: '読んだ内容を信頼できる理由',
     pillars: {
       parser: {
@@ -742,7 +742,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     heroLead:
       'Dein Coding-Agent greppt nach einem Symbol, findet drei der sieben Stellen, auf die es ankommt, und liefert eine halbe Änderung. Das ist kein Denkfehler, sondern ein ',
     heroEmphasis: 'Routing',
-    heroRest: '-Fehler. Handbook gibt ihm die Karte.',
+    heroRest: '-Fehler. Handbooks gibt ihm die Karte.',
     ctaDemo: 'Offline-Demo starten',
     ctaDocs: 'Dokumentation lesen',
     snippetComment: '# komplette Pipeline, offline, kein API-Schlüssel, ~30 s',
@@ -762,7 +762,7 @@ export const HOME: Record<Locale, HomeStrings> = {
     },
     pipelineMore: 'Wie jede Phase funktioniert',
     pipelineDiagramAlt:
-      'Die Handbook-Pipeline: analyze, generate, render, skill, plan, apply und die resync-Rückkopplung',
+      'Die Handbooks-Pipeline: analyze, generate, render, skill, plan, apply und die resync-Rückkopplung',
     pillarsTitle: 'Warum du dem Gelesenen trauen kannst',
     pillars: {
       parser: {

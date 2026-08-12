@@ -1,12 +1,20 @@
 ---
-title: 'Handbook 是什么？'
+title: 'Handbooks 是什么？'
 description: 一个代码库进来，两本手册出去——一份给团队读的叙述式文档站，一份给编码 agent 路由用的位置索引。同一张解析出的地图，随代码演进保持同步。
 icon: House
 ---
 
+<div className="not-prose mb-8">
+  <img
+    src="/diagrams/hero.zh.svg"
+    alt="Handbooks —— 一个代码库进去，两本手册出来：一本团队读的叙述式文档站，一份智能体用来定位的机器可读索引"
+    className="rounded-xl border"
+  />
+</div>
+
 ## 一个代码库进来，两本手册出去。
 
-Handbook 会把同一张代码地图写成**两份**，因为它有两种完全不同的读者：
+Handbooks 会把同一张代码地图写成**两份**，因为它有两种完全不同的读者：
 
 <Cards>
   <Card
@@ -33,7 +41,7 @@ Handbook 会把同一张代码地图写成**两份**，因为它有两种完全�
 这不是推理出了问题，而是**路由**出了问题。代理从头到尾都没见过地图。
 
 <Callout title="一句话版本">
-  Handbook
+  Handbooks
   用真正的解析器读取你的代码，为它构建一张地图，并把这张地图作为**位置索引**——而不是摘要——交给代理，且随着代码变动持续更新这张地图。
 </Callout>
 
@@ -60,7 +68,7 @@ pnpm demo
 
 ### 1. 事实来自解析器，而不是模型
 
-Handbook 用 [tree-sitter](https://tree-sitter.github.io/) 解析每一个源文件，构建一张带类型的调用图：函数、方法、通过 `self`/属性/参数/导入解析出来的调用边、离开你代码的调用，以及无法解析的调用——后者被隔离进单独的文件，绝不靠猜。
+Handbooks 用 [tree-sitter](https://tree-sitter.github.io/) 解析每一个源文件，构建一张带类型的调用图：函数、方法、通过 `self`/属性/参数/导入解析出来的调用边、离开你代码的调用，以及无法解析的调用——后者被隔离进单独的文件，绝不靠猜。
 
 读不了或根本解析不了的文件同样会被隔离出来——缺口可以逐条列举，而不会悄无声息地消失。
 

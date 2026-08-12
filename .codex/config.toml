@@ -1,4 +1,4 @@
-# Codex project configuration for the Handbook monorepo.
+# Codex project configuration for the Handbooks monorepo.
 #
 # Loaded from `.codex/config.toml` when this project is trusted. A project-scoped
 # config can never override machine-local provider, auth or telemetry settings,

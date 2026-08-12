@@ -1,4 +1,4 @@
-# Handbook — working notes for coding agents
+# Handbooks — working notes for coding agents
 
 Turn any codebase into a navigable handbook, and use that handbook to plan precise code
 changes. A pnpm monorepo of eleven TypeScript packages plus a standalone docs site.

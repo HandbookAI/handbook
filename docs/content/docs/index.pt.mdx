@@ -1,12 +1,20 @@
 ---
-title: 'O que é o Handbook?'
+title: 'O que é o Handbooks?'
 description: Um código-fonte entra, dois manuais saem — um site de documentação narrado que o seu time lê e um índice de localização com que o seu agente de código se orienta. Do mesmo mapa parseado, sempre em dia com o código.
 icon: House
 ---
 
+<div className="not-prose mb-8">
+  <img
+    src="/diagrams/hero.pt.svg"
+    alt="Handbooks — entra uma base de código, saem dois handbooks: um site de documentação narrado para a equipe e um índice de localização legível por máquinas para o seu agente"
+    className="rounded-xl border"
+  />
+</div>
+
 ## Um código-fonte entra. Saem dois manuais.
 
-O Handbook escreve o mesmo mapa do seu código **duas vezes**, porque tem dois leitores muito diferentes:
+O Handbooks escreve o mesmo mapa do seu código **duas vezes**, porque tem dois leitores muito diferentes:
 
 <Cards>
   <Card
@@ -39,7 +47,7 @@ Isso não é uma falha de raciocínio. É uma falha de **roteamento**. O agente 
 mapa.
 
 <Callout title="A versão em uma frase">
-  O Handbook lê seu código com um parser de verdade, constrói um mapa dele, entrega esse mapa ao agente como
+  O Handbooks lê seu código com um parser de verdade, constrói um mapa dele, entrega esse mapa ao agente como
   um **índice de localização** — não um resumo — e mantém o mapa atualizado conforme o código muda.
 </Callout>
 
@@ -70,7 +78,7 @@ pacote SKILL validado.
 
 ### 1. Fatos vêm de um parser, não de um modelo
 
-O Handbook analisa cada arquivo-fonte com [tree-sitter](https://tree-sitter.github.io/) e
+O Handbooks analisa cada arquivo-fonte com [tree-sitter](https://tree-sitter.github.io/) e
 constrói um grafo de chamadas tipado: funções, métodos, arestas de chamada resolvidas via
 `self`/atributos/parâmetros/imports, chamadas que saem do seu código e chamadas que ele
 não conseguiu resolver — postas em quarentena em um arquivo próprio, nunca adivinhadas.
@@ -103,14 +111,14 @@ emite um plano de edição exato ao byte, aplicável mecanicamente.
   className="rounded-xl border"
 />
 
-| Saída                                                                                                         | Para quem |
-| ------------------------------------------------------------------------------------------------------------- | --------- |
-| Handbook em markdown — visão geral, índice de etapas, uma página por etapa, tabela de registradores de estado | humanos   |
-| Site HTML multipágina — sumário fixo, breadcrumbs, alternância de tema, funciona via `file://`                | humanos   |
-| Uma página HTML autocontida que você pode mandar por e-mail                                                   | humanos   |
-| Índice para agentes — símbolo → `path:line-line`, tabelas de arquivos e chamadas, receitas de grep            | agentes   |
-| `llms.txt` + `llms-full.txt`                                                                                  | agentes   |
-| Um pacote SKILL com um hash de conteúdo por arquivo, tornando a deriva detectável                             | agentes   |
+| Saída                                                                                                          | Para quem |
+| -------------------------------------------------------------------------------------------------------------- | --------- |
+| Handbooks em markdown — visão geral, índice de etapas, uma página por etapa, tabela de registradores de estado | humanos   |
+| Site HTML multipágina — sumário fixo, breadcrumbs, alternância de tema, funciona via `file://`                 | humanos   |
+| Uma página HTML autocontida que você pode mandar por e-mail                                                    | humanos   |
+| Índice para agentes — símbolo → `path:line-line`, tabelas de arquivos e chamadas, receitas de grep             | agentes   |
+| `llms.txt` + `llms-full.txt`                                                                                   | agentes   |
+| Um pacote SKILL com um hash de conteúdo por arquivo, tornando a deriva detectável                              | agentes   |
 
 ## Para quem é isto
 

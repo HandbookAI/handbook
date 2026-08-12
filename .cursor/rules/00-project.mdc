@@ -1,9 +1,9 @@
 ---
-description: Handbook monorepo — the gate, the generated files, the architecture, and the invariants this project is actually about. Read this before changing anything.
+description: Handbooks monorepo — the gate, the generated files, the architecture, and the invariants this project is actually about. Read this before changing anything.
 alwaysApply: true
 ---
 
-# Handbook
+# Handbooks
 
 Turn any codebase into a navigable handbook, and use it to plan precise code changes.
 A pnpm monorepo of eleven TypeScript packages plus a standalone docs site.

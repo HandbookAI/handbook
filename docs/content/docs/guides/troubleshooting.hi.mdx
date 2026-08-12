@@ -41,8 +41,8 @@ handbook config --command generate | grep -i <setting>
 
 ### `node: /some/path.env: not found`, और exit code 9
 
-यह Handbook की error है ही नहीं। Node >= 20.6 का अपना `--env-file` flag है और वह पूरी
-command line को उसके लिए pre-scan करता है, इसलिए Handbook के शुरू होने से **पहले** ही वह
+यह Handbooks की error है ही नहीं। Node >= 20.6 का अपना `--env-file` flag है और वह पूरी
+command line को उसके लिए pre-scan करता है, इसलिए Handbooks के शुरू होने से **पहले** ही वह
 missing path पर मर जाता है। इसके बजाय variable इस्तेमाल करें, जिसे कोई intercept नहीं कर
 सकता:
 

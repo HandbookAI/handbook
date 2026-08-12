@@ -12,7 +12,7 @@
 
 ## What it is
 
-The presentation arm of the [Handbook](../../README.md) toolchain. It takes a
+The presentation arm of the [Handbooks](../../README.md) toolchain. It takes a
 `HandbookModel` — the boundary type produced by `@handbooks/pipeline` — and writes:
 
 | Function                 | Output                                                                 | Audience |
@@ -285,4 +285,4 @@ cells.
 
 ---
 
-Part of [Handbook](../../README.md) · [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) · MIT
+Part of [Handbooks](../../README.md) · [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) · MIT

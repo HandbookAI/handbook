@@ -40,11 +40,11 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` 与一个 Node 参数冲突">
   Node >= 20.6 有它自己的 `--env-file`，而且它会**预扫描整条命令行**去找这个参数——包括
   脚本路径之后的部分，可在那里它其实并不会真的应用这个文件。存在的路径会原封不动地传给
-  Handbook，但**不**存在的路径会先把进程杀掉：
+  Handbooks，但**不**存在的路径会先把进程杀掉：
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 于是这个参数承诺要大声报出来的那唯一一种情况，恰恰是它报不出来的那一种。

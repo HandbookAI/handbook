@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="How Handbook resolves one setting: CLI flag beats shell environment beats dot-env cascade beats handbook.config.yaml beats the registry default">
-  <title>Handbook — die Konfigurationskaskade</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="How Handbooks resolves one setting: CLI flag beats shell environment beats dot-env cascade beats handbook.config.yaml beats the registry default">
+  <title>Handbooks — die Konfigurationskaskade</title>
   <desc>Fünf Vorrangebenen, höchste zuerst: CLI-Flag, Shell-Umgebung, die .env-Kaskade, handbook.config.yaml und der Registry-Standard. `handbook config` zeigt, aus welcher Ebene jeder Wert tatsächlich kam.</desc>
 
   <defs>

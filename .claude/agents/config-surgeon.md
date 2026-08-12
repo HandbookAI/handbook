@@ -1,6 +1,6 @@
 ---
 name: config-surgeon
-description: Use when adding, renaming or removing a Handbook setting — a new CLI flag, a new environment variable, a new handbook.config.yaml key — so that all four generated surfaces stay in step and the byte-exact drift test passes.
+description: Use when adding, renaming or removing a Handbooks setting — a new CLI flag, a new environment variable, a new handbook.config.yaml key — so that all four generated surfaces stay in step and the byte-exact drift test passes.
 tools: Read, Grep, Glob, Bash, Edit
 model: inherit
 color: purple

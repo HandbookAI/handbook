@@ -1,6 +1,6 @@
 ---
 title: Environment variables
-description: Every variable Handbook reads, the naming rule that generates them, the .env cascade, and which ones must never enter a config file.
+description: Every variable Handbooks reads, the naming rule that generates them, the .env cascade, and which ones must never enter a config file.
 ---
 
 ## The naming rule
@@ -50,11 +50,11 @@ Three settings are resolved **before** everything else, because everything else 
 them. None of them can be set by the thing they load — an `--env` key inside
 `handbook.config.yaml` would have nothing left to read it.
 
-| Variable / flag                           | What it does                                                                                                                                                                                                                                                                                               |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HANDBOOK_ENV` / `--env <name>`           | Selects a per-environment `.env` cascade and prefers `handbook.config.<name>.yaml`                                                                                                                                                                                                                         |
-| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Loads exactly that one file, **bypassing the cascade**. A missing file is a loud error. Prefer the variable: Node >= 20.6 owns `--env-file` too and pre-scans for it, so a missing path dies as `node: <path>: not found` (exit 9) before Handbook runs. The flag wins over the variable when both are set |
-| `--config <path>`                         | Names one exact config file, bypassing discovery                                                                                                                                                                                                                                                           |
+| Variable / flag                           | What it does                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>`           | Selects a per-environment `.env` cascade and prefers `handbook.config.<name>.yaml`                                                                                                                                                                                                                          |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Loads exactly that one file, **bypassing the cascade**. A missing file is a loud error. Prefer the variable: Node >= 20.6 owns `--env-file` too and pre-scans for it, so a missing path dies as `node: <path>: not found` (exit 9) before Handbooks runs. The flag wins over the variable when both are set |
+| `--config <path>`                         | Names one exact config file, bypassing discovery                                                                                                                                                                                                                                                            |
 
 ## The `.env` cascade
 

@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Handbook monorepo architecture: eleven packages in four layers with a strictly one-way dependency direction">
-  <title>Handbook — package layering</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Handbooks monorepo architecture: eleven packages in four layers with a strictly one-way dependency direction">
+  <title>Handbooks — package layering</title>
   <desc>Four layers. Entry points (cli, studio) depend on the capability packages (pipeline, renderer, skill, planner, patcher, resync), which depend on the engines (analyzer, llm), which depend on core. Dependencies only ever point downward.</desc>
 
   <defs>

@@ -94,7 +94,7 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
     },
     guide: {
       title: 'Instructions',
-      lead: 'Handbook Studio is a local code-comprehension workbench. Static analysis splits the repo into a call graph; an LLM narrates that graph into a handbook organised by stages; from then on every change is located through the handbook, landed by the patcher, and the handbook rolls forward with it.',
+      lead: 'Handbooks Studio is a local code-comprehension workbench. Static analysis splits the repo into a call graph; an LLM narrates that graph into a handbook organised by stages; from then on every change is located through the handbook, landed by the patcher, and the handbook rolls forward with it.',
       secs: [
         {
           n: '01',

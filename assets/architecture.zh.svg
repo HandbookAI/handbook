@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Handbook 单仓架构：十一个包分四层，依赖方向严格单向向下">
-  <title>Handbook — 包分层</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Handbooks 单仓架构：十一个包分四层，依赖方向严格单向向下">
+  <title>Handbooks — 包分层</title>
   <desc>共四层。入口（cli、studio）依赖能力包（pipeline、renderer、skill、planner、patcher、resync），能力包依赖引擎（analyzer、llm），引擎依赖 core。依赖永远只指向下方。</desc>
 
   <defs>

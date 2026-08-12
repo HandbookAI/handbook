@@ -41,12 +41,12 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` collides with a Node flag">
   Node >= 20.6 has its own `--env-file`, and it **pre-scans the whole command line** for
   it — including the part after the script path, where it does not actually apply the
-  file. A path that exists passes through to Handbook untouched, but a path that does
+  file. A path that exists passes through to Handbooks untouched, but a path that does
   **not** exist kills the process first:
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 So the one case the flag promises to report loudly is the one case it cannot report.
@@ -193,7 +193,7 @@ handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-sit
 | Flag                      | Default           | What it does                                            |
 | ------------------------- | ----------------- | ------------------------------------------------------- |
 | `--work <dir>`            | **required**      | The work directory to render                            |
-| `--title <title>`         | `System Handbook` | Handbook title in the output                            |
+| `--title <title>`         | `System Handbook` | Handbooks title in the output                           |
 | `--out <dir>`             | `<work>/handbook` | Where to write                                          |
 | `--html`                  | `false`           | Also the multi-page HTML site, under `<out>/html`       |
 | `--html-single`           | `false`           | Also one self-contained `<out>/handbook.html`           |
@@ -259,7 +259,7 @@ schema, and hash freshness. Errors and warnings go to stderr.
 
 ## `plan`
 
-Handbook-guided change localization. **Needs an LLM endpoint. Read-only.**
+Handbooks-guided change localization. **Needs an LLM endpoint. Read-only.**
 
 ```bash
 handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]

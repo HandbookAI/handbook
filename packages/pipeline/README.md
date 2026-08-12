@@ -12,7 +12,7 @@
 
 ## What it is
 
-`@handbooks/pipeline` is the generation engine of the [Handbook](../../README.md)
+`@handbooks/pipeline` is the generation engine of the [Handbooks](../../README.md)
 toolchain. It orchestrates:
 
 ```
@@ -247,5 +247,5 @@ mid-run aborts and resume. **No test needs an API key.**
 
 ---
 
-Part of [Handbook](../../README.md) · [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) ·
+Part of [Handbooks](../../README.md) · [Artifact formats](../../docs/content/docs/reference/artifacts.mdx) ·
 [Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) · MIT

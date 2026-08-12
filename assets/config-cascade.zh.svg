@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="Handbook 如何解析一个设置：CLI 标志压过 shell 环境，压过 .env 级联，压过 handbook.config.yaml，压过注册表默认值">
-  <title>Handbook — 配置级联</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="Handbooks 如何解析一个设置：CLI 标志压过 shell 环境，压过 .env 级联，压过 handbook.config.yaml，压过注册表默认值">
+  <title>Handbooks — 配置级联</title>
   <desc>五个优先级层，从高到低：CLI 标志、shell 环境、.env 级联、handbook.config.yaml、注册表默认值。`handbook config` 会打印出每个值实际来自哪一层。</desc>
 
   <defs>

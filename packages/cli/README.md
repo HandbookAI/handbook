@@ -41,7 +41,7 @@ pnpm handbook --help
 | `render`   | Work dir → markdown / HTML site / agent index / llms.txt |  ❌  |
 | `skill`    | Rendered handbook → agent SKILL package                  |  ❌  |
 | `validate` | Check a SKILL package's structure and freshness          |  ❌  |
-| `plan`     | Handbook-guided change localization → an edit plan       |  ✅  |
+| `plan`     | Handbooks-guided change localization → an edit plan      |  ✅  |
 | `apply`    | Apply a plan's EDIT blocks byte-exactly, with backups    |  ❌  |
 | `rollback` | Restore a source tree from a patch backup                |  ❌  |
 | `resync`   | Roll a handbook forward after a code change              |  ✅  |
@@ -212,5 +212,5 @@ handbook config --json | jq '.settings[] | select(.source.kind == "env")'
 
 ---
 
-Part of [Handbook](../../README.md) ·
+Part of [Handbooks](../../README.md) ·
 [Configuration reference](../../docs/content/docs/reference/configuration.md) · MIT

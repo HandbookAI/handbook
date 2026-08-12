@@ -13,7 +13,7 @@
 
 ## What it is
 
-Every LLM touchpoint in the [Handbook](../../README.md) toolchain goes through one tiny
+Every LLM touchpoint in the [Handbooks](../../README.md) toolchain goes through one tiny
 interface:
 
 ```ts
@@ -232,4 +232,4 @@ key.**
 
 ---
 
-Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) · MIT
+Part of [Handbooks](../../README.md) · [Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) · MIT

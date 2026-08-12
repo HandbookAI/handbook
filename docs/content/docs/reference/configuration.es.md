@@ -1,6 +1,6 @@
 ---
 title: Referencia de configuración
-description: Todos los ajustes de Handbook, con su flag, variable de entorno, clave del archivo de configuración, tipo y valor por defecto — generado a partir del registro.
+description: Todos los ajustes de Handbooks, con su flag, variable de entorno, clave del archivo de configuración, tipo y valor por defecto — generado a partir del registro.
 ---
 
 Esta página es la **traducción de una página generada**. El original en inglés lo genera `pnpm run config:docs` a partir del registro de ajustes y está protegido por una prueba de deriva; esta traducción se mantiene a mano: cuando cambie el original, actualízala también.

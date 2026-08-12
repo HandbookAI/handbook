@@ -171,7 +171,7 @@ program.hook('preAction', (_thisCommand, actionCommand) => {
   if (envNote) log.debug(envNote);
   if (configNote) log.debug(configNote);
   // A key nothing recognises is a WARNING, not a failure: a config file
-  // written for a newer Handbook has to keep working, and hard-failing on it
+  // written for a newer Handbooks release has to keep working, and hard-failing on it
   // would make forward compatibility impossible. But silence is what let a
   // typo'd `readWorker` look applied for a whole run, so it is reported on
   // every command, at a level that shows without -v. `config --check` treats

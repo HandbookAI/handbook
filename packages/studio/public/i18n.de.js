@@ -96,7 +96,7 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
     },
     guide: {
       title: 'Anleitung',
-      lead: 'Handbook Studio ist eine lokale Werkbank zum Verstehen von Code. Die statische Analyse zerlegt das Repository in einen Aufrufgraphen; ein LLM erzählt diesen Graphen zu einem Handbook, das nach Etappen geordnet ist; von da an wird jede Änderung über das Handbook verortet, vom Patcher umgesetzt, und das Handbook wächst mit.',
+      lead: 'Handbooks Studio ist eine lokale Werkbank zum Verstehen von Code. Die statische Analyse zerlegt das Repository in einen Aufrufgraphen; ein LLM erzählt diesen Graphen zu einem Handbook, das nach Etappen geordnet ist; von da an wird jede Änderung über das Handbook verortet, vom Patcher umgesetzt, und das Handbook wächst mit.',
       secs: [
         {
           n: '01',

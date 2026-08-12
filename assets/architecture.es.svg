@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Handbook monorepo architecture: eleven packages in four layers with a strictly one-way dependency direction">
-  <title>Handbook — capas de paquetes</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Handbooks monorepo architecture: eleven packages in four layers with a strictly one-way dependency direction">
+  <title>Handbooks — capas de paquetes</title>
   <desc>Cuatro capas. Los puntos de entrada (cli, studio) dependen de los paquetes de capacidades (pipeline, renderer, skill, planner, patcher, resync), que dependen de los motores (analyzer, llm), que dependen de core. Las dependencias solo apuntan hacia abajo.</desc>
 
   <defs>

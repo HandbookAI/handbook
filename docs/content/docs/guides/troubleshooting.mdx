@@ -40,8 +40,8 @@ Move it to `.env` or the shell environment. This refusal is deliberate.
 
 ### `node: /some/path.env: not found`, and exit code 9
 
-Not a Handbook error at all. Node >= 20.6 has its own `--env-file` flag and pre-scans the
-whole command line for it, so it dies on a missing path **before** Handbook starts. Use
+Not a Handbooks error at all. Node >= 20.6 has its own `--env-file` flag and pre-scans the
+whole command line for it, so it dies on a missing path **before** Handbooks starts. Use
 the variable instead, which nothing can intercept:
 
 ```bash

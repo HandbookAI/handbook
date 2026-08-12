@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="What one Handbook run produces: markdown pages, an HTML site, a single-file page, an agent locator index, llms.txt files, and a packaged agent SKILL">
-  <title>Handbook — was ein Lauf liefert</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="What one Handbooks run produces: markdown pages, an HTML site, a single-file page, an agent locator index, llms.txt files, and a packaged agent SKILL">
+  <title>Handbooks — was ein Lauf liefert</title>
   <desc>Aus einem Arbeitsverzeichnis erzeugt render Markdown-Seiten, eine mehrseitige HTML-Site, eine eigenständige HTML-Seite, einen Agent-Locator-Index und llms.txt; skill paketiert das als Agenten-SKILL mit Inhalts-Hashes.</desc>
 
   <defs>

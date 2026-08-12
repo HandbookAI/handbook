@@ -1,4 +1,4 @@
-# Contributing to Handbook
+# Contributing to Handbooks
 
 **English** | [中文](CONTRIBUTING.zh-CN.md)
 

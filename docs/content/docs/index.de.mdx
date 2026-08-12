@@ -1,12 +1,20 @@
 ---
-title: 'Was ist Handbook?'
+title: 'Was ist Handbooks?'
 description: Eine Codebasis rein, zwei Handbücher raus — eine erzählte Doku-Site für dein Team und ein Orts-Index, mit dem dein Coding-Agent navigiert. Aus derselben geparsten Karte, immer aktuell zum Code.
 icon: House
 ---
 
+<div className="not-prose mb-8">
+  <img
+    src="/diagrams/hero.de.svg"
+    alt="Handbooks — eine Codebasis rein, zwei Handbücher raus: eine erzählte Doku-Site für dein Team und ein maschinenlesbarer Ortsindex für deinen Coding-Agenten"
+    className="rounded-xl border"
+  />
+</div>
+
 ## Eine Codebasis rein. Zwei Handbücher raus.
 
-Handbook schreibt dieselbe Karte deines Codes **zweimal** auf, denn es hat zwei sehr unterschiedliche Leser:
+Handbooks schreibt dieselbe Karte deines Codes **zweimal** auf, denn es hat zwei sehr unterschiedliche Leser:
 
 <Cards>
   <Card
@@ -38,7 +46,7 @@ Metrik, die die Versuche zählt, und den Test, der das alte Verhalten festschrei
 Das ist kein Denkfehler. Es ist ein **Routing**-Fehler. Der Agent hat nie eine Karte gesehen.
 
 <Callout title="Die Ein-Satz-Version">
-  Handbook liest den Code mit einem echten Parser, baut daraus eine Karte, übergibt diese Karte dem Agenten
+  Handbooks liest den Code mit einem echten Parser, baut daraus eine Karte, übergibt diese Karte dem Agenten
   als **Ortsindex** — nicht als Zusammenfassung — und hält die Karte aktuell, während sich der Code
   weiterbewegt.
 </Callout>
@@ -69,7 +77,7 @@ HTML-Site, ein Agenten-Locator-Index und ein validiertes SKILL-Paket auf der Pla
 
 ### 1. Fakten kommen aus einem Parser, nicht aus einem Modell
 
-Handbook parst jede Quelldatei mit [tree-sitter](https://tree-sitter.github.io/) und
+Handbooks parst jede Quelldatei mit [tree-sitter](https://tree-sitter.github.io/) und
 baut einen typisierten Aufrufgraphen: Funktionen, Methoden, über
 `self`/Attribute/Parameter/Imports aufgelöste Aufrufkanten, Aufrufe, die den eigenen Code
 verlassen, und Aufrufe, die nicht aufgelöst werden konnten — in eine eigene Datei in

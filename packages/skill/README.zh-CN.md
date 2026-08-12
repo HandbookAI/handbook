@@ -209,4 +209,4 @@ pnpm --filter @handbooks/skill test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · MIT
+[Handbooks](../../README.zh-CN.md) 的一部分 · MIT

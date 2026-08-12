@@ -11,7 +11,7 @@
 
 ## 这是什么
 
-`@handbooks/pipeline` 是 [Handbook](../../README.zh-CN.md) 工具链的生成引擎。它编排：
+`@handbooks/pipeline` 是 [Handbooks](../../README.zh-CN.md) 工具链的生成引擎。它编排：
 
 ```
   阶段 1    静态调用图                      ← @handbooks/analyzer，不用 LLM
@@ -232,5 +232,5 @@ pnpm --filter @handbooks/pipeline test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/content/docs/reference/artifacts.mdx) ·
+[Handbooks](../../README.zh-CN.md) 的一部分 · [产物格式](../../docs/content/docs/reference/artifacts.mdx) ·
 [提示词目录](../../docs/content/docs/reference/prompts.mdx) · MIT

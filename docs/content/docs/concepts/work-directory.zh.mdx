@@ -102,7 +102,7 @@ jq '.missing' phase2/cards/_coverage.json
 
 ## 还有哪些地方会被写入
 
-Handbook 只会在工作目录之外的两个地方写入，且都由你运行的命令显式选择：
+Handbooks 只会在工作目录之外的两个地方写入，且都由你运行的命令显式选择：
 
 - **`<source>/.handbook-patches/`** —— 由 `apply` 创建，存放备份及其清单。其中会自动写入一个 `.gitignore`，让备份永远不会进入 git。
 - **`$HOME/.handbook-studio/`** —— Studio 的仓库注册表及其自动创建的工作目录。可用 `--state-dir` 挪动位置。

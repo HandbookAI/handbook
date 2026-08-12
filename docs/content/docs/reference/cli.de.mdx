@@ -41,12 +41,12 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` kollidiert mit einem Node-Flag">
   Node >= 20.6 hat ein eigenes `--env-file` und **durchsucht die gesamte Kommandozeile
   vorab** danach — auch den Teil nach dem Skriptpfad, wo es die Datei gar nicht anwendet.
-  Ein existierender Pfad wird unverändert an Handbook durchgereicht, ein Pfad, der **nicht**
+  Ein existierender Pfad wird unverändert an Handbooks durchgereicht, ein Pfad, der **nicht**
   existiert, killt den Prozess jedoch vorher:
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 Der eine Fall, den das Flag laut zu melden verspricht, ist also genau der Fall, den es nicht

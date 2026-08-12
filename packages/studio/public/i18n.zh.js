@@ -93,7 +93,7 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
     },
     guide: {
       title: '使用说明',
-      lead: 'Handbook Studio 是一台本机的代码理解工作台。它先用静态分析把仓库拆成调用图，再让 LLM 把图叙述成一本按“阶段”组织的手册；之后每一次改动，都能沿着手册定位、落地、并让手册跟着前滚。',
+      lead: 'Handbooks Studio 是一台本机的代码理解工作台。它先用静态分析把仓库拆成调用图，再让 LLM 把图叙述成一本按“阶段”组织的手册；之后每一次改动，都能沿着手册定位、落地、并让手册跟着前滚。',
       secs: [
         {
           n: '01',

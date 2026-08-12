@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="How Handbook resolves one setting: CLI flag beats shell environment beats dot-env cascade beats handbook.config.yaml beats the registry default">
-  <title>Handbook — configuration cascade</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-label="How Handbooks resolves one setting: CLI flag beats shell environment beats dot-env cascade beats handbook.config.yaml beats the registry default">
+  <title>Handbooks — configuration cascade</title>
   <desc>Five precedence layers, highest first: CLI flag, shell environment, the .env cascade, handbook.config.yaml, and the registry default. `handbook config` prints which layer every value actually came from.</desc>
 
   <defs>

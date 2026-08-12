@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="Handbook 一次运行的产出物：markdown 页面、HTML 站点、单文件页面、智能体定位索引、llms.txt 文件，以及打包好的智能体 SKILL">
-  <title>Handbook — 一次运行给你什么</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="600" viewBox="0 0 1120 600" role="img" aria-label="Handbooks 一次运行的产出物：markdown 页面、HTML 站点、单文件页面、智能体定位索引、llms.txt 文件，以及打包好的智能体 SKILL">
+  <title>Handbooks — 一次运行给你什么</title>
   <desc>从同一个工作目录出发，render 产出 markdown 页面、多页 HTML 站点、一个自包含的 HTML 页面、智能体定位索引和 llms.txt；skill 再把这些重新打包成带内容哈希的智能体 SKILL。</desc>
 
   <defs>

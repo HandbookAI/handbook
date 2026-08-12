@@ -2,7 +2,7 @@
   "name": "handbook-docs",
   "version": "0.1.0",
   "private": true,
-  "description": "The Handbook documentation site (Next.js + Fumadocs)",
+  "description": "The Handbooks documentation site (Next.js + Fumadocs)",
   "scripts": {
     "predev": "node scripts/sync-generated.mjs",
     "dev": "next dev",

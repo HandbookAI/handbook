@@ -199,4 +199,4 @@ pnpm --filter @handbooks/resync test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · MIT
+[Handbooks](../../README.zh-CN.md) 的一部分 · MIT

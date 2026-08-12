@@ -216,7 +216,9 @@ const english = await (async () => {
     ]);
     t.ok(
       `${label} the diagram's alt text is translated`,
-      code === 'en' ? true : state.diagramAlt !== '' && !state.diagramAlt.startsWith('The Handbook pipeline'),
+      code === 'en'
+        ? true
+        : state.diagramAlt !== '' && !state.diagramAlt.startsWith('The Handbooks pipeline'),
       `alt="${(state.diagramAlt ?? '').slice(0, 50)}"`,
     );
 

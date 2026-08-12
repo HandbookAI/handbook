@@ -1,4 +1,4 @@
-Diagnose a Handbook work directory: report what a generation run actually did, with
+Diagnose a Handbooks work directory: report what a generation run actually did, with
 evidence. Do **not** re-run `generate` — everything needed is already on disk.
 
 Ask for the work directory if it was not given.

@@ -1,6 +1,6 @@
 ---
 title: 'Umgebungsvariablen'
-description: 'Jede Variable, die Handbook liest, die Benennungsregel, die sie erzeugt, die .env-Kaskade und die, die nie in eine Konfigurationsdatei gehören.'
+description: 'Jede Variable, die Handbooks liest, die Benennungsregel, die sie erzeugt, die .env-Kaskade und die, die nie in eine Konfigurationsdatei gehören.'
 ---
 
 ## Die Benennungsregel
@@ -52,11 +52,11 @@ Drei Einstellungen werden **vor** allem anderen aufgelöst, weil alles andere vo
 abhängt. Keine von ihnen kann von dem gesetzt werden, was sie lädt — ein `--env`-Schlüssel
 in `handbook.config.yaml` hätte niemanden mehr, der ihn liest.
 
-| Variable / Flag                           | Was sie tut                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HANDBOOK_ENV` / `--env <name>`           | Wählt eine umgebungsspezifische `.env`-Kaskade und bevorzugt `handbook.config.<name>.yaml`                                                                                                                                                                                                                                                           |
-| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Lädt genau diese eine Datei und **umgeht die Kaskade**. Eine fehlende Datei ist ein lauter Fehler. Bevorzuge die Variable: Node >= 20.6 besitzt `--env-file` ebenfalls und sucht vorab danach, sodass ein fehlender Pfad als `node: <path>: not found` (Exit 9) stirbt, bevor Handbook läuft. Das Flag schlägt die Variable, wenn beide gesetzt sind |
-| `--config <path>`                         | Benennt genau eine Konfigurationsdatei und umgeht die Suche                                                                                                                                                                                                                                                                                          |
+| Variable / Flag                           | Was sie tut                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>`           | Wählt eine umgebungsspezifische `.env`-Kaskade und bevorzugt `handbook.config.<name>.yaml`                                                                                                                                                                                                                                                            |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Lädt genau diese eine Datei und **umgeht die Kaskade**. Eine fehlende Datei ist ein lauter Fehler. Bevorzuge die Variable: Node >= 20.6 besitzt `--env-file` ebenfalls und sucht vorab danach, sodass ein fehlender Pfad als `node: <path>: not found` (Exit 9) stirbt, bevor Handbooks läuft. Das Flag schlägt die Variable, wenn beide gesetzt sind |
+| `--config <path>`                         | Benennt genau eine Konfigurationsdatei und umgeht die Suche                                                                                                                                                                                                                                                                                           |
 
 ## Die `.env`-Kaskade
 

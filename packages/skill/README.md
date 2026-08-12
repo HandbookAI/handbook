@@ -231,4 +231,4 @@ detection.
 
 ---
 
-Part of [Handbook](../../README.md) · MIT
+Part of [Handbooks](../../README.md) · MIT

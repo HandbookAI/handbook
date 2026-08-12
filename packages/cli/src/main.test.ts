@@ -305,7 +305,7 @@ describe('unknown config keys (M25)', () => {
     expect(err).toMatch(
       /unknown key "generate\.readWorker" is ignored — did you mean "generate\.readWorkers"\?/,
     );
-    // A warning, not a failure: a file written for a newer Handbook keeps working.
+    // A warning, not a failure: a file written for a newer Handbooks release keeps working.
     expect(generateHandbookMock).toHaveBeenCalledTimes(1);
     expect(generateHandbookMock.mock.calls[0]?.[0]?.readWorkers).toBe(PIPELINE_DEFAULTS.readWorkers);
   });

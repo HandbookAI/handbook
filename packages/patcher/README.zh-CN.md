@@ -209,5 +209,5 @@ pnpm --filter @handbooks/patcher test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 ·
+[Handbooks](../../README.zh-CN.md) 的一部分 ·
 计划来自 [`@handbooks/planner`](../planner/README.zh-CN.md) · MIT

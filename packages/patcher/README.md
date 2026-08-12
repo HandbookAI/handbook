@@ -221,5 +221,5 @@ file edited afterwards, and every parser rejection above.
 
 ---
 
-Part of [Handbook](../../README.md) ·
+Part of [Handbooks](../../README.md) ·
 plans come from [`@handbooks/planner`](../planner/README.md) · MIT

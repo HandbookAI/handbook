@@ -1,6 +1,6 @@
 ---
 title: Referência de configuração
-description: Cada configuração do Handbook, com sua flag, variável de ambiente, chave de arquivo de configuração, tipo e padrão — gerada a partir do registro.
+description: Cada configuração do Handbooks, com sua flag, variável de ambiente, chave de arquivo de configuração, tipo e padrão — gerada a partir do registro.
 ---
 
 Esta página é a **tradução de uma página gerada**. O original em inglês é gerado por `pnpm run config:docs` a partir do registro de configurações e é protegido por um teste de deriva; esta tradução é mantida à mão — quando o original mudar, atualize-a também.

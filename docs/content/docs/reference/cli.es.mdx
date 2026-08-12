@@ -41,12 +41,12 @@ handbook --env prod -v generate --source ~/code/api --work work/api
 <Callout type="warn" title="`--env-file` choca con un flag de Node">
   Node >= 20.6 tiene su propio `--env-file`, y **preescanea toda la línea de comandos**
   buscándolo — incluida la parte posterior a la ruta del script, donde en realidad no
-  aplica el archivo. Una ruta que existe llega a Handbook intacta, pero una ruta que **no**
+  aplica el archivo. Una ruta que existe llega a Handbooks intacta, pero una ruta que **no**
   existe mata el proceso antes:
 
 ```bash
 $ handbook --env-file /gone.env config
-node: /gone.env: not found        # node, exit 9, before Handbook ever runs
+node: /gone.env: not found        # node, exit 9, before Handbooks ever runs
 ```
 
 Así que el único caso que el flag promete reportar de forma ruidosa es justo el que no
@@ -215,7 +215,7 @@ handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-sit
 
 ## `skill`
 
-Handbook renderizado → paquete SKILL para agentes. **Sin LLM.**
+Handbooks renderizado → paquete SKILL para agentes. **Sin LLM.**
 
 ```bash
 handbook skill --handbook <dir> --out <dir> --name <slug> [options]
@@ -268,13 +268,13 @@ Localización de cambios guiada por el handbook. **Necesita un endpoint LLM. Sol
 handbook plan --source <dir> --request "<text>" [--handbook <dir>] [--out <file>]
 ```
 
-| Flag               | Por defecto     | Qué hace                                                         |
-| ------------------ | --------------- | ---------------------------------------------------------------- |
-| `--source <dir>`   | **obligatorio** | El código sobre el que planificar (nunca se escribe en él)       |
-| `--request <text>` | **obligatorio** | La petición de cambio en lenguaje natural                        |
-| `--handbook <dir>` | —               | Handbook renderizado o `skills/<x>/references`. Muy recomendable |
-| `--out <file>`     | _(stdout)_      | Escribe el plan aquí                                             |
-| `--max-turns <n>`  | `30`            | Presupuesto de turnos del agente                                 |
+| Flag               | Por defecto     | Qué hace                                                          |
+| ------------------ | --------------- | ----------------------------------------------------------------- |
+| `--source <dir>`   | **obligatorio** | El código sobre el que planificar (nunca se escribe en él)        |
+| `--request <text>` | **obligatorio** | La petición de cambio en lenguaje natural                         |
+| `--handbook <dir>` | —               | Handbooks renderizado o `skills/<x>/references`. Muy recomendable |
+| `--out <file>`     | _(stdout)_      | Escribe el plan aquí                                              |
+| `--max-turns <n>`  | `30`            | Presupuesto de turnos del agente                                  |
 
 Más las opciones de LLM compartidas.
 

@@ -1,6 +1,6 @@
 ---
 name: diagnose-run
-description: Inspect a Handbook work directory and report what a generation run actually did — file counts, dropped calls, card coverage, stage shape, unassigned files, registers, token cost. Use when a handbook looks wrong and you need evidence rather than a guess.
+description: Inspect a Handbooks work directory and report what a generation run actually did — file counts, dropped calls, card coverage, stage shape, unassigned files, registers, token cost. Use when a handbook looks wrong and you need evidence rather than a guess.
 argument-hint: '<work-dir>'
 allowed-tools: Bash Read Grep Glob
 ---

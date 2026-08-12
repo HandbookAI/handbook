@@ -1,12 +1,20 @@
 ---
-title: What is Handbook?
+title: What is Handbooks?
 description: One codebase in, two handbooks out — a narrated documentation site your team reads, and a location index your coding agent routes with. Built from the same parsed map, kept current as the code moves.
 icon: House
 ---
 
+<div className="not-prose mb-8">
+  <img
+    src="/diagrams/hero.svg"
+    alt="Handbooks — one codebase in, two handbooks out: a narrated documentation site your team reads, and a machine-shaped location index your coding agent routes with"
+    className="rounded-xl border"
+  />
+</div>
+
 ## One codebase in. Two handbooks out.
 
-Handbook writes the same map of your code down **twice**, because it has two very
+Handbooks writes the same map of your code down **twice**, because it has two very
 different readers:
 
 <Cards>
@@ -39,8 +47,8 @@ asserts the old behaviour.
 That is not a reasoning failure. It is a **routing** failure. The agent never saw a map.
 
 <Callout title="The one-sentence version">
-  Handbook reads your code with a real parser, builds a map of it, hands that map to the agent as a **location
-  index** — not a summary — and keeps the map current as the code moves.
+  Handbooks reads your code with a real parser, builds a map of it, hands that map to the agent as a
+  **location index** — not a summary — and keeps the map current as the code moves.
 </Callout>
 
 ## Try it before you read any further
@@ -69,7 +77,7 @@ agent index and a validated SKILL package sitting on disk.
 
 ### 1. Facts come from a parser, not from a model
 
-Handbook parses every source file with [tree-sitter](https://tree-sitter.github.io/) and
+Handbooks parses every source file with [tree-sitter](https://tree-sitter.github.io/) and
 builds a typed call graph: functions, methods, call edges resolved through
 `self`/attributes/parameters/imports, calls that leave your code, and calls it could not
 resolve — quarantined into their own file, never guessed at.

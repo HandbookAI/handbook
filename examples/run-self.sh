@@ -44,7 +44,7 @@ echo "== 2. generate =="
 hb generate --source "$SOURCE" --work "$WORK" --phase 2,3 --narrate-lang "${NARRATE_LANG:-en}"
 
 echo "== 3. render =="
-hb render --work "$WORK" --title "Handbook Monorepo — Self Handbook" --html --html-single --agent-site
+hb render --work "$WORK" --title "Handbooks Monorepo — Self Handbook" --html --html-single --agent-site
 
 echo
 echo "Done. Open these:"

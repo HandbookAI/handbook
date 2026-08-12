@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-[Handbook](../../README.zh-CN.md) 工具链里所有碰 LLM 的地方，都只走一个很小的接口：
+[Handbooks](../../README.zh-CN.md) 工具链里所有碰 LLM 的地方，都只走一个很小的接口：
 
 ```ts
 interface ChatClient {
@@ -219,4 +219,4 @@ pnpm --filter @handbooks/llm test
 
 ---
 
-[Handbook](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/content/docs/reference/prompts.mdx) · MIT
+[Handbooks](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/content/docs/reference/prompts.mdx) · MIT

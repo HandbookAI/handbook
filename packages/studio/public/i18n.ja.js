@@ -95,7 +95,7 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
     },
     guide: {
       title: '使い方',
-      lead: 'Handbook Studio はローカルで動くコード理解ワークベンチです。静的解析がリポジトリをコールグラフに分解し、LLM がそのグラフをステージごとに構成された Handbook として語ります。それ以降の変更はすべて Handbook で位置を特定し、patcher で適用し、Handbook もそれに合わせて前へ進みます。',
+      lead: 'Handbooks Studio はローカルで動くコード理解ワークベンチです。静的解析がリポジトリをコールグラフに分解し、LLM がそのグラフをステージごとに構成された Handbook として語ります。それ以降の変更はすべて Handbook で位置を特定し、patcher で適用し、Handbook もそれに合わせて前へ進みます。',
       secs: [
         {
           n: '01',

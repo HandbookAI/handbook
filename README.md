@@ -1,10 +1,6 @@
 <div align="center">
 
-# Handbook
-
-### One codebase in. **Two handbooks out.**
-
-**📖 One your team actually reads. 🤖 One your AI agent actually routes with.**
+<img src="assets/hero.svg" alt="Handbooks — one codebase in, two handbooks out: a narrated documentation site your team reads, and a machine-shaped location index your coding agent routes with" width="100%">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6.svg?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.11-6366f1.svg?style=flat-square)](.nvmrc)
@@ -18,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="assets/pipeline.svg" alt="Handbook pipeline: analyze, generate, render, skill, plan, apply, resync" width="100%">
+  <img src="assets/pipeline.svg" alt="Handbooks pipeline: analyze, generate, render, skill, plan, apply, resync" width="100%">
 </p>
 
 <table>
@@ -57,7 +53,7 @@ context window. Your coding agent greps for a symbol, finds three of the seven p
 that matter, edits those three, and ships a half-change. Meanwhile the humans on the
 team have a wiki that was last true eight months ago.
 
-**Handbook fixes both with one pass.** It reads your code with a real parser, builds a
+**Handbooks fixes both with one pass.** It reads your code with a real parser, builds a
 map of it, then writes that map down twice: once as prose a person enjoys reading, once
 as a location index an agent can route with. Then it keeps both current as the code
 moves.
@@ -107,7 +103,7 @@ That is not a reasoning failure. It is a **routing** failure. The agent never sa
 ### The answer, in three ideas
 
 **1. Facts come from a parser, not from a model.**
-Handbook parses every source file with tree-sitter and builds a typed call graph:
+Handbooks parses every source file with tree-sitter and builds a typed call graph:
 functions, methods, call edges resolved through `self`/attributes/parameters/imports,
 calls that leave your code, and calls it could not resolve (quarantined, never guessed).
 This layer never touches an LLM. It is the same every time you run it.
@@ -533,7 +529,7 @@ Both are reported in the scan log — never silently dropped.
 | [`@handbooks/pipeline`](packages/pipeline/README.md) | The generation pipeline — phases 1–3, file & member strategies                                           |  ✅  |
 | [`@handbooks/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, HTML site, llms.txt                                                 |  ❌  |
 | [`@handbooks/skill`](packages/skill/README.md)       | SKILL packaging, validation, coverage drift detection                                                    |  ❌  |
-| [`@handbooks/planner`](packages/planner/README.md)   | Handbook-guided read-only planning agent                                                                 |  ✅  |
+| [`@handbooks/planner`](packages/planner/README.md)   | Handbooks-guided read-only planning agent                                                                |  ✅  |
 | [`@handbooks/patcher`](packages/patcher/README.md)   | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback                              |  ❌  |
 | [`@handbooks/resync`](packages/resync/README.md)     | Incremental handbook roll-forward after code changes                                                     |  ✅  |
 | [`@handbooks/studio`](packages/studio/README.md)     | Local web UI: repos · generate · browse · evolve                                                         |  ✅  |

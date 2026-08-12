@@ -1,6 +1,6 @@
 ---
 title: 'Variáveis de ambiente'
-description: 'Cada variável que o Handbook lê, a regra de nomenclatura que as gera, a cascata de .env e quais delas jamais podem entrar em um arquivo de configuração.'
+description: 'Cada variável que o Handbooks lê, a regra de nomenclatura que as gera, a cascata de .env e quais delas jamais podem entrar em um arquivo de configuração.'
 ---
 
 ## A regra de nomenclatura
@@ -50,11 +50,11 @@ Três configurações são resolvidas **antes** de todo o resto, porque todo o r
 delas. Nenhuma delas pode ser definida pela coisa que elas carregam — uma chave `--env`
 dentro de `handbook.config.yaml` não teria mais ninguém para lê-la.
 
-| Variável / flag                           | O que faz                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HANDBOOK_ENV` / `--env <name>`           | Seleciona uma cascata de `.env` por ambiente e prefere `handbook.config.<name>.yaml`                                                                                                                                                                                                                                                                                             |
-| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Carrega exatamente esse único arquivo, **contornando a cascata**. Um arquivo ausente é um erro barulhento. Prefira a variável: o Node >= 20.6 também tem seu próprio `--env-file` e faz uma pré-varredura em busca dele, então um caminho ausente morre como `node: <path>: not found` (saída 9) antes de o Handbook rodar. A flag vence a variável quando ambas estão definidas |
-| `--config <path>`                         | Nomeia um arquivo de configuração exato, contornando a descoberta                                                                                                                                                                                                                                                                                                                |
+| Variável / flag                           | O que faz                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDBOOK_ENV` / `--env <name>`           | Seleciona uma cascata de `.env` por ambiente e prefere `handbook.config.<name>.yaml`                                                                                                                                                                                                                                                                                              |
+| `--env-file <path>` / `HANDBOOK_ENV_FILE` | Carrega exatamente esse único arquivo, **contornando a cascata**. Um arquivo ausente é um erro barulhento. Prefira a variável: o Node >= 20.6 também tem seu próprio `--env-file` e faz uma pré-varredura em busca dele, então um caminho ausente morre como `node: <path>: not found` (saída 9) antes de o Handbooks rodar. A flag vence a variável quando ambas estão definidas |
+| `--config <path>`                         | Nomeia um arquivo de configuração exato, contornando a descoberta                                                                                                                                                                                                                                                                                                                 |
 
 ## A cascata de `.env`
 

@@ -1,12 +1,20 @@
 ---
-title: '¿Qué es Handbook?'
+title: '¿Qué es Handbooks?'
 description: Un código base entra, dos manuales salen — un sitio de documentación narrado que tu equipo lee y un índice de ubicaciones con el que tu agente de código se orienta. Del mismo mapa parseado, siempre al día con el código.
 icon: House
 ---
 
+<div className="not-prose mb-8">
+  <img
+    src="/diagrams/hero.es.svg"
+    alt="Handbooks — entra una base de código, salen dos handbooks: un sitio de documentación narrado para tu equipo y un índice de ubicación legible por máquinas para tu agente"
+    className="rounded-xl border"
+  />
+</div>
+
 ## Un código base entra. Salen dos manuales.
 
-Handbook escribe el mismo mapa de tu código **dos veces**, porque tiene dos lectores muy distintos:
+Handbooks escribe el mismo mapa de tu código **dos veces**, porque tiene dos lectores muy distintos:
 
 <Cards>
   <Card
@@ -39,7 +47,7 @@ Eso no es un fallo de razonamiento. Es un fallo de **enrutamiento**. El agente n
 un mapa.
 
 <Callout title="La versión en una frase">
-  Handbook lee tu código con un parser real, construye un mapa de él, entrega ese mapa al agente como un
+  Handbooks lee tu código con un parser real, construye un mapa de él, entrega ese mapa al agente como un
   **índice de ubicaciones** — no un resumen — y mantiene el mapa al día a medida que el código se mueve.
 </Callout>
 
@@ -70,7 +78,7 @@ SKILL validado.
 
 ### 1. Los hechos vienen de un parser, no de un modelo
 
-Handbook parsea cada archivo fuente con [tree-sitter](https://tree-sitter.github.io/) y
+Handbooks parsea cada archivo fuente con [tree-sitter](https://tree-sitter.github.io/) y
 construye un grafo de llamadas tipado: funciones, métodos, aristas de llamada resueltas a
 través de `self`/atributos/parámetros/imports, llamadas que salen de tu código y llamadas
 que no pudo resolver — puestas en cuarentena en su propio archivo, nunca adivinadas.
@@ -104,14 +112,14 @@ mecánicamente.
   className="rounded-xl border"
 />
 
-| Salida                                                                                                      | Para quién |
-| ----------------------------------------------------------------------------------------------------------- | ---------- |
-| Handbook en markdown — visión general, índice de etapas, una página por etapa, tabla de registros de estado | humanos    |
-| Sitio HTML multipágina — TOC fijo, migas de pan, selector de tema, funciona sobre `file://`                 | humanos    |
-| Una página HTML autocontenida que puedes enviar por correo                                                  | humanos    |
-| Índice para agentes — símbolo → `path:line-line`, tablas de archivos y llamadas, recetas de grep            | agentes    |
-| `llms.txt` + `llms-full.txt`                                                                                | agentes    |
-| Un paquete SKILL con un hash de contenido por archivo, para que la deriva sea detectable                    | agentes    |
+| Salida                                                                                                       | Para quién |
+| ------------------------------------------------------------------------------------------------------------ | ---------- |
+| Handbooks en markdown — visión general, índice de etapas, una página por etapa, tabla de registros de estado | humanos    |
+| Sitio HTML multipágina — TOC fijo, migas de pan, selector de tema, funciona sobre `file://`                  | humanos    |
+| Una página HTML autocontenida que puedes enviar por correo                                                   | humanos    |
+| Índice para agentes — símbolo → `path:line-line`, tablas de archivos y llamadas, recetas de grep             | agentes    |
+| `llms.txt` + `llms-full.txt`                                                                                 | agentes    |
+| Un paquete SKILL con un hash de contenido por archivo, para que la deriva sea detectable                     | agentes    |
 
 ## Para quién es esto
 
