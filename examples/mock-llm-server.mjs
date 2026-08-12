@@ -208,7 +208,10 @@ const server = createServer((req, res) => {
   let body = '';
   req.on('data', (chunk) => (body += chunk));
   req.on('end', () => {
-    let prompt = '';
+    // No initialiser: every path either assigns it below or returns. ESLint 10's
+    // `no-useless-assignment` caught the dead `= ''`, which was doing nothing
+    // except making the variable look like it had a meaningful default.
+    let prompt;
     try {
       const parsed = JSON.parse(body);
       prompt = parsed.messages?.map((m) => m.content).join('\n') ?? '';
