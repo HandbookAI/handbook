@@ -13,7 +13,7 @@ model choice) stays gitignored.
 settings.json     permissions, environment, and the four hooks below
 hooks/            small POSIX shell scripts; each says in its header WHY it exists
 agents/           subagents for the three jobs that need real specialism
-skills/           slash commands: /gate /self-handbook /diagnose-run /offline-e2e
+skills/           slash commands: /gate /ship /self-handbook /diagnose-run /offline-e2e
 rules/            path-scoped rules, loaded when you touch the matching files
 ```
 
