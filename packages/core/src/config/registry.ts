@@ -72,10 +72,17 @@ export const SETTINGS: readonly Setting[] = [
     key: 'llmBaseUrl',
     type: 'string',
     flag: '--base-url <url>',
+    // Not a secret, on purpose: a shared gateway URL is exactly the kind of
+    // thing a team wants committed, and `secret: true` would ban the useful
+    // case to catch the rare one. What must never be committed is the
+    // credential some deployments embed in the URL — and userinfo is a
+    // credential by position, so refusing it is an exact test, not a guess
+    // (see `rejectInFile` in types.ts).
+    rejectInFile: 'urlCredentials',
     default: 'https://api.openai.com/v1',
     envAliases: ['OPENAI_BASE_URL'],
     commands: [...LLM_COMMANDS],
-    doc: 'any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy)',
+    doc: 'any OpenAI-compatible endpoint (hosted, vLLM, LiteLLM, a proxy); a URL with embedded credentials is refused in the config file, which gets committed',
   },
   {
     key: 'llmMaxTokens',
@@ -132,11 +139,21 @@ export const SETTINGS: readonly Setting[] = [
   {
     key: 'llmExtraBody',
     type: 'json',
-    flag: '--extra-body <json>',
+    // Free-form by definition: the tool cannot know which vendor fields a user
+    // will put here, and gateways do take auth in the request body. Scanning
+    // the object for credential-looking key names would be a guess that passes
+    // whatever shape it was not taught — the same "a guessed edge is
+    // indistinguishable from a real one" problem the analyzer refuses to have.
+    // So this gets the API key's treatment instead: no flag (shell history,
+    // `ps`), no config file (it gets committed). The cost is real —
+    // `{"thinking":{"type":"disabled"}}` is not a secret and now has to travel
+    // through the environment like one — and it is the price of not shipping a
+    // guard that only works on the credentials we happened to imagine.
+    secret: true,
     envAliases: ['OPENAI_EXTRA_BODY'],
     commands: [...LLM_COMMANDS],
     example: '{"thinking":{"type":"disabled"}}',
-    doc: 'vendor fields merged into every request body; model/messages/token fields cannot be overridden',
+    doc: 'vendor fields merged into every request body; model/messages/token fields cannot be overridden. Free-form, so it is treated as a secret: never a flag and never allowed in the config file',
   },
 
   // ── shared paths ──────────────────────────────────────────────────────────

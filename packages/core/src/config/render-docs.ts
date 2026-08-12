@@ -14,10 +14,11 @@
  * its own doc comment in `types.ts`, a placeholder for `.env.example` only.
  * `renderConfigDocs` and `renderConfigExampleYaml` read `setting.default`
  * exclusively, so a setting with an `example` but no `default` (`source`,
- * `work`, `llmExtraBody`) still shows up there as unset — exactly the
- * pass-through behaviour decisions item 5 asks for, and the same reason
- * `readBatchSize`, `cardDetail` and `proseLang` show up unset too, even
- * though none of those three carries an `example` at all.
+ * `work`) still shows up there as unset — exactly the pass-through behaviour
+ * decisions item 5 asks for, and the same reason `readBatchSize`,
+ * `cardDetail` and `proseLang` show up unset too, even though none of those
+ * three carries an `example` at all. (`llmExtraBody` carries an `example` and
+ * no `default` too, but it is secret, so the example YAML skips it entirely.)
  */
 import { envName, fileKeyCandidates, scopedEnvName } from './names.js';
 import { SETTINGS, settingByKey, settingsFor } from './registry.js';

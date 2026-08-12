@@ -129,6 +129,37 @@ describe('registry agrees with the pipeline defaults', () => {
   });
 });
 
+describe('credential-bearing settings (M23)', () => {
+  it('treats the free-form extra body as a secret, so it is neither a flag nor committable', () => {
+    // It is a container, not a credential — but the tool cannot know which
+    // vendor fields a user will put in it, and a key-name heuristic passes
+    // whatever shape it was not taught. Refusing the container is the only
+    // answer that does not depend on guessing right.
+    const extraBody = settingByKey('llmExtraBody');
+    expect(extraBody?.secret).toBe(true);
+    expect(extraBody?.flag).toBeUndefined();
+    // The environment is then the only route left, so the vendor alias is
+    // load-bearing rather than a convenience.
+    expect(extraBody?.envAliases).toContain('OPENAI_EXTRA_BODY');
+  });
+
+  it('leaves the base URL committable but guards the credential inside it', () => {
+    // A shared gateway URL is exactly what a team wants in a committed file;
+    // `secret: true` would ban the useful case to catch the rare one.
+    const baseUrl = settingByKey('llmBaseUrl');
+    expect(baseUrl?.secret).toBeUndefined();
+    expect(baseUrl?.flag).toBe('--base-url <url>');
+    expect(baseUrl?.rejectInFile).toBe('urlCredentials');
+  });
+
+  it('keeps every secret reachable from the environment', () => {
+    // `supplyRoutes` drops the flag and the config file for a secret, so the
+    // env name is all that is left — a `scopedOnly` secret would have no flat
+    // env name at all, and `.env.example` would document a route nothing reads.
+    expect(SETTINGS.filter((s) => s.secret && s.scopedOnly).map((s) => s.key)).toEqual([]);
+  });
+});
+
 describe('every command the CLI ships is represented', () => {
   it('covers all eleven subcommands plus config', () => {
     const commands = new Set(SETTINGS.flatMap((s) => s.commands));
