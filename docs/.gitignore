@@ -7,3 +7,8 @@ next-env.d.ts
 
 # Copied from ../assets at build time by scripts/sync-generated.mjs.
 public/diagrams/
+# Written by `vercel link`. `.vercel/` holds the project and org ids; `.env.local`
+# holds a short-lived OIDC token the CLI downloads. Neither is ours to commit,
+# and the token in particular must not be.
+.vercel
+.env*.local

@@ -36,3 +36,8 @@ runs/
 # Subagent-driven-development scratch: ledger, task briefs, review packages.
 # Session-local coordination state, never part of the product.
 .superpowers/
+# Written by `vercel link`. `.vercel/` holds the project and org ids; `.env.local`
+# holds a short-lived OIDC token the CLI downloads. Neither is ours to commit,
+# and the token in particular must not be.
+.vercel
+.env*.local
