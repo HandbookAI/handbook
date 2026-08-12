@@ -43,6 +43,62 @@ const squareImage = (locale: string) => ({
 });
 
 /**
+ * The Open Graph and Twitter halves of a SINGLE page's metadata.
+ *
+ * Next merges `Metadata` shallowly: a route that returns `openGraph` replaces
+ * the parent's whole object, and a route that returns none inherits it intact.
+ * The docs route returned `openGraph` and no `twitter`, so all 238 documentation
+ * pages served their own Open Graph card and the SITE's Twitter card — and
+ * Twitter/X, Slack, Discord, LinkedIn and Teams all prefer `twitter:*` when both
+ * are present. The per-page cards this site generates at `/og/docs/…` were being
+ * rendered and then ignored by the platforms links actually travel through.
+ *
+ * Returning both from one function is what stops that recurring: a caller cannot
+ * supply one and forget the other.
+ */
+export function pageCardMetadata(page: {
+  title: string;
+  description?: string;
+  url: string;
+  locale: string;
+  image: string;
+}): Pick<Metadata, 'openGraph' | 'twitter'> {
+  const bcp47 = BCP47[page.locale as Locale] ?? page.locale;
+  const description = page.description ?? siteCopy(page.locale).shortDescription;
+  const image = {
+    url: page.image,
+    width: 1200,
+    height: 630,
+    alt: `${page.title} — ${appName}`,
+    type: 'image/png',
+  };
+
+  return {
+    openGraph: {
+      // `article`, not `website`: a documentation page is a document. It is also
+      // what lets a card carry a modified time.
+      type: 'article',
+      siteName: appName,
+      title: page.title,
+      description,
+      url: page.url,
+      locale: bcp47.replace('-', '_'),
+      alternateLocale: LOCALES.filter((l) => l.code !== page.locale).map((l) =>
+        (BCP47[l.code as Locale] ?? l.code).replace('-', '_'),
+      ),
+      images: [image],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: page.title,
+      description,
+      images: [image],
+      ...(social.twitter ? { site: social.twitter, creator: social.twitter } : {}),
+    },
+  };
+}
+
+/**
  * `locale` drives more than the `lang` attribute: the canonical URL, the
  * `hreflang` set and `og:locale` all change with it. Getting those wrong is how
  * eight translations of one page end up competing with each other in search
@@ -226,6 +282,73 @@ export function PlatformMeta({ locale = i18n.defaultLanguage }: { locale?: strin
  */
 export function StructuredData({ locale = i18n.defaultLanguage }: { locale?: string } = {}) {
   const json = JSON.stringify(structuredData(locale)).replace(/</g, '\\u003c');
+  return (
+    <div hidden dangerouslySetInnerHTML={{ __html: `<script type="application/ld+json">${json}</script>` }} />
+  );
+}
+
+/**
+ * Per-page structured data: what the page IS, and where it sits.
+ *
+ * The site-level graph (`SoftwareApplication` + `WebSite` + `Organization`) was
+ * identical on all 273 URLs, which describes the product and says nothing about
+ * any individual document. `TechArticle` is the type Google reads for technical
+ * documentation, and `BreadcrumbList` is what produces the trail shown under a
+ * result instead of a bare URL.
+ *
+ * `dateModified` is emitted only when a real date exists — see `lastModified` in
+ * `lib/source.ts`. A fabricated one would be a schema-level version of the
+ * sitemap bug it was added to fix.
+ */
+export function PageStructuredData({
+  title,
+  description,
+  url,
+  locale,
+  modified,
+  trail,
+}: {
+  title: string;
+  description?: string;
+  url: string;
+  locale: string;
+  modified?: string | number | Date;
+  trail: { name: string; url: string }[];
+}) {
+  const graph: Record<string, unknown>[] = [
+    {
+      '@type': 'TechArticle',
+      '@id': `${url}#article`,
+      headline: title,
+      ...(description ? { description } : {}),
+      url,
+      inLanguage: BCP47[locale as Locale] ?? locale,
+      ...(modified ? { dateModified: new Date(modified).toISOString() } : {}),
+      isPartOf: { '@id': `${siteUrl}/#website` },
+      about: { '@id': `${siteUrl}/#software` },
+      publisher: { '@id': `${siteUrl}/#org` },
+      author: { '@type': 'Organization', name: `${appName} contributors`, url: repoUrl },
+      license: 'https://opensource.org/licenses/MIT',
+    },
+  ];
+
+  // One item is not a trail. Emitting a single-element BreadcrumbList adds a
+  // node Google will not render and a reader cannot use.
+  if (trail.length > 1) {
+    graph.push({
+      '@type': 'BreadcrumbList',
+      '@id': `${url}#breadcrumbs`,
+      itemListElement: trail.map((crumb, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: crumb.name,
+        item: crumb.url,
+      })),
+    });
+  }
+
+  const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
+
   return (
     <div hidden dangerouslySetInnerHTML={{ __html: `<script type="application/ld+json">${json}</script>` }} />
   );
