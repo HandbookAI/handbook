@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -19,6 +19,16 @@ const configWith = (body: string): string => {
   const path = join(tmp(), 'handbook.config.yaml');
   writeFileSync(path, body);
   return path;
+};
+
+/** Can this process read `path` right now, whatever its mode claims? */
+const stillReadable = (path: string): boolean => {
+  try {
+    readFileSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 describe('flattenConfig', () => {
@@ -202,9 +212,15 @@ describe('readConfigFile (M24)', () => {
   });
 
   it('returns an error for a file that cannot be read', () => {
-    if (process.getuid?.() === 0) return; // root reads anything; the mode says nothing
+    // The mode is a request, and plenty of systems decline it: root reads
+    // anything, and on Windows `chmod` only moves the read-only attribute — mode
+    // 000 leaves the owner full read access, so `readConfigFile` correctly
+    // returns the parsed file and there is no error to assert. Probing whether
+    // this process can still read the file asks that directly, instead of
+    // enumerating the reasons the mode might not have taken.
     const path = configWith('detail: deep\n');
     chmodSync(path, 0o000);
+    if (stillReadable(path)) return;
     expect(readConfigFile(path).error).toMatch(/EACCES|permission/i);
   });
 

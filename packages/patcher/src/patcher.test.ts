@@ -336,17 +336,26 @@ describe('patcher — review regressions', () => {
     expect(text).toBe('def a():\r\n    return 2\r\n');
   });
 
-  it('preserves the executable bit', () => {
+  it('preserves the mode of the file it rewrites, executable bit included', () => {
+    // Asserted against the mode the file ACTUALLY got, not against 0o755: a
+    // patch replaces the file by renaming a fresh one over it, so the mode is
+    // the patcher's to carry across, and "unchanged" is the whole invariant.
+    // Windows has no executable bit at all — `chmod` there moves the read-only
+    // attribute and nothing else — so a literal 0o755 tests the platform's
+    // permission model rather than this code, and reports 0o666 on the one OS
+    // whose filesystem differences this suite is meant to catch.
     const root = repo();
     const script = join(root, 'run.sh');
     writeFileSync(script, '#!/bin/sh\necho one\n', { mode: 0o755 });
+    const before = statSync(script).mode & 0o777;
     const result = applyPlan({
       sourceRoot: root,
       plan: plan([{ file: 'run.sh', old: 'echo one', next: 'echo two' }]),
       backupRoot: join(root, '.patches'),
     });
     expect(result.ok).toBe(true);
-    expect(statSync(script).mode & 0o777).toBe(0o755);
+    expect(statSync(script).mode & 0o777).toBe(before);
+    expect(readFileSync(script, 'utf8')).toContain('echo two');
   });
 
   it('refuses non-UTF-8 files instead of rewriting them as replacement chars', () => {
