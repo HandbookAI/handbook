@@ -878,7 +878,12 @@ function rollbackInner(
         // previous revision of the user's source.
         tmp = `${target}.handbook-rollback-${stagingSuffix()}`;
         copyFileSync(backupPath, tmp, constants.COPYFILE_EXCL);
-        renameSync(tmp, target);
+        // `replaceFile`, not a bare rename: Windows consults the DESTINATION's
+        // read-only attribute, so restoring a mode-444 file failed with `EPERM:
+        // rename` and the file was reported skipped — a rollback that silently
+        // did not roll one file back. POSIX allows the owner the rename and
+        // never enters the retry, which is why this only showed up in CI.
+        replaceFile(tmp, target);
         tmp = undefined;
         restored.push(entry.file);
       } else {
