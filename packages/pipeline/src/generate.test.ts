@@ -31,9 +31,9 @@ def main():
   );
 }
 
-/** Mock LLM covering every pipeline prompt with deterministic responses. */
-function mockClient(): MockChatClient {
-  const rules: MockRule[] = [
+/** Deterministic responses for every pipeline prompt, as reusable rules. */
+function mockRules(): MockRule[] {
+  return [
     {
       match: 'Files to describe',
       respond: (prompt) => {
@@ -102,7 +102,11 @@ function mockClient(): MockChatClient {
       respond: 'The demo system spins an engine from a tiny entry point.',
     },
   ];
-  return new MockChatClient(rules);
+}
+
+/** Mock LLM covering every pipeline prompt with deterministic responses. */
+function mockClient(): MockChatClient {
+  return new MockChatClient(mockRules());
 }
 
 describe('expandPhases', () => {
@@ -319,6 +323,47 @@ describe('generateHandbook cooperative cancellation', () => {
     // The work-dir lock was released: a follow-up run succeeds.
     await generateHandbook({ sourceRoot, workDir, client: mockClient(), phase: 'all' });
     expect(existsSync(join(workDir, 'run-manifest.json'))).toBe(true);
+  });
+
+  it('an abort inside the skeleton doctor rejects and leaves no phase-2b artifact', async () => {
+    // The doctor is the deepest LLM path in the pipeline — generate → doctor →
+    // actor/critic panel — and it was the one the signal never reached. A
+    // cancelled panel came back as a healthy no-op round, so the loop broke out
+    // with a "converged" skeleton and phase 2b wrote it to disk.
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'hb-src-abort4-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'hb-work-abort4-'));
+    writeFixtureRepo(sourceRoot);
+    await generateHandbook({ sourceRoot, workDir, client: mockClient(), phase: '1,2a' });
+
+    const controller = new AbortController();
+    const client = new MockChatClient([
+      { match: 'You are the SKELETON DOCTOR', respond: { changes: [], rationale: 'healthy' } },
+      {
+        match: 'reviewing a proposed change to a codebase handbook',
+        respond: () => {
+          controller.abort();
+          return { decision: 'APPROVE', concerns: [], suggested_revision: null, rationale: 'ok' };
+        },
+      },
+      ...mockRules(),
+    ]);
+    const error = await generateHandbook({
+      sourceRoot,
+      workDir,
+      client,
+      phase: '2b',
+      synthMode: 'doctor',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    // Nothing phase 2b would have written landed, and the manifest still
+    // describes the earlier run — so the work dir reads as "2b never ran".
+    expect(existsSync(join(workDir, 'phase2', 'skeleton.yaml'))).toBe(false);
+    expect(existsSync(join(workDir, 'phase2', 'assignment.json'))).toBe(false);
+    const manifest = runManifestSchema.parse(
+      JSON.parse(readFileSync(join(workDir, 'run-manifest.json'), 'utf8')),
+    );
+    expect(manifest.phases).toEqual(['1', '2a']);
   });
 });
 

@@ -156,6 +156,7 @@ corruption that is hard to notice.
   phase1/functions.csv        every function, flat
   phase1/graph.dot            Graphviz
   phase1/dropped-calls.json   unresolved calls, categorized
+  phase1/scan-coverage.json   files that could not be read or fully parsed
   phase2/cards/<rel>.json     one card per source file
   phase2/cards/_coverage.json how many files got prose, and which did not
   phase2/cards/_rejected/     replies that produced no usable card (capped)

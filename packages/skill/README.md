@@ -77,7 +77,7 @@ skills/myrepo/
     index.md                  the stage index — every subsystem → its files
     registers.md              cross-stage state
     stages/<id>.md            one page per stage
-    agent/                    how_to_use.md + disambiguation.md   (optional)
+    agent/                    index.md + symbols.tsv + files.tsv + calls.tsv + stages/  (optional)
     coverage.json             file → stage + a content hash each   (optional)
 ```
 
@@ -153,10 +153,17 @@ by a re-package.
 - **It refuses to eat its own input.** If `outDir` _is_ the handbook directory, or the
   handbook sits inside it, the build aborts — because it starts by wiping `outDir`, and
   that would delete the very thing being packaged and then quietly emit an empty skill.
-- **Locator pages ship as a pair or not at all.** `agent/how_to_use.md` and
-  `agent/disambiguation.md` are only copied when both exist, and the SKILL.md routing
-  protocol only gains its disambiguation step when they do. `SKILL.md` must never route to
-  a file that is not there.
+- **The agent artifact ships whole or not at all.** `agent/index.md` and all three fact
+  tables are copied only when every one of them exists, and the SKILL.md routing protocol
+  only gains its grep recipes when they do. `SKILL.md` must never route to a file that is
+  not there. `agent/stages/` follows opportunistically — a handbook with no
+  content-bearing stage produces none, and that is not a reason to ship no index.
+
+  This is also the delivery channel that was broken for a while: the copy list named two
+  pages the renderer had stopped writing, so the entire agent index was generated on every
+  run and then never packaged. The probe now uses `AGENT_INDEX_FILE`, exported by the
+  renderer, so the two cannot drift again.
+
 - **The register page always exists.** A handbook with zero registers renders no register
   page; the skill still ships one saying so, because a stable reference layout is part of
   the contract.

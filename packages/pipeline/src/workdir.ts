@@ -8,6 +8,7 @@
  * ```
  * <work>/
  *   phase1/graph.json | functions.csv | graph.dot | dropped-calls.json
+ *   phase1/scan-coverage.json         files that could not be read or parsed
  *   phase2/cards/<rel>.json           one card per source file
  *   phase2/cards/_coverage.json
  *   phase2/skeleton.yaml              stage skeleton (canonical form)
@@ -134,6 +135,50 @@ export class WorkDir {
 
   saveCard(card: FileCard): void {
     writeJsonFile(this.cardPath(card.file), card);
+  }
+
+  /**
+   * Delete cards for files that are no longer part of the codebase.
+   *
+   * A card is written per file and, until this existed, never removed — so a
+   * file deleted by a refactor kept its card for the life of the work dir. That
+   * is not merely stale data: everything downstream that enumerates
+   * `model.cards` then emits a path that does not exist, and a path that does
+   * not exist is the worst possible defect in an artifact whose entire promise
+   * is "this path is where the thing is". Measured on this repo's own work dir:
+   * 182 cards for 180 assigned files, the extras being `cli/src/args.ts` and
+   * its test, deleted by the config refactor.
+   *
+   * `keep` must be the AUTHORITATIVE full file set. A subset — a resync pass
+   * over three changed files — would delete every other card in the work dir,
+   * so callers that work on a subset must not call this at all. That is why
+   * there is no "prune to the files I just processed" convenience here.
+   *
+   * Returns the paths removed, so the caller can report them rather than
+   * silently shrinking the handbook.
+   */
+  evictCardsOutside(keep: readonly string[]): string[] {
+    if (!fileExists(this.cardsDir)) return [];
+    const wanted = new Set(keep);
+    const removed: string[] = [];
+    for (const rel of listFilesRecursive(this.cardsDir, { extensions: ['.json'] })) {
+      if (rel === '_coverage.json') continue;
+      // The path is derived from the card's own `file` field rather than from
+      // the filename, because `cardPath` mirrors the source tree and a
+      // Windows-authored work dir can differ in separators.
+      let card;
+      try {
+        card = readValidatedJson(join(this.cardsDir, rel), fileCardSchema);
+      } catch {
+        // Unreadable or foreign json: `loadCards` skips it, so it is not a card
+        // and deleting it is not ours to do.
+        continue;
+      }
+      if (wanted.has(card.file)) continue;
+      rmSync(join(this.cardsDir, rel), { force: true });
+      removed.push(card.file);
+    }
+    return removed.sort();
   }
 
   /** Load all cards, keyed by relative file path. Unparseable files are skipped. */

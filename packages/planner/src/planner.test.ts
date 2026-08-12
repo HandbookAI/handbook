@@ -353,6 +353,75 @@ describe('runPlanner', () => {
       expect(result.aborted).toBe('turn-limit');
     }
   });
+
+  it('refuses a reply too large to be an action block or a plan', async () => {
+    // The transcript is re-sent IN FULL every turn, so one runaway reply is paid
+    // for again on every remaining turn. Truncating it would keep planning from
+    // a mutilated reply; refusing says what happened and stops.
+    const client = new MockChatClient([{ match: () => true, respond: 'x'.repeat(200_001) }]);
+    const result = await runPlanner({ client, sourceRoot, request: 'x', maxTurns: 5 });
+    expect(result.aborted).toBe('oversized-reply');
+    expect(result.turns).toBe(1); // refused on the spot, not after five more
+    expect(result.plan).not.toContain('xxxx');
+    expect(result.declarations).toBeUndefined();
+  });
+});
+
+describe('runPlanner — cancellation', () => {
+  let sourceRoot: string;
+
+  beforeAll(() => {
+    sourceRoot = mkdtempSync(join(tmpdir(), 'hb-plan-cancel-'));
+    mkdirSync(join(sourceRoot, 'app'));
+    writeFileSync(join(sourceRoot, 'app', 'engine.py'), 'class Engine:\n    def spin(self):\n        pass\n');
+  });
+
+  it('passes the caller signal into every model call', async () => {
+    const client = new MockChatClient([{ match: () => true, respond: { tool: 'finish', plan: PLAN } }]);
+    const controller = new AbortController();
+    await runPlanner({ client, sourceRoot, request: 'x', signal: controller.signal });
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls.every((c) => c.options?.signal === controller.signal)).toBe(true);
+  });
+
+  it('rejects a pre-aborted run without spending a single call', async () => {
+    const client = new MockChatClient([{ match: () => true, respond: { tool: 'finish', plan: PLAN } }]);
+    const controller = new AbortController();
+    controller.abort();
+    const error = await runPlanner({
+      client,
+      sourceRoot,
+      request: 'x',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it('stops before the next turn once the signal fires, and never returns a result', async () => {
+    // A cancelled planner used to run all 30 turns: the signal reached neither
+    // the loop nor `client.complete`, so Ctrl-C left the agent buying tokens and
+    // the caller still got a PlannerResult it could mistake for a real plan.
+    const controller = new AbortController();
+    const client = new MockChatClient([
+      {
+        match: () => true,
+        respond: () => {
+          controller.abort();
+          return { tool: 'list_dir', path: '.' };
+        },
+      },
+    ]);
+    const error = await runPlanner({
+      client,
+      sourceRoot,
+      request: 'x',
+      maxTurns: 30,
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(client.calls).toHaveLength(1); // turn 2 never asked the model
+  });
 });
 
 describe('parseDeclarations', () => {

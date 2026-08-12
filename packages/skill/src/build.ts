@@ -7,18 +7,19 @@
  *   references/
  *     overview.md  index.md  registers.md
  *     stages/<sid>.md        one page per stage
- *     agent/                 how_to_use.md + disambiguation.md (optional, from the agent site)
+ *     agent/                 index.md + symbols.tsv + files.tsv + calls.tsv + stages/ (optional)
  *     coverage.json          file → stage + content hashes (optional, drift signal)
  * ```
  *
  * The skill is self-contained and shareable; it never embeds source code.
  */
-import { copyFileSync, readFileSync, rmSync } from 'node:fs';
-import { basename, join, resolve, sep } from 'node:path';
+import { copyFileSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { basename, join, normalize, resolve, sep } from 'node:path';
 import {
   PIPELINE_DEFAULTS,
   ensureDir,
   fileExists,
+  isAbsoluteAnyPlatform,
   listFilesRecursive,
   sha256Hex,
   writeFileAtomic,
@@ -38,10 +39,11 @@ export interface BuildSkillOptions {
   /** When given, coverage.json records file→stage plus source hashes for drift detection. */
   coverage?: { assignment: Assignment; sourceRoot?: string };
   /**
-   * Rendered agent locator site. When it contains both `how_to_use.md` and
-   * `disambiguation.md`, they ship under `references/agent/` and the SKILL.md
-   * routing protocol gains a disambiguation step. Omitted (or missing pages):
-   * output is byte-identical to a build without this option.
+   * Rendered agent artifact. When it contains the entry index and all three
+   * fact tables, they ship under `references/agent/` (with `stages/` alongside
+   * if present) and the SKILL.md routing protocol gains its grep recipes.
+   * Omitted, or missing any of the four: output is byte-identical to a build
+   * without this option — SKILL.md must never route to a file that is not there.
    */
   agentDir?: string;
   /**
@@ -61,15 +63,7 @@ export interface BuildSkillResult {
 }
 
 /** Root-level pages that are NOT stage pages in a flat rendered handbook. */
-const NON_STAGE_PAGES = new Set([
-  'overview.md',
-  'index.md',
-  'register.md',
-  'registers.md',
-  'how_to_use.md',
-  'disambiguation.md',
-  'readme.md',
-]);
+const NON_STAGE_PAGES = new Set(['overview.md', 'index.md', 'register.md', 'registers.md', 'readme.md']);
 
 /** SKILL.md body copy plus synthetic fallback prose, per narrate language. */
 interface SkillCopy {
@@ -109,7 +103,7 @@ Use it to decide WHICH files, functions and state a change must touch — then r
       stages: 'Open only the relevant `references/stages/<id>.md` pages.',
       registers: 'Check `references/registers.md` for cross-cutting state — invaluable for fan-out changes.',
       agent:
-        'When a term is ambiguous or a search hits many stages, check `references/agent/disambiguation.md`; `references/agent/how_to_use.md` documents the agent-side search protocol.',
+        'For a symbol, a file or a caller, grep the fact tables instead of guessing: `grep "^NAME\t" references/agent/symbols.tsv` gives `path:startLine-endLine`; `grep "\tNAME\t" references/agent/calls.tsv` gives its callers. `references/agent/index.md` lists every recipe. Locations are parser-derived; open the file and read the range before editing.',
       source: '`read_file` the actual source at every cited path before proposing or making changes.',
     },
     coverage: `If \`references/coverage.json\` exists, treat its content hashes as freshness signals: a stale
@@ -143,7 +137,7 @@ all optional. Never edit anything under \`references/\` yourself: a later resync
       stages: '只打开相关的 `references/stages/<id>.md` 页面。',
       registers: '查 `references/registers.md` 的跨阶段状态 —— 对波及面大的修改尤其关键。',
       agent:
-        '当一个词含义不明、或搜索命中多个阶段时，查 `references/agent/disambiguation.md`；`references/agent/how_to_use.md` 记录了 agent 侧的完整检索规程。',
+        '查符号、文件或调用方时，直接 grep 事实表，不要猜：`grep "^NAME\t" references/agent/symbols.tsv` 给出 `路径:起始行-结束行`；`grep "\tNAME\t" references/agent/calls.tsv` 给出它的调用方。全部检索配方见 `references/agent/index.md`。位置来自解析器；动手改之前先打开文件读那段行号。',
       source: '在提出或做出任何修改之前，`read_file` 每个被引用路径的真实源码。',
     },
     coverage: `如果 \`references/coverage.json\` 存在，把其中的内容哈希当作新鲜度信号：哈希过期意味着
@@ -177,7 +171,7 @@ ${CORRECTION_EXAMPLE}
       registers:
         'क्रॉसकट state के लिए `references/registers.md` देखिए — बिखरे हुए बदलावों में यह सबसे काम का है।',
       agent:
-        'जब कोई शब्द अस्पष्ट हो या खोज कई stages पर पहुँचे, तो `references/agent/disambiguation.md` देखिए; `references/agent/how_to_use.md` में agent-पक्ष की पूरी खोज-प्रणाली लिखी है।',
+        'किसी symbol, file या caller के लिए अनुमान न लगाइए — fact tables पर grep कीजिए: `grep "^NAME\t" references/agent/symbols.tsv` से `path:startLine-endLine` मिलता है; `grep "\tNAME\t" references/agent/calls.tsv` से उसके callers। सारी recipes `references/agent/index.md` में हैं। ये स्थान parser से आते हैं; बदलने से पहले file खोलकर वह range पढ़िए।',
       source: 'कोई भी बदलाव प्रस्तावित करने या करने से पहले हर उद्धृत पथ का असली सोर्स `read_file` कीजिए।',
     },
     coverage: `अगर \`references/coverage.json\` मौजूद है, तो उसके content हैश को ताज़गी के संकेत की तरह लीजिए: पुराना
@@ -214,7 +208,7 @@ Este handbook es un **índice de ubicación** del código de ${project}, no una 
       registers:
         'Consulta `references/registers.md` para el estado transversal — es valiosísimo en cambios de mucho alcance.',
       agent:
-        'Cuando un término sea ambiguo o una búsqueda toque muchas etapas, consulta `references/agent/disambiguation.md`; `references/agent/how_to_use.md` documenta el protocolo de búsqueda del lado del agente.',
+        'Para un símbolo, un archivo o quién lo llama, haz grep en las tablas de hechos en vez de adivinar: `grep "^NAME\t" references/agent/symbols.tsv` da `ruta:líneaInicio-líneaFin`; `grep "\tNAME\t" references/agent/calls.tsv` da quién lo llama. Todas las recetas están en `references/agent/index.md`. Las ubicaciones vienen del parser; abre el archivo y lee el rango antes de editar.',
       source: 'Haz `read_file` del código real en cada ruta citada antes de proponer o hacer cambios.',
     },
     coverage: `Si existe \`references/coverage.json\`, trata sus hashes de contenido como señales de frescura: un hash
@@ -253,7 +247,7 @@ Use-o para decidir QUAIS arquivos, funções e estado uma mudança precisa tocar
       registers:
         'Consulte `references/registers.md` para o estado transversal — é valiosíssimo em mudanças de grande alcance.',
       agent:
-        'Quando um termo for ambíguo ou uma busca cair em várias etapas, consulte `references/agent/disambiguation.md`; `references/agent/how_to_use.md` documenta o protocolo de busca do lado do agente.',
+        'Para um símbolo, um arquivo ou quem o chama, faça grep nas tabelas de fatos em vez de adivinhar: `grep "^NAME\t" references/agent/symbols.tsv` dá `caminho:linhaInicial-linhaFinal`; `grep "\tNAME\t" references/agent/calls.tsv` dá quem o chama. Todas as receitas estão em `references/agent/index.md`. As localizações vêm do parser; abra o arquivo e leia o intervalo antes de editar.',
       source: 'Faça `read_file` do código real em cada caminho citado antes de propor ou fazer mudanças.',
     },
     coverage: `Se \`references/coverage.json\` existir, trate os seus hashes de conteúdo como sinais de atualidade: um
@@ -291,7 +285,7 @@ real.`,
       registers:
         'Смотрите `references/registers.md` для сквозного состояния — незаменимо при изменениях с широким охватом.',
       agent:
-        'Если термин неоднозначен или поиск попадает в несколько этапов, загляните в `references/agent/disambiguation.md`; `references/agent/how_to_use.md` описывает поисковый протокол на стороне агента.',
+        'Чтобы найти символ, файл или вызывающий код, используйте grep по таблицам фактов, а не догадки: `grep "^NAME\t" references/agent/symbols.tsv` даёт `путь:перваяСтрока-последняяСтрока`; `grep "\tNAME\t" references/agent/calls.tsv` даёт вызывающих. Все рецепты — в `references/agent/index.md`. Позиции получены парсером; откройте файл и прочитайте диапазон перед правкой.',
       source:
         'Прежде чем предлагать или вносить изменения, сделайте `read_file` настоящего исходника по каждому упомянутому пути.',
     },
@@ -330,7 +324,7 @@ ${CORRECTION_EXAMPLE}
       registers:
         '横断的な状態は `references/registers.md` で確認してください — 影響が広がる変更ではとくに有用です。',
       agent:
-        '用語が曖昧なとき、あるいは検索が多くのステージに当たるときは `references/agent/disambiguation.md` を確認してください。`references/agent/how_to_use.md` にエージェント側の検索手順が書かれています。',
+        'シンボル・ファイル・呼び出し元を探すときは推測せず事実テーブルを grep してください: `grep "^NAME\t" references/agent/symbols.tsv` で `パス:開始行-終了行`、`grep "\tNAME\t" references/agent/calls.tsv` で呼び出し元が得られます。全レシピは `references/agent/index.md` にあります。位置はパーサ由来です。編集の前にファイルを開いてその行範囲を読んでください。',
       source: '変更を提案・実施する前に、引用された各パスの実際のソースを `read_file` してください。',
     },
     coverage: `\`references/coverage.json\` があれば、その内容ハッシュを鮮度の指標として扱ってください。ハッシュが
@@ -368,7 +362,7 @@ dann den echten Quellcode.`,
       registers:
         'Prüfe `references/registers.md` auf querschnittlichen Zustand — unbezahlbar bei weitreichenden Änderungen.',
       agent:
-        'Wenn ein Begriff mehrdeutig ist oder eine Suche viele Etappen trifft, sieh in `references/agent/disambiguation.md` nach; `references/agent/how_to_use.md` dokumentiert das Suchprotokoll auf Agentenseite.',
+        'Für ein Symbol, eine Datei oder Aufrufer nicht raten, sondern die Faktentabellen grepen: `grep "^NAME\t" references/agent/symbols.tsv` liefert `Pfad:Startzeile-Endzeile`; `grep "\tNAME\t" references/agent/calls.tsv` liefert die Aufrufer. Alle Rezepte stehen in `references/agent/index.md`. Die Fundstellen stammen vom Parser; öffne die Datei und lies den Bereich, bevor du etwas änderst.',
       source:
         'Führe an jedem zitierten Pfad `read_file` auf den echten Quellcode aus, bevor du Änderungen vorschlägst oder vornimmst.',
     },
@@ -421,7 +415,54 @@ ${copy.corrections}
 }
 
 /** The two locator pages of a rendered agent site that ship with the skill. */
-const AGENT_LOCATOR_PAGES = ['how_to_use.md', 'disambiguation.md'] as const;
+/**
+ * The agent artifact's files, shipped as a set.
+ *
+ * `index.md` is the entry point and the three tables are what it routes to, so
+ * they travel together: SKILL.md must never route to a file that does not
+ * exist. The stage pages ship too — they are the second hop — but their absence
+ * is not fatal, so they are copied opportunistically rather than gated on.
+ *
+ * Previously this list was `how_to_use.md` + `disambiguation.md`, which meant
+ * the entire agent index and every stage page were generated and then never
+ * delivered through the skill — the product's primary channel.
+ */
+const AGENT_LOCATOR_PAGES = ['index.md', 'symbols.tsv', 'files.tsv', 'calls.tsv'];
+
+/** Every top-level entry a handbook skill build writes into `--out`. */
+const OUR_TOP_LEVEL = new Set(['SKILL.md', 'references', 'corrections.jsonl']);
+/** Filesystem litter that is nobody's data — never a reason to refuse a rebuild. */
+const IGNORABLE_ENTRIES = new Set(['.DS_Store', 'Thumbs.db']);
+
+/**
+ * Resolve a repo-relative POSIX path inside `root`, or `undefined` when it
+ * leaves — the guard that keeps a model-authored assignment path from making
+ * the builder read (and publish the hash of) a file off-tree.
+ */
+function insideRoot(root: string, relPath: string): string | undefined {
+  if (isAbsoluteAnyPlatform(relPath) || relPath.includes('\\')) return undefined;
+  const full = resolve(root, normalize(relPath));
+  return full === root || full.startsWith(root + sep) ? full : undefined;
+}
+
+/**
+ * Stage pages to ship, as (source path, destination file name) pairs. A nested
+ * `stages/` directory wins; otherwise every root-level `.md` that is not a
+ * known top-level page — stage ids are arbitrary (LLM- or user-authored), so a
+ * name-shape filter would silently drop pages. The flat scan does NOT recurse:
+ * sub-sites (agent/, html/) carry their own copies of the stage pages.
+ */
+function stagePageSources(handbookDir: string): Array<{ from: string; name: string }> {
+  if (fileExists(join(handbookDir, 'stages'))) {
+    return listFilesRecursive(join(handbookDir, 'stages'), { extensions: ['.md'] }).map((page) => ({
+      from: join(handbookDir, 'stages', page),
+      name: basename(page),
+    }));
+  }
+  return listFilesRecursive(handbookDir, { extensions: ['.md'] })
+    .filter((f) => !f.includes('/') && !NON_STAGE_PAGES.has(basename(f).toLowerCase()))
+    .map((page) => ({ from: join(handbookDir, page), name: basename(page) }));
+}
 
 export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
   const { handbookDir, outDir } = options;
@@ -439,6 +480,64 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
     throw new Error(
       `outDir must not be the handbook directory or an ancestor of it (outDir=${outAbs}, handbookDir=${handbookAbs}) — packaging would delete the source`,
     );
+  }
+  // The clean below is `rm -rf outDir`, and `out` is reachable from a committed
+  // handbook.config.yaml or a HANDBOOK_SKILL_OUT inherited from a project .env
+  // — so a stale value, or `--out .`, deletes an unrelated tree with no
+  // confirmation and no dry-run.
+  //
+  // A SKILL.md on its own is NOT proof this build produced the directory: every
+  // hand-written agent skill has one too, sitting next to the scripts, assets
+  // and git history that months of somebody's work live in. So both facts must
+  // hold — the marker file is present AND nothing that this build never writes
+  // is — because `rm -rf` cannot ask forgiveness afterwards.
+  if (fileExists(outAbs)) {
+    const existing = readdirSync(outAbs).filter((entry) => !IGNORABLE_ENTRIES.has(entry));
+    const foreign = existing.filter((entry) => !OUR_TOP_LEVEL.has(entry));
+    const oursToReplace =
+      existing.length === 0 || (existsSync(join(outAbs, 'SKILL.md')) && foreign.length === 0);
+    if (!oursToReplace) {
+      const why =
+        foreign.length > 0
+          ? `it holds ${foreign
+              .slice(0, 5)
+              .map((entry) => JSON.stringify(entry))
+              .join(', ')}, which \`handbook skill\` never writes`
+          : 'it is not empty and holds no SKILL.md, so it was not built by `handbook skill`';
+      throw new Error(
+        `refusing to overwrite ${outAbs}: ${why}. Packaging starts by deleting the whole directory — ` +
+          `pass --out an empty or previously-built path.`,
+      );
+    }
+  }
+  // Both checks below run BEFORE the destructive clean: refusing after it would
+  // have already destroyed the directory the refusal is meant to protect.
+  const stagePages = stagePageSources(handbookDir);
+  // The nested layout is flattened onto `references/stages/<basename>`, so two
+  // pages differing only by directory land on one path and the second silently
+  // overwrites the first — a page dropped without a word.
+  const pageByName = new Map<string, string>();
+  for (const page of stagePages) {
+    const clash = pageByName.get(page.name);
+    if (clash) {
+      throw new Error(
+        `two stage pages share the same file name and would both flatten onto ` +
+          `references/stages/${page.name}: ${clash} and ${page.from} — rename one`,
+      );
+    }
+    pageByName.set(page.name, page.from);
+  }
+  const coverageRoot = options.coverage?.sourceRoot ? resolve(options.coverage.sourceRoot) : undefined;
+  if (options.coverage && coverageRoot) {
+    const escaping = Object.keys(options.coverage.assignment.fileStage).filter(
+      (file) => insideRoot(coverageRoot, file) === undefined,
+    );
+    if (escaping.length > 0) {
+      throw new Error(
+        `assignment lists ${escaping.length} path(s) that escape the source root ` +
+          `(${escaping.slice(0, 5).join(', ')}) — refusing to hash files off-tree`,
+      );
+    }
   }
   // Agent locator pages ship only as a pair: SKILL.md must never route to a
   // file that does not exist, and half a locator is what the validator warns on.
@@ -466,6 +565,18 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
       copyFileSync(join(agentDir, page), join(agentOut, page));
       references.push(`agent/${page}`);
     }
+    // The second hop. Opportunistic: a handbook with no content-bearing stage
+    // produces none, and that is not a reason to ship no index.
+    const stageSrc = join(agentDir, 'stages');
+    if (fileExists(stageSrc)) {
+      const stageOut = join(agentOut, 'stages');
+      ensureDir(stageOut);
+      for (const page of readdirSync(stageSrc).sort()) {
+        if (!page.endsWith('.md')) continue;
+        copyFileSync(join(stageSrc, page), join(stageOut, page));
+        references.push(`agent/stages/${page}`);
+      }
+    }
   }
   const copyMap: Array<[string, string[]]> = [
     ['overview.md', ['overview.md']],
@@ -486,34 +597,20 @@ export function buildSkill(options: BuildSkillOptions): BuildSkillResult {
     references.push('registers.md');
   }
 
-  // Stage pages: nested stages/ dir wins, else flat `<sid>.md` at the root.
-  let stagePages: string[];
-  if (fileExists(join(handbookDir, 'stages'))) {
-    stagePages = listFilesRecursive(join(handbookDir, 'stages'), { extensions: ['.md'] });
-    for (const page of stagePages) {
-      copyFileSync(join(handbookDir, 'stages', page), join(stagesDir, basename(page)));
-    }
-  } else {
-    // Flat layout: stage pages are every root-level .md that isn't a known
-    // top-level page — stage ids are arbitrary (LLM- or user-authored), so a
-    // name-shape filter would silently drop pages. Do NOT recurse: sub-sites
-    // (agent/, html/) carry their own copies of the stage pages.
-    stagePages = listFilesRecursive(handbookDir, { extensions: ['.md'] }).filter(
-      (f) => !f.includes('/') && !NON_STAGE_PAGES.has(basename(f).toLowerCase()),
-    );
-    for (const page of stagePages) {
-      copyFileSync(join(handbookDir, page), join(stagesDir, basename(page)));
-    }
-  }
+  for (const page of stagePages) copyFileSync(page.from, join(stagesDir, page.name));
 
   if (options.coverage) {
-    const { assignment, sourceRoot } = options.coverage;
+    const { assignment } = options.coverage;
     const files = Object.entries(assignment.fileStage)
       .map(([file, entry]) => {
         let sha = '';
-        if (sourceRoot) {
+        // `insideRoot` cannot be undefined here — every key was checked before
+        // the clean — but reading its result is what keeps that true if the
+        // check above is ever moved.
+        const full = coverageRoot ? insideRoot(coverageRoot, file) : undefined;
+        if (full) {
           try {
-            sha = sha256Hex(readFileSync(join(sourceRoot, file)));
+            sha = sha256Hex(readFileSync(full));
           } catch {
             sha = '';
           }

@@ -144,6 +144,7 @@ const stats = await runPhase1({ sourceRoot, workDir, lang: 'auto', logger });
   phase1/functions.csv        全部函数，平铺
   phase1/graph.dot            Graphviz
   phase1/dropped-calls.json   未解析的调用，已分类
+  phase1/scan-coverage.json   读不了或没能完整解析的文件
   phase2/cards/<rel>.json     每个源文件一张卡片
   phase2/cards/_coverage.json 多少文件拿到了散文，哪些没有
   phase2/cards/_rejected/     产出不了可用卡片的回复（有上限）

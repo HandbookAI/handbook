@@ -2,7 +2,7 @@
  * Deterministic per-file function inventory derived from the call graph.
  * These are the FACTS merged into deep cards — the LLM adds prose, never facts.
  */
-import type { CodeGraph, FunctionNote } from '@handbook/core';
+import type { CodeGraph, FunctionNote, TypeNote } from '@handbook/core';
 import { isInternalNode, truncate } from '@handbook/core';
 
 const REL_CAP = 25;
@@ -54,6 +54,42 @@ export function buildInventory(graph: CodeGraph): Record<string, FunctionNote[]>
       relations: '',
     };
     (byFile[node.file] ??= []).push(note);
+  }
+  for (const notes of Object.values(byFile)) {
+    notes.sort((a, b) => a.lineRange[0] - b.lineRange[0]);
+  }
+  return byFile;
+}
+
+/**
+ * Per-file type inventory — the same deterministic FACTS, for `graph.types`.
+ *
+ * Returns `undefined`, not `{}`, when the graph carries no `types` field at all:
+ * that means no adapter in the run extracts types, and an empty record would be
+ * indistinguishable from "every scanned file happens to declare none". The cards
+ * pass passes the distinction on by leaving `FileCard.types` off, and the
+ * artifact discloses which languages were actually indexed from
+ * `graph.metadata.languages`.
+ *
+ * A separate function from {@link buildInventory} rather than a second return
+ * value, because the two have different callers: this one runs in brief mode too
+ * (a type note has no prose to wait for), while the function inventory only
+ * exists to be annotated.
+ */
+export function buildTypeInventory(graph: CodeGraph): Record<string, TypeNote[]> | undefined {
+  if (!graph.types) return undefined;
+  const byFile: Record<string, TypeNote[]> = {};
+  for (const type of graph.types) {
+    (byFile[type.file] ??= []).push({
+      name: type.name,
+      qualname: type.qualname,
+      kind: type.kind,
+      lineRange: [type.lineStart, type.lineEnd],
+      // Capped exactly as a function signature is, and for the same reason: a
+      // 4,000-character declaration is a fact nobody can read in a table cell.
+      signature: truncate(type.signature, 200),
+      container: type.container,
+    });
   }
   for (const notes of Object.values(byFile)) {
     notes.sort((a, b) => a.lineRange[0] - b.lineRange[0]);

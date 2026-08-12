@@ -123,10 +123,14 @@ const RESERVED_STAGE_IDS = new Set([
   'index',
   'register',
   'registers',
-  'how_to_use',
-  'disambiguation',
   'readme',
   'handbook',
+  // The agent artifact's fact tables live beside its stage pages, and a stage
+  // id of `symbols` would render `stages/symbols.md` — harmless today, but the
+  // names are reserved so a future flattening cannot collide with them.
+  'symbols',
+  'files',
+  'calls',
 ]);
 
 /** Coerce a raw LLM skeleton into the canonical, internally-consistent form. */

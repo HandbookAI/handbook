@@ -218,12 +218,40 @@ function pathProblem(path: string): string | undefined {
   return undefined;
 }
 
+/**
+ * A plan is model output, so its size is not a property anyone controls. Both
+ * ceilings sit far above any plan a human would review: a real one is a handful
+ * of edits and a few kilobytes.
+ */
+const MAX_PLAN_BYTES = 4 * 1024 * 1024;
+/**
+ * Anchor matching is O(edits x file size) and runs while the tree lock is held,
+ * so an unbounded edit count is a denial of service on the machine holding it.
+ */
+const MAX_EDITS = 500;
+
 export function parsePlan(plan: string): ParsedPlan {
+  // Checked before the split, which is where the memory goes: refusing here
+  // costs one comparison, and splitting a gigabyte first costs the process.
+  if (plan.length > MAX_PLAN_BYTES) {
+    return {
+      edits: [],
+      problems: [
+        `plan is too large (${plan.length} bytes; the cap is ${MAX_PLAN_BYTES}) — refusing to parse it`,
+      ],
+    };
+  }
   const { sections, problems } = splitSections(plan);
   const edits: EditBlock[] = [];
 
   if (sections.length === 0) {
     problems.push('no "### EDIT <n>" blocks found in the plan');
+    return { edits, problems };
+  }
+  if (sections.length > MAX_EDITS) {
+    problems.push(
+      `plan has too many EDIT blocks (${sections.length}; the cap is ${MAX_EDITS}) — split it into separate plans`,
+    );
     return { edits, problems };
   }
 

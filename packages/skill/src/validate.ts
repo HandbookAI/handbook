@@ -21,6 +21,32 @@ export interface ValidateSkillOptions {
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/**
+ * Markdown link targets ending in `.md`, scanned linearly.
+ *
+ * This was `/\]\(([^)#\s]+\.md)\)/g`, which backtracks quadratically: every
+ * `](` in an unclosed run rescans that whole run looking for `.md)` and fails
+ * one character at a time. A 240 KB `index.md` of `](a](a](a…` took ten seconds
+ * here, and index.md is model-authored inside a skill package that is meant to
+ * be shared. Advancing past each `)` — never rescanning a region — is the same
+ * answer in one pass.
+ */
+function markdownPageLinks(markdown: string): string[] {
+  const targets: string[] = [];
+  let at = 0;
+  for (;;) {
+    const open = markdown.indexOf('](', at);
+    if (open < 0) break;
+    const close = markdown.indexOf(')', open + 2);
+    if (close < 0) break; // no closer anywhere after this point, so no link can follow
+    const target = markdown.slice(open + 2, close);
+    at = close + 1;
+    if (target === '' || /[#\s]/.test(target) || !target.endsWith('.md')) continue;
+    targets.push(target);
+  }
+  return targets;
+}
+
 export function validateSkill(options: ValidateSkillOptions): ValidationResult {
   const { skillDir } = options;
   const errors: string[] = [];
@@ -85,14 +111,16 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     errors.push('references/stages/ is missing');
   }
 
-  // --- agent locator pages (optional subdirectory) ---
+  // --- agent artifact (optional subdirectory) ---
   // Skills without references/agent/ are valid; when the dir exists it should
-  // carry both locator pages, each non-empty. A missing page is a warning —
-  // the skill still routes — but an empty page is a broken reference: error.
+  // carry the entry index and all three fact tables, each non-empty. A missing
+  // one is a warning — the skill still routes — but an empty one is a broken
+  // reference: SKILL.md's recipes grep it, and an empty table answers "no such
+  // symbol" rather than "this file was not written".
   const agentRefDir = join(referencesDir, 'agent');
   if (fileExists(agentRefDir)) {
     const missing: string[] = [];
-    for (const page of ['how_to_use.md', 'disambiguation.md']) {
+    for (const page of ['index.md', 'symbols.tsv', 'files.tsv', 'calls.tsv']) {
       const path = join(agentRefDir, page);
       if (!fileExists(path)) {
         missing.push(page);
@@ -102,7 +130,7 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     }
     if (missing.length > 0) {
       warnings.push(
-        `references/agent/ is missing ${missing.join(' and ')} — the locator pair should ship together`,
+        `references/agent/ is missing ${missing.join(', ')} — the index and its fact tables should ship together`,
       );
     }
   }
@@ -114,15 +142,16 @@ export function validateSkill(options: ValidateSkillOptions): ValidationResult {
     const pages = listFilesRecursive(stagesDir, { extensions: ['.md'] }).map((p) => basename(p, '.md'));
     if (pages.length === 0) warnings.push('references/stages/ contains no pages');
     for (const sid of pages) {
-      const count = index.split(`${sid}.md`).length - 1;
-      if (count === 0) errors.push(`index.md never links stage page ${sid}.md`);
+      // `includes`, not `split(…).length - 1`: only presence is in question,
+      // and splitting allocates the whole index once per stage page.
+      if (!index.includes(`${sid}.md`)) errors.push(`index.md never links stage page ${sid}.md`);
     }
     // Every markdown link in the index that targets a stage page must exist —
     // a linked-but-missing page means the skill silently lost content.
     const pageSet = new Set(pages.map((p) => `${p}.md`));
     const known = new Set(['overview.md', 'index.md', 'register.md', 'registers.md']);
-    for (const match of index.matchAll(/\]\(([^)#\s]+\.md)\)/g)) {
-      const target = basename(match[1] ?? '');
+    for (const link of markdownPageLinks(index)) {
+      const target = basename(link);
       if (!target || known.has(target.toLowerCase())) continue;
       if (!pageSet.has(target))
         errors.push(`index.md links ${target} but references/stages/${target} is missing`);

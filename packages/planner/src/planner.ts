@@ -29,6 +29,14 @@ export interface PlannerOptions {
   promptVars?: Partial<PlannerPromptVars>;
   /** Maximum agent turns before forced finish. Default: the registry default for `maxTurns`. */
   maxTurns?: number;
+  /**
+   * Cooperative cancellation: tested before each turn and passed into every
+   * model call, so a cancelled run stops buying tokens instead of playing out
+   * its remaining turns. An aborted run REJECTS with the signal's reason
+   * (`name === 'AbortError'`) — it never resolves to a {@link PlannerResult},
+   * because a resolved result is something a caller can act on.
+   */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -49,7 +57,7 @@ export interface PlannerResult {
    * as a failure: a run that abandoned the request used to return normally, so the
    * job above it reported success while its own log said "rejected (3/3)".
    */
-  aborted?: 'fabrication' | 'turn-limit' | 'no-plan';
+  aborted?: 'fabrication' | 'turn-limit' | 'no-plan' | 'oversized-reply';
 }
 
 interface Action {
@@ -121,6 +129,20 @@ const FABRICATED_RESULT_RE = /^#{1,3}\s*Tool result\b/im;
 /** How many fabricating replies to correct before giving up on the run. */
 const MAX_FABRICATIONS = 3;
 
+/**
+ * The largest single reply this loop will take, in characters.
+ *
+ * `PLANNER_MAX_TOKENS` holds a well-behaved endpoint to roughly 24k characters,
+ * so this is an order of magnitude of headroom — but it is not merely a memory
+ * guard. The transcript is re-sent IN FULL on every turn, so one runaway reply
+ * is paid for again on each of the remaining turns: thirty turns of a 50 MB
+ * reply is a gigabyte and a half of prompt, and `client.complete` will happily
+ * read a 64 MiB body. Truncating it would leave the planner reasoning from a
+ * mutilated reply, which is the fabrication failure by another route, so refuse
+ * the run and say why.
+ */
+const MAX_REPLY_CHARS = 200_000;
+
 export async function runPlanner(options: PlannerOptions): Promise<PlannerResult> {
   const logger = options.logger ?? silentLogger;
   const maxTurns = options.maxTurns ?? (settingByKey('maxTurns')?.default as number);
@@ -168,6 +190,9 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
   };
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
+    // Before the turn's call, not only inside it: a cancel that lands while a
+    // grep walks a large tree must stop the loop rather than buy one more turn.
+    options.signal?.throwIfAborted();
     const isLast = turn === maxTurns;
     // The reminder goes LAST, after the transcript. Put it only in the system
     // prompt and the final thing the model reads is a tool result — which is
@@ -181,7 +206,28 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerResult
     logger.info(`[planner] turn ${turn}/${maxTurns}: asking the model…`);
     // One action block needs a few hundred tokens; a plan needs a few thousand.
     // Leaving the full budget open let a runaway reply burn 16k tokens per turn.
-    const response = await options.client.complete(prompt, { temperature: 0, maxTokens: PLANNER_MAX_TOKENS });
+    const response = await options.client.complete(prompt, {
+      temperature: 0,
+      maxTokens: PLANNER_MAX_TOKENS,
+      signal: options.signal,
+    });
+    // Bound BEFORE anything reads the reply: the regexes below, the transcript
+    // it would join, and `parseDeclarations` all scale with its length.
+    if (response.text.length > MAX_REPLY_CHARS) {
+      logger.warn(
+        `[planner] turn ${turn}/${maxTurns}: reply was ${response.text.length} characters ` +
+          `(cap ${MAX_REPLY_CHARS}) — refusing it rather than planning from a truncation`,
+      );
+      return {
+        plan:
+          `(planner aborted: the endpoint returned a ${response.text.length}-character reply, which is ` +
+          'not an action block and not a plan. Check OPENAI_BASE_URL and OPENAI_MAX_TOKENS.)',
+        turns: turn,
+        trace,
+        aborted: 'oversized-reply',
+      };
+    }
+
     const action = (response.json ?? undefined) as Action | undefined;
 
     // A reply that writes the harness's own "## Tool result" heading has invented

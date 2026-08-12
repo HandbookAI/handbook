@@ -3,7 +3,7 @@
  * persistence, and loading a completed work directory into a
  * {@link HandbookModel} for the renderer.
  */
-import type { ChatClient } from '@handbook/llm';
+import { LanguageReport, type ChatClient } from '@handbook/llm';
 import { RunProgress, type ProgressSink } from '@handbook/core';
 import {
   MissingArtifactError,
@@ -93,6 +93,8 @@ export interface GenerateOptions {
    * which would claim 20% for a phase that takes seconds.
    */
   onProgress?: ProgressSink;
+  /** Internal: the run-wide language report `generateHandbook` threads through. */
+  languageReport?: LanguageReport;
 }
 
 export interface GenerateStats {
@@ -119,6 +121,27 @@ export const runManifestSchema = z.object({
   /** Whatever the client's optional usage() reported, or null if it has none. */
   usage: z.record(z.string(), z.unknown()).nullable(),
   stats: z.record(z.string(), z.unknown()),
+  /**
+   * Passages that came back in the wrong language and stayed wrong after a
+   * retry. Empty is the normal case and the common one.
+   *
+   * This is the fourth layer of the language guard, and the only one that is a
+   * promise rather than an attempt: the run may ship prose in the wrong
+   * language — dropping it would lose content that is merely mislabelled — but
+   * it will never claim a language it did not deliver. Without a record on
+   * disk, `--narrate-lang ja` could produce a mostly-English handbook stamped
+   * `lang: "ja"` with no trace anywhere.
+   */
+  languageLapses: z
+    .array(
+      z.object({
+        where: z.string(),
+        wanted: z.string(),
+        gotLanguage: z.string().optional(),
+        detail: z.string(),
+      }),
+    )
+    .default([]),
 });
 
 export type RunManifest = z.infer<typeof runManifestSchema>;
@@ -140,7 +163,12 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
   // artifacts would interleave writes (re-entrant, so runPhase1 nests fine).
   return withDirLock(options.workDir, 'handbook', options.logger ?? silentLogger, async () => {
     const startedAt = new Date().toISOString();
-    const stats = await generateLocked(options);
+    // One report for the whole run, so a lapse in stage 12 and one in the
+    // system overview are counted together rather than reported twice.
+    const languageReport = new LanguageReport();
+    const stats = await generateLocked({ ...options, languageReport });
+    const summary = languageReport.summary();
+    if (summary) (options.logger ?? silentLogger).warn(`[lang] ${summary}`);
     const manifest: RunManifest = {
       version: 1,
       model: options.client?.model ?? null,
@@ -149,6 +177,12 @@ export async function generateHandbook(options: GenerateOptions): Promise<Genera
       finishedAt: new Date().toISOString(),
       usage: readClientUsage(options.client),
       stats: stats as unknown as Record<string, unknown>,
+      languageLapses: languageReport.lapses.map((lapse) => ({
+        where: lapse.where,
+        wanted: lapse.wanted,
+        gotLanguage: lapse.gotLanguage,
+        detail: lapse.detail,
+      })),
     };
     writeJsonFile(runManifestPath(options.workDir), manifest);
     return stats;
@@ -348,6 +382,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
         signal,
         logger,
         onProgress: progressFor('narrate'),
+        languageReport: options.languageReport,
       },
     );
     work.saveNarration(narration);
@@ -386,5 +421,30 @@ export function loadHandbookModel(workDir: string, title: string): HandbookModel
     organization: work.loadOrganization(),
     narration,
     registers: work.loadRegisters().registers,
+    // Read from the run manifest rather than stamped here: `Date.now()` at load
+    // time would say when the handbook was RENDERED, and the question a reader
+    // has is when the facts were extracted. A work dir with no manifest — one
+    // that predates it, or a phase-1-only run — leaves the field absent, and
+    // the agent index says so rather than inventing a date.
+    provenance: readProvenance(workDir),
   };
+}
+
+/** When this work dir's facts were produced, from the run manifest if there is one. */
+function readProvenance(workDir: string): HandbookModel['provenance'] {
+  try {
+    const raw = JSON.parse(readFileSync(runManifestPath(workDir), 'utf8')) as {
+      finishedAt?: unknown;
+      commit?: unknown;
+    };
+    if (typeof raw.finishedAt !== 'string' || raw.finishedAt === '') return undefined;
+    return {
+      generatedAt: raw.finishedAt,
+      ...(typeof raw.commit === 'string' && raw.commit !== '' ? { commit: raw.commit } : {}),
+    };
+  } catch {
+    // No manifest, unreadable, or not JSON. Absent provenance is a fact the
+    // header states plainly; a guessed timestamp would not be.
+    return undefined;
+  }
 }

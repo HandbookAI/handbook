@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NARRATE_LANGS, checkLanguage, fileExists, sha256Hex } from '@handbook/core';
 import type { NarrateLang } from '@handbook/core';
@@ -24,8 +24,16 @@ function writeRenderedHandbook(dir: string): void {
 
 function writeAgentSite(dir: string): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'how_to_use.md'), '# How to use this index\n\nSearch, then pick by duty line.\n');
-  writeFileSync(join(dir, 'disambiguation.md'), '# Disambiguation\n\n- `boot` → stage-1 vs stage-2\n');
+  writeFileSync(join(dir, 'index.md'), '# fixture — agent index\n\n## lookup\n\ngrep symbols.tsv\n');
+  writeFileSync(
+    join(dir, 'symbols.tsv'),
+    '# name\tlocation\tkind\tstage\tnCalledBy\tsignature\nloadAll\tsrc/loader.ts:10-42\tfn\tstage-1\t2\tfunction loadAll()\n',
+  );
+  writeFileSync(
+    join(dir, 'files.tsv'),
+    '# path\tstage\trole\tnSymbols\tpurpose[prose]\nsrc/loader.ts\tstage-1\tio_transport\t2\tloads things\n',
+  );
+  writeFileSync(join(dir, 'calls.tsv'), '# callerQualname\tcallerLocation\tcalleeQualname\tcalleeLocation\n');
   writeFileSync(join(dir, 'index.md'), '# Agent locator index\n');
   writeFileSync(join(dir, 'stage-1.md'), 'agent copy of stage-1\n');
 }
@@ -189,7 +197,7 @@ describe('buildSkill with agentDir', () => {
     out = join(hb, 'out');
   });
 
-  it('copies the locator pages into references/agent/ and keeps stage discovery untouched', () => {
+  it('ships the agent index and its fact tables, and keeps stage discovery untouched', () => {
     const result = buildSkill({
       handbookDir: hb,
       outDir: out,
@@ -198,24 +206,28 @@ describe('buildSkill with agentDir', () => {
       agentDir: join(hb, 'agent'),
     });
     expect(result.nStagePages).toBe(2);
-    expect(readFileSync(join(out, 'references', 'agent', 'how_to_use.md'), 'utf8')).toContain('duty line');
-    expect(readFileSync(join(out, 'references', 'agent', 'disambiguation.md'), 'utf8')).toContain(
-      'Disambiguation',
+    expect(readFileSync(join(out, 'references', 'agent', 'symbols.tsv'), 'utf8')).toContain(
+      'src/loader.ts:10-42',
     );
-    // Only the two locator pages ship — never the agent site's index/stage copies.
-    expect(fileExists(join(out, 'references', 'agent', 'index.md'))).toBe(false);
+    expect(readFileSync(join(out, 'references', 'agent', 'files.tsv'), 'utf8')).toContain('src/loader.ts');
+    // The agent's own entry index ships too: it is what SKILL.md's recipes
+    // route to, and previously the whole agent artifact was generated and then
+    // never delivered through the skill at all.
+    expect(fileExists(join(out, 'references', 'agent', 'index.md'))).toBe(true);
     expect(fileExists(join(out, 'references', 'agent', 'stage-1.md'))).toBe(false);
-    expect(fileExists(join(out, 'references', 'stages', 'how_to_use.md'))).toBe(false);
-    expect(result.references).toContain('agent/how_to_use.md');
-    expect(result.references).toContain('agent/disambiguation.md');
+    // The agent index must not be mistaken for a stage page.
+    expect(fileExists(join(out, 'references', 'stages', 'symbols.tsv'))).toBe(false);
+    for (const page of ['index.md', 'symbols.tsv', 'files.tsv', 'calls.tsv']) {
+      expect(result.references).toContain(`agent/${page}`);
+    }
   });
 
   it('extends the routing protocol with an agent-locator step', () => {
     const skill = readFileSync(join(out, 'SKILL.md'), 'utf8');
-    expect(skill).toContain('references/agent/disambiguation.md');
-    expect(skill).toContain('references/agent/how_to_use.md');
+    expect(skill).toContain('references/agent/symbols.tsv');
+    expect(skill).toContain('references/agent/calls.tsv');
     // Reading the real source stays the final numbered step.
-    const agentStep = skill.indexOf('references/agent/disambiguation.md');
+    const agentStep = skill.indexOf('references/agent/symbols.tsv');
     const sourceStep = skill.indexOf('`read_file` the actual source');
     expect(agentStep).toBeGreaterThan(-1);
     expect(sourceStep).toBeGreaterThan(agentStep);
@@ -254,7 +266,7 @@ describe('buildSkill lang: zh', () => {
     expect(frontmatter(skill)).toBe(frontmatter(LEGACY_SKILL_MD));
     expect(skill).toContain('位置索引');
     expect(skill).toContain('references/index.md');
-    expect(skill).toContain('references/agent/disambiguation.md');
+    expect(skill).toContain('references/agent/symbols.tsv');
     expect(skill).toContain('真实源码');
   });
 
@@ -348,20 +360,23 @@ describe('validateSkill references/agent/ coverage', () => {
     return out;
   }
 
-  it('warns (not errors) when only one locator page is present', () => {
+  it('warns (not errors) when one of the fact tables is missing', () => {
     const out = buildWithAgent();
-    rmSync(join(out, 'references', 'agent', 'disambiguation.md'));
+    rmSync(join(out, 'references', 'agent', 'calls.tsv'));
     const result = validateSkill({ skillDir: out });
     expect(result.errors).toEqual([]);
-    expect(result.warnings.join('\n')).toMatch(/agent\/.*disambiguation\.md/);
+    expect(result.warnings.join('\n')).toMatch(/agent\/.*calls\.tsv/);
   });
 
-  it('errors when a locator page is empty', () => {
+  it('errors when a fact table is present but empty', () => {
     const out = buildWithAgent();
-    writeFileSync(join(out, 'references', 'agent', 'how_to_use.md'), '');
+    // An empty table is worse than a missing one: SKILL.md's recipes grep it,
+    // and an empty result reads as "no such symbol" rather than "this file was
+    // never written".
+    writeFileSync(join(out, 'references', 'agent', 'symbols.tsv'), '');
     const result = validateSkill({ skillDir: out });
     expect(result.ok).toBe(false);
-    expect(result.errors.join('\n')).toMatch(/agent\/how_to_use\.md.*empty/);
+    expect(result.errors.join('\n')).toMatch(/agent\/symbols\.tsv.*empty/);
   });
 });
 
@@ -538,5 +553,108 @@ describe('SKILL.md builds in every supported language', () => {
     // The steps list is the copy table talking; the paths around it are not.
     const verdict = checkLanguage(body, lang);
     expect(verdict.ok, `${lang}: ${verdict.detail}`).toBe(true);
+  });
+});
+
+describe('skill — audit A7: destructive --out and untrusted input', () => {
+  function handbook(prefix: string): string {
+    const hb = mkdtempSync(join(tmpdir(), prefix));
+    writeRenderedHandbook(hb);
+    return hb;
+  }
+
+  // A7-S1: `--out` is reachable from a committed handbook.config.yaml and from
+  // HANDBOOK_SKILL_OUT in a project .env, and packaging starts with `rm -rf`.
+  // A lone SKILL.md is NOT proof that this build produced the directory: every
+  // hand-written agent skill has one too, next to scripts and assets that no
+  // handbook build ever writes.
+  it('A7-S1: refuses an --out directory holding a SKILL.md beside unrelated files', () => {
+    const hb = handbook('hb-a7-out-');
+    const out = mkdtempSync(join(tmpdir(), 'hb-a7-userskill-'));
+    writeFileSync(join(out, 'SKILL.md'), '---\nname: my-own-skill\n---\n\nHand written.\n');
+    mkdirSync(join(out, 'scripts'), { recursive: true });
+    writeFileSync(join(out, 'scripts', 'run.py'), 'print("months of work")\n');
+    expect(() => buildSkill({ handbookDir: hb, outDir: out, name: 'demo' })).toThrow(/refusing to overwrite/);
+    expect(readFileSync(join(out, 'scripts', 'run.py'), 'utf8')).toContain('months of work');
+    expect(readFileSync(join(out, 'SKILL.md'), 'utf8')).toContain('Hand written');
+  });
+
+  it('A7-S1b: still rebuilds happily over its own previous output', () => {
+    const hb = handbook('hb-a7-rebuild-');
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo' });
+    expect(() => buildSkill({ handbookDir: hb, outDir: out, name: 'demo' })).not.toThrow();
+    expect(fileExists(join(out, 'references', 'index.md'))).toBe(true);
+  });
+
+  // A7-S1c: `--out` pointing at a SYMLINK to somewhere that matters. `rm -rf`
+  // on a symlink unlinks the link rather than its target, so the target's files
+  // survive either way — but the refusal has to happen anyway, because the
+  // build would otherwise report success while quietly replacing the link.
+  it('A7-S1c: refuses an --out symlink aimed at a populated directory', () => {
+    const hb = handbook('hb-a7-link-');
+    const important = mkdtempSync(join(tmpdir(), 'hb-a7-important-'));
+    writeFileSync(join(important, 'thesis.tex'), 'years of work\n');
+    const out = join(mkdtempSync(join(tmpdir(), 'hb-a7-linkdir-')), 'out');
+    symlinkSync(important, out);
+    expect(() => buildSkill({ handbookDir: hb, outDir: out, name: 'demo' })).toThrow(/refusing to overwrite/);
+    expect(readFileSync(join(important, 'thesis.tex'), 'utf8')).toBe('years of work\n');
+    expect(lstatSync(out).isSymbolicLink()).toBe(true);
+  });
+
+  // A7-S2: nested stage pages are flattened with `basename`, so two pages with
+  // the same file name in different subdirectories silently became one — a page
+  // dropped without a word, which the "never drop" rule forbids.
+  it('A7-S2: refuses a handbook whose nested stage pages collide on their basename', () => {
+    const hb = handbook('hb-a7-collide-');
+    mkdirSync(join(hb, 'stages', 'alpha'), { recursive: true });
+    mkdirSync(join(hb, 'stages', 'beta'), { recursive: true });
+    writeFileSync(join(hb, 'stages', 'alpha', 'x.md'), '# Alpha page\n');
+    writeFileSync(join(hb, 'stages', 'beta', 'x.md'), '# Beta page\n');
+    expect(() => buildSkill({ handbookDir: hb, outDir: join(hb, 'out'), name: 'demo' })).toThrow(
+      /same file name|collide/,
+    );
+  });
+
+  // A7-S3: a coverage assignment path is model-influenced, and the builder
+  // hashed `join(sourceRoot, path)` with no containment check — so `../` read
+  // (and published the hash of) a file outside the tree entirely.
+  it('A7-S3: refuses a coverage assignment path that escapes the source root', () => {
+    const hb = handbook('hb-a7-cov-');
+    const src = mkdtempSync(join(tmpdir(), 'hb-a7-src-'));
+    const secretDir = mkdtempSync(join(tmpdir(), 'hb-a7-secret-'));
+    writeFileSync(join(secretDir, 'secret.txt'), 'topsecret\n');
+    const escaping: Assignment = {
+      version: 1,
+      fileStage: { [`../${basename(secretDir)}/secret.txt`]: { stage: 'stage-1', also: [] } },
+      buckets: { 'stage-1': [`../${basename(secretDir)}/secret.txt`] },
+      coverage: { nFiles: 1, nAssigned: 1, unassigned: [] },
+    };
+    const out = join(hb, 'out');
+    expect(() =>
+      buildSkill({
+        handbookDir: hb,
+        outDir: out,
+        name: 'demo',
+        coverage: { assignment: escaping, sourceRoot: src },
+      }),
+    ).toThrow(/escape/);
+    // The refusal happens BEFORE the destructive clean, so nothing was written.
+    expect(fileExists(out)).toBe(false);
+  });
+
+  // A7-S4: `/\]\(([^)#\s]+\.md)\)/g` backtracks quadratically — every `](`
+  // rescans the whole unclosed run looking for `.md)`. A 240 KB index.md took
+  // ~10 s here; a few megabytes takes hours. index.md is model-authored and a
+  // skill package is meant to be shareable, so this is reachable input.
+  it('A7-S4: validates a pathological index.md without quadratic backtracking', () => {
+    const hb = handbook('hb-a7-redos-');
+    const out = join(hb, 'out');
+    buildSkill({ handbookDir: hb, outDir: out, name: 'demo' });
+    writeFileSync(join(out, 'references', 'index.md'), '](a'.repeat(80_000));
+    const started = Date.now();
+    const result = validateSkill({ skillDir: out });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(result.ok).toBe(false);
   });
 });
