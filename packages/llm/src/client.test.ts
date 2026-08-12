@@ -4,6 +4,7 @@ import {
   extractAssistantText,
   llmConfigFromValues,
   looksLikeGatewayPage,
+  readBoundedBody,
   resolveLlmEnv,
 } from './client.js';
 import { PermanentError, settingByKey, silentLogger } from '@handbook/core';
@@ -701,5 +702,144 @@ describe('truncated completions', () => {
         )) as unknown as typeof fetch,
     });
     await expect(client.complete('p')).resolves.toMatchObject({ json: { ok: 1 } });
+  });
+});
+
+describe('a response body is bounded', () => {
+  /**
+   * `response.json()` and `response.text()` buffer without a ceiling. A base URL
+   * typo pointing at a file server, or a gateway streaming an endless error
+   * page, then kills the process by memory exhaustion rather than by an error
+   * anyone can act on. These prove it refuses instead — and refuses EARLY.
+   */
+  const streamOf = (chunks: Uint8Array[], headers: Record<string, string> = {}): Response =>
+    ({
+      headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
+      body: {
+        getReader() {
+          let i = 0;
+          return {
+            read: async () => (i < chunks.length ? { done: false, value: chunks[i++] } : { done: true }),
+            cancel: async () => undefined,
+          };
+        },
+      },
+      text: async () => Buffer.concat(chunks).toString('utf8'),
+    }) as unknown as Response;
+
+  const kb = (n: number, byte = 0x61): Uint8Array => new Uint8Array(n * 1024).fill(byte);
+
+  it('reads a body that fits', async () => {
+    expect(await readBoundedBody(streamOf([Buffer.from('{"ok":1}')]), 1024)).toBe('{"ok":1}');
+  });
+
+  it('refuses mid-stream, without buffering the whole thing', async () => {
+    // Ten chunks offered, a cap of four. It must stop reading rather than
+    // collect all ten and measure afterwards — measuring afterwards is the
+    // memory exhaustion this guard exists to prevent.
+    let served = 0;
+    const chunks = Array.from({ length: 10 }, () => kb(1));
+    const counting = {
+      headers: { get: () => null },
+      body: {
+        getReader: () => ({
+          read: async () =>
+            served < chunks.length ? { done: false, value: chunks[served++] } : { done: true },
+          cancel: async () => undefined,
+        }),
+      },
+    } as unknown as Response;
+    await expect(readBoundedBody(counting, 4 * 1024)).rejects.toThrow(/more than/i);
+    expect(served).toBeLessThanOrEqual(5);
+  });
+
+  it('short-circuits on a declared length, before reading a single byte', async () => {
+    let read = false;
+    const declared = {
+      headers: { get: (k: string) => (k.toLowerCase() === 'content-length' ? String(500 * 1024) : null) },
+      body: {
+        getReader: () => ({
+          read: async () => {
+            read = true;
+            return { done: true };
+          },
+          cancel: async () => undefined,
+        }),
+      },
+    } as unknown as Response;
+    await expect(readBoundedBody(declared, 1024)).rejects.toThrow(/more than/i);
+    expect(read).toBe(false);
+  });
+
+  it('still bounds a response that exposes no stream', async () => {
+    const noStream = {
+      headers: { get: () => null },
+      body: null,
+      text: async () => 'x'.repeat(5000),
+    } as unknown as Response;
+    await expect(readBoundedBody(noStream, 1024)).rejects.toThrow(/more than/i);
+  });
+
+  it('measures bytes, not characters', async () => {
+    // Four emoji are 4 UTF-16 units and 16 bytes. A character count would let
+    // a body four times the cap through on non-Latin text — which is most of
+    // the languages this tool generates in.
+    const emoji = Buffer.from('🚀🚀🚀🚀');
+    expect(emoji.byteLength).toBe(16);
+    await expect(readBoundedBody(streamOf([emoji]), 8)).rejects.toThrow(/more than/i);
+  });
+
+  it('calls the oversize refusal permanent, so it is not retried', async () => {
+    await expect(readBoundedBody(streamOf([kb(4)]), 1024)).rejects.toBeInstanceOf(PermanentError);
+  });
+
+  it('names the likely cause, because the fix is the base URL', async () => {
+    await expect(readBoundedBody(streamOf([kb(4)]), 1024)).rejects.toThrow(/base URL/i);
+  });
+});
+
+describe('a 200 that is not JSON', () => {
+  it('is reported as a wrong endpoint, not as an empty completion', async () => {
+    // Pointing `baseUrl` at a web server rather than an API is the single most
+    // common misconfiguration, and "empty completion" sends the reader looking
+    // at their prompt instead of at their URL.
+    const client = new OpenAiChatClient({
+      logger: silentLogger,
+      config: {
+        apiKey: 'k',
+        model: 'm',
+        baseUrl: 'http://127.0.0.1:1/v1',
+        maxTokens: 10,
+        maxRetries: 0,
+        retryBackoffMs: 1,
+        timeoutMs: 1000,
+        extraBody: {},
+      },
+      fetchImpl: (async () =>
+        new Response('<!DOCTYPE html><html><body>hello</body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        })) as unknown as typeof fetch,
+    });
+    await expect(client.complete('hi')).rejects.toThrow(/not an API endpoint/i);
+  });
+
+  it('quotes a non-HTML 200 so the reader can see what answered', async () => {
+    const client = new OpenAiChatClient({
+      logger: silentLogger,
+      config: {
+        apiKey: 'k',
+        model: 'm',
+        baseUrl: 'http://127.0.0.1:1/v1',
+        maxTokens: 10,
+        maxRetries: 0,
+        retryBackoffMs: 1,
+        timeoutMs: 1000,
+        extraBody: {},
+      },
+      fetchImpl: (async () =>
+        new Response('upstream connect error', { status: 200 })) as unknown as typeof fetch,
+    });
+    await expect(client.complete('hi')).rejects.toThrow(/not JSON.*upstream connect error/is);
   });
 });

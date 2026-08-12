@@ -228,6 +228,68 @@ const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 405, 410, 422]);
  */
 const REASONING_MODEL_RE = /gpt-5|gpt-4\.1|o[1-9]/i;
 
+/**
+ * The most body this client will read from an endpoint, in bytes.
+ *
+ * A completion is bounded by `max_tokens`, so even a 128k-token answer is under
+ * a megabyte of text. Everything above that is not an answer: a `baseUrl` typo
+ * pointing at a file server, a gateway streaming an endless error page, or an
+ * endpoint that is simply broken. `response.json()` and `response.text()` both
+ * buffer the whole body with no ceiling, so without this the process dies of
+ * memory exhaustion on input it should have rejected in the first megabyte.
+ *
+ * 64 MiB is far above any legitimate reply and far below anything that hurts.
+ */
+const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Read a response body, refusing one that is implausibly large.
+ *
+ * Checks the declared length first so an honest oversized body costs nothing,
+ * then counts bytes while streaming so a body that lies (or omits the header,
+ * as a chunked response does) is still caught. Falls back to buffering when the
+ * response exposes no stream, which is what a hand-built `Response` in a test
+ * and some fetch polyfills do.
+ */
+export async function readBoundedBody(response: Response, maxBytes = MAX_RESPONSE_BYTES): Promise<string> {
+  const tooBig = (seen: number): Error =>
+    new PermanentError(
+      `LLM endpoint returned more than ${Math.round(maxBytes / (1024 * 1024))} MiB (${seen} bytes and still going) — ` +
+        'that is not a completion; check that the base URL points at an API and not at a file or a proxy error page',
+    );
+
+  const declared = Number(response.headers?.get?.('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooBig(declared);
+
+  const stream = response.body;
+  if (!stream) {
+    const text = await response.text();
+    // Byte length, not string length: one emoji is two UTF-16 units and four bytes.
+    if (Buffer.byteLength(text) > maxBytes) throw tooBig(Buffer.byteLength(text));
+    return text;
+  }
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let seen = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      seen += value.byteLength;
+      // Refuse mid-stream rather than after the fact — the point is never to
+      // hold the whole thing in memory.
+      if (seen > maxBytes) throw tooBig(seen);
+      chunks.push(value);
+    }
+  } finally {
+    // Releases the connection; without it an abandoned body keeps the socket.
+    reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /** Is this error body an edge/gateway HTML page rather than an API response? */
 export function looksLikeGatewayPage(body: string): boolean {
   const head = body.trimStart().slice(0, 200).toLowerCase();
@@ -367,6 +429,18 @@ export class OpenAiChatClient implements ChatClient {
       headers = { 'content-type': 'application/json', authorization: `Bearer ${this.config.apiKey}` };
     }
 
+    // `-v` used to produce one debug line for a whole run, which made the level
+    // useless for the thing people actually reach for it to answer: why a run is
+    // slow, or expensive, or hitting a limit. Prompt size and the token ceiling
+    // are the two numbers that explain both, and neither is visible anywhere
+    // else — `usage()` reports totals, not per call.
+    //
+    // The URL is logged; the key never is. It is in `headers`, and headers are
+    // deliberately not part of this line.
+    this.logger.debug(
+      `[llm] POST ${url} model=${this.model} prompt=${prompt.length}ch max_tokens=${maxTokens}`,
+    );
+    const startedAt = Date.now();
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers,
@@ -380,7 +454,11 @@ export class OpenAiChatClient implements ChatClient {
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
+      // A bounded read even on the error path: a broken gateway is exactly the
+      // thing that answers with an unbounded stream.
+      const body = await readBoundedBody(response).catch((e: unknown) =>
+        e instanceof PermanentError ? e.message : '',
+      );
       // An HTML body means the API never saw the request — a gateway, WAF or
       // load balancer answered instead. Say so in one line rather than dumping
       // 300 characters of markup into the log, and retry it: an edge verdict
@@ -403,7 +481,19 @@ export class OpenAiChatClient implements ChatClient {
       throw new Error(message); // 408/429/5xx → retryable
     }
 
-    const payload = (await response.json()) as Record<string, unknown>;
+    this.logger.debug(`[llm] ${response.status} in ${Date.now() - startedAt}ms`);
+    const raw = await readBoundedBody(response);
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      // A 200 that is not JSON is a gateway or a wrong URL, not an answer.
+      throw new Error(
+        looksLikeGatewayPage(raw)
+          ? 'LLM endpoint answered 200 with an HTML page — the base URL is not an API endpoint'
+          : `LLM endpoint returned a 200 that is not JSON: ${raw.slice(0, 200)}`,
+      );
+    }
     if (provider) {
       const reply = provider.reply(payload);
       // Metered on EVERY response, including one that is about to be rejected:
