@@ -1,14 +1,18 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Node } from 'web-tree-sitter';
-import type { FunctionNode } from '@handbook/core';
+import type { FunctionNode, Logger, TypeKind, TypeNode } from '@handbook/core';
 import {
   createAdapter,
   boundaryOf,
   buildStandardIndexes,
+  declaredTypeKinds,
+  dedupeTypesById,
+  dirKey,
   dirOf,
+  lookupBareType,
   lookupScoped,
   resolveFieldType,
   resolveOwnMethod,
@@ -68,12 +72,39 @@ describe('buildStandardIndexes — moduleFunctions (audit finding A1)', () => {
 });
 
 describe('buildStandardIndexes — typeToModule', () => {
-  it('maps a declared owner to its scan module, first declaration winning', () => {
+  it('maps a declared owner to its scan module', () => {
+    const std = buildStandardIndexes([
+      scanOf('a', { ownerMethods: new Map([['Engine', new Set(['spin'])]]) }),
+    ]);
+    expect(std.typeToModule.get('Engine')).toBe('a');
+    expect(std.ambiguousTypes.has('Engine')).toBe(false);
+  });
+
+  it('withdraws a bare name two modules both declare, instead of picking the first', () => {
+    // This assertion used to require `'a'` — first declaration wins — and that
+    // expectation was the bug. Two modules declaring `Config`, or `Engine`, is
+    // routine above a few thousand lines, and the winner then answered for
+    // every later reference: `from b import Engine; Engine()` resolved to A's
+    // constructor and shipped as a REAL edge with dropped-calls.json empty.
+    // A guessed edge is indistinguishable from a real one downstream, which is
+    // precisely what invariant 2 forbids.
     const std = buildStandardIndexes([
       scanOf('a', { ownerMethods: new Map([['Engine', new Set(['spin'])]]) }),
       scanOf('b', { ownerMethods: new Map([['Engine', new Set(['other'])]]) }),
     ]);
-    expect(std.typeToModule.get('Engine')).toBe('a');
+    expect(std.typeToModule.has('Engine')).toBe(false);
+    expect(std.ambiguousTypes.has('Engine')).toBe(true);
+  });
+
+  it('does not call a name ambiguous when both scans agree on the module', () => {
+    // Two scans of the same module (a re-scan, or a language whose scan is
+    // emitted per file) must not withdraw the name from the table.
+    const std = buildStandardIndexes([
+      scanOf('same', { ownerMethods: new Map([['Engine', new Set(['spin'])]]) }),
+      scanOf('same', { ownerMethods: new Map([['Engine', new Set(['other'])]]) }),
+    ]);
+    expect(std.typeToModule.get('Engine')).toBe('same');
+    expect(std.ambiguousTypes.has('Engine')).toBe(false);
   });
 
   it('honours typeModules as the owning module (inline-module languages)', () => {
@@ -126,12 +157,41 @@ describe('buildStandardIndexes — scopedTypeToModule', () => {
     expect(buildStandardIndexes([scanOf('app')]).scopedTypeToModule.size).toBe(0);
   });
 
-  it('keeps the first declaration of a name within one scope', () => {
+  it('withdraws a name two modules declare in the same scope', () => {
+    // This test previously asserted that the FIRST declaration won, which was
+    // the defect written down as an expectation. A scope is not unique across a
+    // repository: C++ re-opens `namespace detail` in every file that wants it,
+    // so `detail::Impl` in two translation units is two unrelated types. Giving
+    // it to whichever file was scanned first resolved every reference to one of
+    // them and shipped the result as a real edge — invariant 2's exact
+    // prohibition, with `dropped-calls.json` left empty.
     const std = buildStandardIndexes([
       scanOf('a', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
       scanOf('b', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
     ]);
+    expect(std.scopedTypeToModule.has(scopedKey('ns', 'T'))).toBe(false);
+    expect(std.ambiguousScopedTypes.has(scopedKey('ns', 'T'))).toBe(true);
+  });
+
+  it('does not let a third declaration re-award a withdrawn name', () => {
+    // Order must not decide it. Once withdrawn, a later scan claiming the same
+    // key cannot put it back — otherwise the answer depends on scan order,
+    // which is the property that made this wrong in the first place.
+    const std = buildStandardIndexes([
+      scanOf('a', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
+      scanOf('b', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
+      scanOf('c', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
+    ]);
+    expect(std.scopedTypeToModule.has(scopedKey('ns', 'T'))).toBe(false);
+  });
+
+  it('leaves an unambiguous scoped name alone', () => {
+    const std = buildStandardIndexes([
+      scanOf('a', { scopedTypes: new Map([['ns', new Set(['T'])]]) }),
+      scanOf('b', { scopedTypes: new Map([['other', new Set(['T'])]]) }),
+    ]);
     expect(std.scopedTypeToModule.get(scopedKey('ns', 'T'))).toBe('a');
+    expect(std.ambiguousScopedTypes.size).toBe(0);
   });
 
   it('honours typeModules as the owning module, like typeToModule does', () => {
@@ -194,6 +254,60 @@ describe('scopedKey / lookupScoped', () => {
   });
 });
 
+describe('an ambiguous scope ends the lookup instead of falling outward', () => {
+  /**
+   * The subtle half of the fix. Withdrawing `detail::Impl` from the table is
+   * not enough on its own: `lookupScoped` walks scopes from innermost outward,
+   * so a withdrawn inner key just means the walk continues and finds the GLOBAL
+   * `Impl` — turning "we cannot tell which of these two" into a confident edge
+   * pointing at a third thing entirely. That is worse than the original bug.
+   */
+  const std = buildStandardIndexes([
+    scanOf('a', { scopedTypes: new Map([['detail', new Set(['Impl'])]]) }),
+    scanOf('b', { scopedTypes: new Map([['detail', new Set(['Impl'])]]) }),
+    scanOf('global', { scopedTypes: new Map([['', new Set(['Impl'])]]) }),
+  ]);
+
+  it("finds nothing, rather than the enclosing scope's unrelated type", () => {
+    const hit = lookupScoped(std.scopedTypeToModule, ['detail', ''], 'Impl', std.ambiguousScopedTypes);
+    expect(hit).toBeUndefined();
+  });
+
+  it('would have resolved to the outer scope without the ambiguity set', () => {
+    // The same call WITHOUT the set — proving the guard is what stops it, and
+    // that this test is not passing for some unrelated reason.
+    const hit = lookupScoped(std.scopedTypeToModule, ['detail', ''], 'Impl');
+    expect(hit?.value).toBe('global');
+  });
+
+  it('still resolves a name that is only ambiguous in some other scope', () => {
+    const hit = lookupScoped(std.scopedTypeToModule, ['', 'detail'], 'Impl', std.ambiguousScopedTypes);
+    expect(hit?.value).toBe('global');
+  });
+});
+
+describe('lookupBareType', () => {
+  it('answers undefined for a name nobody declares', () => {
+    expect(lookupBareType(buildStandardIndexes([scanOf('a')]), 'Nope')).toBeUndefined();
+  });
+
+  it('answers undefined for a name two modules declare', () => {
+    // Callers want the same thing in both cases — fall through to
+    // `unresolvedOf` — and the whole point of the helper is that an adapter
+    // cannot forget the second case.
+    const std = buildStandardIndexes([
+      scanOf('a', { ownerMethods: new Map([['Config', new Set(['load'])]]) }),
+      scanOf('b', { ownerMethods: new Map([['Config', new Set(['save'])]]) }),
+    ]);
+    expect(lookupBareType(std, 'Config')).toBeUndefined();
+  });
+
+  it('answers the module for an unambiguous one', () => {
+    const std = buildStandardIndexes([scanOf('a', { ownerMethods: new Map([['Only', new Set()]]) })]);
+    expect(lookupBareType(std, 'Only')).toBe('a');
+  });
+});
+
 describe('buildStandardIndexes — typeMethods', () => {
   it('keys methods by owning module + owner and unions same-key scans', () => {
     const std = buildStandardIndexes([
@@ -219,13 +333,20 @@ describe('buildStandardIndexes — typeMethods', () => {
 });
 
 describe('buildStandardIndexes — directoryFunctions', () => {
-  it('indexes free functions per directory, first file winning', () => {
+  it('withdraws a free function two files in one directory both declare', () => {
+    // Also previously an assertion that first-wins was correct. Go cannot
+    // produce this — one package, one name, or it does not compile — but Swift
+    // shares this table and its `private func` is FILE-scoped, so two files
+    // legitimately declaring `Helper` is ordinary Swift. Pointing one file's
+    // call at the other file's function is an invented edge.
     const std = buildStandardIndexes([
       scanOf('app.a', { files: ['app/a.x'], freeFunctions: new Set(['Helper']) }),
       scanOf('app.b', { files: ['app/b.x'], freeFunctions: new Set(['Helper', 'Other']) }),
     ]);
     const pkg = std.directoryFunctions.get('app');
-    expect(pkg?.get('Helper')).toBe('app.a');
+    expect(pkg?.has('Helper')).toBe(false);
+    expect(std.ambiguousDirectoryFunctions.has(dirKey('app', 'Helper'))).toBe(true);
+    // The name only ONE of them declares is unaffected.
     expect(pkg?.get('Other')).toBe('app.b');
   });
 
@@ -648,5 +769,208 @@ describe('SpineAdapter.analyze — WASM lifetime', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('SpineAdapter.analyze — files it could not turn into facts', () => {
+  /**
+   * The driver had two silent `continue`s — an unreadable file and a null tree —
+   * and never asked `rootNode.hasError`. All three left the file listed as
+   * scanned with zero functions, which the cards pass then described as "a file
+   * with 0 functions" and `_coverage.json` counted as fully covered: the
+   * handbook asserted, as a parser fact, something no parser ever saw.
+   *
+   * A real mini-repo with a real grammar, because the whole question here is
+   * what tree-sitter does with broken source. `broken.py` is a DIRECTORY rather
+   * than a chmod-000 file: `readFileSync` raises EISDIR for every user, whereas
+   * a mode-000 file is readable by root and the test would pass vacuously in a
+   * container.
+   */
+  const spec = (log: string[]) =>
+    createAdapter<BaseScan>({
+      name: 'coverage-probe',
+      extensions: ['.py'],
+      grammarFor: () => 'python',
+      moduleIdForFile: (file) => file.replace(/\.py$/, ''),
+      capabilities: { tier: 'generic', callTypes: ['unresolved'], selfAttrs: false, statementSpans: false },
+      emptyScan: (moduleId) => ({
+        moduleId,
+        files: [],
+        functions: [],
+        fnContext: new Map(),
+        imports: new Map(),
+        ownerMethods: new Map(),
+        fieldTypes: new Map(),
+        freeFunctions: new Set(),
+      }),
+      scan: (scan, root, file) => {
+        for (const child of root.namedChildren) {
+          if (child?.type !== 'function_definition') continue;
+          const name = child.childForFieldName('name')?.text ?? '?';
+          scan.freeFunctions.add(name);
+          scan.functions.push(fnNode(`${scan.moduleId}.${name}`, name, file));
+        }
+        log.push(`scanned ${file}`);
+      },
+      extractCalls: () => [],
+    });
+
+  function fnNode(id: string, name: string, file: string): FunctionNode {
+    return {
+      id,
+      name,
+      qualname: name,
+      file,
+      lineStart: 1,
+      lineEnd: 2,
+      signature: `${name}()`,
+      isAsync: false,
+      isMethod: false,
+      className: null,
+      decorators: [],
+      kind: 'internal',
+      synthetic: false,
+      selfAttrsRead: [],
+      selfAttrsWritten: [],
+      paramTypes: {},
+    };
+  }
+
+  let root: string;
+  let warnings: string[];
+  let scanned: string[];
+  let analysis: Awaited<ReturnType<ReturnType<typeof spec>['analyze']>>;
+
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), 'spine-scan-coverage-'));
+    writeFileSync(join(root, 'good.py'), 'def alpha():\n    return 1\n');
+    mkdirSync(join(root, 'broken.py'));
+    // Above the 8 MiB scan ceiling. Real content, so nothing about this test
+    // depends on the file being unparseable — it is skipped purely on size.
+    writeFileSync(join(root, 'huge.py'), `def gamma():\n    return 3\n${'# pad\n'.repeat(2_200_000)}`);
+    writeFileSync(join(root, 'partial.py'), 'def beta():\n    return 2\n\nclass Wrong(:\n    pass\n');
+    warnings = [];
+    scanned = [];
+    const logger: Logger = {
+      debug: () => {},
+      info: () => {},
+      warn: (m) => warnings.push(m),
+      error: () => {},
+      child: () => logger,
+    };
+    analysis = await spec(scanned).analyze(['good.py', 'broken.py', 'partial.py', 'huge.py'], root, {
+      logger,
+    });
+  });
+
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  it('records the unreadable file with its real cause instead of dropping it', () => {
+    const entry = analysis.unparsedFiles?.find((f) => f.file === 'broken.py');
+    expect(entry?.reason).toBe('unreadable');
+    expect(entry?.detail).toMatch(/EISDIR|illegal operation on a directory/i);
+    expect(scanned).not.toContain('scanned broken.py');
+  });
+
+  it('warns about it, so a run that lost a file does not end like a clean one', () => {
+    expect(warnings.some((w) => w.includes('broken.py') && /unreadable/.test(w))).toBe(true);
+  });
+
+  it('records a file tree-sitter parsed with syntax errors as partial', () => {
+    const entry = analysis.unparsedFiles?.find((f) => f.file === 'partial.py');
+    expect(entry?.reason).toBe('partial');
+    expect(entry?.detail).toMatch(/incomplete/);
+    expect(warnings.some((w) => w.includes('parsed with syntax errors'))).toBe(true);
+  });
+
+  it('keeps the facts a partial parse DID yield', () => {
+    // The point of `partial` rather than `unparsable`: `beta` is real, the file
+    // is still scanned, and only what sat inside the ERROR node is missing.
+    expect(scanned).toContain('scanned partial.py');
+    expect(analysis.functions.map((f) => f.name).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  it('says nothing about a file that read and parsed cleanly', () => {
+    expect(analysis.unparsedFiles?.some((f) => f.file === 'good.py')).toBe(false);
+  });
+
+  describe('a file too large to be worth parsing', () => {
+    /**
+     * A minified bundle or a generated table can be hundreds of megabytes. Read
+     * as UTF-8 it becomes a JS string about twice that in memory, and then
+     * tree-sitter is asked to parse it — spending the memory and the minutes on
+     * a card nobody will read. Skipping it is right; skipping it SILENTLY is the
+     * same defect as the unreadable file above.
+     */
+    it('is skipped rather than read', () => {
+      expect(scanned).not.toContain('scanned huge.py');
+      expect(analysis.functions.map((f) => f.name)).not.toContain('gamma');
+    });
+
+    it('is recorded with the size as the reason, not a parser failure', () => {
+      const entry = analysis.unparsedFiles?.find((f) => f.file === 'huge.py');
+      expect(entry?.reason).toBe('unreadable');
+      // The detail has to name the SIZE. "unreadable" alone would send the
+      // reader looking at file permissions.
+      expect(entry?.detail).toMatch(/MiB.*limit/);
+    });
+
+    it('warns, so the gap is visible in the run log too', () => {
+      expect(warnings.some((w) => w.includes('huge.py') && /above the/.test(w))).toBe(true);
+    });
+  });
+});
+
+describe('declaredTypeKinds', () => {
+  it('reports the distinct kinds a node-type map produces, sorted', () => {
+    // Sorted because the result lands in graph.json: an unchanged analysis must
+    // re-serialize byte-identically, and Map insertion order is not that promise.
+    const kinds = new Map<string, TypeKind>([
+      ['interface_declaration', 'interface'],
+      ['class_declaration', 'class'],
+      ['abstract_class_declaration', 'class'],
+    ]);
+    expect(declaredTypeKinds(kinds)).toEqual(['class', 'interface']);
+  });
+
+  it('is derived, so widening the map widens the declaration in the same edit', () => {
+    // The whole point: a hand-written list is how a capability claim goes stale.
+    const before = new Map<string, TypeKind>([['class_declaration', 'class']]);
+    const after = new Map(before).set('record_declaration', 'record');
+    expect(declaredTypeKinds(before)).toEqual(['class']);
+    expect(declaredTypeKinds(after)).toEqual(['class', 'record']);
+  });
+
+  it('reports nothing for an empty map', () => {
+    expect(declaredTypeKinds(new Map())).toEqual([]);
+  });
+});
+
+describe('dedupeTypesById', () => {
+  const type = (id: string, lineStart: number): TypeNode => ({
+    id,
+    name: 'Merged',
+    qualname: 'Merged',
+    file: 'm.ts',
+    lineStart,
+    lineEnd: lineStart + 2,
+    kind: 'interface',
+    signature: 'interface Merged',
+    container: null,
+  });
+
+  it('keeps the FIRST declaration, unlike dedupeFunctionsById which keeps the last', () => {
+    // For a function, last-wins is semantic: the last definition is the one live at
+    // runtime. For a merged TypeScript interface BOTH halves are live, so the
+    // earliest is where a reader starts — and it is the only choice that keeps the
+    // span pointing at the first thing in the file.
+    const kept = dedupeTypesById([type('type:m.Merged', 10), type('type:m.Merged', 40)]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]?.lineStart).toBe(10);
+  });
+
+  it('keeps distinct ids apart', () => {
+    const kept = dedupeTypesById([type('type:m.A', 1), type('type:m.B', 5)]);
+    expect(kept.map((t) => t.id)).toEqual(['type:m.A', 'type:m.B']);
   });
 });

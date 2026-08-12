@@ -19,6 +19,9 @@ the same language-agnostic IR no matter what the code is written in:
 
 - every **function and method**, with its file, line range, signature, decorators,
   parameter types, and the instance attributes it reads and writes;
+- every **named type** — class, interface, struct, record, enum, trait, alias — with the
+  line span of its **declaration**, for the languages listed under
+  [type extraction](#type-extraction-is-declared-per-language) below;
 - every **call edge**, resolved through `self`/`this`, attribute types, parameter type
   annotations, imports, and inheritance;
 - every **boundary call** — where your code leaves for a third-party library;
@@ -78,12 +81,13 @@ handbook analyze --source /path/to/repo --work work/myrepo
 
 ### What lands on disk
 
-| File                 | Contents                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `graph.json`         | The graph: metadata, degree-annotated nodes, edges, per-class self-attribute index |
-| `functions.csv`      | Every function, flat — for `grep`, a spreadsheet, or a quick sanity check          |
-| `graph.dot`          | Graphviz. `dot -Tsvg graph.dot -o graph.svg`                                       |
-| `dropped-calls.json` | Unresolved calls by category, with the raw call text and line                      |
+| File                 | Contents                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `graph.json`         | The graph: metadata, degree-annotated nodes, edges, per-class self-attribute index, parsed type declarations |
+| `functions.csv`      | Every function, flat — for `grep`, a spreadsheet, or a quick sanity check                                    |
+| `graph.dot`          | Graphviz. `dot -Tsvg graph.dot -o graph.svg`                                                                 |
+| `dropped-calls.json` | Unresolved calls by category, with the raw call text and line                                                |
+| `scan-coverage.json` | Files that could not be read, could not be parsed, or parsed with syntax errors                              |
 
 ---
 
@@ -124,6 +128,7 @@ readonly capabilities: AdapterCapabilities = {
   callTypes: ['self_method', 'self_attr_method', 'param_method', 'internal_func', /* … */],
   selfAttrs: true,
   statementSpans: true,
+  typeKinds: ['class', 'enum', 'interface'],   // [] = extracts no types
 };
 ```
 
@@ -131,6 +136,46 @@ Phase 1 records this **per language** in the graph metadata, and the renderers s
 in the handbook overview. Both tiers produce identical-looking IR, so without this a
 reader would take a generic-tier call edge for a Python-grade fact. Saying so out loud is
 the whole point.
+
+`register.test.ts` runs every registered adapter against a fixture repo and compares the
+declaration to what was actually emitted, **in both directions** — an under-claim and an
+over-claim both fail the build.
+
+### Type extraction is declared per language
+
+Type extraction is **partial, and the partition is declared**. `typeKinds` lists the kinds
+an adapter actually parses; an empty list is a positive statement that it parses none.
+
+| Language                                              | Extracts | Mapping                                                                                              |
+| ----------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| TypeScript                                            | yes      | `class` (incl. `abstract`) · `interface` · `enum` (incl. `const enum`) · `alias` (`type X = …`)      |
+| Python                                                | yes      | `class`                                                                                              |
+| Go                                                    | yes      | `struct` · `interface` · `alias` (`type A = B`) · `other` (a _defined_ type, `type Celsius float64`) |
+| Rust                                                  | yes      | `struct` · `enum` · `trait` · `alias` (`type`) · `other` (`union`)                                   |
+| Java                                                  | yes      | `class` · `interface` · `enum` · `record` · `other` (`@interface`)                                   |
+| C#                                                    | yes      | `class` · `interface` · `struct` · `record` (incl. `record struct`) · `enum`                         |
+| C/C++, Ruby, PHP, Swift, Dart, Solidity               | **no**   | —                                                                                                    |
+| Shell                                                 | **no**   | the language has no named types                                                                      |
+| Kotlin, Scala, Zig, Objective-C, OCaml (generic tier) | **no**   | —                                                                                                    |
+
+Known gaps inside the covered languages, so a miss is never mistaken for absence:
+
+- **TypeScript**: a type inside a `namespace` is not emitted (the scan is flat over
+  top-level declarations).
+- **C#**: `delegate` is not emitted — it is a named type that fits no bucket, and `other`
+  for something that common would say less than nothing.
+- **Python**: `class Color(Enum)` is reported as a `class`. The only evidence for `enum` is
+  a base-class name any module may define and any import may rename, so it is not inferred.
+- **Every language**: constants, variables and macros are not indexed at all.
+
+The vocabulary is closed (`class` `interface` `struct` `record` `enum` `trait` `alias`
+`other`), like `FILE_ROLES`. A construct that fits none of the first seven gets `other`
+rather than the nearest-looking bucket — and `TypeNode.signature` carries the declaration
+**as written**, so `other` never loses the native keyword.
+
+Where an adapter extracts no types, the handbook's agent artifact falls back to a
+`class-derived` row whose span is `min..max` of the class's **methods**, labelled as
+derived, and `agent/index.md` names which languages are indexed and which are not.
 
 ### Two honest caveats
 
@@ -173,7 +218,7 @@ discoverByExtension(root, exts, extraSkipDirs?, filter?): string[]
 interface LanguageAdapter {
   readonly name: string;
   readonly extensions: readonly string[];
-  readonly capabilities: AdapterCapabilities; // required — see above
+  readonly capabilities: AdapterCapabilities; // required, `typeKinds` included — see above
   discover(sourceRoot: string): string[];
   analyze(files, sourceRoot, options?): Promise<ModuleAnalysis>;
   statementSpans?(filePath, qualname): Promise<Array<[number, number]> | undefined>;
@@ -231,9 +276,23 @@ managed to drift six languages behind.
 - **Two-pass analysis.** Pass 1 collects definitions and builds type indexes; pass 2 walks
   call sites with those indexes in hand. That is what makes `self.attr.method()` and
   `param.method()` resolvable at all.
+- **Types are a sibling of the call graph, not a third node kind in it.** `graph.nodes` is
+  the call graph's vertex set — every member is a possible edge endpoint — so a type lives
+  in `graph.types` instead. Thirteen places walk `graph.nodes` asking "is this a
+  function?"; a third kind would make each of them correct only by remembering to ask, and
+  the cost of forgetting is a type rendered as a callable.
+- **A type span is parsed or it does not exist.** `TypeNode.lineStart` is positive by
+  schema. An adapter that can read a type's name but not its position emits nothing: a
+  stale path fails to open and a stale name greps nothing, while a fabricated line range
+  opens the wrong code in silence.
 - **Unresolved is a category, not a guess.** A call the analyzer cannot pin down goes to
   `dropped-calls.json` with its raw text and line. Guessing would poison every downstream
   consumer with edges that look exactly as trustworthy as the real ones.
+- **A file the parser could not read is reported, not erased.** The same rule one level
+  up: an unreadable file, one the grammar rejected, and one that parsed with syntax
+  errors all land in `scan-coverage.json`. The first two are additionally kept out of
+  `graph.metadata.scannedFiles`, so nothing downstream can present a file the parser
+  never saw as a file with zero functions.
 - **A broken adapter must not break discovery.** `discoverAll` catches per-adapter
   failures, logs them, and carries on with the rest.
 - **`web-tree-sitter` is pinned to `~0.25.10`.** 0.26 changed the WASM ABI and fails to

@@ -18,6 +18,9 @@
 
 - 每个**函数和方法**，带文件、行范围、签名、装饰器、参数类型，
   以及它读写的实例属性；
+- 每个**命名类型** —— class、interface、struct、record、enum、trait、别名 ——
+  连同它**声明本身**的行号范围，覆盖范围见下文
+  [类型抽取](#类型抽取是逐语言声明的)；
 - 每条**调用边**，通过 `self`/`this`、属性类型、参数类型标注、import 和继承解析出来；
 - 每个**边界调用** —— 你的代码离开自己、进入第三方库的地方；
 - 每个**未解析的调用**，被分类并隔离到单独的产物里，**而不是猜一个**。
@@ -75,12 +78,13 @@ handbook analyze --source /path/to/repo --work work/myrepo
 
 ### 会落到磁盘上的东西
 
-| 文件                 | 内容                                                        |
-| -------------------- | ----------------------------------------------------------- |
-| `graph.json`         | 图本体：元数据、带出入度的节点、边、逐类的 self 属性索引    |
-| `functions.csv`      | 全部函数，平铺 —— 给 `grep`、给表格、或者快速看一眼是否合理 |
-| `graph.dot`          | Graphviz。`dot -Tsvg graph.dot -o graph.svg`                |
-| `dropped-calls.json` | 按类别归档的未解析调用，带原始调用文本和行号                |
+| 文件                 | 内容                                                                       |
+| -------------------- | -------------------------------------------------------------------------- |
+| `graph.json`         | 图本体：元数据、带出入度的节点、边、逐类的 self 属性索引、解析出的类型声明 |
+| `functions.csv`      | 全部函数，平铺 —— 给 `grep`、给表格、或者快速看一眼是否合理                |
+| `graph.dot`          | Graphviz。`dot -Tsvg graph.dot -o graph.svg`                               |
+| `dropped-calls.json` | 按类别归档的未解析调用，带原始调用文本和行号                               |
+| `scan-coverage.json` | 读不了、解析不了、或解析出语法错误的文件                                   |
 
 ---
 
@@ -120,12 +124,50 @@ readonly capabilities: AdapterCapabilities = {
   callTypes: ['self_method', 'self_attr_method', 'param_method', 'internal_func', /* … */],
   selfAttrs: true,
   statementSpans: true,
+  typeKinds: ['class', 'enum', 'interface'],   // 空数组 = 明确声明"不抽取类型"
 };
 ```
 
 阶段 1 把它**逐语言**记进图的元数据，渲染器再把它写进手册总览。
 两层产出的 IR 看起来一模一样，所以没有这个声明，读者就会把通用层的调用边
 当成 Python 级别的事实。**把话说出来，就是全部的意义。**
+
+`register.test.ts` 会把每个已注册的适配器跑在一份 fixture 仓库上，
+再**双向**比对声明与实际产出：少声明和多声明都会让构建失败。
+
+### 类型抽取是逐语言声明的
+
+类型抽取**是局部的，而且这个边界是声明出来的**。`typeKinds` 列出适配器真正解析的种类；
+空数组是一句肯定的声明——"它不解析任何类型"。
+
+| 语言                                             | 是否抽取 | 映射                                                                                               |
+| ------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
+| TypeScript                                       | 是       | `class`（含 `abstract`）· `interface` · `enum`（含 `const enum`）· `alias`（`type X = …`）         |
+| Python                                           | 是       | `class`                                                                                            |
+| Go                                               | 是       | `struct` · `interface` · `alias`（`type A = B`）· `other`（_定义类型_，如 `type Celsius float64`） |
+| Rust                                             | 是       | `struct` · `enum` · `trait` · `alias`（`type`）· `other`（`union`）                                |
+| Java                                             | 是       | `class` · `interface` · `enum` · `record` · `other`（`@interface`）                                |
+| C#                                               | 是       | `class` · `interface` · `struct` · `record`（含 `record struct`）· `enum`                          |
+| C/C++、Ruby、PHP、Swift、Dart、Solidity          | **否**   | —                                                                                                  |
+| Shell                                            | **否**   | 该语言没有命名类型                                                                                 |
+| Kotlin、Scala、Zig、Objective-C、OCaml（通用层） | **否**   | —                                                                                                  |
+
+已覆盖语言内部仍有的缺口，写在这里，好让"查不到"不被当成"不存在"：
+
+- **TypeScript**：`namespace` 内部的类型不会产出（扫描是对顶层声明的平铺遍历）。
+- **C#**：`delegate` 不产出——它是命名类型，但放进任何一个桶都不对，
+  而对这么常见的东西标 `other`，说的比不说还少。
+- **Python**：`class Color(Enum)` 记为 `class`。判定 `enum` 的唯一依据是一个基类名，
+  而任何模块都能定义它、任何 import 都能改名，所以不做这个推断。
+- **所有语言**：常量、变量和宏完全不进索引。
+
+词表是封闭的（`class` `interface` `struct` `record` `enum` `trait` `alias` `other`），
+和 `FILE_ROLES` 一样。前七个都装不下的构造归入 `other`，而不是塞进"最像"的那个桶——
+并且 `TypeNode.signature` 保留**原样书写**的声明，所以 `other` 从不丢掉语言本身的关键字。
+
+对于不抽取类型的适配器，手册的 agent 产物会退化为一行 `class-derived`：
+跨度取该类**方法**的 `min..max`，并明确标注为推导所得；
+`agent/index.md` 会点名哪些语言进了索引、哪些没有。
 
 ### 两个如实说明的注意点
 
@@ -167,7 +209,7 @@ discoverByExtension(root, exts, extraSkipDirs?, filter?): string[]
 interface LanguageAdapter {
   readonly name: string;
   readonly extensions: readonly string[];
-  readonly capabilities: AdapterCapabilities; // 必填 —— 见上
+  readonly capabilities: AdapterCapabilities; // 必填，含 `typeKinds` —— 见上
   discover(sourceRoot: string): string[];
   analyze(files, sourceRoot, options?): Promise<ModuleAnalysis>;
   statementSpans?(filePath, qualname): Promise<Array<[number, number]> | undefined>;
@@ -218,11 +260,22 @@ pipeline 用它来合成骨架，从而**不必把整张图塞进提示词**。
 
 ## 设计说明
 
+- **类型是调用图的兄弟，不是图里的第三种节点。** `graph.nodes` 是调用图的顶点集 ——
+  里面每一个都可能是一条边的端点 —— 所以类型放在 `graph.types`。
+  现有十三处代码都在遍历 `graph.nodes` 并追问"这是函数吗"；
+  多一种节点只会让这十三处"记得问才对"，而忘记问的代价是把一个类型渲染成可调用的东西。
+- **类型的跨度要么是解析出来的，要么就不存在。** `TypeNode.lineStart` 在 schema 层就是正数。
+  适配器如果只能读出类型名、读不出位置，那就什么都不产出：
+  过期的路径打不开、过期的名字 grep 不到，而编造的行号范围会**悄无声息**地指向错误的代码。
 - **两遍分析。** 第一遍收集定义并建立类型索引；第二遍带着这些索引走调用点。
   这正是 `self.attr.method()` 和 `param.method()` 能被解析出来的原因。
 - **「未解析」是一个类别，不是一次猜测。** 定位不到的调用带着原始文本和行号进
   `dropped-calls.json`。猜一个，就会给所有下游消费者塞进一批
   **看起来和真边一样可信**的假边。
+- **读不了的文件要被记录下来，而不是被抹掉。** 同一条规矩往上抬一层：读不了的文件、
+  语法解析器拒绝的文件、以及解析出语法错误的文件，都会落进 `scan-coverage.json`。
+  前两类还会被排除在 `graph.metadata.scannedFiles` 之外，这样下游就不可能把一个
+  解析器压根没读过的文件，说成是「一个零函数的文件」。
 - **一个坏掉的适配器不能搞垮发现流程。** `discoverAll` 会捕获单个适配器的失败、
   记日志，然后继续跑其余的。
 - **`web-tree-sitter` 锁死在 `~0.25.10`。** 0.26 改了 WASM ABI，加载不了随包的语法。

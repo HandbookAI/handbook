@@ -398,6 +398,23 @@ function capabilitiesOf(spec: GenericLanguageSpec): AdapterCapabilities {
     callTypes: spec.callTypes,
     selfAttrs: false,
     statementSpans: false,
+    // No type extraction, for every generic-tier language, and stated rather than
+    // left implicit.
+    //
+    // The engine DOES know each language's class-like node types — `spec.nodes.class`
+    // is how it finds method owners — so emitting a `class` row per hit would be
+    // easy. It would also be wrong in the way this whole tier is guarded against:
+    // that list is one bucket holding Kotlin's `class` and `object`, Scala's
+    // `class`, `object` and `trait`, and Objective-C's `class_implementation`, so
+    // mapping it onto {@link TypeKind} would report a Scala trait as a class and an
+    // `@implementation` as a declaration. It also finds no interfaces, no enums and
+    // no aliases at all, in languages full of them — so a non-empty declaration
+    // here would tell an agent that a miss means absence.
+    //
+    // The honest move is the same one the tier already makes about call edges:
+    // claim nothing, say so out loud, and let the labelled `class-derived` row
+    // carry what can be inferred.
+    typeKinds: [],
   };
 }
 

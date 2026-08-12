@@ -1,6 +1,7 @@
 /**
- * Assemble a {@link CodeGraph} from adapter output and emit the four phase-1
- * artifacts: `graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+ * Assemble a {@link CodeGraph} from adapter output and emit the five phase-1
+ * artifacts: `graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`
+ * and `scan-coverage.json`.
  *
  * Identical across languages: adapters decide WHAT the nodes/edges are, this
  * module decides how they become a persisted graph.
@@ -14,7 +15,10 @@ import type {
   FunctionNode,
   GraphNode,
   ModuleAnalysis,
+  ScanCoverage,
   SelfAttrsIndex,
+  TypeNode,
+  UnparsedFile,
 } from '@handbook/core';
 import { writeFileAtomic, writeJsonFile } from '@handbook/core';
 
@@ -25,6 +29,12 @@ export interface BuildGraphOptions {
   fileHashes?: Record<string, string>;
   /** Language label for metadata (`multi` for merged graphs). */
   language: string;
+  /**
+   * Files the analysis could not fully turn into facts. Pass `[]` to state that
+   * every scanned file parsed cleanly; omit it only when the caller genuinely
+   * does not know (an out-of-tree adapter that predates the record).
+   */
+  unparsedFiles?: readonly UnparsedFile[];
   /**
    * Extension used to synthesize file names of implicit nodes (e.g. an implied
    * constructor). Pass the analyzed language's extension; empty (default)
@@ -37,12 +47,17 @@ export interface BuildGraphOptions {
 export interface BuildGraphResult {
   graph: CodeGraph;
   dropped: DroppedCalls;
+  scanCoverage: ScanCoverage;
   stats: {
     functions: number;
     edgesKept: number;
     edgesDropped: number;
     internalNodes: number;
     boundaryNodes: number;
+    /** Parsed type declarations, or undefined when no adapter looked for any. */
+    types?: number;
+    /** Files recorded as unreadable, unparsable or partially parsed. */
+    filesUnparsed: number;
   };
 }
 
@@ -63,6 +78,7 @@ export function buildGraph(analysis: ModuleAnalysis, options: BuildGraphOptions)
 
   const internalCount = Object.values(nodes).filter((n) => n.kind === 'internal').length;
   const boundaryCount = Object.values(nodes).filter((n) => n.kind === 'boundary').length;
+  const types = analysis.types ? sortTypes(analysis.types) : undefined;
 
   const graph: CodeGraph = {
     version: 1,
@@ -75,24 +91,51 @@ export function buildGraph(analysis: ModuleAnalysis, options: BuildGraphOptions)
       nInternalFunctions: internalCount,
       nBoundaryNodes: boundaryCount,
       nEdges: kept.length,
+      nTypes: types?.length,
       policy: POLICY,
+      unparsedFiles: options.unparsedFiles ? [...options.unparsedFiles] : undefined,
     },
     nodes,
     edges: kept,
     selfAttrs,
+    // Passed straight through, not derived: a type is a parser fact and this
+    // builder's job is assembly. Undefined stays undefined — see
+    // {@link ModuleAnalysis.types} for why an absent array and an empty one are
+    // different statements.
+    types,
   };
 
+  const unparsed = options.unparsedFiles ?? [];
   return {
     graph,
     dropped: buildDroppedCalls(droppedEdges, generatedAt),
+    scanCoverage: buildScanCoverage(unparsed, options.scannedFiles.length, generatedAt),
     stats: {
       functions: analysis.functions.length,
       edgesKept: kept.length,
       edgesDropped: droppedEdges.length,
       internalNodes: internalCount,
       boundaryNodes: boundaryCount,
+      types: types?.length,
+      filesUnparsed: unparsed.length,
     },
   };
+}
+
+/**
+ * Sort types by `(file, lineStart, name)`.
+ *
+ * Adapters are driven one language at a time and `discoverAll`'s iteration order
+ * is nobody's promise, so without this a multi-language run over an unchanged
+ * tree could reorder the array and produce a different `graph.json`. Same reason
+ * `scan-coverage.json` sorts its file list. Byte-wise on the strings, never
+ * `localeCompare`, so the order does not depend on the developer's machine.
+ */
+function sortTypes(types: readonly TypeNode[]): TypeNode[] {
+  const byBytes = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  return [...types].sort(
+    (a, b) => byBytes(a.file, b.file) || a.lineStart - b.lineStart || byBytes(a.name, b.name),
+  );
 }
 
 function buildNodeTable(
@@ -294,10 +337,31 @@ function buildDroppedCalls(edges: readonly CallEdge[], generatedAt: string): Dro
   };
 }
 
-/** Emit graph.json / functions.csv / graph.dot / dropped-calls.json into `outDir`. */
+function buildScanCoverage(
+  unparsed: readonly UnparsedFile[],
+  nScanned: number,
+  generatedAt: string,
+): ScanCoverage {
+  const byReason: Record<string, number> = {};
+  for (const entry of unparsed) byReason[entry.reason] = (byReason[entry.reason] ?? 0) + 1;
+  return {
+    version: 1,
+    metadata: { generatedAt, nScanned, nUnparsed: unparsed.length, byReason },
+    // Sorted so two runs over an unchanged tree produce a byte-identical file:
+    // adapters are driven per language, and `discoverAll`'s iteration order is
+    // not a promise anyone made.
+    files: [...unparsed].sort((a, b) => a.file.localeCompare(b.file)),
+  };
+}
+
+/**
+ * Emit graph.json / functions.csv / graph.dot / dropped-calls.json /
+ * scan-coverage.json into `outDir`.
+ */
 export function writeGraphArtifacts(result: BuildGraphResult, outDir: string): void {
   writeJsonFile(join(outDir, 'graph.json'), result.graph);
   writeJsonFile(join(outDir, 'dropped-calls.json'), result.dropped);
+  writeJsonFile(join(outDir, 'scan-coverage.json'), result.scanCoverage);
   writeFileAtomic(join(outDir, 'functions.csv'), functionsCsv(result.graph));
   writeFileAtomic(join(outDir, 'graph.dot'), graphDot(result.graph));
 }

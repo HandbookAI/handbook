@@ -7,6 +7,7 @@
  * independently and corrupted artifacts fail loudly instead of propagating.
  */
 import { z } from 'zod';
+import { TYPE_KINDS } from './ir.js';
 
 /** Narration language for all handbook-bound prose. */
 /**
@@ -115,6 +116,34 @@ export const functionNoteSchema = z.object({
 export type FunctionNote = z.infer<typeof functionNoteSchema>;
 
 /**
+ * Per-type annotation on a file card — the {@link TypeNode} facts the renderer
+ * needs, and nothing else.
+ *
+ * Note what is NOT here: `purpose`, `dataFlow`, `relations`. {@link FunctionNote}
+ * carries those because deep mode asks the model to write them; no pass asks the
+ * model about a type, so there is nothing to hold. Leaving the fields off is the
+ * statement — a schema with three permanently-empty prose strings is an invitation
+ * to fill them, and invariant 1 keeps parser facts and model prose apart by
+ * construction rather than by intention.
+ *
+ * `id` is dropped for the same reason `CodeGraph.types` is an array: nothing
+ * resolves a type by id, and a card is already keyed by file.
+ */
+export const typeNoteSchema = z.object({
+  name: z.string(),
+  /** Module-relative name; `Outer.Inner` for a nested declaration. */
+  qualname: z.string(),
+  kind: z.enum(TYPE_KINDS),
+  /** 1-based span of the declaration itself — both bounds parsed, never derived. */
+  lineRange: z.tuple([z.number().int(), z.number().int()]),
+  /** The declaration header as written; names the native construct. */
+  signature: z.string(),
+  /** Enclosing type's qualname for a nested declaration; null at module level. */
+  container: z.string().nullable(),
+});
+export type TypeNote = z.infer<typeof typeNoteSchema>;
+
+/**
  * One card per source file — the handbook's leaf content for that file.
  * Written to `<work>/phase2/cards/<rel-path>.json`.
  * Brief cards carry only purpose/role/lifecycle; deep cards add a
@@ -130,6 +159,21 @@ export const fileCardSchema = z.object({
   lifecycle: z.string(),
   description: z.string().optional(),
   functions: z.array(functionNoteSchema).optional(),
+  /**
+   * Named types declared in this file — a pure parser fact, so unlike
+   * `functions` it is filled in BRIEF mode too.
+   *
+   * `functions` is gated on deep mode because the prose fields are what deep mode
+   * buys; a {@link TypeNote} has no prose, so withholding it at brief detail
+   * would hide a free fact behind an LLM setting.
+   *
+   * Omitted (not `[]`) when the file declares none, or when the adapter that
+   * analyzed it extracts no types at all. Those two are NOT distinguishable here
+   * on purpose — whether types were looked for is a per-language property, and it
+   * is declared once in `graph.metadata.languages[lang].typeKinds` instead of
+   * being restated on several hundred cards.
+   */
+  types: z.array(typeNoteSchema).optional(),
 });
 export type FileCard = z.infer<typeof fileCardSchema>;
 
@@ -256,6 +300,17 @@ export interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  /**
+   * How this model was produced, rendered into the agent artifact's header.
+   *
+   * Optional so a work dir written before this existed still loads. It matters
+   * because the agent artifact's primary payload is now LINE NUMBERS, and a
+   * line number is the one fact that goes wrong silently: a stale path still
+   * exists, a stale symbol name still greps, but a stale line points at the
+   * wrong code with no signal at all. A reader who can see when this was made
+   * can decide whether to trust it.
+   */
+  provenance?: { commit?: string; generatedAt: string };
 }
 
 /** Stage lookup helpers shared by pipeline and renderer. */

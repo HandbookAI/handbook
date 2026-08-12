@@ -124,7 +124,7 @@
  * `#elseif` / `#else` nesting at file, type-body and expression level.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, Logger } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
@@ -865,14 +865,14 @@ function resolveTypeRef(
 ): { type: string; module: string } | undefined {
   const at = ref.lastIndexOf('.');
   if (at < 0) {
-    const hit = lookupScoped(std.scopedTypeToModule, scopes, ref);
+    const hit = lookupScoped(std.scopedTypeToModule, scopes, ref, std.ambiguousScopedTypes);
     return hit ? { type: qualify(hit.scope, ref), module: hit.value } : undefined;
   }
   // `Outer.Inner` seen from scope `S` may mean `S.Outer.Inner` or `Outer.Inner`.
   const prefix = ref.slice(0, at);
   const leaf = ref.slice(at + 1);
   const candidates = scopes.map((s) => qualify(s, prefix));
-  const hit = lookupScoped(std.scopedTypeToModule, candidates, leaf);
+  const hit = lookupScoped(std.scopedTypeToModule, candidates, leaf, std.ambiguousScopedTypes);
   return hit ? { type: qualify(hit.scope, leaf), module: hit.value } : undefined;
 }
 
@@ -1204,6 +1204,11 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  // No type extraction yet — an EMPTY list is the positive declaration, not a
+  // gap in this object. The agent artifact reads it and says so on the page, and
+  // the `class-derived` fallback row (a span inferred from a class's methods,
+  // labelled as inferred) is what covers Swift classes, structs, enums and protocols in the meantime.
+  typeKinds: [],
 };
 
 const SWIFT_SPEC: LanguageSpec<ModuleScan, SwiftIndexes> = {
@@ -1362,7 +1367,7 @@ export class SwiftAdapter extends SpineAdapter<ModuleScan, SwiftIndexes> {
     super(SWIFT_SPEC);
   }
 
-  override discover(sourceRoot: string): string[] {
+  override discover(sourceRoot: string, options: { logger?: Logger } = {}): string[] {
     if (!swiftRuntimeIsSafe()) {
       throw new Error(
         `Swift analysis is disabled on this runtime: tree-sitter-swift aborts the process on V8 ` +
@@ -1370,6 +1375,6 @@ export class SwiftAdapter extends SpineAdapter<ModuleScan, SwiftIndexes> {
           `or use a runtime on V8 < 13, to analyze Swift.`,
       );
     }
-    return super.discover(sourceRoot);
+    return super.discover(sourceRoot, options);
   }
 }

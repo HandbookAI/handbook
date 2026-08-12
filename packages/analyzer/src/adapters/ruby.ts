@@ -1045,7 +1045,7 @@ function resolveTypeSpelling(
   const scoped = (function* () {
     for (const scope of candidates) yield joinScope(scope, qualifier);
   })();
-  const hit = lookupScoped(std.scopedTypeToModule, scoped, name);
+  const hit = lookupScoped(std.scopedTypeToModule, scoped, name, std.ambiguousScopedTypes);
   return hit ? { scope: hit.scope, name, module: hit.value } : undefined;
 }
 
@@ -1400,6 +1400,11 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  // No type extraction yet — an EMPTY list is the positive declaration, not a
+  // gap in this object. The agent artifact reads it and says so on the page, and
+  // the `class-derived` fallback row (a span inferred from a class's methods,
+  // labelled as inferred) is what covers Ruby classes and modules in the meantime.
+  typeKinds: [],
 };
 
 const RUBY_SPEC: LanguageSpec<ModuleScan, RubyIndexes> = {

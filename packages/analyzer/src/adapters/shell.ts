@@ -243,6 +243,10 @@ const CAPABILITIES: AdapterCapabilities = {
   callTypes: ['internal_func', 'boundary', 'unresolved'],
   selfAttrs: false,
   statementSpans: false,
+  // Empty because the LANGUAGE has no named types, not because this adapter
+  // skipped them — the only entry in the list that is a permanent fact rather
+  // than an unfinished one.
+  typeKinds: [],
 };
 
 const SHELL_SPEC: LanguageSpec<ModuleScan, ShellIndexes> = {

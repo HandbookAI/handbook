@@ -586,3 +586,78 @@ describe('JavaAdapter — capability declaration', () => {
     expect(adapter.statementSpans).toBeUndefined();
   });
 });
+
+/**
+ * Java's five type declarations, including the two the grammar's node names would
+ * mis-bucket.
+ */
+describe('JavaAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  const SRC = `package engine;
+
+public class Outer {
+    void go() {}
+
+    static class Inner {
+        void deep() {}
+    }
+}
+
+interface Spinner {
+    void spin();
+}
+
+enum Gear {
+    LOW,
+    HIGH
+}
+
+record Rpm(int value) {}
+
+@interface Nullable {}
+`;
+  const lines = SRC.split('\n');
+  const find = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-java-types-'));
+    mkdirSync(join(root, 'engine'), { recursive: true });
+    writeFileSync(join(root, 'engine', 'Kinds.java'), SRC);
+    analysis = await new JavaAdapter().analyze(['engine/Kinds.java'], root);
+  });
+
+  it('maps class, interface and enum onto the obvious buckets', () => {
+    expect(find('Outer')?.kind).toBe('class');
+    expect(find('Spinner')?.kind).toBe('interface');
+    expect(find('Gear')?.kind).toBe('enum');
+  });
+
+  it('calls a record a record, not a struct', () => {
+    // A Java record is a REFERENCE type, so `struct` would be wrong in the one
+    // vocabulary where `struct` also means "value type" for Go, Rust and C#.
+    expect(find('Rpm')?.kind).toBe('record');
+    expect(find('Rpm')?.signature).toContain('record Rpm(int value)');
+  });
+
+  it('calls an @interface `other`, not an interface', () => {
+    // `@interface` is spelled like one and is nothing like one: not implementable,
+    // never a supertype, never in an `implements` clause. The signature still says
+    // what it is, so the escape hatch loses no information.
+    expect(find('Nullable')?.kind).toBe('other');
+    expect(find('Nullable')?.signature).toContain('@interface Nullable');
+  });
+
+  it('qualifies a nested type by its enclosing type', () => {
+    // `Inner` alone would collide with any other `Inner` in the module; call
+    // resolution still keys on the simple name, which is how Java source refers to
+    // a nested type from inside its enclosing one.
+    const inner = find('Inner');
+    expect(inner?.qualname).toBe('Outer.Inner');
+    expect(inner?.container).toBe('Outer');
+    expect(lines[(inner?.lineStart ?? 0) - 1]).toContain('static class Inner');
+    // Nested inside the outer span, not beside it.
+    expect(inner?.lineStart).toBeGreaterThan(find('Outer')?.lineStart ?? 0);
+    expect(inner?.lineEnd).toBeLessThan(find('Outer')?.lineEnd ?? 0);
+  });
+});

@@ -15,11 +15,13 @@
  * `typeModules` table records.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
   boundaryOf,
+  declaredTypeKinds,
+  recordType,
   resolveFieldType,
   resolveOwnMethod,
   resolveSameFileFree,
@@ -178,6 +180,7 @@ function scanInto(scan: ModuleScan, container: Node, file: string, prefix: strin
         const name = fieldText(child, 'name');
         if (name) {
           registerType(scan, name, childPrefix);
+          recordTypeItem(scan, child, childPrefix, file);
           const body = child.childForFieldName('body');
           if (body) collectFieldTypes(scan, body, name);
         }
@@ -185,13 +188,24 @@ function scanInto(scan: ModuleScan, container: Node, file: string, prefix: strin
       }
       case 'enum_item': {
         const name = fieldText(child, 'name');
-        if (name) registerType(scan, name, childPrefix);
+        if (name) {
+          registerType(scan, name, childPrefix);
+          recordTypeItem(scan, child, childPrefix, file);
+        }
+        break;
+      }
+      case 'type_item': {
+        // A `type` alias declares no methods, so it never reached the call-
+        // resolution tables and had no case here at all. It is still a name a
+        // reader looks up, which is the whole point of the type index.
+        recordTypeItem(scan, child, childPrefix, file);
         break;
       }
       case 'trait_item': {
         const name = fieldText(child, 'name');
         if (name) {
           registerType(scan, name, childPrefix);
+          recordTypeItem(scan, child, childPrefix, file);
           const body = child.childForFieldName('body');
           // Default methods (function_items with a body); signatures skipped.
           if (body) scanImplBody(scan, body, name, file, childPrefix);
@@ -289,6 +303,50 @@ function collectUse(node: Node, base: string, imports: Map<string, string>): voi
         break;
     }
   }
+}
+
+/**
+ * Node type → {@link TypeKind}, for this grammar.
+ *
+ * `union_item` is `other`, not `struct`: a Rust union is overlapping storage read
+ * through `unsafe`, which is the opposite of an aggregate of independent fields.
+ * They look identical in source and behave nothing alike, so the escape hatch
+ * plus a signature reading `union Payload` is the only non-misleading answer.
+ *
+ * `impl_item` is absent: an `impl` block declares no type, it attaches methods to
+ * one declared elsewhere (possibly in another crate). Emitting a row for it would
+ * put a second, different span on a name whose declaration is somewhere else.
+ */
+const RUST_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['struct_item', 'struct'],
+  ['union_item', 'other'],
+  ['enum_item', 'enum'],
+  ['trait_item', 'trait'],
+  ['type_item', 'alias'],
+]);
+
+/**
+ * Record a type declaration, with the enclosing inline `mod` path in its name.
+ *
+ * The prefix goes through `namePrefix` rather than `container`, because a Rust
+ * `mod` is a module and not an enclosing type. The id is then
+ * `<scan.moduleId>::<prefix><name>` — the same construction `recordFunction`
+ * uses, so a type and a function declared in the same inline `mod` carry the
+ * same module path. (Not `effectiveModule`: that folds the prefix INTO the module
+ * for the call-resolution tables, and applying both would spell `inner` twice.)
+ */
+function recordTypeItem(scan: ModuleScan, node: Node, prefix: string, file: string): void {
+  const kind = RUST_TYPE_KINDS.get(node.type);
+  if (!kind) return;
+  recordType(scan, {
+    name: fieldText(node, 'name'),
+    kind,
+    node,
+    body: node.childForFieldName('body'),
+    file,
+    separator: SEP,
+    namePrefix: prefix,
+  });
 }
 
 function registerType(scan: ModuleScan, name: string, prefix: string): void {
@@ -546,6 +604,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: false,
+  typeKinds: declaredTypeKinds(RUST_TYPE_KINDS),
 };
 
 const RUST_SPEC: LanguageSpec<ModuleScan, RustIndexes> = {

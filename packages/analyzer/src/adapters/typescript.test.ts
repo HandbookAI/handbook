@@ -412,3 +412,140 @@ factory().attached = function fromCall() { return 8; };
     expect(fromLiteral?.callType).toBe('internal_func');
   });
 });
+
+/**
+ * Parsed type declarations.
+ *
+ * Every assertion here is against a real parse of real source in a temp dir, and
+ * the spans are checked against the source TEXT rather than against a constant —
+ * a hard-coded line number would pass just as well if the adapter returned the
+ * declaration's members instead of the declaration, which is precisely the
+ * `class-derived` interim this replaces.
+ */
+const TYPES_TS = `export interface HandbookModel {
+  title: string;
+  lang: string;
+}
+
+export type StageId = string;
+
+export const enum Mode {
+  A,
+  B,
+}
+
+export abstract class Base {
+  run(): void {}
+}
+
+class Plain {
+  go(): void {}
+}
+
+/** Declaration merging: two halves, both live. */
+export interface Merged {
+  a: number;
+}
+export interface Merged {
+  b: number;
+}
+
+/** A type and a function may share a name in TypeScript. */
+export function Overloaded(): void {}
+export interface Overloaded {
+  x: number;
+}
+
+namespace Hidden {
+  export interface Inside {
+    y: number;
+  }
+}
+`;
+
+describe('TypeScriptAdapter — parsed type declarations', () => {
+  let analysis: ModuleAnalysis;
+  let source: string[];
+  const byName = (name: string): NonNullable<ModuleAnalysis['types']>[number] | undefined =>
+    (analysis.types ?? []).find((t) => t.name === name);
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hb-ts-types-'));
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'model.ts'), TYPES_TS);
+    source = TYPES_TS.split('\n');
+    analysis = await new TypeScriptAdapter().analyze(['src/model.ts'], root);
+  });
+
+  it('maps each declaration onto the constrained vocabulary', () => {
+    expect((analysis.types ?? []).map((t) => [t.name, t.kind])).toEqual([
+      ['HandbookModel', 'interface'],
+      ['StageId', 'alias'],
+      ['Mode', 'enum'],
+      ['Base', 'class'],
+      ['Plain', 'class'],
+      ['Merged', 'interface'],
+      ['Overloaded', 'interface'],
+    ]);
+  });
+
+  it('reads the span off the DECLARATION, not off its members', () => {
+    // The distinguishing property. `HandbookModel` has no methods at all, so a
+    // members-derived span could not exist for it; `Base` has one method on line
+    // 14, and the parsed span must start at the `abstract class` line above it.
+    const model = byName('HandbookModel');
+    expect(source[(model?.lineStart ?? 0) - 1]).toContain('export interface HandbookModel');
+    expect(source[(model?.lineEnd ?? 0) - 1]).toBe('}');
+
+    const base = byName('Base');
+    expect(source[(base?.lineStart ?? 0) - 1]).toContain('abstract class Base');
+    const runLine = source.findIndex((l) => l.includes('run(): void')) + 1;
+    expect(base?.lineStart).toBeLessThan(runLine);
+    expect(base?.lineEnd).toBeGreaterThan(runLine);
+  });
+
+  it('gives a one-line alias a one-line span', () => {
+    const alias = byName('StageId');
+    expect(alias?.lineStart).toBe(alias?.lineEnd);
+    expect(source[(alias?.lineStart ?? 0) - 1]).toContain('export type StageId = string');
+  });
+
+  it('keeps the declaration as written in the signature, modifiers included', () => {
+    // `abstract` and `const` are modifiers, not kinds: the kind column stays
+    // closed and the signature carries what was actually typed.
+    expect(byName('Base')?.signature).toBe('abstract class Base');
+    expect(byName('Mode')?.signature).toBe('const enum Mode');
+    expect(byName('HandbookModel')?.signature).toBe('interface HandbookModel');
+    // A body-less declaration shows whole — for an alias that IS the useful part.
+    expect(byName('StageId')?.signature).toBe('type StageId = string;');
+  });
+
+  it('reports a merged interface once, keeping the FIRST half', () => {
+    const merged = (analysis.types ?? []).filter((t) => t.name === 'Merged');
+    expect(merged).toHaveLength(1);
+    expect(source[(merged[0]?.lineStart ?? 0) - 1]).toContain('export interface Merged');
+    expect(source[merged[0]?.lineStart ?? 0]).toContain('a: number');
+  });
+
+  it('lets a type and a same-named function coexist without either being lost', () => {
+    // Declaration merging makes this legal, and it is why type ids carry a
+    // `type:` prefix instead of sharing the function id space — one of them would
+    // otherwise silently overwrite the other.
+    expect(byName('Overloaded')?.id).toBe('type:src.model.Overloaded');
+    expect(analysis.functions.map((f) => f.id)).toContain('src.model.Overloaded');
+    expect(byName('Overloaded')?.id).not.toBe('src.model.Overloaded');
+  });
+
+  it('emits nothing for a type inside a namespace rather than mislocating it', () => {
+    // The documented omission: this adapter's scan is flat over top-level
+    // declarations, so a namespace's members are not reached. Emitting the
+    // namespace, or the member with a bare name, would both be worse than the gap
+    // — which the capability declaration and the coverage note disclose.
+    expect((analysis.types ?? []).map((t) => t.name)).not.toContain('Inside');
+    expect((analysis.types ?? []).map((t) => t.name)).not.toContain('Hidden');
+  });
+
+  it('declares exactly the kinds it emits', () => {
+    expect(new TypeScriptAdapter().capabilities.typeKinds).toEqual(['alias', 'class', 'enum', 'interface']);
+  });
+});

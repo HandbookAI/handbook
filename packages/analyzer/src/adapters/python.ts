@@ -12,12 +12,14 @@
  */
 import { readFileSync } from 'node:fs';
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
 import { truncate } from '@handbook/core';
 import { createParser, freeParsers } from '../languages.js';
 import { dedupeFunctionsById } from '../adapter.js';
 import { collectLineSpans, fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {
+  declaredTypeKinds,
+  recordType,
   resolveFieldType,
   resolveOwnMethod,
   resolveSameFileFree,
@@ -388,6 +390,21 @@ function resolveBareName(name: string, scan: ModuleScan, std: StandardIndexes): 
   );
 }
 
+/**
+ * Node type → {@link TypeKind}, for this grammar.
+ *
+ * `class` is the whole vocabulary Python's SYNTAX offers, and this map only ever
+ * reports what the syntax says. `class Color(Enum)` is an enum to a reader and
+ * this adapter files it as a class, because the only evidence is a base-class
+ * name that any module may define and any alias may rename — inferring `enum`
+ * from it would be a guess dressed as a parse. Same for `NamedTuple` as a
+ * struct, and for a `TypeAlias`-annotated assignment as an alias: all three are
+ * conventions over expressions, not declarations, so none is claimed.
+ */
+const PYTHON_TYPE_KINDS: ReadonlyMap<string, TypeKind> = new Map<string, TypeKind>([
+  ['class_definition', 'class'],
+]);
+
 const CAPABILITIES: AdapterCapabilities = {
   tier: 'full',
   callTypes: [
@@ -402,6 +419,7 @@ const CAPABILITIES: AdapterCapabilities = {
   ],
   selfAttrs: true,
   statementSpans: true,
+  typeKinds: declaredTypeKinds(PYTHON_TYPE_KINDS),
 };
 
 const PYTHON_SPEC: LanguageSpec<ModuleScan> = {
@@ -456,6 +474,21 @@ const PYTHON_SPEC: LanguageSpec<ModuleScan> = {
         const className = fieldText(definition, 'name');
         if (!scan.ownerMethods.has(className)) scan.ownerMethods.set(className, new Set());
         const classBody = definition.childForFieldName('body');
+        // The DECORATED node, so `@dataclass` is inside the span and the row
+        // points at the line a reader would jump to. `classStack` is already the
+        // enclosing chain, which is what makes a nested class's qualname
+        // `Outer.Inner` rather than a bare, ambiguous `Inner`.
+        recordType(scan, {
+          name: className,
+          kind: 'class',
+          node: child,
+          body: classBody,
+          file,
+          // The whole enclosing chain, not just the innermost name: a class three
+          // levels deep must come out as `A.B.C`, or two different `B.C`s in one
+          // module collide on one id.
+          container: classStack.join('.') || null,
+        });
         if (classBody) pushChildren(classBody, [...classStack, className], fnStack);
       } else if (definition.type === 'function_definition') {
         recordFunction(scan, definition, decorators, classStack, fnStack, file);

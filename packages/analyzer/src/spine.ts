@@ -16,10 +16,19 @@
  * a straitjacket, so each language calls the helpers it needs, in its own order,
  * inside its own `extractCalls`.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Node, Parser, Tree } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, CallType, FunctionNode, ModuleAnalysis } from '@handbook/core';
+import type {
+  AdapterCapabilities,
+  CallEdge,
+  CallType,
+  FunctionNode,
+  ModuleAnalysis,
+  TypeKind,
+  TypeNode,
+  UnparsedFile,
+} from '@handbook/core';
 import { truncate } from '@handbook/core';
 import type { Logger } from '@handbook/core';
 import { createParser, freeParsers } from './languages.js';
@@ -70,6 +79,22 @@ export interface BaseScan {
    * claim the type's home module.
    */
   typeModules?: Map<string, string>;
+  /**
+   * Named types this scan declared, as parsed {@link TypeNode}s — filled by
+   * {@link recordType}.
+   *
+   * Optional, so an adapter that does not extract types needs no change at all
+   * and its `emptyScan` stays as written. What makes the omission honest is not
+   * this field but {@link LanguageSpec.capabilities}`.typeKinds`, which every
+   * adapter must state either way; a `register.test.ts` case fails the build if
+   * one declares kinds it never emits, or emits kinds it never declared.
+   *
+   * Named `typeNodes` rather than `types` because three adapters (C++, PHP,
+   * Ruby) already carry a private `types` map of their own, and silently
+   * shadowing a language's own field from the shared base is how a scan starts
+   * meaning two things at once.
+   */
+  typeNodes?: TypeNode[];
 }
 
 /**
@@ -83,8 +108,28 @@ export interface BaseScan {
  * clear. It lives here now so the fourth language does not write a third one.
  */
 export interface StandardIndexes {
-  /** bare type name → owning moduleId (first declaration wins). */
+  /**
+   * bare type name → owning moduleId, for names that are UNAMBIGUOUS.
+   *
+   * A name declared in two scanned modules is deliberately absent: read it with
+   * {@link lookupBareType}, which returns `undefined` for both the missing and
+   * the ambiguous case so a caller falls through to `unresolvedOf`.
+   *
+   * First-declaration-wins was the previous behaviour and it silently invented
+   * edges: two modules declaring `Config` — routine above a few thousand lines —
+   * meant `from beta.mod import Config; Config()` resolved to ALPHA's
+   * constructor and shipped as a real edge, with `dropped-calls.json` empty. A
+   * guessed edge is indistinguishable from a real one to everything downstream,
+   * which is exactly what invariant 2 exists to prevent.
+   */
   typeToModule: Map<string, string>;
+  /**
+   * Bare type names declared by more than one scanned module. Kept so the
+   * ambiguity can be REPORTED rather than merely refused — a reader who sees a
+   * missing edge deserves to know the analyzer could not choose, not to wonder
+   * whether the call exists.
+   */
+  ambiguousTypes: Set<string>;
   /**
    * {@link scopedKey}(scope, Type) → owning moduleId (first declaration wins
    * within a scope). Built from {@link BaseScan.scopedTypes}, so it is empty
@@ -94,12 +139,31 @@ export interface StandardIndexes {
    * order.
    */
   scopedTypeToModule: Map<string, string>;
+  /**
+   * {@link scopedKey}s declared by more than one module. Withdrawn from
+   * `scopedTypeToModule` for the same reason as {@link ambiguousTypes}: a scope
+   * is NOT always unique across a repository. C++'s `namespace detail` is
+   * idiomatically re-opened in every file that needs it, so `detail::Impl` in
+   * two translation units is two unrelated types, and first-wins resolved every
+   * reference to whichever file was scanned first.
+   */
+  ambiguousScopedTypes: Set<string>;
   /** `<owning module><sep><Type>` → method names. */
   typeMethods: Map<string, Set<string>>;
   /** moduleId → free function names. */
   moduleFunctions: Map<string, Set<string>>;
   /** directory → free function name → owning moduleId (same-package siblings). */
   directoryFunctions: Map<string, Map<string, string>>;
+  /**
+   * `<dir>\0<function name>` for names declared by more than one module in the
+   * same directory, withdrawn from `directoryFunctions`.
+   *
+   * Go cannot produce these — one package, one name, or it does not compile —
+   * but Swift shares this table and its `private func` is FILE-scoped, so two
+   * files in a directory legitimately declare the same helper. Resolving one
+   * file's call to the other file's function is an invented edge.
+   */
+  ambiguousDirectoryFunctions: Set<string>;
   moduleIds: Set<string>;
 }
 
@@ -172,13 +236,41 @@ export interface ScopedHit<T> {
  * the value type so a language can use it on its own scoped tables too, not
  * only on {@link StandardIndexes.scopedTypeToModule}.
  */
+/**
+ * Key for {@link StandardIndexes.ambiguousDirectoryFunctions}. NUL, because it
+ * cannot occur in a path or an identifier — `dir + name` would make
+ * `a/b` + `c` collide with `a` + `/bc`.
+ */
+export function dirKey(dir: string, name: string): string {
+  return `${dir}\0${name}`;
+}
+
+/**
+ * Read {@link StandardIndexes.typeToModule}, returning `undefined` for both a
+ * name nobody declares and a name more than one module declares.
+ *
+ * Callers want the same thing in both cases — fall through to `unresolvedOf` —
+ * and asking them to remember the second case is how the ambiguity gets lost
+ * one adapter at a time.
+ */
+export function lookupBareType(std: StandardIndexes, name: string): string | undefined {
+  return std.ambiguousTypes.has(name) ? undefined : std.typeToModule.get(name);
+}
+
 export function lookupScoped<T>(
   table: ReadonlyMap<string, T>,
   scopes: Iterable<string>,
   name: string,
+  ambiguous?: ReadonlySet<string>,
 ): ScopedHit<T> | undefined {
   for (const scope of scopes) {
-    const value = table.get(scopedKey(scope, name));
+    const key = scopedKey(scope, name);
+    // An ambiguous scope ENDS the walk rather than skipping to the next one.
+    // Falling outward would find some other `Impl` in an enclosing scope and
+    // resolve to it — turning "we cannot tell which of these two" into a
+    // confident edge pointing at a third thing entirely.
+    if (ambiguous?.has(key)) return undefined;
+    const value = table.get(key);
     if (value !== undefined) return { scope, value };
   }
   return undefined;
@@ -194,7 +286,10 @@ export function buildStandardIndexes<S extends BaseScan>(
   separator: string = DEFAULT_SEPARATOR,
 ): StandardIndexes {
   const typeToModule = new Map<string, string>();
+  const ambiguousTypes = new Set<string>();
   const scopedTypeToModule = new Map<string, string>();
+  const ambiguousScopedTypes = new Set<string>();
+  const ambiguousDirectoryFunctions = new Set<string>();
   const typeMethods = new Map<string, Set<string>>();
   const moduleFunctions = new Map<string, Set<string>>();
   const directoryFunctions = new Map<string, Map<string, string>>();
@@ -213,8 +308,15 @@ export function buildStandardIndexes<S extends BaseScan>(
     for (const [scope, types] of scan.scopedTypes ?? []) {
       for (const type of types) {
         const key = scopedKey(scope, type);
-        if (!scopedTypeToModule.has(key)) {
-          scopedTypeToModule.set(key, scan.typeModules?.get(type) ?? scan.moduleId);
+        const owner = scan.typeModules?.get(type) ?? scan.moduleId;
+        const existing = scopedTypeToModule.get(key);
+        if (existing === undefined) {
+          if (!ambiguousScopedTypes.has(key)) scopedTypeToModule.set(key, owner);
+        } else if (existing !== owner) {
+          // Same rule as the bare-name table: neither module can be chosen, so
+          // the key is withdrawn rather than awarded to whoever came first.
+          ambiguousScopedTypes.add(key);
+          scopedTypeToModule.delete(key);
         }
       }
     }
@@ -224,7 +326,18 @@ export function buildStandardIndexes<S extends BaseScan>(
       // A scan that declares its types explicitly (typeModules) only claims
       // those; owners it merely implements methods for are skipped here.
       const declared = scan.typeModules ? scan.typeModules.has(owner) : true;
-      if (declared && !typeToModule.has(owner)) typeToModule.set(owner, ownerModule);
+      if (declared) {
+        const existing = typeToModule.get(owner);
+        if (existing === undefined) {
+          typeToModule.set(owner, ownerModule);
+        } else if (existing !== ownerModule) {
+          // Two modules, one bare name. Neither can be chosen, so the name is
+          // withdrawn from the table entirely — leaving the first one there
+          // would resolve every later reference to it.
+          ambiguousTypes.add(owner);
+          typeToModule.delete(owner);
+        }
+      }
       const key = `${ownerModule}${separator}${owner}`;
       let known = typeMethods.get(key);
       if (!known) {
@@ -242,19 +355,146 @@ export function buildStandardIndexes<S extends BaseScan>(
         directoryFunctions.set(dir, pkg);
       }
       for (const name of scan.freeFunctions) {
-        if (!pkg.has(name)) pkg.set(name, scan.moduleId);
+        const existing = pkg.get(name);
+        if (existing === undefined) {
+          if (!ambiguousDirectoryFunctions.has(dirKey(dir, name))) pkg.set(name, scan.moduleId);
+        } else if (existing !== scan.moduleId) {
+          ambiguousDirectoryFunctions.add(dirKey(dir, name));
+          pkg.delete(name);
+        }
       }
     }
   }
 
   return {
     typeToModule,
+    ambiguousTypes,
     scopedTypeToModule,
+    ambiguousScopedTypes,
+    ambiguousDirectoryFunctions,
     typeMethods,
     moduleFunctions,
     directoryFunctions,
     moduleIds,
   };
+}
+
+/** Longest declaration header kept in {@link TypeNode.signature}. */
+const TYPE_SIGNATURE_CHARS = 200;
+
+/** What {@link recordType} needs from a language to name one type declaration. */
+export interface RecordTypeOptions {
+  /** Leaf name as written, e.g. `HandbookModel`. */
+  name: string;
+  kind: TypeKind;
+  /** The whole declaration node — the ONLY source of the line span. */
+  node: Node;
+  /**
+   * The declaration's body, when it has one. The signature is then the text
+   * before it (`export interface Foo` out of `export interface Foo { … }`);
+   * without it the node's own text is used, which is right for a body-less
+   * declaration like a type alias.
+   */
+  body?: Node | null;
+  file: string;
+  /**
+   * The enclosing type's QUALNAME, for a nested declaration — not its leaf name.
+   * `qualname` below is built from it, so passing the leaf would make `C` inside
+   * `A.B` come out as `B.C` and collide with a different `B.C` elsewhere.
+   */
+  container?: string | null;
+  /** Id separator; defaults to {@link DEFAULT_SEPARATOR} (Rust passes `::`). */
+  separator?: string;
+  /**
+   * Override the module part of the id, for languages whose types are not simply
+   * owned by `scan.moduleId` (Rust's inline `mod` blocks nest a module in a file).
+   */
+  moduleId?: string;
+  /**
+   * Prefix prepended to the qualname, already ending in the separator — for a
+   * language whose in-FILE module nesting is part of a type's name (Rust's
+   * `mod inner { struct S; }` is `inner::S`).
+   *
+   * Separate from `container` on purpose: `container` is an enclosing TYPE, and a
+   * module is not one. Conflating them would make `container` unreadable for the
+   * one thing it is for.
+   */
+  namePrefix?: string;
+}
+
+/**
+ * Record one parsed type declaration on a scan. The single constructor of a
+ * {@link TypeNode}, so the invariants live here instead of in thirteen adapters.
+ *
+ * Refuses — silently, returning without recording — when the name is empty or
+ * the declaration node yields a non-positive line span. That is the "a guessed
+ * fact is worse than a missing one" rule at its narrowest: the interim
+ * `class-derived` row in the agent artifact still covers a type nobody could
+ * locate, and it is LABELLED as derived, whereas a `TypeNode` with a fabricated
+ * range is indistinguishable from a parsed one. A tree-sitter node always has a
+ * position, so in practice this guard only fires on a caller passing something
+ * that is not a declaration.
+ */
+export function recordType(scan: BaseScan, opts: RecordTypeOptions): void {
+  const { name, kind, node, body, file } = opts;
+  if (name === '') return;
+  const lineStart = node.startPosition.row + 1;
+  const lineEnd = node.endPosition.row + 1;
+  if (lineStart <= 0 || lineEnd <= 0) return;
+  const separator = opts.separator ?? DEFAULT_SEPARATOR;
+  const container = opts.container ?? null;
+  const qualname = `${opts.namePrefix ?? ''}${container ? `${container}${separator}` : ''}${name}`;
+  const headerEnd = body ? body.startIndex : node.endIndex;
+  const header = node.text.slice(0, Math.max(0, headerEnd - node.startIndex));
+  (scan.typeNodes ??= []).push({
+    // `type:` so a type and a same-named function can never collide. TypeScript
+    // makes that reachable in one file (`interface Foo {}` beside
+    // `function Foo() {}`), and a collision would silently drop one of them.
+    id: `type:${opts.moduleId ?? scan.moduleId}${separator}${qualname}`,
+    name,
+    qualname,
+    file,
+    lineStart,
+    lineEnd: Math.max(lineStart, lineEnd),
+    kind,
+    signature: truncate(header.replace(/\s+/g, ' ').trim(), TYPE_SIGNATURE_CHARS),
+    container,
+  });
+}
+
+/**
+ * The distinct {@link TypeKind}s a node-type→kind map can produce, sorted.
+ *
+ * Derived rather than hand-listed so an adapter's declaration cannot drift from
+ * its extraction: adding `record_declaration → struct` to the map widens the
+ * declared capability in the same commit, and removing a row narrows it. A
+ * hand-written list is exactly how a capability claim goes stale, which is the
+ * failure `AdapterCapabilities` exists to prevent. Sorted, because the result is
+ * persisted in `graph.json` and an unchanged analysis must re-serialize
+ * identically.
+ */
+export function declaredTypeKinds(kinds: ReadonlyMap<string, TypeKind>): readonly TypeKind[] {
+  return [...new Set(kinds.values())].sort();
+}
+
+/**
+ * Collapse types sharing an id, keeping the FIRST.
+ *
+ * The sibling of {@link dedupeFunctionsById}, with the opposite tie-break and a
+ * reason for it. For a function the last definition is the one live at runtime,
+ * so last-wins is a semantic choice. For a type the reachable duplicate is
+ * TypeScript declaration MERGING — `interface Foo` written twice, both halves
+ * live — where no single declaration is "the" one; the earliest is where a reader
+ * should start and is the only choice that keeps the emitted span the first thing
+ * in the file rather than an arbitrary later fragment.
+ */
+export function dedupeTypesById(types: readonly TypeNode[]): TypeNode[] {
+  const seen = new Set<string>();
+  return types.filter((type) => {
+    if (seen.has(type.id)) return false;
+    seen.add(type.id);
+    return true;
+  });
 }
 
 /** `unresolved:<hint>` — the one shape the graph builder diverts to dropped calls. */
@@ -305,7 +545,10 @@ export function resolveSiblingPackage(
 ): Resolved | undefined {
   const separator = opts.separator ?? DEFAULT_SEPARATOR;
   for (const file of scan.files) {
-    const owner = std.directoryFunctions.get(dirOf(file))?.get(name);
+    const dir = dirOf(file);
+    // Two files in this directory declare it; neither can be chosen.
+    if (std.ambiguousDirectoryFunctions.has(dirKey(dir, name))) return undefined;
+    const owner = std.directoryFunctions.get(dir)?.get(name);
     if (owner) return { calleeId: `${owner}${separator}${name}`, callType: 'internal_func' };
   }
   return undefined;
@@ -363,6 +606,15 @@ export function resolveViaImport(
 
   const typeBranch = (): Resolved | undefined => {
     if (opts.capitalizedTypesOnly && !capitalized) return undefined;
+    // A name the scanned set declares TWICE is not a boundary — the callee is
+    // in the codebase, we simply cannot say which one. Falling through would
+    // let `capitalizedIsConstructor` below label it `boundary_constructor`,
+    // which positively asserts the call leaves the codebase. Quarantine it
+    // instead, so it lands in dropped-calls.json and nothing downstream can
+    // mistake a refusal for a fact.
+    if (std.ambiguousTypes.has(leaf)) {
+      return unresolvedOf(`ambiguous type "${leaf}" declared in more than one module`);
+    }
     const typeModule = std.typeToModule.get(leaf);
     if (typeModule) {
       const base = `${typeModule}${separator}${leaf}`;
@@ -417,6 +669,9 @@ export function resolveOwnMethod(
     return { calleeId: `${base}${separator}${method}`, callType: 'self_method' };
   }
   if (!opts.crossModule) return undefined;
+  if (std.ambiguousTypes.has(owner)) {
+    return unresolvedOf(`ambiguous type "${owner}" declared in more than one module`);
+  }
   const ownerModule = std.typeToModule.get(owner);
   if (ownerModule && std.typeMethods.get(`${ownerModule}${separator}${owner}`)?.has(method)) {
     return {
@@ -444,6 +699,9 @@ export function resolveFieldType(
   const type = scan.fieldTypes.get(`${owner}.${field}`);
   if (!type) return undefined;
   const separator = opts.separator ?? DEFAULT_SEPARATOR;
+  if (std.ambiguousTypes.has(type)) {
+    return unresolvedOf(`ambiguous field type "${type}" declared in more than one module`);
+  }
   const typeModule = std.typeToModule.get(type);
   if (typeModule) {
     return {
@@ -455,13 +713,30 @@ export function resolveFieldType(
 }
 
 /**
- * The driver (design §1.1): build parsers, read each file (unreadable → skip),
- * parse it (null tree → skip), merge by moduleId on demand, then hand the scans
- * to the language's own `extractCalls` and flatten the result.
+ * The driver (design §1.1): build parsers, read each file, parse it, merge by
+ * moduleId on demand, then hand the scans to the language's own `extractCalls`
+ * and flatten the result.
+ *
+ * A file that cannot be read, cannot be parsed, or parses with syntax errors is
+ * RECORDED in `unparsedFiles` rather than skipped in silence — see
+ * {@link ModuleAnalysis}.
  *
  * A class rather than a plain object because adapters are constructed with
  * `new` by the registry and by tests.
  */
+/**
+ * The largest source file this analyzer will read, in bytes.
+ *
+ * Chosen against real repositories rather than in the abstract: the largest
+ * hand-written source file across the seventeen projects this was tested on is
+ * under 1 MiB, and everything past a few MiB was generated — a protobuf stub,
+ * a bundled vendor script, a lookup table. 8 MiB leaves an order of magnitude
+ * of headroom over anything a person wrote, and the files above it are
+ * disclosed in `scan-coverage.json` rather than dropped, so a repository that
+ * genuinely needs one analyzed can see exactly what was skipped and why.
+ */
+const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+
 export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAdapter {
   readonly name: string;
   readonly extensions: readonly string[];
@@ -475,12 +750,13 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
     if (spec.statementSpans) this.statementSpans = spec.statementSpans;
   }
 
-  discover(sourceRoot: string): string[] {
+  discover(sourceRoot: string, options: { logger?: Logger } = {}): string[] {
     return discoverByExtension(
       sourceRoot,
       this.spec.extensions,
       this.spec.extraSkipDirs ?? [],
       this.spec.discoverFilter,
+      options.logger,
     );
   }
 
@@ -494,6 +770,8 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
     const parsers = new Map<string, Parser>();
     const trees: Tree[] = [];
     const unparsable: string[] = [];
+    const partial: string[] = [];
+    const unparsedFiles: UnparsedFile[] = [];
     const scans: S[] = [];
     const byModule = new Map<string, S>();
 
@@ -531,8 +809,38 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
       for (const file of files) {
         let source: string;
         try {
+          // Size first, so an implausible file costs a `stat` rather than a
+          // read. A minified bundle, a vendored blob or a generated table can
+          // be hundreds of megabytes; read as UTF-8 it becomes a JS string
+          // roughly twice that in memory, and then tree-sitter is asked to
+          // parse it. Neither the memory nor the minutes buy anything: nobody
+          // reads a card about a 400 MB generated file.
+          //
+          // Recorded as `unreadable` — which is the truth, we did not read it —
+          // with the size in `detail`, so `scan-coverage.json` names the real
+          // reason rather than implying the parser choked.
+          const bytes = statSync(join(sourceRoot, file)).size;
+          if (bytes > MAX_SOURCE_BYTES) {
+            const mib = (n: number): string => `${(n / (1024 * 1024)).toFixed(1)} MiB`;
+            unparsedFiles.push({
+              file,
+              reason: 'unreadable',
+              detail: `${mib(bytes)} is above the ${mib(MAX_SOURCE_BYTES)} scan limit — not read`,
+            });
+            logger?.warn(`[scan] ${file}: ${mib(bytes)}, above the ${mib(MAX_SOURCE_BYTES)} limit — skipped`);
+            continue;
+          }
           source = readFileSync(join(sourceRoot, file), 'utf8');
-        } catch {
+        } catch (error) {
+          // Discovery listed this path, so something happened between listing
+          // and reading: a mode that denies us, a dangling symlink, a file the
+          // build deleted underneath us. Continuing silently was worse than the
+          // failure — the path stayed in `scannedFiles`, so the cards pass
+          // described it as "a file with 0 functions" and `_coverage.json`
+          // counted it as fully covered. The handbook then asserted, as a
+          // parser fact, that an unread file is empty.
+          unparsedFiles.push({ file, reason: 'unreadable', detail: (error as Error).message });
+          logger?.warn(`[scan] ${file}: unreadable (${(error as Error).message}) — no facts for this file`);
           continue;
         }
         const grammar = spec.grammarFor(file);
@@ -561,11 +869,35 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
             // already gone, or the runtime is past saving — either way, moving on
           }
           unparsable.push(file);
+          unparsedFiles.push({ file, reason: 'unparsable', detail: (error as Error).message });
           logger?.debug(`[scan] ${file}: parser failed (${(error as Error).message})`);
           continue;
         }
-        if (!tree) continue;
+        if (!tree) {
+          // Same standing as a throw: no tree means no facts. It used to be the
+          // one branch with neither a log line nor a record, so the file simply
+          // ceased to exist between discovery and the graph.
+          unparsedFiles.push({ file, reason: 'unparsable', detail: 'the parser returned no tree' });
+          logger?.warn(`[scan] ${file}: the parser returned no tree — no facts for this file`);
+          continue;
+        }
         trees.push(tree);
+        if (tree.rootNode.hasError) {
+          // Tree-sitter recovers from a syntax error by parking the text it
+          // could not understand in an ERROR node and carrying on, so the pass
+          // below still yields functions — just not the ones inside that node.
+          // Nothing downstream can see the difference: a file with three
+          // exported functions and one malformed class reaches the handbook as
+          // a file with one function, stated as fact. Recorded (not skipped),
+          // because the facts we DID get are real and worth keeping.
+          partial.push(file);
+          unparsedFiles.push({
+            file,
+            reason: 'partial',
+            detail: 'the parse tree contains syntax errors; facts from this file are incomplete',
+          });
+          logger?.debug(`[scan] ${file}: parsed with syntax errors — partial facts`);
+        }
 
         const moduleId = spec.moduleIdForFile(file);
         let scan = spec.mergeByModule ? byModule.get(moduleId) : undefined;
@@ -597,14 +929,35 @@ export class SpineAdapter<S extends BaseScan, I = unknown> implements LanguageAd
           `[scan] ${spec.name}: ${unparsable.length} file(s) the grammar could not parse${because} — ${shown}${more}`,
         );
       }
+      // Partial parses get ONE aggregate line rather than a warning each: a
+      // grammar that trails the language by a release makes this the common
+      // case, and a per-file flood is how the two lines above stop being read.
+      // Every one of them is still named individually in scan-coverage.json.
+      if (partial.length > 0) {
+        const shown = partial.slice(0, 5).join(', ');
+        const more = partial.length > 5 ? ` (+${partial.length - 5} more)` : '';
+        logger?.warn(
+          `[scan] ${spec.name}: ${partial.length} file(s) parsed with syntax errors — their function` +
+            ` and call facts are incomplete, not absent — ${shown}${more}`,
+        );
+      }
 
       // Pass 2 runs HERE, inside the try, so its results are computed while the
       // trees its body nodes point into are still alive.
       const std = buildStandardIndexes(scans, spec.idSeparator ?? DEFAULT_SEPARATOR);
       const own = spec.buildIndexes?.(scans, std) as I;
+      // `[]` when the adapter DECLARES type kinds and found none; `undefined`
+      // when it declares none at all. That is the whole disambiguation: an empty
+      // array says "looked, found nothing", an absent one says "did not look",
+      // and collapsing them would make an unindexed language indistinguishable
+      // from an empty one to everything downstream.
+      const declaresTypes = (spec.capabilities.typeKinds ?? []).length > 0;
+      const types = scans.flatMap((scan) => scan.typeNodes ?? []);
       return {
         functions: scans.flatMap((scan) => scan.functions),
         edges: scans.flatMap((scan) => spec.extractCalls(scan, std, own)),
+        unparsedFiles,
+        types: declaresTypes ? dedupeTypesById(types) : undefined,
       };
     } finally {
       freeParsers(parsers.values());

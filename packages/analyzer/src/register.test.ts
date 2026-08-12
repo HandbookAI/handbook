@@ -8,11 +8,11 @@
  * against a fixture repo here and its declaration is compared to what it
  * actually emitted, in both directions.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { CallType, ModuleAnalysis } from '@handbook/core';
+import type { CallType, ModuleAnalysis, TypeKind } from '@handbook/core';
 import { availableLanguages, getAdapter, type LanguageAdapter } from './adapter.js';
 import { registerBuiltinAdapters } from './register.js';
 
@@ -121,8 +121,19 @@ export function shout(text: string): string {
   return text;
 }
 `,
+    // Every declared typeKind, so the bidirectional guard below is not vacuous.
+    'types.ts': `
+export interface Spinner {
+  spin(): Promise<number>;
+}
+export type Rpm = number;
+export enum Gear {
+  Low,
+  High,
+}
+`,
   },
-  analyze: ['app.ts', 'engine.ts', 'helpers.ts'],
+  analyze: ['app.ts', 'engine.ts', 'helpers.ts', 'types.ts'],
 };
 
 const GO: Fixture = {
@@ -157,6 +168,16 @@ package main
 type Engine struct {
 	rpm int
 }
+
+// Every remaining declared typeKind: an interface, an alias, and a DEFINED type
+// (kind "other" -- a new type sharing a representation, which Go does not alias).
+type Spinner interface {
+	Spin()
+}
+
+type Alias = Engine
+
+type Rpm int
 
 func (e *Engine) Spin() {
 	e.rpm = e.rpm + 1
@@ -220,8 +241,29 @@ pub fn shout(text: &str) -> String {
     text.to_uppercase()
 }
 `,
+    // Every remaining declared typeKind. `union` is `other`, not `struct`:
+    // overlapping storage read through `unsafe` is not an aggregate of fields.
+    'src/kinds.rs': `
+pub enum Gear {
+    Low,
+    High,
+}
+
+pub trait Spinner {
+    fn spin(&self) -> u32 {
+        0
+    }
+}
+
+pub type Rpm = u32;
+
+pub union Payload {
+    pub a: u32,
+    pub b: f32,
+}
+`,
   },
-  analyze: ['src/app.rs', 'src/engine.rs', 'src/helpers.rs'],
+  analyze: ['src/app.rs', 'src/engine.rs', 'src/helpers.rs', 'src/kinds.rs'],
 };
 
 const SHELL: Fixture = {
@@ -299,8 +341,27 @@ public class Engine {
     }
 }
 `,
+    // Every remaining declared typeKind, including the two that are NOT what the
+    // grammar's node name suggests: a `record` is a `record` (not a struct — it is
+    // a reference type), and an `@interface` is `other` (not an interface — it is
+    // not implementable and never appears in an `implements` clause).
+    'engine/Kinds.java': `package engine;
+
+public interface Spinner {
+    void spin();
+}
+
+enum Gear {
+    LOW,
+    HIGH
+}
+
+record Rpm(int value) {}
+
+@interface Nullable {}
+`,
   },
-  analyze: ['app/App.java', 'app/Helpers.java', 'engine/Engine.java'],
+  analyze: ['app/App.java', 'app/Helpers.java', 'engine/Engine.java', 'engine/Kinds.java'],
 };
 
 const CSHARP: Fixture = {
@@ -376,8 +437,33 @@ public static class Helpers
     public static string Shout(string text) => text;
 }
 `,
+    // Every remaining declared typeKind. `record` and `record struct` both map to
+    // `record` — that is what the declaration says and what a reader searches for;
+    // the reference/value distinction survives in the signature.
+    'src/Kinds.cs': `namespace Demo.Engines;
+
+public interface ISpinner
+{
+    void Spin();
+}
+
+public struct Rpm
+{
+    public int Value;
+}
+
+public record Reading(int Value);
+
+public record struct Sample(int Value);
+
+public enum Gear
+{
+    Low,
+    High
+}
+`,
   },
-  analyze: ['src/App.cs', 'src/Motor.cs', 'tools/Text.cs'],
+  analyze: ['src/App.cs', 'src/Kinds.cs', 'src/Motor.cs', 'tools/Text.cs'],
 };
 
 const CPP: Fixture = {
@@ -982,12 +1068,14 @@ describe.each(Object.keys(FIXTURES))('%s capabilities', (language) => {
   let adapter: LanguageAdapter;
   let analysis: ModuleAnalysis;
   let produced: Set<CallType>;
+  let root: string;
 
   beforeAll(async () => {
     adapter = getAdapter(language);
     const fixture = FIXTURES[language];
     if (!fixture) throw new Error(`no fixture for ${language}`);
-    analysis = await adapter.analyze(fixture.analyze, writeFixture(fixture));
+    root = writeFixture(fixture);
+    analysis = await adapter.analyze(fixture.analyze, root);
     produced = new Set(analysis.edges.map((e) => e.callType));
   });
 
@@ -1020,5 +1108,64 @@ describe.each(Object.keys(FIXTURES))('%s capabilities', (language) => {
 
   it('declares a known tier', () => {
     expect(['full', 'generic']).toContain(adapter.capabilities.tier);
+  });
+
+  // ---- type extraction: the same bidirectional check, for `typeKinds` ----
+  //
+  // An adapter that under-declares makes a reader distrust rows that are real; one
+  // that over-declares makes an agent read a miss as absence, which is the wrong
+  // pointer the agent artifact exists to prevent. Both directions, against a
+  // fixture that actually contains one declaration of every kind claimed.
+
+  it('declares typeKinds explicitly, even to say none', () => {
+    // Absent is reserved for an analysis that PREDATES the field. An in-tree
+    // adapter leaving it off would be read downstream as "coverage unknown", which
+    // is a claim it has no business making about itself.
+    expect(adapter.capabilities.typeKinds).toBeDefined();
+  });
+
+  it('returns a types array exactly when it declares kinds', () => {
+    // `undefined` = did not look; `[]` = looked and found none. Collapsing them
+    // would make an unindexed language indistinguishable from an empty one.
+    const declares = (adapter.capabilities.typeKinds ?? []).length > 0;
+    expect(analysis.types !== undefined).toBe(declares);
+  });
+
+  it('emits only typeKinds it declares', () => {
+    const declared = new Set<TypeKind>(adapter.capabilities.typeKinds ?? []);
+    const undeclared = [...new Set((analysis.types ?? []).map((t) => t.kind))]
+      .filter((k) => !declared.has(k))
+      .sort();
+    expect(undeclared).toEqual([]);
+  });
+
+  it('emits every typeKind it declares (no over-claiming)', () => {
+    const emitted = new Set((analysis.types ?? []).map((t) => t.kind));
+    const missing = (adapter.capabilities.typeKinds ?? []).filter((k) => !emitted.has(k)).sort();
+    expect(missing).toEqual([]);
+  });
+
+  it('gives every type a span whose FIRST line actually names it', () => {
+    // The anti-vacuity check, and the one that separates this from the interim it
+    // replaces: a derived span ends up at the members, so reading `lineStart` out
+    // of the real fixture source and finding the type's own name there is what
+    // proves the number was parsed off the declaration. Also bounds the span
+    // inside the file, so no row can point past the end.
+    const types = analysis.types ?? [];
+    for (const type of types) {
+      const lines = readFileSync(join(root, type.file), 'utf8').split('\n');
+      expect(type.lineStart, `${type.name} lineStart`).toBeGreaterThan(0);
+      expect(type.lineEnd, `${type.name} lineEnd`).toBeGreaterThanOrEqual(type.lineStart);
+      expect(type.lineEnd, `${type.name} lineEnd past EOF`).toBeLessThanOrEqual(lines.length);
+      expect(lines[type.lineStart - 1], `${type.name} at line ${type.lineStart}`).toContain(type.name);
+      // The signature is the declaration as written, so it names the type too.
+      expect(type.signature, `${type.name} signature`).toContain(type.name);
+    }
+  });
+
+  it('never gives a type an id that collides with a function id', () => {
+    const fnIds = new Set(analysis.functions.map((f) => f.id));
+    const collisions = (analysis.types ?? []).map((t) => t.id).filter((id) => fnIds.has(id));
+    expect(collisions).toEqual([]);
   });
 });
