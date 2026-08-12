@@ -331,6 +331,8 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       cancelReq: '… Abbruch angefordert — der Job stoppt am nächsten Checkpoint',
       info: 'INFO',
       streamDropped: '⚠ Log-Stream abgerissen, Job-Status wird abgefragt…',
+      linesDropped:
+        '⚠ {0} Protokollzeilen verworfen — diese Live-Ansicht kam nicht mit; neu laden, um das vollständige Protokoll zu sehen',
     },
     dlg: {
       add: 'Repository hinzufügen',

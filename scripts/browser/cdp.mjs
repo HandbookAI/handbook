@@ -245,6 +245,36 @@ async function launchOnce({ headless = true, width = 1440, height = 900 } = {}) 
       else await new Promise((r) => setTimeout(r, waitMs));
       return true;
     },
+    /**
+     * Click by CSS selector, with the same hit test as `clickLabel`.
+     *
+     * Text matching cannot address a control whose label is localised, is an
+     * icon, or is empty until a dictionary loads — which is most of Studio's
+     * chrome. This addresses the element directly and still clicks it with a
+     * real pointer.
+     */
+    async clickSel(selector, { waitMs = 700 } = {}) {
+      const at = await api.eval(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        el.scrollIntoView({ block: 'center' });
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          const x = Math.round(r.x + r.width / 2);
+          const y = Math.round(r.y + r.height / 2);
+          if (x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) {
+            const hit = document.elementFromPoint(x, y);
+            if (hit && (hit === el || el.contains(hit) || hit.contains(el))) return { x, y };
+          }
+        }
+        el.click();
+        return { synthetic: true };
+      })()`);
+      if (!at) return false;
+      if (!at.synthetic) await api.clickAt(at.x, at.y, { waitMs });
+      else await new Promise((r) => setTimeout(r, waitMs));
+      return true;
+    },
     async key(key, { modifiers = 0, waitMs = 500 } = {}) {
       const vk =
         key === 'Enter'

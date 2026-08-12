@@ -8,12 +8,23 @@
  * this server, not the socket it happens to be listening on.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFileSync, realpathSync, rmSync, statSync, readdirSync, existsSync } from 'node:fs';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createReadStream,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   NARRATE_LANGUAGES,
+  SETTINGS,
   ensureDir,
+  envName,
   fileExists,
   readJsonFile,
   resolveConfig,
@@ -38,6 +49,7 @@ import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer'
 import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
 import { isInternalNode } from '@handbook/core';
 import {
+  AGENT_INDEX_FILE,
   renderAgentSite,
   renderHtmlSite,
   renderLlmsTxt,
@@ -76,6 +88,46 @@ export interface StudioOptions {
    */
   configFile?: ConfigFileData;
   logger?: Logger;
+  /**
+   * Override the per-launch API token. Supplied by tests so they can
+   * authenticate; production mints a fresh one and prints it with the URL.
+   */
+  authToken?: string;
+  /**
+   * How long a client may take to finish sending its request headers, and then
+   * the whole request. Studio is one process serving one person: a socket that
+   * connects and says nothing, or dribbles a body a byte at a time, is holding
+   * a slot that nothing will ever reclaim. Node's own defaults (60s / 300s) are
+   * sized for a public server behind a load balancer. Tests dial these down to
+   * milliseconds; 0 disables, which is Node's meaning too.
+   */
+  headersTimeoutMs?: number;
+  requestTimeoutMs?: number;
+  /**
+   * Jobs allowed to run at once across all repos. Defaults to the JobRunner's
+   * own ceiling; an operator with a bigger machine can raise it.
+   */
+  maxConcurrentJobs?: number;
+}
+
+/** An error that already knows the status code it deserves. */
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * The status a thrown error should be answered with; 400 unless it says
+ * otherwise. A rejection with no `status` — including a non-object one, which
+ * is why this reads it defensively — is a malformed request until proven else.
+ */
+function statusOf(error: unknown): number {
+  const status = error instanceof Error ? (error as { status?: unknown }).status : undefined;
+  return typeof status === 'number' ? status : 400;
 }
 
 interface Ctx {
@@ -86,28 +138,58 @@ interface Ctx {
   logger: Logger;
   /** Default parent dir for auto-created work dirs. */
   stateDirWork: string;
+  /** The per-launch API token; see `mintToken`. */
+  token: string;
 }
 
 /**
- * The per-job tunable LLM settings.
+ * LLM settings a request may never change, because they are launch decisions.
  *
- * Two are deliberately absent. `llmApiKey` is a secret and never travels over
- * HTTP (see `rejectSecrets`). `llmBaseUrl` is worse than a secret: letting a
- * request body choose the endpoint means `{"llmBaseUrl":"http://attacker/v1"}`
- * sends every prompt — file paths, source excerpts, the prose being written —
- * to that host, carrying the SERVER's `OPENAI_API_KEY` in the Authorization
- * header. Rejecting the key coming in is pointless if the key can be pointed
- * out. The endpoint is a launch decision, made by whoever started studio.
+ * `llmBaseUrl` is worse than a secret: letting a request body choose the
+ * endpoint means `{"llmBaseUrl":"http://attacker/v1"}` sends every prompt —
+ * file paths, source excerpts, the prose being written — to that host, carrying
+ * the SERVER's API key in the Authorization header. Rejecting the key coming in
+ * is pointless if the key can be pointed out. `llmProvider` is the wire format
+ * that endpoint speaks; changing one without the other only produces requests
+ * the configured gateway cannot parse. Whoever started studio chose both.
+ *
+ * Not `secret` in the registry, and rightly so — a shared gateway URL is
+ * exactly the kind of thing a team commits. It is this SURFACE that must not
+ * carry them, which is a studio decision and lives here.
  */
-const LLM_OVERRIDE_KEYS = [
-  'llmModel',
-  'llmMaxTokens',
-  'llmTimeout',
-  'llmMaxRetries',
-  'llmRetryBackoff',
-  'llmConcurrency',
-  'llmExtraBody',
-] as const;
+const FIXED_AT_LAUNCH = ['llmBaseUrl', 'llmProvider'] as const;
+
+/** Every registry setting declared secret. The one source for both lists below. */
+function secretSettings(): readonly Setting[] {
+  return SETTINGS.filter((s) => s.secret === true);
+}
+
+/**
+ * Every name a body might spell a secret with: the setting key, studio's own
+ * env name, and each vendor alias. All three are things a caller plausibly
+ * types, and a body key is refused whichever one it is.
+ */
+function secretAliases(setting: Setting): string[] {
+  return [setting.key, envName(setting.key), ...(setting.envAliases ?? [])];
+}
+
+/**
+ * The per-job tunable LLM settings — derived from the registry, never listed.
+ *
+ * Everything the registry gives the `studio` command in the llm group, minus
+ * what it declares `secret` and minus the launch decisions above. A hardcoded
+ * list is what let `llmExtraBody` through: it became a secret later (free-form
+ * vendor fields cannot be scanned for credentials, and gateways do take auth in
+ * the request body), and the list said nothing, so a secret was accepted over
+ * HTTP and written into `studio.json`. The registry is the declaration; this
+ * reads it.
+ */
+function llmOverrideKeys(): string[] {
+  const fixed = new Set<string>(FIXED_AT_LAUNCH);
+  return settingsFor('studio')
+    .filter((s) => s.key.startsWith('llm') && s.secret !== true && !fixed.has(s.key))
+    .map((s) => s.key);
+}
 
 /**
  * Refuse a request that carries a secret.
@@ -115,23 +197,27 @@ const LLM_OVERRIDE_KEYS = [
  * The registry's own rule is that secrets are never a flag and are rejected in
  * a config file, because those surfaces get persisted and shared. An HTTP body
  * is the same kind of surface — it lands in logs, dev-tools HAR exports and
- * `lastParams` — so the key travels by environment only. Silently dropping it
+ * `lastParams` — so a secret travels by environment only. Silently dropping it
  * (what this API used to do) is worse than refusing: the caller believes the
- * key was used.
+ * value was used.
  */
 function rejectSecrets(body: Record<string, unknown>): void {
-  if ('llmApiKey' in body || 'OPENAI_API_KEY' in body) {
+  for (const setting of secretSettings()) {
+    if (!secretAliases(setting).some((alias) => alias in body)) continue;
+    const routes = [envName(setting.key), ...(setting.envAliases ?? [])].join(' or ');
     throw new Error(
-      'llmApiKey is environment-only — set OPENAI_API_KEY where studio runs; it is never accepted over HTTP',
+      `${setting.key} is environment-only — set ${routes} where studio runs; it is never accepted over HTTP`,
     );
   }
-  // Not a secret itself, but it decides where the secret is SENT. A body that
-  // sets it redirects every prompt, and the server's Authorization header, to
-  // a host of the caller's choosing.
-  if ('llmBaseUrl' in body || 'OPENAI_BASE_URL' in body) {
-    throw new Error(
-      'llmBaseUrl is fixed at launch — it decides where prompts and the API key are sent, so a request cannot change it',
-    );
+  const whyFixed: Record<string, string> = {
+    llmBaseUrl: 'it decides where prompts and the API key are sent',
+    llmProvider: 'it is the wire format the configured endpoint speaks',
+  };
+  for (const key of FIXED_AT_LAUNCH) {
+    const setting = settingByKey(key);
+    const aliases = setting ? [key, envName(key), ...(setting.envAliases ?? [])] : [key];
+    if (!aliases.some((alias) => alias in body)) continue;
+    throw new Error(`${key} is fixed at launch — ${whyFixed[key]}, so a request cannot change it`);
   }
 }
 
@@ -148,7 +234,7 @@ function llmOverridesFrom(
   values: Record<string, unknown>,
 ): Record<string, unknown> {
   const overrides: Record<string, unknown> = {};
-  for (const key of LLM_OVERRIDE_KEYS) {
+  for (const key of llmOverrideKeys()) {
     if (body[key] !== undefined) overrides[key] = values[key];
   }
   return overrides;
@@ -169,13 +255,33 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(text);
 }
 
+/**
+ * Largest request body studio will read, in bytes.
+ *
+ * The biggest legitimate body is a plan: a few hundred kilobytes of markdown at
+ * the outside. Everything else is a small object of settings. 1 MB is roomy for
+ * both and small enough that a caller cannot make this process hold an
+ * arbitrary amount of memory just by talking to it.
+ */
+const MAX_BODY_BYTES = 1_000_000;
+
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  // A declared length over the cap is refused before a single byte is read. The
+  // stream guard below is still what enforces the limit — Content-Length is the
+  // client's claim, and a chunked body makes no claim at all — but honouring the
+  // claim when it is honest saves waiting out a gigabyte sent one byte a second.
+  const declared = Number(req.headers['content-length'] ?? '');
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    throw new HttpError(413, `request body too large (limit ${MAX_BODY_BYTES} bytes)`);
+  }
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buf.length;
-    if (size > 1_000_000) throw new Error('request body too large');
+    if (size > MAX_BODY_BYTES) {
+      throw new HttpError(413, `request body too large (limit ${MAX_BODY_BYTES} bytes)`);
+    }
     chunks.push(buf);
   }
   const raw = Buffer.concat(chunks).toString('utf8'); // decode ONCE — multi-byte chars can straddle chunks
@@ -265,7 +371,9 @@ function repoStatus(repo: RepoEntry, jobs?: JobRunner): Record<string, unknown> 
     outputs: {
       html: fileExists(join(handbookDir, 'html', 'overview.html')),
       single: fileExists(join(handbookDir, 'handbook.html')),
-      agent: fileExists(join(handbookDir, 'agent', 'how_to_use.md')),
+      // The entry index, not a fact table: it is what the UI links to, and it
+      // is the one file the agent artifact always writes.
+      agent: fileExists(join(handbookDir, 'agent', 'index.md')),
       // Whether a SKILL package has been built. Without this the UI cannot
       // tell a "validate" that is ready to run from one that will come back
       // 409, so the button was offered whenever a handbook existed and the
@@ -421,15 +529,45 @@ function safeResolve(root: string, rel: string): string | null {
   return full;
 }
 
+/**
+ * Content-Security-Policy for the RENDERED HANDBOOK, which is served from the
+ * same origin as this UI.
+ *
+ * The handbook is built from an arbitrary source repository, and its prose is
+ * written by a model reading that repository. So its HTML is not trusted input:
+ * a crafted comment or identifier that survives into a page — or a model talked
+ * into emitting markup — runs as script on studio's own origin, where it can
+ * `fetch('/')` and read the API token straight out of the UI's `<meta>` tag.
+ *
+ * `connect-src` is the one that closes that path: with no network verbs at all,
+ * a script that runs still cannot send anything anywhere. `script-src` has to
+ * keep `'unsafe-inline'` because inlining is the handbook's whole point — it
+ * must open by double-click with no server and no build — and `'self'` because
+ * the multi-page render loads `search-index.js` as a sibling script rather than
+ * inlining the index into all N pages.
+ */
+export const HANDBOOK_CSP = [
+  "default-src 'none'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src 'self' data:",
+  'font-src data:',
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join('; ');
+
 /** Serve a file from inside `root` (path-traversal AND symlink safe). */
-function serveStatic(res: ServerResponse, root: string, relPath: string): void {
+function serveStatic(res: ServerResponse, root: string, relPath: string, csp?: string): void {
   let target = safeResolve(root, relPath);
   if (!target) {
     json(res, 400, { error: 'path escapes root' });
     return;
   }
+  let size: number;
   try {
-    if (statSync(target).isDirectory()) {
+    let info = statSync(target);
+    if (info.isDirectory()) {
       // A directory rewrite to index.html must itself stay inside the sandbox.
       const idx = safeResolve(root, join(target, 'index.html'));
       if (!idx) {
@@ -437,12 +575,212 @@ function serveStatic(res: ServerResponse, root: string, relPath: string): void {
         return;
       }
       target = idx;
+      info = statSync(target);
     }
-    const body = readFileSync(target);
-    res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' });
-    res.end(body);
+    if (!info.isFile()) {
+      json(res, 404, { error: `not found: ${relPath}` });
+      return;
+    }
+    size = info.size;
   } catch {
     json(res, 404, { error: `not found: ${relPath}` });
+    return;
+  }
+  // Streamed, not read whole. A single-page handbook of a large repo is tens of
+  // megabytes, and `readFileSync` would hold all of it AND block the event loop
+  // — which for a one-process server means every other request, including the
+  // SSE log of the job that is still running, stops until the read finishes.
+  // `nosniff` because the MIME table falls back to octet-stream: a browser must
+  // not guess a type for a file whose extension we did not recognise.
+  res.writeHead(200, {
+    'content-type': MIME[extname(target)] ?? 'application/octet-stream',
+    'content-length': String(size),
+    'x-content-type-options': 'nosniff',
+    ...(csp ? { 'content-security-policy': csp } : {}),
+  });
+  const stream = createReadStream(target);
+  // A read that fails after the head is written cannot become a 404 — the
+  // status is already on the wire. Dropping the connection is the honest signal
+  // that the body is incomplete; a short 200 would look like a valid file.
+  stream.on('error', () => res.destroy());
+  res.on('close', () => stream.destroy());
+  // `pipe`, not a read-and-write loop: it stops reading whenever the response
+  // reports backpressure, so a client that stops reading a 40 MB single-page
+  // handbook holds one file-system chunk here, not the rest of the file. That
+  // property is the reason this is the only streaming write in this file that
+  // needs nothing further — see SseStream for the one that does.
+  stream.pipe(res);
+}
+
+/**
+ * Log lines a stalled SSE subscriber may accumulate before the oldest go.
+ *
+ * Both bounds are needed for different reasons: the byte cap is the memory
+ * promise (a log line is capped at ~2 KB by the job runner, so this is ~1 MB
+ * per subscriber at worst), and the count cap is what stops a run that emits
+ * very short lines from parking half a million small strings, whose per-string
+ * overhead dwarfs their length.
+ */
+const SSE_MAX_QUEUED_LINES = 512;
+const SSE_MAX_QUEUED_BYTES = 1_000_000;
+
+/**
+ * A backpressure-aware writer for one SSE subscriber.
+ *
+ * `res.write()` never refuses. When a subscriber stops reading — a browser tab
+ * throttled in the background, a paused debugger, a `curl` piped into something
+ * slow, a half-open socket — the kernel's socket buffer fills (~64 KB) and Node
+ * then buffers every further byte in THIS process's memory, without bound, for
+ * as long as the job runs. Measured with the plain `res.write` this replaced, by
+ * the test that now guards it: one non-reading loopback socket parked 8,030,890
+ * bytes here after 4000 log lines, and would have kept going for as long as the
+ * job kept talking. A `generate` on a large repo emits thousands of lines, and
+ * the backlog replay alone is up to MAX_LOG_LINES of them in one burst.
+ *
+ * The policy, and why it is this one:
+ *
+ * - NOT "pause the producer". A job must not run slower because somebody's tab
+ *   is in the background. The stream is the run's narration, not its output.
+ * - NOT "disconnect the subscriber". Being backgrounded is the common case, and
+ *   this UI reads a dropped stream as the run having ENDED — `onerror`
+ *   finalizes the drawer from `/api/jobs/<id>` — so hanging up on a live job
+ *   would report a running job as finished, which is worse than a gap.
+ * - Bounded queue, drop the OLDEST, and SAY SO. The stream is a live view; the
+ *   log itself is kept on the job and re-fetchable, so a gap costs a reload and
+ *   nothing more. What that buys is the invariant that matters: a spectator can
+ *   never grow this process's memory, and the run never stalls.
+ *
+ * A drop is disclosed as its own `dropped` event, never as a synthetic `data:`
+ * line — for the same reason facts and prose are never mixed elsewhere here: a
+ * line we invented is indistinguishable, to everything downstream, from a line
+ * the job actually said.
+ *
+ * Two details are load-bearing:
+ *
+ * - The backlog replay is INDEXED, not queued. `job.log` is already in memory
+ *   and already bounded, so walking it as the socket drains costs nothing and
+ *   can never be dropped — which is what lets a perfectly healthy subscriber,
+ *   whose multi-megabyte replay trips `writableNeedDrain` within the first
+ *   ~30 lines, still receive all of it.
+ * - `progress` is COALESCED, not queued. A progress event is a snapshot, so an
+ *   older one is worthless; keeping only the newest means a run that ticks
+ *   quickly cannot evict the log lines a reader actually came for.
+ */
+class SseStream {
+  /** Backlog not yet written. An index into an existing array — no copy grows. */
+  private replay: readonly string[];
+  private replayAt = 0;
+  private readonly queue: string[] = [];
+  private queuedBytes = 0;
+  /** Newest progress frame not yet written; superseded rather than queued. */
+  private pendingProgress: string | null = null;
+  /** Lines evicted since the last time we managed to disclose a gap. */
+  private dropped = 0;
+  private ending = false;
+  private gone = false;
+  private awaitingDrain = false;
+
+  constructor(
+    private readonly res: ServerResponse,
+    backlog: readonly string[],
+  ) {
+    // A snapshot: the job runner splices `job.log` in place once it passes
+    // MAX_LOG_LINES, and an index into a live array would then skip lines.
+    // `slice` copies references, not strings, so this is pointer-sized.
+    this.replay = backlog.slice();
+    res.on('close', () => {
+      // Nobody is left to read it. Releasing here matters as much as the bound:
+      // a subscriber that hangs up mid-job would otherwise leave its queue
+      // reachable until the job's listener set is torn down.
+      this.gone = true;
+      this.replay = [];
+      this.queue.length = 0;
+      this.queuedBytes = 0;
+      this.pendingProgress = null;
+    });
+  }
+
+  line(text: string): void {
+    this.push(`data: ${JSON.stringify(text)}\n\n`);
+  }
+
+  progress(event: ProgressEvent): void {
+    // Progress is its own SSE event type: a bar is not a log line, and
+    // interleaving them would make the drawer scroll on every tick.
+    this.pendingProgress = `event: progress\ndata: ${JSON.stringify(event)}\n\n`;
+    this.pump();
+  }
+
+  /** Deliver `done` and close — after everything still owed, never before. */
+  end(): void {
+    this.ending = true;
+    this.pump();
+  }
+
+  private push(frame: string): void {
+    if (this.gone || this.ending) return;
+    this.queue.push(frame);
+    this.queuedBytes += frame.length;
+    // Drop the OLDEST. A live view is worth more at its head than at its tail:
+    // the line a watcher is waiting for is the one that just arrived.
+    while (this.queue.length > SSE_MAX_QUEUED_LINES || this.queuedBytes > SSE_MAX_QUEUED_BYTES) {
+      const evicted = this.queue.shift();
+      if (evicted === undefined) break;
+      this.queuedBytes -= evicted.length;
+      this.dropped += 1;
+    }
+    this.pump();
+  }
+
+  private pump(): void {
+    const res = this.res;
+    // `writableNeedDrain` is false on a destroyed response, so it cannot be the
+    // only loop guard — without these two the replay would burn through 2000
+    // frames writing at a socket that is already gone.
+    while (!this.gone && !res.destroyed && !res.writableEnded && !res.writableNeedDrain) {
+      if (this.pendingProgress !== null) {
+        const frame = this.pendingProgress;
+        this.pendingProgress = null;
+        res.write(frame);
+        continue;
+      }
+      if (this.replayAt < this.replay.length) {
+        res.write(`data: ${JSON.stringify(this.replay[this.replayAt])}\n\n`);
+        this.replayAt += 1;
+        continue;
+      }
+      // The gap is disclosed exactly where it happened: the next frame out is
+      // the oldest survivor, so the notice belongs immediately before it. A
+      // count sent at the end of the stream would put the hole in the wrong
+      // place, which for a log is the same as not saying where it is.
+      if (this.dropped > 0) {
+        const lines = this.dropped;
+        this.dropped = 0;
+        res.write(`event: dropped\ndata: ${JSON.stringify({ lines })}\n\n`);
+        continue;
+      }
+      const frame = this.queue.shift();
+      if (frame !== undefined) {
+        this.queuedBytes -= frame.length;
+        res.write(frame);
+        continue;
+      }
+      if (this.ending) {
+        res.write('event: done\ndata: {}\n\n');
+        res.end();
+      }
+      return;
+    }
+    // Stalled. One listener per stall, not per frame — `on` here would add a
+    // listener for every line a wedged subscriber is sent, which is the leak
+    // this class exists to prevent, in a different currency.
+    if (!this.gone && !res.destroyed && !res.writableEnded && !this.awaitingDrain) {
+      this.awaitingDrain = true;
+      res.once('drain', () => {
+        this.awaitingDrain = false;
+        this.pump();
+      });
+    }
   }
 }
 
@@ -654,9 +992,15 @@ async function runPlan(
     handbookDir: fileExists(join(handbookDir, 'index.md')) ? handbookDir : undefined,
     request,
     maxTurns: values.maxTurns as number,
+    // Handed to the WORK, not merely consulted around it. Checked only after
+    // runPlanner returned, a cancel let the agent play out every remaining turn
+    // — up to thirty model calls, real money — and then threw the result away.
+    // The user saw "cancelled" and paid for the whole run.
+    signal,
     logger,
   });
-  // Cooperative checkpoint: a cancelled planning run must not come back green.
+  // The planner rejects on abort, so this is the narrow race where the cancel
+  // landed after its last turn: still not a run to come back green.
   signal.throwIfAborted();
   // A run that gave up must not come back green. The planner's own log said
   // "rejected (3/3)" while the drawer showed SUCCEEDED.
@@ -761,6 +1105,7 @@ async function summariseChange(
   client: ChatClient | undefined,
   lang: 'en' | 'zh',
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<{ text: string; source: DescriptionSource } | undefined> {
   const touched = [...report.changedFiles, ...report.addedFiles];
   const removed = report.deletedFiles;
@@ -811,7 +1156,7 @@ async function summariseChange(
           '',
           ...lines,
         ].join('\n');
-    const reply = await client.complete(prompt, { temperature: 0, maxTokens: 200 });
+    const reply = await client.complete(prompt, { temperature: 0, maxTokens: 200, signal });
     const text =
       reply.text
         .trim()
@@ -821,6 +1166,10 @@ async function summariseChange(
     if (text.length >= 4 && text.length <= 120) return { text, source: 'auto' };
     logger.warn(`[resync] auto-summary unusable (${text.length} chars) — falling back to the file list`);
   } catch (error) {
+    // A cancel is not a summary failure. Swallowing it here would spend the
+    // call the user just stopped, write the label anyway, and let the job
+    // resolve as though nothing had been asked of it.
+    if (signal?.aborted) throw error;
     logger.warn(`[resync] auto-summary failed: ${String(error)} — falling back to the file list`);
   }
   return fromFiles();
@@ -888,9 +1237,12 @@ async function runResync(
   ensureDir(caseDir);
   const planText = typeof body.description === 'string' ? body.description : undefined;
   const client = noLlm ? undefined : ctx.clientFactory(logger, params.llmOverrides);
-  let report;
+  // The cleanup window covers the WHOLE run, not just the pipeline call: a
+  // resync that stops anywhere before `evolution.json` is written — an abort, a
+  // failed re-render, a summary call the user cancelled — must leave no case
+  // dir behind. Only the last line of this block makes the entry real.
   try {
-    report = await resyncHandbook({
+    const report = await resyncHandbook({
       caseDir,
       editedRoot: repo.sourceRoot,
       planText,
@@ -903,59 +1255,65 @@ async function runResync(
       logger,
       signal,
     });
-    // Cooperative checkpoint, still inside the try: a cancelled resync must
-    // clean up its case dir exactly like a failed one — no phantom history.
+    // Cooperative checkpoint: resyncHandbook rejects on abort, so this covers
+    // the race where the cancel landed as its last pass finished.
     signal.throwIfAborted();
+    return await finishResync(report);
   } catch (error) {
-    // A failed resync must not leave a phantom history entry behind.
     rmSync(caseDir, { recursive: true, force: true });
     throw error;
   }
-  const title =
-    typeof body.title === 'string' && body.title.trim()
-      ? body.title.trim()
-      : (repo.title ?? `${repo.name} Handbook`);
-  if (title !== repo.title) ctx.store.setTitle(repo.name, title);
-  if (refreshRendered) {
-    logger.info('re-rendering handbook…');
-    const outDir = join(repo.workDir, 'handbook');
-    const model = loadHandbookModel(repo.workDir, title);
-    // Same fidelity disclosure as a full generate: a resync re-renders the whole
-    // handbook, so dropping it here would silently un-say it.
-    const languages =
-      readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
-    renderMarkdownHandbook(model, outDir, { languages });
-    renderAgentSite(model, join(outDir, 'agent'));
-    renderHtmlSite(model, join(outDir, 'html'), { languages });
-    renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
-  } else {
-    // Registry `refreshRendered` (`--no-render`): the artifacts are refreshed,
-    // the rendered outputs deliberately are not — say so where the reader looks.
-    logger.info('skipping the re-render (refreshRendered=false) — rendered outputs are now stale');
+
+  async function finishResync(
+    report: Awaited<ReturnType<typeof resyncHandbook>>,
+  ): Promise<Record<string, unknown>> {
+    const title =
+      typeof body.title === 'string' && body.title.trim()
+        ? body.title.trim()
+        : (repo.title ?? `${repo.name} Handbook`);
+    if (title !== repo.title) ctx.store.setTitle(repo.name, title);
+    if (refreshRendered) {
+      logger.info('re-rendering handbook…');
+      const outDir = join(repo.workDir, 'handbook');
+      const model = loadHandbookModel(repo.workDir, title);
+      // Same fidelity disclosure as a full generate: a resync re-renders the whole
+      // handbook, so dropping it here would silently un-say it.
+      const languages =
+        readOptional(() => new WorkDir(repo.workDir).loadGraph().metadata.languages) ?? undefined;
+      renderMarkdownHandbook(model, outDir, { languages });
+      renderAgentSite(model, join(outDir, 'agent'));
+      renderHtmlSite(model, join(outDir, 'html'), { languages });
+      renderSinglePageHtml(model, join(outDir, 'handbook.html'), { languages });
+    } else {
+      // Registry `refreshRendered` (`--no-render`): the artifacts are refreshed,
+      // the rendered outputs deliberately are not — say so where the reader looks.
+      logger.info('skipping the re-render (refreshRendered=false) — rendered outputs are now stale');
+    }
+    // A resync with no description used to leave a bare dash in the timeline while
+    // the facts needed to label it sat in the report. Fill it in — but never let the
+    // reader mistake a machine summary for the author's own intent, and never let a
+    // cosmetic summary fail the resync that already succeeded.
+    // The summary language follows the handbook's own prose: the explicit
+    // `proseLang` when given, else whatever language the narration on disk is in.
+    const summaryLang =
+      proseLang ??
+      (readOptional(
+        () => (readJsonFile(new WorkDir(repo.workDir).narrationPath) as { lang?: string }).lang,
+      ) === 'zh'
+        ? 'zh'
+        : 'en');
+    const typed = (planText ?? '').trim();
+    const auto = typed ? undefined : await summariseChange(repo, report, client, summaryLang, logger, signal);
+    const evolution = {
+      id: stamp,
+      at: new Date().toISOString(),
+      description: typed || auto?.text || '(no description)',
+      descriptionSource: typed ? ('user' as const) : (auto?.source ?? ('none' as const)),
+      report,
+    };
+    writeJsonFile(join(caseDir, 'evolution.json'), evolution);
+    return evolution;
   }
-  // A resync with no description used to leave a bare dash in the timeline while
-  // the facts needed to label it sat in the report. Fill it in — but never let the
-  // reader mistake a machine summary for the author's own intent, and never let a
-  // cosmetic summary fail the resync that already succeeded.
-  // The summary language follows the handbook's own prose: the explicit
-  // `proseLang` when given, else whatever language the narration on disk is in.
-  const summaryLang =
-    proseLang ??
-    (readOptional(() => (readJsonFile(new WorkDir(repo.workDir).narrationPath) as { lang?: string }).lang) ===
-    'zh'
-      ? 'zh'
-      : 'en');
-  const typed = (planText ?? '').trim();
-  const auto = typed ? undefined : await summariseChange(repo, report, client, summaryLang, logger);
-  const evolution = {
-    id: stamp,
-    at: new Date().toISOString(),
-    description: typed || auto?.text || '(no description)',
-    descriptionSource: typed ? ('user' as const) : (auto?.source ?? ('none' as const)),
-    report,
-  };
-  writeJsonFile(join(caseDir, 'evolution.json'), evolution);
-  return evolution;
 }
 
 /**
@@ -1057,7 +1415,11 @@ async function runSkillBuild(
     name: values.name as string,
     project: (values.project as string | undefined) ?? repo.name,
     coverage,
-    agentDir: fileExists(join(agentDir, 'how_to_use.md')) ? agentDir : undefined,
+    // Named by the renderer, not by us. This used to hardcode `how_to_use.md`;
+    // when the artifact was redesigned that file stopped existing, the probe
+    // went permanently false, and every skill studio built shipped without its
+    // agent index — silently, because an absent artifact is supported.
+    agentDir: fileExists(join(agentDir, AGENT_INDEX_FILE)) ? agentDir : undefined,
     lang: values.bodyLang as 'en' | 'zh',
   });
 }
@@ -1078,9 +1440,16 @@ const SETTINGS_COMMANDS = [
 /**
  * Settings studio supplies itself; a form rendering them would offer a knob
  * that does nothing (or worse, one that fights the repo entry).
+ *
+ * `FIXED_AT_LAUNCH` belongs here for the same reason: the UI builds its
+ * advanced section from every non-managed, non-secret setting, so it rendered
+ * an `llmBaseUrl` field whose only possible outcome was the 400 from
+ * `rejectSecrets`, and an `llmProvider` field that was accepted and then
+ * ignored. Secrets need no entry — the UI filters on `secret`, which is the
+ * registry's own declaration and now covers `llmExtraBody` too.
  */
 const MANAGED_KEYS: Record<string, readonly string[]> = {
-  '*': ['source', 'work', 'logLevel'],
+  '*': ['source', 'work', 'logLevel', ...FIXED_AT_LAUNCH],
   render: ['out'],
   skill: ['handbook', 'out', 'agentDir'],
   validate: ['skill'],
@@ -1158,18 +1527,25 @@ function preflight(
   }
 }
 
-/** Body minus anything that must not be persisted, for `lastParams`. */
+/**
+ * Body minus anything that must not be persisted, for `lastParams`.
+ *
+ * `studio.json` is exactly the kind of file that ends up in a backup, so the
+ * filter is the registry's `secret` declaration rather than two key names
+ * written out by hand — which is how `llmExtraBody` came to be persisted after
+ * it was declared secret. `rejectSecrets` refuses these at the door already;
+ * this is the layer that has to keep holding if a route ever forgets to call it.
+ */
 function persistableParams(body: Record<string, unknown>): Record<string, unknown> {
-  const { llmApiKey: _key, OPENAI_API_KEY: _envKey, ...rest } = body;
-  return rest;
+  const banned = new Set(secretSettings().flatMap(secretAliases));
+  return Object.fromEntries(Object.entries(body).filter(([key]) => !banned.has(key)));
 }
 
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
-async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const url = new URL(req.url ?? '/', 'http://localhost');
+async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   const path = url.pathname;
   const method = req.method ?? 'GET';
 
@@ -1178,8 +1554,29 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
   // body from a HEAD response automatically, so we can share the one code path.
   if ((method === 'GET' || method === 'HEAD') && (path === '/' || path === '/index.html')) {
     const uiPath = fileURLToPath(new URL('../public/index.html', import.meta.url));
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(readFileSync(uiPath));
+    // The page this server serves is the only legitimate client, so it is the
+    // only thing that gets the token. Injected rather than fetched: an endpoint
+    // that hands out the token would defeat the point of having one.
+    const shell = readFileSync(uiPath, 'utf8').replace(
+      '</head>',
+      `<meta name="hb-token" content="${ctx.token}"></head>`,
+    );
+    // The same token as a cookie, because a `fetch` header cannot serve every
+    // way this page loads things. The rendered handbook is shown in an IFRAME,
+    // and a browser-initiated navigation carries no `Authorization` — nor do the
+    // sub-resources the handbook then loads relative to itself (`search-index.js`,
+    // images), so a token in the iframe's URL would not have covered them either.
+    // A cookie is what browsers send automatically for exactly these loads.
+    //
+    // `SameSite=Strict` keeps another origin from causing the browser to send it,
+    // which together with the existing Host/Origin check is the CSRF story.
+    // `HttpOnly` keeps script from reading it back out — the meta tag above is
+    // for this page's own `fetch`, and the cookie is for the browser's loads.
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'set-cookie': `hb_token=${ctx.token}; Path=/; SameSite=Strict; HttpOnly`,
+    });
+    res.end(shell);
     return;
   }
 
@@ -1234,8 +1631,18 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
 
   if (path === '/api/repos' && method === 'POST') {
     const body = await readBody(req);
-    const name = String(body.name ?? '').trim();
-    const rawSource = String(body.sourceRoot ?? '').trim();
+    // Typed, not coerced. `String(body.sourceRoot)` turned `["/etc"]` into
+    // `/etc` — obeying a path the caller never wrote — and `{}` into
+    // `[object Object]`, a nonsense relative path resolved against the server's
+    // cwd, which the caller cannot see and did not choose.
+    for (const key of ['name', 'sourceRoot', 'workDir'] as const) {
+      if (body[key] !== undefined && typeof body[key] !== 'string') {
+        json(res, 400, { error: `${key} must be a string` });
+        return;
+      }
+    }
+    const name = (body.name ?? '').toString().trim();
+    const rawSource = (body.sourceRoot ?? '').toString().trim();
     if (!name || !rawSource) {
       json(res, 400, { error: 'name and sourceRoot are required' });
       return;
@@ -1250,13 +1657,38 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       return;
     }
     const sourceRoot = resolve(rawSource);
+    // The filesystem root is never what anyone meant, and the shapes of the
+    // mistake are common: a blank field that defaulted, a stray slash, a
+    // variable that expanded to nothing. What it actually asks for is the
+    // analyzer walking the whole disk, and every file on the machine readable
+    // through the viewer route.
+    if (sourceRoot === resolve(sep)) {
+      json(res, 400, {
+        error: 'sourceRoot cannot be the filesystem root — point it at one project directory',
+      });
+      return;
+    }
     // An explicit path is obeyed as given; a blank one adopts an existing
-    // handbook when one is sitting in a conventional spot.
-    const explicit = body.workDir ? resolve(String(body.workDir)) : undefined;
-    const adopted = explicit ? undefined : findWorkDirFor(String(body.sourceRoot ?? ''), ctx.stateDirWork);
+    // handbook when one is sitting in a conventional spot. Both look at the
+    // TRIMMED source: passing the raw body value here made a path with a stray
+    // trailing space resolve differently than the one being registered, so the
+    // adoption silently found nothing.
+    const explicit = body.workDir ? resolve((body.workDir as string).trim()) : undefined;
+    const adopted = explicit ? undefined : findWorkDirFor(sourceRoot, ctx.stateDirWork);
     const workDir = explicit ?? adopted ?? join(ctx.stateDirWork, name);
     const entry = ctx.store.add({ name, sourceRoot, workDir });
-    ensureDir(workDir);
+    try {
+      ensureDir(workDir);
+    } catch (error) {
+      // The entry is already in studio.json at this point, so a work dir that
+      // cannot be created (a parent that is a file, a read-only volume) used to
+      // leave a registered repo that every action fails on — and re-adding it
+      // met "already exists". Registration is one thing or the other.
+      ctx.store.remove(entry.name);
+      throw new Error(
+        `cannot create the work dir ${workDir}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     json(res, 201, { ...repoStatus(entry, ctx.jobs), adoptedWorkDir: adopted !== undefined });
     return;
   }
@@ -1274,7 +1706,16 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
 
   const repoMatch = path.match(/^\/api\/repos\/([^/]+)(\/.*)?$/);
   if (repoMatch) {
-    const repo = ctx.store.get(decodeURIComponent(repoMatch[1] ?? ''));
+    // decodeURIComponent throws URIError on a lone `%`, which reached the
+    // catch-all as "URI malformed" — a message about nothing the reader can see.
+    let repoName: string;
+    try {
+      repoName = decodeURIComponent(repoMatch[1] ?? '');
+    } catch {
+      json(res, 400, { error: 'repo name is not valid percent-encoding' });
+      return;
+    }
+    const repo = ctx.store.get(repoName);
     if (!repo) {
       json(res, 404, { error: 'unknown repo' });
       return;
@@ -1309,9 +1750,10 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       // Secrets never travel over HTTP, whichever endpoint this is. The per-run
       // parsers repeat the check; this one catches every route at the door.
       rejectSecrets(body);
-      const kind = sub.slice(1) as
-        'generate' | 'analyze' | 'render' | 'skill' | 'plan' | 'resync' | 'apply' | 'rollback';
-      const jobKind: JobKind = kind === 'analyze' ? 'generate' : (kind as JobKind);
+      // `analyze` is its own kind, not a generate. It used to be reported as one,
+      // which made the cancel refusal read "a generate job cannot be cancelled"
+      // — naming the one kind that CAN be, about a run that was not it.
+      const kind = sub.slice(1) as JobKind;
       // Validate BEFORE the job exists: a garbage readWorkers must be a 400 on
       // this request, not a failed job discovered in the drawer later.
       const genParams = kind === 'generate' ? parseGenerateParams(body, repo, ctx.configFile) : undefined;
@@ -1347,13 +1789,23 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
         json(res, 409, { error: `repo "${repo.name}" already has a running job — wait for it to finish` });
         return;
       }
+      // Capacity, not correctness: 429 says "ask again later", which is true,
+      // where a 400 would tell the caller to change a request that was fine.
+      // Checked before setLastParams so a refused start leaves no trace of
+      // parameters that never ran.
+      if (ctx.jobs.isAtCapacity()) {
+        json(res, 429, {
+          error: `studio runs at most ${ctx.jobs.capacity} jobs at once — wait for one to finish, or cancel it`,
+        });
+        return;
+      }
       // What this job was run with, remembered per kind so the UI can pre-fill
       // the next dialog with the values that produced the current handbook.
       ctx.store.setLastParams(repo.name, kind, persistableParams(body));
       const debug = body.logLevel === 'debug' || genParams?.debug === true || resyncParams?.debug === true;
       const job = ctx.jobs.start(
         repo.name,
-        jobKind,
+        kind,
         (logger, signal, onProgress) => {
           switch (kind) {
             case 'analyze':
@@ -1374,7 +1826,14 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
               return runRollback(repo, body, logger);
           }
         },
-        { debug },
+        // Only these three thread the signal into the work they do, because
+        // only `generateHandbook`, `runPlanner` and `resyncHandbook` take one.
+        // `runPhase1`, the renderers, `buildSkill`, `applyPlan` and `rollback`
+        // have no signal parameter at all: they are synchronous work that never
+        // yields, so accepting a cancel for them would answer a request with the
+        // opposite of what happens. Adding a kind here without threading the
+        // signal into its work is the same lie.
+        { debug, cancellable: kind === 'generate' || kind === 'plan' || kind === 'resync' },
       );
       json(res, 202, jobSummary(job));
       return;
@@ -1468,9 +1927,11 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       json(res, 200, listEvolutions(repo));
       return;
     }
-    if (method === 'GET' && sub.startsWith('/handbook')) {
+    // Exactly `/handbook` or something under it — not `/handbookXYZ`, which used
+    // to match this prefix and serve `<work>/handbook/XYZ`.
+    if (method === 'GET' && (sub === '/handbook' || sub.startsWith('/handbook/'))) {
       const rel = sub.slice('/handbook'.length).replace(/^\//, '') || 'html/overview.html';
-      serveStatic(res, join(repo.workDir, 'handbook'), rel);
+      serveStatic(res, join(repo.workDir, 'handbook'), rel, HANDBOOK_CSP);
       return;
     }
   }
@@ -1494,6 +1955,12 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
       json(res, 409, { error: `job already finished: ${job.status}` });
       return;
     }
+    if (!job.cancellable) {
+      json(res, 409, {
+        error: `${job.kind} jobs cannot be cancelled — the work does no waiting, so there is no point at which it could stop. Let it finish.`,
+      });
+      return;
+    }
     // 202, not 200: cancellation is cooperative — the run stops at its next
     // checkpoint, and the job's own status transition is what confirms it.
     ctx.jobs.cancel(job.id);
@@ -1514,25 +1981,22 @@ async function route(ctx: Ctx, req: IncomingMessage, res: ServerResponse): Promi
         'cache-control': 'no-cache',
         connection: 'keep-alive',
       });
-      for (const line of job.log) res.write(`data: ${JSON.stringify(line)}\n\n`);
+      // Every byte of this response goes through SseStream, which is what keeps
+      // a subscriber that has stopped reading from growing this process's
+      // memory. Do not add a bare `res.write` here.
+      const stream = new SseStream(res, job.log);
       if (job.status !== 'running') {
-        res.write('event: done\ndata: {}\n\n');
-        res.end();
+        stream.end();
         return;
       }
-      // Progress is its own SSE event type: a bar is not a log line, and
-      // interleaving them would make the drawer scroll on every tick.
-      if (job.progress) res.write(`event: progress\ndata: ${JSON.stringify(job.progress)}\n\n`);
+      if (job.progress) stream.progress(job.progress);
       const unsubscribe = ctx.jobs.subscribe(job.id, (line, done, progress) => {
         if (progress) {
-          res.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`);
+          stream.progress(progress);
           return;
         }
-        res.write(`data: ${JSON.stringify(line)}\n\n`);
-        if (done) {
-          res.write('event: done\ndata: {}\n\n');
-          res.end();
-        }
+        stream.line(line);
+        if (done) stream.end();
       });
       req.on('close', unsubscribe);
       return;
@@ -1555,11 +2019,71 @@ function isLoopbackRequest(req: IncomingMessage): boolean {
   return true;
 }
 
+/**
+ * A secret minted at launch and required on every `/api/*` call.
+ *
+ * The loopback guard stops a hostile WEB PAGE reaching this server. It does
+ * nothing about a hostile PROCESS: anything else running as any user on this
+ * machine could `POST /api/repos {"sourceRoot":"/"}` and then read any file
+ * through the viewer route, write any file through `apply`, or simply spend
+ * the API key. "Local" is not a trust boundary on a shared machine.
+ *
+ * The token is not persisted — a new launch invalidates the old one, which is
+ * the correct lifetime for something whose only reader is the page this server
+ * itself served.
+ */
+function mintToken(): string {
+  return randomBytes(24).toString('base64url');
+}
+
+/**
+ * Compare two tokens without leaking the answer through how long it took.
+ *
+ * `a !== b` returns on the first differing byte, which over a loopback socket
+ * is measurable often enough to be worth not doing. Hashing first makes both
+ * sides a fixed 32 bytes, so `timingSafeEqual` never has to be told about a
+ * length mismatch — which would leak the length by throwing.
+ */
+function tokenMatches(offered: string, expected: string): boolean {
+  const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(offered), digest(expected));
+}
+
+/**
+ * The request target, parsed ONCE.
+ *
+ * The auth gate used to test the raw `req.url` with `startsWith('/api/')` while
+ * the router matched `new URL(...).pathname`. Those two disagree, and every
+ * disagreement is an open door: `/./api/repos`, `//evil/api/repos`,
+ * `/%2e/api/repos` and `/a/../../api/repos` all reach `/api/repos` in the
+ * router and none of them starts with `/api/`, so the whole API — read any
+ * file, write any file, spend the API key — answered with no token at all.
+ * One parse, one pathname, one decision.
+ *
+ * A target that is not origin-form is refused outright rather than normalized.
+ * `//host/path` and `/\host/path` name an AUTHORITY, and an absolute-form
+ * `http://host/path` names a different server; nothing that legitimately talks
+ * to studio sends any of them, and each exists only to make two readers of the
+ * same string disagree.
+ */
+function parseTarget(raw: string): URL | null {
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return null;
+  try {
+    return new URL(raw, 'http://localhost');
+  } catch {
+    return null;
+  }
+}
+
+/** The one route that may carry its token in the query string; see the gate below. */
+const SSE_PATH_RE = /^\/api\/jobs\/[^/]+\/stream$/;
+
 export function createStudioServer(options: StudioOptions): Server {
   ensureDir(options.stateDir);
+  const token = options.authToken ?? mintToken();
   const ctx: Ctx = {
     store: new StateStore(options.stateDir),
-    jobs: new JobRunner(),
+    jobs: new JobRunner(options.maxConcurrentJobs),
     // Pass the job logger: a silent client hides retries, timeouts and
     // gateway blocks, which is how a failing run looks like a quiet one.
     // The overrides are the per-job llm settings a request carried (already
@@ -1585,8 +2109,53 @@ export function createStudioServer(options: StudioOptions): Server {
     configFile: options.configFile,
     logger: options.logger ?? silentLogger,
     stateDirWork: join(options.stateDir, 'work'),
+    token,
   };
-  return createServer((req, res) => {
+  // A socket that connects and says nothing, or stops halfway through a body,
+  // holds a slot in a single-process tool until one of these fires. Node's
+  // defaults (60s headers / 300s request) are sized for a public server behind
+  // a load balancer, not for one person's laptop. These bound only how long the
+  // REQUEST may take to arrive — an SSE response, whose request finished the
+  // moment its headers landed, streams for as long as the job runs.
+  const headersTimeout = options.headersTimeoutMs ?? 15_000;
+  const requestTimeout = options.requestTimeoutMs ?? 60_000;
+  const server = createServer(
+    {
+      // Node does not arm a timer per connection: it sweeps them on an interval
+      // that DEFAULTS TO 30 SECONDS, so a timeout shorter than the sweep is
+      // enforced no sooner than the sweep. Without this the settings above read
+      // as strict and behave as ~30s, which is the kind of setting that looks
+      // like protection and is not.
+      connectionsCheckingInterval: Math.max(50, Math.min(5_000, Math.floor(headersTimeout / 2))),
+    },
+    (req, res) => {
+      // A client that hangs up mid-response makes the next write fail, and an
+      // unhandled 'error' on a request or response stream is an uncaught
+      // exception — which in a one-process server kills the job that is still
+      // running. There is nobody left to answer, so the only thing to do is
+      // stop writing.
+      req.on('error', () => {});
+      res.on('error', () => {});
+      handle(req, res);
+    },
+  );
+  // Malformed request bytes, and the timeouts above, surface here rather than as
+  // a request. Node's default handler writes a response to the socket, which on
+  // a peer that has already gone is itself an unhandled error.
+  server.on('clientError', (error: NodeJS.ErrnoException, socket) => {
+    socket.on('error', () => {});
+    if (!socket.writable || socket.destroyed) {
+      socket.destroy();
+      return;
+    }
+    const status = error.code === 'ERR_HTTP_REQUEST_TIMEOUT' ? '408 Request Timeout' : '400 Bad Request';
+    socket.end(`HTTP/1.1 ${status}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n`);
+  });
+  server.headersTimeout = headersTimeout;
+  server.requestTimeout = requestTimeout;
+  return server;
+
+  function handle(req: IncomingMessage, res: ServerResponse): void {
     // Local-tool CSRF defence: a hostile web page can fire requests at
     // 127.0.0.1, so only loopback Hosts and (when present) loopback Origins
     // are accepted, and mutating requests must be real JSON.
@@ -1598,12 +2167,42 @@ export function createStudioServer(options: StudioOptions): Server {
       json(res, 415, { error: 'POST bodies must be application/json' });
       return;
     }
-    route(ctx, req, res).catch((error: unknown) => {
+    const url = parseTarget(req.url ?? '/');
+    if (!url) {
+      json(res, 400, { error: 'malformed request target' });
+      return;
+    }
+    // Everything that reads a path, writes a file or spends money lives under
+    // /api. The shell, the locale bundles and the rendered handbook do not —
+    // they are the page itself, and it cannot present a token to fetch itself.
+    // The decision is made on the PARSED pathname, which is the same string the
+    // router will match; see parseTarget for what happens when it is not.
+    if (url.pathname.startsWith('/api/')) {
+      // EventSource cannot set a header, so the SSE route — and only that one —
+      // also accepts the token as a query parameter. Query strings survive in
+      // shell history, copied links and Referer headers, so the exception is
+      // kept as narrow as the reason for it.
+      const fromQuery = SSE_PATH_RE.test(url.pathname) ? (url.searchParams.get('token') ?? '') : '';
+      // The cookie set when the shell was served. It is the ONLY credential a
+      // browser-initiated load can present: the rendered handbook is shown in an
+      // iframe, and neither that navigation nor the sub-resources the handbook
+      // then loads relative to itself (`search-index.js`, images) can carry an
+      // `Authorization` header — so a token in the iframe's URL would not have
+      // covered them either. `SameSite=Strict` is what keeps another origin from
+      // making the browser send it.
+      const fromCookie = /(?:^|;\s*)hb_token=([^;]*)/.exec(req.headers.cookie ?? '')?.[1] ?? '';
+      const offered = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '') || fromQuery || fromCookie;
+      if (!tokenMatches(offered, token)) {
+        json(res, 401, { error: 'missing or wrong API token — open the URL studio printed at startup' });
+        return;
+      }
+    }
+    route(ctx, req, res, url).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      if (!res.headersSent) json(res, 400, { error: message });
+      if (!res.headersSent) json(res, statusOf(error), { error: message });
       else res.end();
     });
-  });
+  }
 }
 
 /** Start the server and return it once listening.

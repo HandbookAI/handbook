@@ -585,10 +585,22 @@ function t(key) {
 }
 
 /** Every server call funnels through here so no button can fail silently. */
+/** The per-launch token the server injected into this page's own <head>. */
+const HB_TOKEN = (document.querySelector('meta[name="hb-token"]') || {}).content || '';
+
 async function api(path, opts) {
   let res;
   try {
-    res = await fetch(path, opts ? { headers: { 'content-type': 'application/json' }, ...opts } : undefined);
+    // Every /api call carries the token, GET included: the server requires it
+    // on the whole surface, because a read of an arbitrary path is as much a
+    // problem as a write to one.
+    const auth = { authorization: 'Bearer ' + HB_TOKEN };
+    res = await fetch(
+      path,
+      opts
+        ? { ...opts, headers: { 'content-type': 'application/json', ...auth, ...(opts.headers || {}) } }
+        : { headers: auth },
+    );
   } catch (e) {
     throw new Error('network error: ' + (e && e.message ? e.message : String(e)));
   }
@@ -1687,7 +1699,10 @@ function runJob(job, title, onDone) {
     else await render();
   };
   try {
-    evtSource = new EventSource('/api/jobs/' + enc(job.id) + '/stream');
+    // EventSource cannot set a header, so this one route takes the token as a
+    // query parameter. It is a same-origin URL that never leaves the machine,
+    // and the alternative is leaving the stream unauthenticated.
+    evtSource = new EventSource('/api/jobs/' + enc(job.id) + '/stream?token=' + encodeURIComponent(HB_TOKEN));
   } catch (e) {
     appendLog('✖ ' + errMsg(e));
     void finish();
@@ -1701,6 +1716,16 @@ function runJob(job, title, onDone) {
   // Progress arrives as its own event type, so a tick never scrolls the log.
   evtSource.addEventListener('progress', (e) => {
     try { showProgress(JSON.parse(e.data)); } catch { /* a malformed tick is not worth a failure */ }
+  });
+  // The server bounds what it will hold for a subscriber that stopped reading
+  // (a backgrounded tab throttles this connection), and drops the oldest lines
+  // rather than growing forever or hanging up mid-run. It says so with this
+  // event, in the position the gap occurred — an unhandled event would make the
+  // hole silent, which is the one outcome worse than the hole.
+  evtSource.addEventListener('dropped', (e) => {
+    let lines = 0;
+    try { lines = JSON.parse(e.data).lines; } catch { /* the gap still gets said */ }
+    appendLog(fmt(t('job.linesDropped'), lines || '?'));
   });
   evtSource.addEventListener('done', () => { hideProgress(); void finish(); });
   evtSource.onerror = () => {

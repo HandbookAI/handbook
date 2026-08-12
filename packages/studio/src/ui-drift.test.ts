@@ -114,4 +114,36 @@ describe('studio UI i18n dictionaries', () => {
       expect(html).toContain(`<script src="/i18n.${loc}.js"></script>`);
     }
   });
+
+  it('every locale can say that log lines were dropped', () => {
+    // The server bounds what it will hold for a subscriber that stopped reading
+    // and drops the oldest lines (see SseStream). A gap nobody is told about is
+    // the one outcome worse than the gap, and `t()` echoes the KEY when a
+    // dictionary is missing it — so a locale without this entry would render the
+    // literal "job.linesDropped" at exactly the moment the user needs a sentence.
+    for (const loc of UI_LOCALES) {
+      const job = loadDict(`i18n.${loc}.js`).job as Record<string, string>;
+      expect(typeof job.linesDropped, loc).toBe('string');
+      expect(job.linesDropped, loc).toContain('{0}');
+    }
+  });
+});
+
+describe('the studio UI handles every SSE event the server sends', () => {
+  /**
+   * The two sides are string literals in different files with nothing between
+   * them: an `addEventListener` name that stops matching what the server writes
+   * fails silently, because a browser simply ignores an SSE event nobody is
+   * listening for. That is how a disclosure becomes a no-op while both halves
+   * still look correct on their own.
+   */
+  const server = readFileSync(fileURLToPath(new URL('./server.ts', import.meta.url)), 'utf8');
+
+  it('listens for each named event the SSE route emits', () => {
+    const emitted = [...server.matchAll(/event: ([a-z]+)\\n/g)].map((m) => m[1] as string);
+    expect(new Set(emitted)).toEqual(new Set(['progress', 'done', 'dropped']));
+    for (const name of new Set(emitted)) {
+      expect(html, name).toContain(`evtSource.addEventListener('${name}'`);
+    }
+  });
 });

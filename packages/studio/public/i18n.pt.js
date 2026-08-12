@@ -327,6 +327,8 @@ window.HB_DICT = Object.assign(window.HB_DICT || {}, {
       cancelReq: '… cancelamento solicitado — o job para no próximo checkpoint',
       info: 'INFO',
       streamDropped: '⚠ o stream de log caiu, consultando o status do job…',
+      linesDropped:
+        '⚠ {0} linhas de log descartadas — esta visão ao vivo não conseguiu acompanhar; recarregue para ver o log completo',
     },
     dlg: {
       add: 'Adicionar repositório',

@@ -89,10 +89,15 @@ Server-Sent Events.
 - **One job per repo at a time.** The pipeline's artifacts are not safe for concurrent
   writers on the same work dir; a second start is refused with a clear message rather than
   allowed to interleave.
-- **Cancellable.** Every job gets an `AbortController` whose signal is threaded all the
-  way down into in-flight LLM requests. Cancel means cancel, not "stop showing me the log".
-- **Statuses:** `running` → `succeeded` | `failed` | `cancelled`. The full log is kept, so
-  you can read what happened after it finished.
+- **Cancellable — where the work can actually observe it.** `generate`, `plan` and
+  `resync` hand their signal to `generateHandbook`, `runPlanner` and `resyncHandbook`, so a
+  cancelled run stops buying model calls instead of playing out its remaining turns and
+  discarding the result. `analyze`, `render`, `skill`, `apply` and `rollback` take no
+  signal at all, and cancelling one is refused with `409` rather than accepted and ignored.
+- **Statuses:** `running` → `succeeded` | `failed` | `cancelled`. A run that resolved after
+  a cancel is recorded `cancelled`, never `succeeded` — its result is kept and the log says
+  what happened, but the status never claims a run the user stopped. The full log is kept,
+  so you can read what happened after it finished.
 
 ---
 
@@ -109,6 +114,25 @@ Studio is a **local tool**. It is not hardened for exposure and does not pretend
   the filesystem, and paths are realpath-normalized so two spellings of one tree compare
   equal.
 - **Source and handbook file serving is sandboxed** to the registered roots.
+- **The auth decision is made on the PARSED path**, never on the raw request target.
+  `/./api/repos` and `//host/api/repos` normalize to `/api/repos` in the router; a gate
+  reading the raw string would not see them as `/api` at all.
+
+### Limits it enforces on a client that misbehaves
+
+Being local is not being safe: anything else running on the machine can talk to this port,
+and a stuck script does the same damage as a hostile one.
+
+| Limit                            | Answer                           |
+| -------------------------------- | -------------------------------- |
+| Request body over **1 MB**       | `413`, before the bytes are read |
+| Headers not sent within **15 s** | socket closed (`408`)            |
+| Request not complete in **60 s** | socket closed (`408`)            |
+| More than **4 jobs** at once     | `429` (`maxConcurrentJobs`)      |
+| A second job on one repo         | `409`                            |
+
+Job logs are capped per line and per job, so a model that answers with a megabyte cannot
+grow this process without limit. Handbook files are streamed, not read whole.
 
 ### Running it in a container
 
