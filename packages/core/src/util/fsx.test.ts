@@ -132,14 +132,23 @@ describe('listFilesRecursive', () => {
   });
 
   it('reports the root itself when the root is what cannot be read', () => {
+    // `.` is the only path `relative()` can produce for the root, and a caller
+    // needs it: "the tree you named is unreadable" and "the tree you named is
+    // empty" are different answers.
+    //
+    // Guarded on `onSkip` firing, not on the result being empty. An empty result
+    // is ALSO what you get when the directory is perfectly readable and simply
+    // holds no matching file — which is exactly what happens on Windows, where
+    // `chmod 000` does not deny the owner. The first version keyed on the empty
+    // result and failed there for the wrong reason.
     const root = tree();
     const inner = join(root, 'sealed');
     mkdirSync(inner);
     chmodSync(inner, 0o000);
     made.push(() => chmodSync(inner, 0o755));
     const skipped: string[] = [];
-    const files = listFilesRecursive(inner, { onSkip: (p) => skipped.push(p) });
-    if (files.length === 0) expect(skipped).toEqual(['.']);
+    listFilesRecursive(inner, { onSkip: (p) => skipped.push(p) });
+    if (skipped.length > 0) expect(skipped).toEqual(['.']);
   });
 });
 

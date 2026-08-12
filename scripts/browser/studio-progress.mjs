@@ -40,10 +40,15 @@ t.ok('the coarse phase bar advances through phases', phases.length >= 2, JSON.st
 const scopes = [...new Set(seen.map((e) => e.scope))];
 t.ok('more than one pass reports', scopes.length >= 2, JSON.stringify(scopes));
 const pcts = withOverall.map((e) => e.overall.pct);
+// `pcts.length > 0` is load-bearing: `every` on an empty array is true, so this
+// assertion PASSED on the run where nothing reported at all — reporting
+// `min=Infinity max=-Infinity`, which is what `Math.min()`/`Math.max()` return
+// with no arguments. One green line among five red ones is worse than useless:
+// it says the range was checked when there was nothing to check.
 t.ok(
   'overall percentage is within 0-100',
-  pcts.every((p) => p >= 0 && p <= 100),
-  `min=${Math.min(...pcts)} max=${Math.max(...pcts)}`,
+  pcts.length > 0 && pcts.every((p) => p >= 0 && p <= 100),
+  pcts.length > 0 ? `min=${Math.min(...pcts)} max=${Math.max(...pcts)}` : 'no percentages at all',
 );
 t.ok(
   'an ETA is produced at some point',
