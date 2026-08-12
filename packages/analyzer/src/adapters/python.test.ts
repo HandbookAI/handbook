@@ -171,9 +171,19 @@ def helper():
 });
 
 describe('PythonAdapter — deep-nesting & ReDoS defenses (pass 2)', () => {
-  it('does not stack-overflow scanning a pathologically deep expression', async () => {
+  it('does not stack-overflow scanning a pathologically deep expression', { timeout: 60_000 }, async () => {
     // 20k nested parens force the module-body descent (visitBody) and the call
     // walk arbitrarily deep — both were recursive and blew the stack.
+    //
+    // The assertion is "does not overflow", not "is fast": tree-sitter's own
+    // parse of 40k parens dominates the runtime and is nothing this adapter
+    // controls. Measured 15.7s on a developer's machine and 31.7s on GitHub's
+    // Windows runner, which tripped the 30s default and read as a defect.
+    //
+    // The timeout is raised rather than the depth lowered. 20k is chosen to be
+    // far past any recursive implementation's stack, and cutting it to fit a
+    // clock would quietly weaken the only thing this test checks — a stack
+    // overflow that returns below the new depth would go unnoticed.
     const depth = 20000;
     const src = `x = ${'('.repeat(depth)}1${')'.repeat(depth)}\n\ndef top():\n    return ${'g('.repeat(depth)}1${')'.repeat(depth)}\n`;
     const root = mkdtempSync(join(tmpdir(), 'hb-py-deep-'));
