@@ -50,6 +50,16 @@ interface HtmlLabels {
   fidelityLead: string;
   /** Disclosure for languages analyzed by the generic engine (see genericTierLanguages). */
   fidelityNote: (languages: readonly string[]) => string;
+  /**
+   * The global file count when some file landed in no stage. `files(n)` states
+   * a total the pages then contradict by showing fewer; this one shows the
+   * split instead (see fileCountChip).
+   */
+  filesPartial: (assigned: number, total: number) => string;
+  /** Heading of the overview's list of files no stage claims. */
+  unassigned: string;
+  /** Why that list is there, with the assigned/total split spelled out. */
+  unassignedNote: (nUnassigned: number, nAssigned: number, nFiles: number) => string;
   /** Shell chrome. */
   onThisPage: string;
   search: string;
@@ -98,6 +108,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: 'Analysis fidelity',
     fidelityNote: (languages) =>
       `call relations for ${languages.join(', ')} come from the generic (config-driven) analyzer: they are best-effort and may be incomplete. The file inventory and the structure of these languages are exact.`,
+    filesPartial: (assigned, total) => `${assigned} of ${total} files in a stage`,
+    unassigned: 'Files in no stage',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} of ${nFiles} files were placed in a stage. The ${nUnassigned} below were found by the parser but placed in none, so no stage page describes them.`,
     onThisPage: 'On this page',
     search: 'Search',
     searchPlaceholder: 'Search stages, files, functions…',
@@ -143,6 +157,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: '保真度说明',
     fidelityNote: (languages) =>
       `${languages.join('、')} 的调用关系来自通用（配置驱动）分析器：尽力而为，可能不完整。这些语言的文件清单与结构仍是精确的。`,
+    filesPartial: (assigned, total) => `${total} 个文件中 ${assigned} 个已归入阶段`,
+    unassigned: '未归入任何阶段的文件',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} 个文件中有 ${nAssigned} 个已归入阶段。下面这 ${nUnassigned} 个是解析器扫到、但没有归入任何阶段的文件，因此没有任何阶段页面会描述它们。`,
     onThisPage: '本页目录',
     search: '搜索',
     searchPlaceholder: '搜索阶段、文件、函数…',
@@ -188,6 +206,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: 'Analysis fidelity',
     fidelityNote: (languages) =>
       `${languages.join(', ')} के लिए call relations सामान्य (कॉन्फ़िग-आधारित) विश्लेषक से आते हैं: ये यथासंभव हैं और अधूरे हो सकते हैं। इन भाषाओं की फ़ाइल सूची और संरचना सटीक हैं।`,
+    filesPartial: (assigned, total) => `${total} में से ${assigned} फ़ाइलें किसी stage में`,
+    unassigned: 'किसी stage में न रखी गई फ़ाइलें',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} में से ${nAssigned} फ़ाइलें किसी stage में रखी गईं। नीचे दी गई ${nUnassigned} फ़ाइलें parser को मिलीं पर किसी stage में नहीं रखी गईं, इसलिए किसी stage पेज पर इनका ब्यौरा नहीं है।`,
     onThisPage: 'इस पेज पर',
     search: 'खोजें',
     searchPlaceholder: 'Stages, फ़ाइलें, फ़ंक्शन खोजें…',
@@ -233,6 +255,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: 'Fidelidad del análisis',
     fidelityNote: (languages) =>
       `las relaciones de llamada de ${languages.join(', ')} vienen del analizador genérico (guiado por configuración): son de mejor esfuerzo y pueden estar incompletas. El inventario de archivos y la estructura de estos lenguajes son exactos.`,
+    filesPartial: (assigned, total) => `${assigned} de ${total} archivos en una etapa`,
+    unassigned: 'Archivos sin etapa',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} de ${nFiles} archivos se asignaron a una etapa. Los ${nUnassigned} de abajo los encontró el analizador pero no quedaron en ninguna, así que ninguna página de etapa los describe.`,
     onThisPage: 'En esta página',
     search: 'Buscar',
     searchPlaceholder: 'Buscar etapas, archivos, funciones…',
@@ -278,6 +304,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: 'Fidelidade da análise',
     fidelityNote: (languages) =>
       `as relações de chamada de ${languages.join(', ')} vêm do analisador genérico (guiado por configuração): são de melhor esforço e podem estar incompletas. O inventário de arquivos e a estrutura dessas linguagens são exatos.`,
+    filesPartial: (assigned, total) => `${assigned} de ${total} arquivos em uma etapa`,
+    unassigned: 'Arquivos sem etapa',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} de ${nFiles} arquivos foram atribuídos a uma etapa. Os ${nUnassigned} abaixo foram encontrados pelo analisador mas não ficaram em nenhuma, portanto nenhuma página de etapa os descreve.`,
     onThisPage: 'Nesta página',
     search: 'Buscar',
     searchPlaceholder: 'Buscar etapas, arquivos, funções…',
@@ -323,6 +353,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: 'Достоверность анализа',
     fidelityNote: (languages) =>
       `связи вызовов для ${languages.join(', ')} получены обобщённым (основанным на конфигурации) анализатором: по мере возможностей и, вероятно, неполно. Перечень файлов и структура этих языков точны.`,
+    filesPartial: (assigned, total) => `${assigned} из ${total} файлов в этапах`,
+    unassigned: 'Файлы вне этапов',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} из ${nFiles} файлов отнесены к этапу. Перечисленные ниже ${nUnassigned} анализатор нашёл, но ни к одному этапу не отнёс, поэтому ни одна страница этапа их не описывает.`,
     onThisPage: 'На этой странице',
     search: 'Поиск',
     searchPlaceholder: 'Искать этапы, файлы, функции…',
@@ -368,6 +402,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: '解析忠実度',
     fidelityNote: (languages) =>
       `${languages.join('、')} の呼び出し関係は汎用（設定駆動）アナライザーによるものです：ベストエフォートのため不完全な場合があります。これらの言語のファイル一覧と構造は正確です。`,
+    filesPartial: (assigned, total) => `${total} 個中 ${assigned} 個のファイルがステージに所属`,
+    unassigned: 'どのステージにも属さないファイル',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} 個のうち ${nAssigned} 個のファイルがステージに配置されました。以下の ${nUnassigned} 個はパーサーが見つけたものの、どのステージにも配置されていないため、どのステージのページにも説明がありません。`,
     onThisPage: 'このページの目次',
     search: '検索',
     searchPlaceholder: 'ステージ・ファイル・関数を検索…',
@@ -413,6 +451,10 @@ const LABELS: Record<NarrateLang, HtmlLabels> = {
     fidelityLead: 'Analysetreue',
     fidelityNote: (languages) =>
       `Aufrufbeziehungen für ${languages.join(', ')} stammen aus dem generischen (konfigurationsgesteuerten) Analyzer: nach bestem Bemühen und möglicherweise unvollständig. Dateiinventar und Struktur dieser Sprachen sind exakt.`,
+    filesPartial: (assigned, total) => `${assigned} von ${total} Dateien in einer Etappe`,
+    unassigned: 'Dateien ohne Etappe',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} von ${nFiles} Dateien wurden einer Etappe zugeordnet. Die ${nUnassigned} unten hat der Parser gefunden, aber keiner Etappe zugeordnet — daher beschreibt sie keine Etappenseite.`,
     onThisPage: 'Auf dieser Seite',
     search: 'Suchen',
     searchPlaceholder: 'Etappen, Dateien, Funktionen suchen…',
@@ -489,6 +531,9 @@ function heading(level: 2 | 3, id: string, text: string, L: HtmlLabels): string 
   return `<h${level} id="${esc(id)}">${esc(text)}<a class="anchor" href="#${esc(id)}" aria-label="${esc(L.anchorTitle)}" title="${esc(L.anchorTitle)}">${ICONS.link}</a></h${level}>`;
 }
 
+/** Anchor of the overview section listing the files no stage claims. */
+const UNASSIGNED_ID = 'ov-unassigned';
+
 /** One entry of the client-side search index: [kind, label, sublabel, url]. */
 type IndexEntry = [0 | 1 | 2 | 3, string, string, string];
 
@@ -498,7 +543,11 @@ type IndexEntry = [0 | 1 | 2 | 3, string, string, string];
  * `href` maps a page-local target to a URL, so the same builder serves the
  * multi-page site (`stage-3.html#f-…`) and the single page (`#f-…`).
  */
-function searchIndex(view: HandbookView, href: (sid: string, hash?: string) => string): IndexEntry[] {
+function searchIndex(
+  view: HandbookView,
+  href: (sid: string, hash?: string) => string,
+  L: HtmlLabels,
+): IndexEntry[] {
   const numbers = numberMap(view);
   const entries: IndexEntry[] = [];
   for (const sid of view.contentStages()) {
@@ -511,10 +560,49 @@ function searchIndex(view: HandbookView, href: (sid: string, hash?: string) => s
       }
     }
   }
+  // Unassigned files are indexed too, pointing at the overview list. Searching a
+  // path and getting nothing reads as "that file is not in this codebase" — the
+  // one conclusion the handbook must never let a reader draw about a file the
+  // parser did find.
+  for (const rel of view.unassignedFiles()) {
+    entries.push([1, rel, L.unassigned, href('overview', UNASSIGNED_ID)]);
+  }
   for (const reg of view.model.registers) {
     entries.push([3, reg.id, truncate(reg.semantics, 70), href('register', domId('reg', reg.id))]);
   }
   return entries;
+}
+
+/**
+ * The whole-handbook file count.
+ *
+ * `coverage.nFiles` counts every file the parser found, but every list on every
+ * page comes from `assignment.buckets`, which excludes the unassigned ones — so
+ * a bare total is a number the pages themselves contradict. When something is
+ * unassigned, state the split instead; {@link unassignedSectionHtml} then names
+ * the files.
+ */
+function fileCountChip(view: HandbookView, L: HtmlLabels): string {
+  const { nFiles, nAssigned, unassigned } = view.model.assignment.coverage;
+  return unassigned.length === 0 ? L.files(nFiles) : L.filesPartial(nAssigned, nFiles);
+}
+
+/**
+ * The overview's list of files no stage claims, or '' when every file was
+ * placed. Uncapped: truncating it would re-create, one level down, the omission
+ * it exists to fix.
+ */
+function unassignedSectionHtml(view: HandbookView, lang: NarrateLang): string {
+  const files = view.unassignedFiles();
+  if (files.length === 0) return '';
+  const L = LABELS[lang];
+  const { nAssigned, nFiles } = view.model.assignment.coverage;
+  const items = files.map((rel) => `<li><code class="path">${esc(rel)}</code></li>`).join('');
+  return [
+    heading(2, UNASSIGNED_ID, L.unassigned, L),
+    `<div class="callout"><p>${esc(L.unassignedNote(files.length, nAssigned, nFiles))}</p></div>`,
+    `<div class="prose"><ul>${items}</ul></div>`,
+  ].join('\n');
 }
 
 /** The `<head>` contents shared by every page. */
@@ -638,11 +726,17 @@ function page(
     view.model.registers.length > 0
       ? `<li><a${current === 'register' ? ' class="cur"' : ''} href="register.html"><span class="sb-num"></span><span>${esc(L.registers)}</span></a></li>`
       : '';
+  // In the sidebar of EVERY page, not only the overview: a reader who never
+  // opens the overview would otherwise never learn the gap exists.
+  const unassignedLink =
+    view.unassignedFiles().length > 0
+      ? `<li><a href="overview.html#${UNASSIGNED_ID}"><span class="sb-num"></span><span>${esc(L.unassigned)}</span></a></li>`
+      : '';
   const sidebar = `
 <nav class="sidebar" id="hb-sidebar" aria-label="${esc(L.stages)}">
 <div class="sb-head">
 <a class="brand" href="overview.html">${ICONS.logo}<span>${esc(view.model.title)}</span></a>
-<p class="sb-sub">${esc(L.files(view.model.assignment.coverage.nFiles))} · ${esc(L.overview)}</p>
+<p class="sb-sub">${esc(fileCountChip(view, L))} · ${esc(L.overview)}</p>
 ${trigger}
 </div>
 <div class="sb-nav">
@@ -650,6 +744,7 @@ ${trigger}
 <ul>
 <li><a${current === 'overview' ? ' class="cur"' : ''} href="overview.html"><span class="sb-num"></span><span>${esc(L.overview)}</span></a></li>
 ${regLink}
+${unassignedLink}
 </ul>
 <p class="sb-label">${esc(L.stages)}</p>
 ${sidebarTree(view, current, (sid) => `${sid}.html`, numbers, L)}
@@ -892,7 +987,9 @@ export function renderHtmlSite(
   // `nPages` is what the CLI reports to a human.
   writeFileAtomic(
     join(outDir, 'search-index.js'),
-    `window.HB_INDEX=${jsLiteral(searchIndex(view, (sid, hash) => `${sid}.html${hash !== undefined ? `#${hash}` : ''}`))};\n`,
+    `window.HB_INDEX=${jsLiteral(
+      searchIndex(view, (sid, hash) => `${sid}.html${hash !== undefined ? `#${hash}` : ''}`, L),
+    )};\n`,
   );
 
   // index.html — meta-refresh redirect to overview.html.
@@ -908,7 +1005,7 @@ export function renderHtmlSite(
   const overviewToc: TocEntry[] = [];
   const overviewParts: string[] = [
     pageHead(esc(L.systemOverview), [
-      `<span class="chip chip-mono">${esc(L.files(model.assignment.coverage.nFiles))}</span>`,
+      `<span class="chip chip-mono">${esc(fileCountChip(view, L))}</span>`,
       `<span class="chip">${esc(L.stages)}: ${view.contentStages().length}</span>`,
     ]),
     `<div class="prose">${md.render(model.narration.systemOverview.trim())}</div>`,
@@ -926,6 +1023,13 @@ export function renderHtmlSite(
       .map((sid) => stageCard(view, sid, lang, `${sid}.html`, numbers))
       .join('')}</ul>`,
   );
+  // Last on the overview, because it is the exception to everything above it:
+  // the stage cards are where the codebase went, this is what did not go there.
+  const unassigned = unassignedSectionHtml(view, lang);
+  if (unassigned.length > 0) {
+    overviewToc.push([UNASSIGNED_ID, L.unassigned, 1]);
+    overviewParts.push(unassigned);
+  }
   write(
     'overview.html',
     page(view, lang, model.title, 'overview', null, overviewParts.join('\n'), overviewToc),
@@ -992,15 +1096,19 @@ export function renderSinglePageHtml(
     model.registers.length > 0
       ? `<li><a href="#registers"><span class="sb-num"></span><span>${esc(L.registers)}</span></a></li>`
       : '';
+  const unassignedToc =
+    view.unassignedFiles().length > 0
+      ? `<li><a href="#${UNASSIGNED_ID}"><span class="sb-num"></span><span>${esc(L.unassigned)}</span></a></li>`
+      : '';
   const sidebar = `<nav class="sidebar" id="hb-sidebar" aria-label="${esc(L.stages)}">
 <div class="sb-head">
 <a class="brand" href="#top">${ICONS.logo}<span>${esc(model.title)}</span></a>
-<p class="sb-sub">${esc(L.files(model.assignment.coverage.nFiles))}</p>
+<p class="sb-sub">${esc(fileCountChip(view, L))}</p>
 ${trigger}
 </div>
 <div class="sb-nav">
 <p class="sb-label">${esc(L.reference)}</p>
-<ul><li><a href="#top"><span class="sb-num"></span><span>${esc(L.overview)}</span></a></li>${regToc}</ul>
+<ul><li><a href="#top"><span class="sb-num"></span><span>${esc(L.overview)}</span></a></li>${regToc}${unassignedToc}</ul>
 <p class="sb-label">${esc(L.stages)}</p>
 <ul>${view.contentRoots().map(tocItem).join('')}</ul>
 </div>
@@ -1024,8 +1132,11 @@ ${trigger}
       : '';
 
   const fidelity = fidelityNoteHtml(lang, options);
+  // The single page is a handbook in its own right, so it must not be the one
+  // output where the files nobody claimed go unmentioned.
+  const unassigned = unassignedSectionHtml(view, lang);
   const body = [
-    `<div class="head" id="top"><h1>${esc(model.title)}</h1><div class="chips"><span class="chip chip-mono">${esc(L.files(model.assignment.coverage.nFiles))}</span><span class="chip">${esc(L.stages)}: ${view.contentStages().length}</span></div></div>`,
+    `<div class="head" id="top"><h1>${esc(model.title)}</h1><div class="chips"><span class="chip chip-mono">${esc(fileCountChip(view, L))}</span><span class="chip">${esc(L.stages)}: ${view.contentStages().length}</span></div></div>`,
     heading(2, 'system-overview', L.systemOverview, L),
     `<div class="prose">${md.render(model.narration.systemOverview.trim())}</div>`,
     ...(fidelity.length > 0 ? [fidelity] : []),
@@ -1035,10 +1146,11 @@ ${trigger}
       .join('')}</ul>`,
     sections.join('\n'),
     registersSection,
+    unassigned,
   ].join('\n');
 
   const index = `<script>window.HB_INDEX=${jsLiteral(
-    searchIndex(view, (sid, hash) => `#${hash ?? sid}`),
+    searchIndex(view, (sid, hash) => `#${hash ?? sid}`, L),
   )};</script>`;
 
   const html = `<!DOCTYPE html>

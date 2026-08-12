@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdapterCapabilities } from '@handbook/core';
-import { makeFixtureModel } from './fixture.test-helper.js';
+import { ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderHtmlSite, renderSinglePageHtml } from './html.js';
 
 const model = makeFixtureModel();
@@ -364,5 +364,61 @@ describe('renderSinglePageHtml', () => {
     const html = read('handbook.html');
     expect(html).toContain('id="registers"');
     expect(html).toContain('<a href="#stage-1">Ingestion Pipeline</a>');
+  });
+});
+
+describe('HTML — files in no stage', () => {
+  /**
+   * Same gap as the markdown index, in the output a reader is most likely to
+   * open: the overview printed `coverage.nFiles` while every list under it came
+   * from `assignment.buckets`, so the page contradicted its own headline and
+   * never said which files were missing.
+   */
+  let outDir: string;
+  let singleHtml: string;
+  beforeAll(() => {
+    outDir = mkdtempSync(join(tmpdir(), 'hb-renderer-html-unassigned-'));
+    const unassignedModel = makeUnassignedFixtureModel();
+    renderHtmlSite(unassignedModel, outDir);
+    const path = join(outDir, 'single.html');
+    renderSinglePageHtml(unassignedModel, path);
+    singleHtml = readFileSync(path, 'utf8');
+  });
+  afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+
+  it('lists them in an anchored overview section', () => {
+    const overview = readFileSync(join(outDir, 'overview.html'), 'utf8');
+    expect(overview).toContain('id="ov-unassigned"');
+    expect(overview).toContain('Files in no stage');
+    expect(overview).toContain(ORPHAN);
+    expect(overview).toContain('4 of 5 files were placed in a stage. The 1 below');
+  });
+
+  it('prints the assigned/total split instead of a total the page contradicts', () => {
+    const overview = readFileSync(join(outDir, 'overview.html'), 'utf8');
+    expect(overview).toContain('4 of 5 files in a stage');
+    expect(overview).not.toContain('>5 files<');
+  });
+
+  it('links the section from the sidebar of every page, not just the overview', () => {
+    for (const name of ['overview.html', 'stage-1.html', 'register.html']) {
+      expect(readFileSync(join(outDir, name), 'utf8'), name).toContain('href="overview.html#ov-unassigned"');
+    }
+  });
+
+  it('indexes them for search so the path is not a dead end', () => {
+    const index = readFileSync(join(outDir, 'search-index.js'), 'utf8');
+    expect(index).toContain(ORPHAN);
+    expect(index).toContain('overview.html#ov-unassigned');
+  });
+
+  it('carries the section in the single-page render too', () => {
+    expect(singleHtml).toContain('id="ov-unassigned"');
+    expect(singleHtml).toContain(ORPHAN);
+  });
+
+  it('adds nothing when every file was placed', () => {
+    expect(read('overview.html')).not.toContain('ov-unassigned');
+    expect(read('overview.html')).toContain('>4 files<');
   });
 });

@@ -32,6 +32,20 @@ export class HandbookView {
     );
   }
 
+  /**
+   * Files the parser found that no stage claims, in assignment order.
+   *
+   * Every other accessor here reads `assignment.buckets`, which excludes these
+   * by construction — while the headline count the pages print,
+   * `coverage.nFiles`, includes them. A handbook could therefore say "300 files"
+   * and contain 260 cards, with the missing 40 named nowhere at all. They are
+   * part of the codebase and the parser saw them: not showing them is the
+   * "never drop" half of invariant 1.
+   */
+  unassignedFiles(): string[] {
+    return this.model.assignment.coverage.unassigned;
+  }
+
   /** Content rule: a stage gets a page/summary iff it has children or direct files. */
   hasContent(sid: string): boolean {
     return this.tree.children(sid).length > 0 || (this.model.assignment.buckets[sid] ?? []).length > 0;
@@ -158,6 +172,48 @@ export function genericTierLanguages(languages: FidelityOptions['languages']): s
     .filter(([, capabilities]) => capabilities.tier === 'generic')
     .map(([name]) => name)
     .sort();
+}
+
+/** How a language's type extraction is disclosed on the page. */
+export interface TypeIndexCoverage {
+  /** `<language> (<kinds>)`, for languages whose adapter emits parsed types. */
+  indexed: string[];
+  /** Languages whose adapter declared it extracts NO types. */
+  notIndexed: string[];
+  /**
+   * Languages whose adapter declared nothing at all — an analysis that predates
+   * the declaration, or an out-of-tree adapter. Reported separately from
+   * `notIndexed` because "did not say" and "said no" are different facts, and
+   * folding the first into the second would state a claim nobody made.
+   */
+  undeclared: string[];
+}
+
+/**
+ * Split the contributing languages by whether their types are in the index.
+ *
+ * The type analogue of {@link genericTierLanguages}, and it exists for the same
+ * reason invariant 3 exists at all: a parsed type row and an absent one look
+ * identical from outside, so an agent that greps a Kotlin interface, gets nothing
+ * and concludes the interface does not exist has been given a wrong pointer — the
+ * one failure the whole artifact is built to avoid. Unlike the generic-tier note,
+ * BOTH halves are worth printing: knowing which languages are covered is what
+ * makes a hit trustworthy, and knowing which are not is what makes a miss
+ * survivable.
+ *
+ * Every list is sorted, so the rendered page is a pure function of the model.
+ */
+export function typeIndexCoverage(languages: FidelityOptions['languages']): TypeIndexCoverage {
+  const coverage: TypeIndexCoverage = { indexed: [], notIndexed: [], undeclared: [] };
+  for (const [name, capabilities] of Object.entries(languages ?? {}).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )) {
+    const kinds = capabilities.typeKinds;
+    if (kinds === undefined) coverage.undeclared.push(name);
+    else if (kinds.length === 0) coverage.notIndexed.push(name);
+    else coverage.indexed.push(`${name} (${[...kinds].sort().join(' ')})`);
+  }
+  return coverage;
 }
 
 /**

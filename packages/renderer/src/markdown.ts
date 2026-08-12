@@ -34,6 +34,10 @@ interface MdLabels {
   stageRegisterMarker: string;
   /** Disclosure for languages analyzed by the generic engine (see genericTierLanguages). */
   fidelityNote: (languages: readonly string[]) => string;
+  /** Heading of the list of files no stage claims (see HandbookView.unassignedFiles). */
+  unassignedHeading: string;
+  /** Why those files are listed, with the assigned/total split spelled out. */
+  unassignedNote: (nUnassigned: number, nAssigned: number, nFiles: number) => string;
 }
 
 const LABELS: Record<NarrateLang, MdLabels> = {
@@ -57,6 +61,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 State Registers Touched',
     fidelityNote: (languages) =>
       `> **Analysis fidelity** — call relations for ${languages.join(', ')} come from the generic (config-driven) analyzer: they are best-effort and may be incomplete. The file inventory and the structure of these languages are exact.`,
+    unassignedHeading: '## 🗂️ Files in no stage',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned}/${nFiles} files were placed in a stage. The ${nUnassigned} below were found by the parser but placed in none, so no stage page describes them.`,
   },
   zh: {
     subStages: '子阶段',
@@ -78,6 +85,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 本阶段涉及的状态',
     fidelityNote: (languages) =>
       `> **保真度说明** —— ${languages.join('、')} 的调用关系来自通用（配置驱动）分析器：尽力而为，可能不完整。这些语言的文件清单与结构仍是精确的。`,
+    unassignedHeading: '## 🗂️ 未归入任何阶段的文件',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} 个文件中有 ${nAssigned} 个已归入阶段。下面这 ${nUnassigned} 个是解析器扫到、但没有归入任何阶段的文件，因此没有任何阶段页面会描述它们。`,
   },
   hi: {
     subStages: 'उप-stages',
@@ -100,6 +110,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 इस stage से जुड़े state registers',
     fidelityNote: (languages) =>
       `> **Analysis fidelity** — ${languages.join(', ')} के लिए call relations सामान्य (कॉन्फ़िग-आधारित) विश्लेषक से आते हैं: ये यथासंभव हैं और अधूरे हो सकते हैं। इन भाषाओं की फ़ाइल सूची और संरचना सटीक हैं।`,
+    unassignedHeading: '## 🗂️ किसी stage में न रखी गई फ़ाइलें',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} में से ${nAssigned} फ़ाइलें किसी stage में रखी गईं। नीचे दी गई ${nUnassigned} फ़ाइलें parser को मिलीं पर किसी stage में नहीं रखी गईं, इसलिए किसी stage पेज पर इनका ब्यौरा नहीं है।`,
   },
   es: {
     subStages: 'Subetapas',
@@ -122,6 +135,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 Registros de estado implicados',
     fidelityNote: (languages) =>
       `> **Fidelidad del análisis** — las relaciones de llamada de ${languages.join(', ')} vienen del analizador genérico (guiado por configuración): son de mejor esfuerzo y pueden estar incompletas. El inventario de archivos y la estructura de estos lenguajes son exactos.`,
+    unassignedHeading: '## 🗂️ Archivos sin etapa',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned}/${nFiles} archivos se asignaron a una etapa. Los ${nUnassigned} de abajo los encontró el analizador pero no quedaron en ninguna, así que ninguna página de etapa los describe.`,
   },
   pt: {
     subStages: 'Subetapas',
@@ -145,6 +161,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 Registradores de estado envolvidos',
     fidelityNote: (languages) =>
       `> **Fidelidade da análise** — as relações de chamada de ${languages.join(', ')} vêm do analisador genérico (guiado por configuração): são de melhor esforço e podem estar incompletas. O inventário de arquivos e a estrutura dessas linguagens são exatos.`,
+    unassignedHeading: '## 🗂️ Arquivos sem etapa',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned}/${nFiles} arquivos foram atribuídos a uma etapa. Os ${nUnassigned} abaixo foram encontrados pelo analisador mas não ficaram em nenhuma, portanto nenhuma página de etapa os descreve.`,
   },
   ru: {
     subStages: 'Подэтапы',
@@ -167,6 +186,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 Затронутые регистры состояния',
     fidelityNote: (languages) =>
       `> **Достоверность анализа** — связи вызовов для ${languages.join(', ')} получены обобщённым (основанным на конфигурации) анализатором: по мере возможностей и, вероятно, неполно. Перечень файлов и структура этих языков точны.`,
+    unassignedHeading: '## 🗂️ Файлы вне этапов',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} из ${nFiles} файлов отнесены к этапу. Перечисленные ниже ${nUnassigned} анализатор нашёл, но ни к одному этапу не отнёс, поэтому ни одна страница этапа их не описывает.`,
   },
   ja: {
     subStages: 'サブステージ',
@@ -189,6 +211,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 このステージが触れる状態レジスタ',
     fidelityNote: (languages) =>
       `> **解析忠実度** — ${languages.join('、')} の呼び出し関係は汎用（設定駆動）アナライザーによるものです：ベストエフォートのため不完全な場合があります。これらの言語のファイル一覧と構造は正確です。`,
+    unassignedHeading: '## 🗂️ どのステージにも属さないファイル',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} 個のうち ${nAssigned} 個のファイルがステージに配置されました。以下の ${nUnassigned} 個はパーサーが見つけたものの、どのステージにも配置されていないため、どのステージのページにも説明がありません。`,
   },
   de: {
     subStages: 'Unteretappen',
@@ -212,6 +237,9 @@ const LABELS: Record<NarrateLang, MdLabels> = {
     stageRegisterMarker: '## 📊 Berührte Zustandsregister',
     fidelityNote: (languages) =>
       `> **Analysetreue** — Aufrufbeziehungen für ${languages.join(', ')} stammen aus dem generischen (konfigurationsgesteuerten) Analyzer: nach bestem Bemühen und möglicherweise unvollständig. Dateiinventar und Struktur dieser Sprachen sind exakt.`,
+    unassignedHeading: '## 🗂️ Dateien ohne Etappe',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned}/${nFiles} Dateien wurden einer Etappe zugeordnet. Die ${nUnassigned} unten hat der Parser gefunden, aber keiner Etappe zugeordnet — daher beschreibt sie keine Etappenseite.`,
   },
 };
 
@@ -304,6 +332,24 @@ function overviewMd(view: HandbookView, lang: NarrateLang, options: RenderOption
   return `${parts.join('\n\n')}\n`;
 }
 
+/**
+ * The list of files no stage claims.
+ *
+ * It lands on the stage index rather than the overview because this is the page
+ * that promises to enumerate the structure — a reader here is asking "where does
+ * file X live", and for these the honest answer is "nowhere". Uncapped on
+ * purpose: truncating the list would re-create, one level down, exactly the
+ * omission it exists to fix.
+ */
+function unassignedSectionMd(view: HandbookView, lang: NarrateLang): string {
+  const L = LABELS[lang];
+  const files = view.unassignedFiles();
+  if (files.length === 0) return '';
+  const { nAssigned, nFiles } = view.model.assignment.coverage;
+  const bullets = files.map((file) => `- \`${file}\``);
+  return `${L.unassignedHeading}\n\n${L.unassignedNote(files.length, nAssigned, nFiles)}\n\n${bullets.join('\n')}`;
+}
+
 function indexMd(view: HandbookView, lang: NarrateLang): string {
   const L = LABELS[lang];
   const parts: string[] = [`# ${view.model.title} — ${L.stageIndexSuffix}`, L.indexIntro];
@@ -318,6 +364,8 @@ function indexMd(view: HandbookView, lang: NarrateLang): string {
     for (const child of view.tree.children(sid)) walk(child);
   };
   for (const root of view.contentRoots()) walk(root);
+  const unassigned = unassignedSectionMd(view, lang);
+  if (unassigned.length > 0) parts.push(unassigned);
   return `${parts.join('\n\n')}\n`;
 }
 

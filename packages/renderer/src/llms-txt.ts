@@ -37,6 +37,10 @@ interface LlmsLabels {
   crosscutSuffix: string;
   stages: (names: string) => string;
   fidelityNote: (names: string) => string;
+  /** Section title for the files no stage claims (see HandbookView.unassignedFiles). */
+  unassignedTitle: string;
+  /** The assigned/total split, stated wherever a reader might take the total on trust. */
+  unassignedNote: (nUnassigned: number, nAssigned: number, nFiles: number) => string;
 }
 
 const LABELS: Record<NarrateLang, LlmsLabels> = {
@@ -54,6 +58,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `(stages: ${names})`,
     fidelityNote: (names) =>
       `Analysis fidelity: call relations for ${names} are best-effort (generic analyzer); file inventory and stage assignment are exact.`,
+    unassignedTitle: 'Files in no stage',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} of ${nFiles} files were placed in a stage; the remaining ${nUnassigned} were found by the parser but placed in none, so no stage section describes them.`,
   },
   zh: {
     handbookSection: '手册',
@@ -69,6 +76,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `（涉及阶段：${names}）`,
     fidelityNote: (names) =>
       `保真度说明：${names} 的调用关系是尽力而为的（通用分析器）；文件清单与阶段归属是精确的。`,
+    unassignedTitle: '未归入任何阶段的文件',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} 个文件中有 ${nAssigned} 个已归入阶段；其余 ${nUnassigned} 个是解析器扫到、但没有归入任何阶段的文件，因此没有任何阶段章节会描述它们。`,
   },
   hi: {
     handbookSection: 'Handbook',
@@ -84,6 +94,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `(stages: ${names})`,
     fidelityNote: (names) =>
       `Analysis fidelity: ${names} के लिए call relations यथासंभव हैं (सामान्य विश्लेषक); फ़ाइल सूची और stage असाइनमेंट सटीक हैं।`,
+    unassignedTitle: 'किसी stage में न रखी गई फ़ाइलें',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} में से ${nAssigned} फ़ाइलें किसी stage में रखी गईं; बाकी ${nUnassigned} फ़ाइलें parser को मिलीं पर किसी stage में नहीं रखी गईं, इसलिए किसी stage खंड में इनका ब्यौरा नहीं है।`,
   },
   es: {
     handbookSection: 'Handbook',
@@ -99,6 +112,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `(etapas: ${names})`,
     fidelityNote: (names) =>
       `Fidelidad del análisis: las relaciones de llamada de ${names} son de mejor esfuerzo (analizador genérico); el inventario de archivos y la asignación de etapas son exactos.`,
+    unassignedTitle: 'Archivos sin etapa',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} de ${nFiles} archivos se asignaron a una etapa; los ${nUnassigned} restantes los encontró el analizador pero no quedaron en ninguna, así que ninguna sección de etapa los describe.`,
   },
   pt: {
     handbookSection: 'Handbook',
@@ -114,6 +130,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `(etapas: ${names})`,
     fidelityNote: (names) =>
       `Fidelidade da análise: as relações de chamada de ${names} são de melhor esforço (analisador genérico); o inventário de arquivos e a atribuição de etapas são exatos.`,
+    unassignedTitle: 'Arquivos sem etapa',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} de ${nFiles} arquivos foram atribuídos a uma etapa; os ${nUnassigned} restantes foram encontrados pelo analisador mas não ficaram em nenhuma, portanto nenhuma seção de etapa os descreve.`,
   },
   ru: {
     handbookSection: 'Handbook',
@@ -129,6 +148,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `(этапы: ${names})`,
     fidelityNote: (names) =>
       `Достоверность анализа: связи вызовов для ${names} получены по мере возможностей (обобщённый анализатор); перечень файлов и распределение по этапам точны.`,
+    unassignedTitle: 'Файлы вне этапов',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} из ${nFiles} файлов отнесены к этапу; остальные ${nUnassigned} анализатор нашёл, но ни к одному этапу не отнёс, поэтому ни один раздел этапа их не описывает.`,
   },
   ja: {
     handbookSection: 'Handbook',
@@ -144,6 +166,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `（ステージ：${names}）`,
     fidelityNote: (names) =>
       `解析忠実度：${names} の呼び出し関係はベストエフォートです（汎用アナライザー）。ファイル一覧とステージ割り当ては正確です。`,
+    unassignedTitle: 'どのステージにも属さないファイル',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nFiles} 個のうち ${nAssigned} 個のファイルがステージに配置されました。残る ${nUnassigned} 個はパーサーが見つけたものの、どのステージにも配置されていないため、どのステージの節にも説明がありません。`,
   },
   de: {
     handbookSection: 'Handbook',
@@ -159,6 +184,9 @@ const LABELS: Record<NarrateLang, LlmsLabels> = {
     stages: (names) => `(Etappen: ${names})`,
     fidelityNote: (names) =>
       `Analysetreue: Aufrufbeziehungen für ${names} sind nach bestem Bemühen (generischer Analyzer); Dateiinventar und Etappenzuordnung sind exakt.`,
+    unassignedTitle: 'Dateien ohne Etappe',
+    unassignedNote: (nUnassigned, nAssigned, nFiles) =>
+      `${nAssigned} von ${nFiles} Dateien wurden einer Etappe zugeordnet; die übrigen ${nUnassigned} hat der Parser gefunden, aber keiner Etappe zugeordnet — daher beschreibt sie kein Etappenabschnitt.`,
   },
 };
 
@@ -188,6 +216,14 @@ function llmsTxt(view: HandbookView, lang: NarrateLang, generic: readonly string
   // An agent may read only the head of this file, so mixed fidelity is
   // disclosed before the link list rather than after it.
   if (generic.length > 0) parts.push(`> ${L.fidelityNote(generic.join(L === LABELS.zh ? '、' : ', '))}`);
+  // Same reasoning, same place: the link list below reaches only stage pages, so
+  // an agent that stops here would take it for the whole codebase. The paths
+  // themselves are in llms-full.txt — a link list is the wrong shape for them.
+  const unassigned = view.unassignedFiles();
+  if (unassigned.length > 0) {
+    const { nAssigned, nFiles } = view.model.assignment.coverage;
+    parts.push(`> ${L.unassignedNote(unassigned.length, nAssigned, nFiles)}`);
+  }
   parts.push(`## ${L.handbookSection}`, links.join('\n'));
   return `${parts.join('\n\n')}\n`;
 }
@@ -223,6 +259,18 @@ function llmsFull(view: HandbookView, lang: NarrateLang, generic: readonly strin
       return `- \`${reg.id}\` — ${reg.semantics} ${L.stages(names)}`;
     });
     parts.push(`## ${L.stateFlow}`, bullets.join('\n'));
+  }
+  // This file claims to be the WHOLE handbook flattened, so the files no stage
+  // claims belong in it by name. Everything above comes from the stage buckets,
+  // which exclude them by construction.
+  const unassigned = view.unassignedFiles();
+  if (unassigned.length > 0) {
+    const { nAssigned, nFiles } = view.model.assignment.coverage;
+    parts.push(
+      `## ${L.unassignedTitle}`,
+      L.unassignedNote(unassigned.length, nAssigned, nFiles),
+      unassigned.map((file) => `- \`${file}\``).join('\n'),
+    );
   }
   return `${parts.join('\n\n')}\n`;
 }

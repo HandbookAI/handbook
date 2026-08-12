@@ -1,330 +1,27 @@
 /**
- * Agent locator site (deterministic, no LLM).
+ * The agent artifact (deterministic, no LLM).
  *
- * Writes `how_to_use.md`, `index.md`, `disambiguation.md` and one `<sid>.md`
- * per content-bearing stage into `outDir`. Every stage page is a fixed-schema
- * locator block; the data-gating invariant is that a field is emitted iff its
- * structural signal exists — an empty field is information.
+ * Writes a small always-read `index.md`, three grep-target fact tables
+ * (`symbols.tsv`, `files.tsv`, `calls.tsv`) and one short `stages/<sid>.md` per
+ * content-bearing stage.
+ *
+ * This replaced a design that rendered the SAME prose as the human handbook
+ * into a different shape — which is how the agent artifact came to be 2.1x the
+ * size of the human one while containing no symbol locations at all. The rule
+ * now: the human artifact explains, and this one locates. Where an agent needs
+ * the explanation it is one hop away, in the human page, rather than copied.
+ *
+ * Facts and prose are never mixed in a column. Prose appears in exactly one
+ * place — the last column of a file row — clipped, and labelled `[prose]`.
  */
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
-import type { FileRole, HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
-import { renderFileCardMd } from './file-card.js';
-import { HandbookView, genericTierLanguages, fileDir, fileStem, mdLinkText } from './shared.js';
+import { ensureDir, truncate, writeFileAtomic } from '@handbook/core';
+import type { HandbookModel } from '@handbook/core';
+import { UNASSIGNED, assignedFiles, callsTsv, filesTsv, symbolRows, symbolsTsv } from './agent-facts.js';
+import type { SymbolRow } from './agent-facts.js';
+import { HandbookView, genericTierLanguages, typeIndexCoverage, fileDir, fileStem } from './shared.js';
 import type { FidelityOptions } from './shared.js';
-
-/** File stems too generic to serve as entry concepts. */
-const GENERIC_TOKENS = new Set([
-  'mod',
-  'lib',
-  'main',
-  'index',
-  'src',
-  'app',
-  'core',
-  'base',
-  'common',
-  'misc',
-  'error',
-  'errors',
-  'test',
-  'tests',
-  'testing',
-  'util',
-  'utils',
-  'helper',
-  'helpers',
-  'types',
-  'type',
-  'model',
-  'models',
-  'init',
-  'setup',
-  'shared',
-  'internal',
-  'impl',
-]);
-
-/** Register-id words that carry no stage-matching signal. */
-const REGISTER_STOPWORDS = new Set([
-  'reg',
-  'state',
-  'status',
-  'stack',
-  'catalog',
-  'flags',
-  'flag',
-  'global',
-  'shared',
-  'current',
-  'active',
-  'live',
-  'main',
-  'info',
-  'data',
-]);
-
-/** Role priority for core-file ranking (unknown roles sort last). */
-const ROLE_PRIORITY: readonly FileRole[] = [
-  'entrypoint',
-  'orchestration',
-  'domain_logic',
-  'data_model',
-  'io_transport',
-  'config',
-  'util',
-  'test',
-];
-
-const ENTRY_CONCEPTS_CAP = 8;
-const CORE_FILES_CAP = 6;
-const MAX_COLLISION_DF = 6;
-
-interface AgentLabels {
-  duty: string;
-  entryConcepts: string;
-  state: string;
-  inherited: (via: string) => string;
-  collides: string;
-  exemplar: string;
-  strongCochange: string;
-  related: string;
-  coreFiles: string;
-  fns: (n: number) => string;
-  files: (n: number) => string;
-  hits: (n: number) => string;
-  indexTitle: string;
-  indexIntro: string;
-  disambiguationTitle: string;
-  disambiguationIntro: string;
-}
-
-const LABELS: Record<NarrateLang, AgentLabels> = {
-  en: {
-    duty: '**Duty**: ',
-    entryConcepts: '**Entry concepts**: ',
-    state: '**State**: ',
-    inherited: (via) => ` (inherited, via ${via})`,
-    collides:
-      '**⚠️ Name collides — searching these words also lands elsewhere; see [disambiguation.md](disambiguation.md)**',
-    exemplar: '**Exemplar** (copy this when adding a new one):',
-    strongCochange: '**⚠️ Strong co-change (change src → change its test)**:',
-    related: '**Related (same sub-group — topical, verify before editing)**:',
-    coreFiles: '**Core files**:',
-    fns: (n) => `${n} fns`,
-    files: (n) => `${n} files`,
-    hits: (n) => `${n} hits`,
-    indexTitle: 'Agent Locator Index',
-    indexIntro:
-      'Read [how_to_use.md](how_to_use.md) first: it defines the operating protocol for this index.',
-    disambiguationTitle: 'Disambiguation',
-    disambiguationIntro: 'Words whose search hits land in several stages. Pick by duty line.',
-  },
-  zh: {
-    duty: '**职责**：',
-    entryConcepts: '**入口概念**：',
-    state: '**状态**：',
-    inherited: (via) => `（继承自父级，按概念词 ${via}）`,
-    collides: '**⚠️ 名称冲突 — 搜索这些词也会命中其他阶段；见 [disambiguation.md](disambiguation.md)**',
-    exemplar: '**范本**（新增同类时可参照）：',
-    strongCochange: '**⚠️ 强共变（改动源文件 → 同步改动其测试）**：',
-    related: '**相关（同一子组 — 主题相关，编辑前请核实）**：',
-    coreFiles: '**核心文件**：',
-    fns: (n) => `${n} 个函数`,
-    files: (n) => `${n} 个文件`,
-    hits: (n) => `${n} 处命中`,
-    indexTitle: '智能体定位索引',
-    indexIntro: '请先阅读 [how_to_use.md](how_to_use.md)：它定义了使用本索引的操作规程。',
-    disambiguationTitle: '消歧',
-    disambiguationIntro: '以下词的搜索会命中多个阶段，请按职责行选择。',
-  },
-  hi: {
-    duty: '**काम**: ',
-    entryConcepts: '**प्रवेश अवधारणाएँ**: ',
-    state: '**State**: ',
-    inherited: (via) => ` (विरासत में मिला, ${via} के ज़रिए)`,
-    collides:
-      '**⚠️ नाम टकराता है — इन शब्दों की खोज दूसरी जगहों पर भी पहुँचती है; देखें [disambiguation.md](disambiguation.md)**',
-    exemplar: '**नमूना** (नया जोड़ते समय इसी की नक़ल करें):',
-    strongCochange: '**⚠️ मज़बूत सह-परिवर्तन (src बदले → उसका test भी बदलें)**:',
-    related: '**संबंधित (वही सब-ग्रुप — विषय के आधार पर, संपादन से पहले जाँचें)**:',
-    coreFiles: '**मुख्य फ़ाइलें**:',
-    fns: (n) => `${n} फ़ंक्शन`,
-    files: (n) => `${n} फ़ाइलें`,
-    hits: (n) => `${n} मिलान`,
-    indexTitle: 'Agent लोकेटर इंडेक्स',
-    indexIntro:
-      'पहले [how_to_use.md](how_to_use.md) पढ़ें: वही इस इंडेक्स के इस्तेमाल की कार्य-प्रणाली तय करता है।',
-    disambiguationTitle: 'अर्थ-स्पष्टीकरण',
-    disambiguationIntro: 'इन शब्दों की खोज कई stages पर पहुँचती है। काम की पंक्ति देखकर चुनें।',
-  },
-  es: {
-    duty: '**Responsabilidad**: ',
-    entryConcepts: '**Conceptos de entrada**: ',
-    state: '**Estado**: ',
-    inherited: (via) => ` (heredado, vía ${via})`,
-    collides:
-      '**⚠️ El nombre colisiona — buscar estas palabras también lleva a otros sitios; consulta [disambiguation.md](disambiguation.md)**',
-    exemplar: '**Ejemplar** (cópialo al añadir uno nuevo):',
-    strongCochange: '**⚠️ Co-cambio fuerte (cambia el fuente → cambia su test)**:',
-    related: '**Relacionado (mismo subgrupo — temático, verifica antes de editar)**:',
-    coreFiles: '**Archivos principales**:',
-    fns: (n) => `${n} ${n === 1 ? 'función' : 'funciones'}`,
-    files: (n) => `${n} ${n === 1 ? 'archivo' : 'archivos'}`,
-    hits: (n) => `${n} ${n === 1 ? 'coincidencia' : 'coincidencias'}`,
-    indexTitle: 'Índice localizador para agentes',
-    indexIntro: 'Lee primero [how_to_use.md](how_to_use.md): define el protocolo de uso de este índice.',
-    disambiguationTitle: 'Desambiguación',
-    disambiguationIntro:
-      'Palabras cuya búsqueda cae en varias etapas. Elige por la línea de responsabilidad.',
-  },
-  pt: {
-    duty: '**Responsabilidade**: ',
-    entryConcepts: '**Conceitos de entrada**: ',
-    state: '**Estado**: ',
-    inherited: (via) => ` (herdado, via ${via})`,
-    collides:
-      '**⚠️ O nome colide — buscar estas palavras também cai em outros lugares; veja [disambiguation.md](disambiguation.md)**',
-    exemplar: '**Exemplar** (copie este ao adicionar um novo):',
-    strongCochange: '**⚠️ Co-mudança forte (mudou o fonte → mude o teste dele)**:',
-    related: '**Relacionado (mesmo subgrupo — temático, verifique antes de editar)**:',
-    coreFiles: '**Arquivos principais**:',
-    fns: (n) => `${n} ${n === 1 ? 'função' : 'funções'}`,
-    files: (n) => `${n} ${n === 1 ? 'arquivo' : 'arquivos'}`,
-    hits: (n) => `${n} ${n === 1 ? 'ocorrência' : 'ocorrências'}`,
-    indexTitle: 'Índice localizador para agentes',
-    indexIntro: 'Leia primeiro [how_to_use.md](how_to_use.md): ele define o protocolo de uso deste índice.',
-    disambiguationTitle: 'Desambiguação',
-    disambiguationIntro: 'Palavras cuja busca cai em várias etapas. Escolha pela linha de responsabilidade.',
-  },
-  ru: {
-    duty: '**Задача**: ',
-    entryConcepts: '**Ключевые понятия**: ',
-    state: '**Состояние**: ',
-    inherited: (via) => ` (унаследовано, через ${via})`,
-    collides:
-      '**⚠️ Имя пересекается — поиск этих слов приводит и в другие места; см. [disambiguation.md](disambiguation.md)**',
-    exemplar: '**Образец** (копируйте его, добавляя новый):',
-    strongCochange: '**⚠️ Сильная со-изменяемость (изменили исходник → измените его тест)**:',
-    related: '**Связанное (та же подгруппа — тематически, проверьте перед правкой)**:',
-    coreFiles: '**Основные файлы**:',
-    fns: (n) => `${n} функций`,
-    files: (n) => `${n} файлов`,
-    hits: (n) => `${n} совпадений`,
-    indexTitle: 'Указатель для агентов',
-    indexIntro:
-      'Сначала прочитайте [how_to_use.md](how_to_use.md): там описан порядок работы с этим указателем.',
-    disambiguationTitle: 'Устранение неоднозначности',
-    disambiguationIntro: 'Слова, поиск по которым попадает в несколько этапов. Выбирайте по строке задачи.',
-  },
-  ja: {
-    duty: '**役割**：',
-    entryConcepts: '**入口となる概念**：',
-    state: '**状態**：',
-    inherited: (via) => `（継承、${via} 経由）`,
-    collides:
-      '**⚠️ 名前が衝突 — これらの語で検索すると別の場所にも当たります。[disambiguation.md](disambiguation.md) を参照**',
-    exemplar: '**手本**（新しく追加するときはこれを写してください）：',
-    strongCochange: '**⚠️ 強い共変更（ソースを変えたらそのテストも変える）**：',
-    related: '**関連（同じサブグループ — 話題が近いだけなので編集前に確認）**：',
-    coreFiles: '**主要ファイル**：',
-    fns: (n) => `${n} 関数`,
-    files: (n) => `${n} ファイル`,
-    hits: (n) => `${n} 件`,
-    indexTitle: 'エージェント用ロケータ索引',
-    indexIntro:
-      'まず [how_to_use.md](how_to_use.md) を読んでください：この索引を使うための手順を定めています。',
-    disambiguationTitle: '曖昧さの解消',
-    disambiguationIntro: '検索が複数のステージに当たる語です。役割の行を見て選んでください。',
-  },
-  de: {
-    duty: '**Aufgabe**: ',
-    entryConcepts: '**Einstiegsbegriffe**: ',
-    state: '**Zustand**: ',
-    inherited: (via) => ` (geerbt, über ${via})`,
-    collides:
-      '**⚠️ Namenskollision — die Suche nach diesen Wörtern landet auch anderswo; siehe [disambiguation.md](disambiguation.md)**',
-    exemplar: '**Musterbeispiel** (beim Hinzufügen eines neuen kopieren):',
-    strongCochange: '**⚠️ Starke Ko-Änderung (Quelle geändert → deren Test ändern)**:',
-    related: '**Verwandt (gleiche Untergruppe — thematisch, vor dem Bearbeiten prüfen)**:',
-    coreFiles: '**Kerndateien**:',
-    fns: (n) => `${n} ${n === 1 ? 'Funktion' : 'Funktionen'}`,
-    files: (n) => `${n} ${n === 1 ? 'Datei' : 'Dateien'}`,
-    hits: (n) => `${n} Treffer`,
-    indexTitle: 'Agenten-Locator-Index',
-    indexIntro:
-      'Lies zuerst [how_to_use.md](how_to_use.md): dort steht das Arbeitsprotokoll für diesen Index.',
-    disambiguationTitle: 'Begriffsklärung',
-    disambiguationIntro:
-      'Wörter, deren Suchtreffer in mehreren Etappen landen. Wähle nach der Aufgabenzeile.',
-  },
-};
-
-/** Lowercase title tokens, generic and short tokens dropped. */
-function titleTokens(title: string): string[] {
-  return title
-    .toLowerCase()
-    .split(/[^a-z0-9一-鿿]+/)
-    .filter((tok) => tok.length > 2 && !GENERIC_TOKENS.has(tok));
-}
-
-/** Distinctive entry-concept stems of a stage's direct files (org order, deduped, capped). */
-function entryConcepts(view: HandbookView, sid: string): string[] {
-  const out: string[] = [];
-  for (const file of view.directFiles(sid)) {
-    const stem = fileStem(file);
-    if (GENERIC_TOKENS.has(stem.toLowerCase())) continue;
-    if (!out.includes(stem)) out.push(stem);
-    if (out.length >= ENTRY_CONCEPTS_CAP) break;
-  }
-  return out;
-}
-
-/** Concept vocabulary of a stage: entry stems + title tokens, split on `_`/`-`. */
-function conceptSubwords(view: HandbookView, sid: string): Set<string> {
-  const vocab = new Set<string>();
-  const feed = (word: string): void => {
-    for (const sub of word.toLowerCase().split(/[_-]+/)) if (sub.length > 2) vocab.add(sub);
-  };
-  for (const stem of entryConcepts(view, sid)) feed(stem);
-  for (const tok of titleTokens(view.tree.title(sid))) feed(tok);
-  return vocab;
-}
-
-/** Concept words of a register id (`reg-` prefix and stopwords dropped). */
-function registerWords(reg: RegisterEntry): string[] {
-  return reg.id
-    .replace(/^reg-/, '')
-    .split('-')
-    .filter((word) => word.length > 2 && !REGISTER_STOPWORDS.has(word));
-}
-
-interface StageRegisterHit {
-  reg: RegisterEntry;
-  via: string | null;
-}
-
-/** Direct register hits plus inherited-via-concept-word hits for leaf stages. */
-function stageRegisters(view: HandbookView, sid: string): StageRegisterHit[] {
-  const hits: StageRegisterHit[] = view.directRegisters(sid).map((reg) => ({ reg, via: null }));
-  const seen = new Set(hits.map((h) => h.reg.id));
-  const isLeaf = view.contentChildren(sid).length === 0;
-  if (isLeaf) {
-    const ancestors = new Set(view.ancestors(sid));
-    const vocab = conceptSubwords(view, sid);
-    for (const reg of view.model.registers) {
-      if (seen.has(reg.id)) continue;
-      if (!reg.stages.some((s) => ancestors.has(s))) continue;
-      const via = registerWords(reg).find((word) => vocab.has(word));
-      if (via !== undefined) {
-        hits.push({ reg, via });
-        seen.add(reg.id);
-      }
-    }
-  }
-  return hits;
-}
 
 /**
  * Test twins of `rel` — the file whose NAME marks it as the tests for this one.
@@ -356,272 +53,275 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function functionCount(view: HandbookView, sid: string, rel: string): number {
-  const organized = view.model.organization.stages[sid]?.groups
-    .flatMap((g) => g.files)
-    .find((f) => f.file === rel);
-  if (organized && organized.nFunctions > 0) return organized.nFunctions;
-  return view.card(rel).functions?.length ?? 0;
+/**
+ * The stage table's `path prefixes` column: the directories a stage's files
+ * actually live in, most-populated first.
+ *
+ * This replaces the old "entry concepts" list, which emitted bare file stems
+ * (`registry`, `names`). Half of those matched more than one file in the
+ * repository and a tenth were `.test` leftovers from stripping a single
+ * extension — but the deeper problem was that a stem is not something an agent
+ * can act on. A path prefix is greppable, globbable, and can be wired straight
+ * into a rules file's `paths:` field.
+ */
+function pathPrefixes(files: readonly string[], max = 2): string[] {
+  const byDir = new Map<string, number>();
+  for (const file of files) {
+    const dir = fileDir(file);
+    byDir.set(dir, (byDir.get(dir) ?? 0) + 1);
+  }
+  return [...byDir.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, max)
+    .map(([dir]) => (dir === '' ? './' : `${dir}/`));
 }
 
-/** Core files: role priority, then function count desc, capped. */
-function coreFiles(view: HandbookView, sid: string): { file: string; role: FileRole; nFns: number }[] {
-  const ranked = view.directFiles(sid).map((file) => {
-    const card = view.card(file);
-    const priority = ROLE_PRIORITY.indexOf(card.role);
-    return {
-      file,
-      role: card.role,
-      nFns: functionCount(view, sid, file),
-      priority: priority < 0 ? ROLE_PRIORITY.length : priority,
-    };
-  });
-  ranked.sort((a, b) => a.priority - b.priority || b.nFns - a.nFns || a.file.localeCompare(b.file));
-  return ranked.slice(0, CORE_FILES_CAP).map(({ file, role, nFns }) => ({ file, role, nFns }));
-}
-
-/** Title-token collision index: word → stage ids, df in [2, 6], no pure ancestor chains. */
-export function buildCollisionIndex(view: HandbookView): Map<string, string[]> {
-  const byToken = new Map<string, string[]>();
-  for (const sid of view.contentStages()) {
-    for (const tok of new Set(titleTokens(view.tree.title(sid)))) {
-      const list = byToken.get(tok) ?? [];
-      list.push(sid);
-      byToken.set(tok, list);
-    }
-  }
-  const collisions = new Map<string, string[]>();
-  for (const [tok, sids] of byToken) {
-    if (sids.length < 2 || sids.length > MAX_COLLISION_DF) continue;
-    if (isPureAncestorChain(view, sids)) continue;
-    const order = new Map(view.tree.order.map((s, i) => [s, i]));
-    collisions.set(
-      tok,
-      [...sids].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
-    );
-  }
-  return new Map(
-    [...collisions.entries()].sort((a, b) => a[1].length - b[1].length || a[0].localeCompare(b[0])),
-  );
-}
-
-/** True when every stage in the set lies on one root-to-leaf path. */
-function isPureAncestorChain(view: HandbookView, sids: readonly string[]): boolean {
-  const deepest = [...sids].sort((a, b) => view.tree.depth(b) - view.tree.depth(a))[0];
-  if (deepest === undefined) return true;
-  const chain = new Set([deepest, ...view.ancestors(deepest)]);
-  return sids.every((sid) => chain.has(sid));
-}
-
-interface LocatorContext {
-  view: HandbookView;
-  lang: NarrateLang;
-  collisions: Map<string, string[]>;
-  fileStage: Map<string, string>;
-}
-
-function locatorBlock(ctx: LocatorContext, sid: string, level: number, linkHeading: boolean): string {
-  const { view, lang } = ctx;
-  const L = LABELS[lang];
-  const title = view.tree.title(sid);
-  const headingText = `${sid} · ${title}`;
-  const heading = `${'#'.repeat(Math.min(level, 6))} ${linkHeading ? `[${mdLinkText(headingText)}](${sid}.md)` : headingText}`;
-  const parts: string[] = [heading];
-
-  // Duty: the summary's full first paragraph, newlines flattened.
-  const paragraph = view.summary(sid).split(/\n\s*\n/)[0] ?? '';
-  const duty = paragraph.replace(/\s*\n\s*/g, ' ').trim();
-  if (duty.length > 0) parts.push(`${L.duty}${duty}`);
-
-  const concepts = entryConcepts(view, sid);
-  if (concepts.length > 0) parts.push(`${L.entryConcepts}${concepts.map((c) => `\`${c}\``).join(' / ')}`);
-
-  const regs = stageRegisters(view, sid);
-  if (regs.length > 0) {
-    const rendered = regs.map((h) => `\`${h.reg.id}\`${h.via !== null ? L.inherited(h.via) : ''}`);
-    parts.push(`${L.state}${rendered.join(', ')}`);
-  }
-
-  const collidingWords = [...ctx.collisions.entries()]
-    .filter(([, sids]) => sids.includes(sid))
-    .map(([word]) => word);
-  if (collidingWords.length > 0) {
-    parts.push(`${L.collides} (${collidingWords.map((w) => `\`${w}\``).join(', ')})`);
-  }
-
-  const { groups } = view.groups(sid);
-  const exemplars: string[] = [];
-  for (const group of groups) {
-    let best: { file: string; nFns: number } | null = null;
-    for (const file of group.files) {
-      const nFns = functionCount(view, sid, file);
-      if (nFns > 0 && (best === null || nFns > best.nFns)) best = { file, nFns };
-    }
-    if (best !== null) exemplars.push(`- \`${best.file}\` [${group.title}] (${L.fns(best.nFns)})`);
-  }
-  if (exemplars.length > 0) parts.push(`${L.exemplar}\n${exemplars.join('\n')}`);
-
-  const allFiles = [...ctx.fileStage.keys()];
-  const twins: string[] = [];
-  for (const file of view.directFiles(sid)) {
-    for (const twin of strongTwins(file, allFiles)) {
-      twins.push(`- \`${file}\` ↔ \`${twin}\` [${ctx.fileStage.get(twin) ?? '?'}]`);
-    }
-  }
-  if (twins.length > 0) parts.push(`${L.strongCochange}\n${twins.join('\n')}`);
-
-  if (groups.length > 0) {
-    const related = groups.map((g) => `- ${g.title} (${L.files(g.files.length)})`);
-    parts.push(`${L.related}\n${related.join('\n')}`);
-  }
-
-  const core = coreFiles(view, sid);
-  if (core.length > 0) {
-    const bullets = core.map((c) => `- \`${c.file}\` \`${c.role}\` (${L.fns(c.nFns)})`);
-    parts.push(`${L.coreFiles}\n${bullets.join('\n')}`);
-  }
-
-  return parts.join('\n\n');
-}
-
-function howToUseMd(lang: NarrateLang, genericLanguages: readonly string[] = []): string {
-  // The agent reads this page before it trusts anything else, so a weaker
-  // analysis tier is disclosed HERE — not only in the human overview.
-  const caveat =
-    genericLanguages.length === 0
-      ? ''
-      : lang === 'zh'
-        ? `\n- **${genericLanguages.join('、')} 的调用关系是尽力而为的**（通用分析器）：文件清单与阶段归属是精确的，但"谁调用谁"可能不全。对这些语言，把调用事实当线索而非结论，务必回源码核对。\n`
-        : `\n- **Call relations for ${genericLanguages.join(', ')} are best-effort** (generic analyzer): the file inventory and stage assignment are exact, but "who calls whom" may be incomplete. Treat call facts for these languages as leads, not conclusions — confirm against the source.\n`;
-  if (lang === 'zh') {
-    return `# 如何使用本手册（智能体操作规程）
-
-## 本手册是什么
-
-- 一份**定位索引**：告诉你东西在哪里、下一步该读什么。
-- 每条事实都锚定到文件路径、阶段 id 或寄存器 id。
-
-## 本手册不是什么
-
-- 不是代码的替代品。跳转过去并 Read 真实文件 — 手册可能过时；代码是唯一的事实来源。${caveat}
-
-## 查找配方
-
-- **改 X 该去哪里？** → 找 **入口概念** 提到 X 的阶段，打开它的 **范本**，照抄形状。
-- **改这个文件还会牵动什么？** → 先看 **强共变**，再看 **相关**。
-- **一个词命中太多阶段？** → 打开 [disambiguation.md](disambiguation.md)，按职责行选择。
-- **涉及状态变更？** → 沿 **状态** 里的 \`reg-*\` id 去主手册的寄存器表（register.md）。
-
-## 空字段即信息
-
-字段只在结构信号存在时输出：没有列出强共变，就是没有检测到 — 不要凭空发明。
-
-## 信任边界
-
-- 锚点（路径、id、计数）是确定性生成的 → 可以信任。
-- 叙述文字（职责行）只指方向 → 一切以代码为准。
-`;
-  }
-  return `# How to use this handbook (agent operating protocol)
-
-## What this handbook IS
-
-- A **locator index**: it tells you where things live and what to read next.
-- Every fact is anchored to a file path, a stage id, or a register id.
-
-## What this handbook IS NOT
-
-- Not a replacement for the code. Jump there and Read the real file — the handbook can be stale; the code is the only source of truth.${caveat}
-
-## Lookup recipes
-
-- **Where do I change X?** → find the stage whose **Entry concepts** mention X, open its **Exemplar**, copy the shape.
-- **What else changes with this file?** → check **Strong co-change** first, then **Related**.
-- **One word hits many stages?** → open [disambiguation.md](disambiguation.md) and pick by duty line.
-- **State changes?** → follow the \`reg-*\` ids in **State** to the register table of the main handbook (register.md).
-
-## An empty field is information
-
-Fields are emitted only when the structural signal exists: if a stage lists no Strong co-change, none was detected — do not invent one.
-
-## Trust boundary
-
-- Anchors (paths, ids, counts) are deterministic → trust them.
-- Prose (duty lines) gives direction only → verify in the code.
-`;
-}
-
-function disambiguationMd(ctx: LocatorContext, written: ReadonlySet<string>): string {
-  const { view, lang } = ctx;
-  const L = LABELS[lang];
-  const parts: string[] = [`# ${L.disambiguationTitle}`, L.disambiguationIntro];
-  for (const [word, sids] of ctx.collisions) {
-    parts.push(`## \`${word}\` (${L.hits(sids.length)})`);
-    const bullets = sids.map((sid) => {
-      const title = view.tree.title(sid);
-      const oneLiner = truncate(firstSentence(view.summary(sid).split(/\n\s*\n/)[0] ?? title), 160);
-      return written.has(sid)
-        ? `- [\`${sid}\`](${sid}.md) ${title} — ${oneLiner}`
-        : `- \`${sid}\` ${title} — ${oneLiner}`;
-    });
-    parts.push(bullets.join('\n'));
-  }
-  return `${parts.join('\n\n')}\n`;
-}
-
-function agentIndexMd(ctx: LocatorContext): string {
-  const L = LABELS[ctx.lang];
-  const parts: string[] = [`# ${ctx.view.model.title} — ${L.indexTitle}`, L.indexIntro];
-  const walk = (sid: string): void => {
-    if (!ctx.view.hasContent(sid)) return;
-    parts.push(locatorBlock(ctx, sid, Math.min(ctx.view.tree.depth(sid) + 2, 6), true));
-    for (const child of ctx.view.tree.children(sid)) walk(child);
-  };
-  for (const root of ctx.view.contentRoots()) walk(root);
-  return `${parts.join('\n\n')}\n`;
-}
-
-function agentStagePageMd(ctx: LocatorContext, sid: string): string {
-  const parts: string[] = [locatorBlock(ctx, sid, 1, false), '---'];
-  for (const file of ctx.view.directFiles(sid)) {
-    parts.push(renderFileCardMd(file, ctx.view.card(file), ctx.lang));
-  }
-  return `${parts.join('\n\n')}\n`;
+/** Files routed to `sid`, from the authoritative assignment. */
+function stageFiles(model: HandbookModel, sid: string): string[] {
+  return assignedFiles(model)
+    .filter((r) => r.stage === sid)
+    .map((r) => r.file);
 }
 
 /**
- * Render the agent locator site into `outDir`.
- * Returns the number of stage pages and title-token collisions.
+ * The always-read entry file.
+ *
+ * Hard budget: this is paid on every session AND on every subagent spawn, so it
+ * is the one file whose size is a product decision rather than a consequence.
+ * It carries routing and nothing else — no per-file descriptions, which is
+ * exactly the content Anthropic's own guidance names as the thing that must not
+ * be always-loaded.
  */
+function agentIndexMd(view: HandbookView, symbols: readonly SymbolRow[], options: FidelityOptions): string {
+  const generic = genericTierLanguages(options.languages);
+  const types = typeIndexCoverage(options.languages);
+  const { model } = view;
+  const files = assignedFiles(model);
+  const routed = files.filter((f) => f.stage !== UNASSIGNED);
+  const withSymbols = new Set(symbols.map((s) => s.file));
+  const stages = view.contentStages();
+  const provenance = model.provenance;
+  const stamp = [
+    provenance?.generatedAt ? `generated ${provenance.generatedAt}` : 'generated (timestamp unavailable)',
+    provenance?.commit ? `from ${provenance.commit}` : undefined,
+    `${files.length} files`,
+    `${symbols.length} symbols`,
+    `${stages.length} stages`,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
+  const out: string[] = [
+    `# ${model.title} — agent index`,
+    '',
+    stamp,
+    'facts below are parser-derived. model-written prose is marked [prose] wherever it appears.',
+    '',
+    '## lookup',
+    '',
+    '```',
+    'symbol -> location     grep -m5 "^NAME\t" symbols.tsv',
+    'file   -> its symbols  grep "\tPATH:" symbols.tsv',
+    'callers of a symbol    grep "\tNAME\t" calls.tsv',
+    'callees of a symbol    grep "^NAME\t" calls.tsv',
+    'file   -> stage, role  grep "^PATH\t" files.tsv',
+    'stage  -> its files    read stages/<sid>.md',
+    '```',
+    '',
+    'Then open the file and read the line range. This index can be stale; the code cannot.',
+    '',
+    '## stages',
+    '',
+    '```',
+    'sid\tfiles\tsymbols\tpath prefixes',
+  ];
+
+  for (const sid of stages) {
+    const own = stageFiles(model, sid);
+    const nSymbols = symbols.filter((s) => s.stage === sid).length;
+    out.push([sid, String(own.length), String(nSymbols), pathPrefixes(own).join(' ')].join('\t'));
+  }
+  out.push('```', '');
+
+  const registers = model.registers ?? [];
+  if (registers.length > 0) {
+    out.push('## state registers', '', '```');
+    for (const reg of registers) {
+      const touching = stages.filter((sid) => view.directRegisters(sid).some((r) => r.id === reg.id));
+      out.push([reg.id, touching.join(',') || '—'].join('\t'));
+    }
+    out.push('```', '');
+  }
+
+  // Coverage. Invariant 1's "never drop" applies to this artifact too: an index
+  // that silently omits a quarter of the files reads as "those files are empty".
+  const noSymbols = files.filter((f) => !withSymbols.has(f.file)).length;
+  out.push('## coverage', '');
+  out.push(
+    `${routed.length}/${files.length} files routed to a stage; ${files.length - routed.length} unrouted (stage=${UNASSIGNED} in files.tsv).`,
+  );
+  out.push(
+    `${noSymbols} of ${files.length} files contribute no symbol row: the parser found no functions in them.`,
+  );
+  const nTypes = symbols.filter((s) => s.kind.startsWith('type:')).length;
+  const nDerived = symbols.filter((s) => s.kind === 'class-derived').length;
+  out.push(
+    `symbols.tsv indexes functions and methods (${symbols.length - nTypes - nDerived}) plus ${nTypes} parsed type declaration(s) and ${nDerived} class row(s) whose span was derived from members.`,
+  );
+  // Invariant 3, applied to types. A parsed row and an absent one are
+  // indistinguishable from outside, so which languages were actually looked at is
+  // the only thing that lets a reader tell a real miss from an unindexed one.
+  if (types.indexed.length > 0) {
+    out.push(`Types indexed (kind=type:… rows) for: ${types.indexed.join(', ')}.`);
+  }
+  if (types.notIndexed.length > 0) {
+    out.push(
+      `Types are NOT indexed for: ${types.notIndexed.join(', ')} — a miss there is not proof the name does not exist. A class in one of those still appears as kind=class-derived, located by its methods.`,
+    );
+  }
+  if (types.undeclared.length > 0) {
+    out.push(
+      `Type coverage is unknown for: ${types.undeclared.join(', ')} — that adapter declared none either way, so treat a miss as unproven.`,
+    );
+  }
+  if (types.indexed.length === 0 && types.notIndexed.length === 0 && types.undeclared.length === 0) {
+    // No fidelity information reached the renderer at all (a pre-declaration work
+    // dir, or a caller that passed no options). Saying nothing would let the row
+    // counts above imply full coverage.
+    out.push(
+      'Which languages had their types indexed is unknown for this run: no fidelity declaration was recorded, so a missing type row is not proof the name does not exist.',
+    );
+  }
+  // Constants and variables are indexed by NO adapter, in any language — a flat
+  // statement, not a per-language one.
+  out.push('Constants, variables and macros are not indexed in any language.');
+  if (generic.length > 0) {
+    out.push(
+      `Call relations for ${generic.join(', ')} come from a generic-tier adapter: names and files are reliable, edges are best-effort.`,
+    );
+  }
+  out.push('');
+  return out.join('\n');
+}
+
+/**
+ * A stage page: the second hop, and the last one.
+ *
+ * What used to be here — a duty paragraph, entry concepts, related groups, core
+ * files, and a full prose block per function — produced a 313 KB page for the
+ * largest stage. No agent reads that; it greps it, and gets back fragments of
+ * facts that were split across non-adjacent lines. The per-symbol detail now
+ * lives in `symbols.tsv`, indexed by the key an agent actually holds (a name)
+ * rather than the key it is trying to discover (a stage).
+ */
+function agentStagePageMd(view: HandbookView, sid: string, symbols: readonly SymbolRow[]): string {
+  const { model } = view;
+  const own = stageFiles(model, sid);
+  const mine = symbols.filter((s) => s.stage === sid);
+  const registers = view.directRegisters(sid).map((r) => r.id);
+  const allFiles = assignedFiles(model).map((r) => r.file);
+
+  const out: string[] = [
+    `# ${sid}`,
+    '',
+    [
+      `${own.length} files`,
+      `${mine.length} symbols`,
+      registers.length > 0 ? `registers: ${registers.join(' ')}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(' | '),
+    '',
+    `symbols in this stage: grep "\t${sid}\t" ../symbols.tsv`,
+    // The paragraph lives in the human handbook. Pointing there rather than
+    // duplicating it is the whole reason the two artifacts stopped being the
+    // same bytes.
+    `prose (model-written): ../${sid}.md`,
+    '',
+    '## files (path, role, symbols, purpose[prose])',
+    '',
+    '```',
+  ];
+  for (const file of own) {
+    const card = model.cards[file];
+    out.push(
+      [
+        file,
+        card?.role ?? 'other',
+        String(card?.functions?.length ?? 0),
+        truncate((card?.purpose ?? '').replace(/\s+/g, ' ').trim(), 120),
+      ].join('\t'),
+    );
+  }
+  out.push('```', '');
+
+  // Kept from the old locator block, and the only thing kept: it is purely
+  // structural, it is not reproducible by grep, and it answers the question an
+  // agent asks immediately after "where is X" — namely "what else must I touch".
+  const twins: string[] = [];
+  for (const file of own) {
+    for (const twin of strongTwins(file, allFiles)) twins.push(`${file}\t${twin}`);
+  }
+  if (twins.length > 0) {
+    out.push('## co-change (source ↔ its test)', '', '```', ...twins, '```', '');
+  }
+  return out.join('\n');
+}
+
+/**
+ * Render the agent artifact into `outDir`.
+ *
+ * Returns the number of stage pages and the number of symbol rows — the second
+ * replaces a collision count that indexed stage-title tokens, a signal the
+ * symbol table now provides for free and far more precisely.
+ */
+/**
+ * The agent artifact's entry file — the one a consumer probes to decide whether
+ * the artifact is there at all.
+ *
+ * Exported so no caller has to name it. Studio hardcoded `how_to_use.md` here;
+ * when the artifact was redesigned that file stopped existing, the probe went
+ * permanently false, and every skill studio built silently shipped without its
+ * agent index. An absent artifact is a supported configuration, so nothing
+ * errored. A shared constant makes that drift impossible rather than merely
+ * unlikely.
+ */
+export const AGENT_INDEX_FILE = 'index.md';
+
 export function renderAgentSite(
   model: HandbookModel,
   outDir: string,
   options: FidelityOptions = {},
-): { nStagePages: number; nCollisions: number } {
+): { nStagePages: number; nSymbols: number } {
   const view = new HandbookView(model);
-  const ctx: LocatorContext = {
-    view,
-    lang: model.lang,
-    collisions: buildCollisionIndex(view),
-    fileStage: view.fileStageIndex(),
-  };
   ensureDir(outDir);
-  // The agent dir is fully renderer-owned: clear pages from previous renders.
-  for (const stale of readdirSync(outDir)) {
-    if (stale.endsWith('.md')) rmSync(join(outDir, stale), { force: true });
-  }
+  const stagesDir = join(outDir, 'stages');
+  ensureDir(stagesDir);
 
+  // The agent dir is fully renderer-owned, so it is emptied COMPLETELY rather
+  // than by extension. Deleting only the extensions this version happens to
+  // write leaves behind whatever a different version wrote, and the result is a
+  // directory holding two generations at once — an agent then finds a protocol
+  // page describing files that are not there beside an index describing files
+  // it was never told about. Observed for real: a `handbook studio` process
+  // still running an older build re-rendered over a newer artifact, and because
+  // that build's cleanup only knew about `.md`, the newer `.tsv` tables
+  // survived alongside it.
+  //
+  // Nothing an agent needs is authored here — corrections live in the skill
+  // package — so emptying it loses nothing.
+  for (const stale of readdirSync(outDir)) rmSync(join(outDir, stale), { recursive: true, force: true });
+  ensureDir(stagesDir);
+
+  const symbols = symbolRows(view);
   const contentStages = view.contentStages();
-  const written = new Set(contentStages);
   for (const sid of contentStages) {
-    writeFileAtomic(join(outDir, `${sid}.md`), agentStagePageMd(ctx, sid));
+    writeFileAtomic(join(stagesDir, `${sid}.md`), agentStagePageMd(view, sid, symbols));
   }
-  writeFileAtomic(
-    join(outDir, 'how_to_use.md'),
-    howToUseMd(model.lang, genericTierLanguages(options.languages)),
-  );
-  writeFileAtomic(join(outDir, 'index.md'), agentIndexMd(ctx));
-  writeFileAtomic(join(outDir, 'disambiguation.md'), disambiguationMd(ctx, written));
+  writeFileAtomic(join(outDir, 'symbols.tsv'), symbolsTsv(view));
+  writeFileAtomic(join(outDir, 'files.tsv'), filesTsv(view));
+  writeFileAtomic(join(outDir, 'calls.tsv'), callsTsv(view));
+  writeFileAtomic(join(outDir, AGENT_INDEX_FILE), agentIndexMd(view, symbols, options));
 
-  return { nStagePages: contentStages.length, nCollisions: ctx.collisions.size };
+  return { nStagePages: contentStages.length, nSymbols: symbols.length };
 }
