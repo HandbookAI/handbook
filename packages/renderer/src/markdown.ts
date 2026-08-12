@@ -8,8 +8,8 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { ensureDir, writeFileAtomic } from '@handbook/core';
-import type { HandbookModel, NarrateLang, RegisterEntry } from '@handbook/core';
+import { ensureDir, writeFileAtomic } from '@handbooks/core';
+import type { HandbookModel, NarrateLang, RegisterEntry } from '@handbooks/core';
 import { renderFileCardMd } from './file-card.js';
 import { HandbookView, genericTierLanguages, mdLinkText, stageMapMermaid } from './shared.js';
 import type { RenderOptions, SourceLinkOptions } from './shared.js';

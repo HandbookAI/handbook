@@ -1,11 +1,11 @@
-# @handbook/analyzer
+# @handbooks/analyzer
 
 **English** · [中文](README.zh-CN.md)
 
 > Point it at a directory. Get back a typed call graph. No LLM, no network, no native
 > compilation — the parsers are WebAssembly.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fanalyzer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/analyzer)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fanalyzer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/analyzer)
 [![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 [![languages](https://img.shields.io/badge/languages-18-a78bfa?style=flat-square)](#supported-languages)
 
@@ -13,7 +13,7 @@
 
 ## What it is
 
-`@handbook/analyzer` is the static-analysis engine of the [Handbook](../../README.md)
+`@handbooks/analyzer` is the static-analysis engine of the [Handbook](../../README.md)
 toolchain — and it is genuinely useful on its own. Give it a source root and it returns
 the same language-agnostic IR no matter what the code is written in:
 
@@ -36,7 +36,7 @@ two graphs, commit one, or assert on one in a test.
 ## Install
 
 ```bash
-pnpm add @handbook/analyzer
+pnpm add @handbooks/analyzer
 ```
 
 No post-install compilation step. Grammars ship as `.wasm` files.
@@ -52,7 +52,7 @@ import {
   getAdapter,
   buildGraph,
   writeGraphArtifacts,
-} from '@handbook/analyzer';
+} from '@handbooks/analyzer';
 
 registerBuiltinAdapters();
 
@@ -332,7 +332,7 @@ managed to drift six languages behind.
 ## Testing
 
 ```bash
-pnpm --filter @handbook/analyzer test
+pnpm --filter @handbooks/analyzer test
 ```
 
 Every test parses real source fixtures — no mocked parse trees, because a mocked tree

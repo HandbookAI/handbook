@@ -1,18 +1,18 @@
-# @handbook/cli
+# @handbooks/cli
 
 **English** · [中文](README.zh-CN.md)
 
 > The `handbook` command. Eleven subcommands, one configuration model, and a `config`
 > command that tells you exactly where every value came from.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcli-6366f1?style=flat-square)](https://www.npmjs.com/package/@handbook/cli)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcli-6366f1?style=flat-square)](https://www.npmjs.com/package/@handbooks/cli)
 
 ---
 
 ## Install
 
 ```bash
-npm i -g @handbook/cli
+npm i -g @handbooks/cli
 handbook --help
 ```
 
@@ -78,7 +78,7 @@ per-command variable, and its default:
 CLI flag  >  shell env  >  .env cascade  >  handbook.config.yaml  >  registry default
 ```
 
-Every setting is declared once in `@handbook/core`'s registry. The flags you see, the
+Every setting is declared once in `@handbooks/core`'s registry. The flags you see, the
 environment variables that work, the YAML keys that are accepted, `.env.example`,
 `handbook.config.example.yaml` and `docs/configuration.md` are **all generated from that
 one table**. They cannot drift apart, because a drift test compares them byte for byte.

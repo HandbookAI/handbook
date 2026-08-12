@@ -1,8 +1,8 @@
 ---
-'@handbook/analyzer': minor
-'@handbook/pipeline': minor
-'@handbook/renderer': minor
-'@handbook/core': minor
+'@handbooks/analyzer': minor
+'@handbooks/pipeline': minor
+'@handbooks/renderer': minor
+'@handbooks/core': minor
 ---
 
 Stop dropping two things the pipeline already knew: files no stage claims, and files the

@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { extractJsonBlock, sha256Hex, writeFileAtomic } from '@handbook/core';
+import { extractJsonBlock, sha256Hex, writeFileAtomic } from '@handbooks/core';
 import type { ChatClient, ChatOptions, ChatResult } from './client.js';
 
 /** On-disk entry shape; bump the version to invalidate every existing entry. */

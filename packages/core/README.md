@@ -1,18 +1,18 @@
-# @handbook/core
+# @handbooks/core
 
 **English** · [中文](README.zh-CN.md)
 
-> The shared vocabulary. Every other `@handbook/*` package speaks it, and none of them
+> The shared vocabulary. Every other `@handbooks/*` package speaks it, and none of them
 > may define its own.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcore-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/core)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcore-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/core)
 [![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 
 ---
 
 ## What it is
 
-`@handbook/core` is the foundation layer of the [Handbook](../../README.md) toolchain.
+`@handbooks/core` is the foundation layer of the [Handbook](../../README.md) toolchain.
 It contains four things and deliberately nothing else:
 
 1. **The data model** — what a call graph _is_, and what a handbook _is_, as zod schemas.
@@ -36,7 +36,7 @@ from disk, by the validator.
 ## Install
 
 ```bash
-pnpm add @handbook/core
+pnpm add @handbooks/core
 ```
 
 ---
@@ -49,7 +49,7 @@ Language-agnostic. Every analyzer produces this and nothing else, so nothing dow
 knows or cares which language a fact came from.
 
 ```ts
-import { codeGraphSchema, type CodeGraph, type FunctionNode, isInternalNode } from '@handbook/core';
+import { codeGraphSchema, type CodeGraph, type FunctionNode, isInternalNode } from '@handbooks/core';
 
 const graph: CodeGraph = codeGraphSchema.parse(JSON.parse(raw)); // throws with a path on mismatch
 
@@ -130,7 +130,7 @@ Adding a setting is a one-line change that shows up on all four surfaces — or 
 build, because a drift test compares the generated files byte for byte.
 
 ```ts
-import { resolveConfig, settingsFor, envName, scopedEnvName } from '@handbook/core';
+import { resolveConfig, settingsFor, envName, scopedEnvName } from '@handbooks/core';
 
 envName('readWorkers'); // 'HANDBOOK_READ_WORKERS'
 scopedEnvName('generate', 'readWorkers'); // 'HANDBOOK_GENERATE_READ_WORKERS'
@@ -168,7 +168,7 @@ with a message saying why: config files get committed.
 ## The `.env` cascade
 
 ```ts
-import { applyEnvFiles, applyEnvFile, parseEnvFile } from '@handbook/core';
+import { applyEnvFiles, applyEnvFile, parseEnvFile } from '@handbooks/core';
 
 applyEnvFiles(process.cwd(), 'prod');
 // tries, in order: .env.prod.local → .env.prod → .env.local → .env
@@ -218,7 +218,7 @@ silently swallowed by `Object.prototype`.
 ## Testing
 
 ```bash
-pnpm --filter @handbook/core test
+pnpm --filter @handbooks/core test
 ```
 
 Fully offline, no fixtures beyond temp dirs. Coverage floor is enforced in

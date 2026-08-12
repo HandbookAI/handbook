@@ -1,4 +1,4 @@
-# @handbook/llm
+# @handbooks/llm
 
 **English** · [中文](README.zh-CN.md)
 
@@ -6,7 +6,7 @@
 > offline mock, and the actor–critic loop the pipeline uses to make an LLM argue with
 > itself until the answer holds up.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fllm-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/llm)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fllm-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/llm)
 [![deps](https://img.shields.io/badge/runtime%20deps-none-2dd4bf?style=flat-square)](#)
 
 ---
@@ -42,7 +42,7 @@ endpoints that only implement 80% of the OpenAI API.
 ## Install
 
 ```bash
-pnpm add @handbook/llm
+pnpm add @handbooks/llm
 ```
 
 ---
@@ -50,7 +50,7 @@ pnpm add @handbook/llm
 ## Quick start
 
 ```ts
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const client = new OpenAiChatClient({ config: resolveLlmEnv(), concurrency: 16 });
 
@@ -110,7 +110,7 @@ object, which is how the CLI gets `--model` and `--base-url` into the client.
 Models wrap JSON in prose, in fences, in explanations, or emit it with a trailing comma.
 `ChatResult.json` is the result of a tolerant extraction pass that handles all of that —
 and returns `undefined` rather than a wrong object when it genuinely cannot find one.
-When it fails, `replyExcerpt` and `describeJsonShape` (from `@handbook/core`) turn the
+When it fails, `replyExcerpt` and `describeJsonShape` (from `@handbooks/core`) turn the
 reply into a readable diagnostic instead of a wall of text.
 
 ---
@@ -118,7 +118,7 @@ reply into a readable diagnostic instead of a wall of text.
 ## Caching
 
 ```ts
-import { CachedChatClient } from '@handbook/llm';
+import { CachedChatClient } from '@handbooks/llm';
 
 const cached = new CachedChatClient(client, '<work>/phase3/cache');
 ```
@@ -135,7 +135,7 @@ From the CLI: `handbook generate --llm-cache` (and `--refresh` to ignore caches)
 ## Offline mock
 
 ```ts
-import { MockChatClient } from '@handbook/llm';
+import { MockChatClient } from '@handbooks/llm';
 
 const client = new MockChatClient(
   [
@@ -169,7 +169,7 @@ each role-played against a different failure mode, review it against ground-trut
 evidence; then the actor gets one revision round to address the aggregated concerns.
 
 ```ts
-import { actorCriticLoop, ROLE_PROMPTS } from '@handbook/llm';
+import { actorCriticLoop, ROLE_PROMPTS } from '@handbooks/llm';
 
 const result = await actorCriticLoop({
   client,
@@ -223,7 +223,7 @@ ROLE_PROMPTS: Record<CriticRole, string>
 ## Testing
 
 ```bash
-pnpm --filter @handbook/llm test
+pnpm --filter @handbooks/llm test
 ```
 
 The client is tested against a local HTTP server — retries, timeouts, rate limits,

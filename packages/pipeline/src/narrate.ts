@@ -7,7 +7,7 @@
  * deterministic fallback prose so the build never blocks.
  */
 import { join } from 'node:path';
-import { completeInLanguage, type ChatClient, type LanguageReport } from '@handbook/llm';
+import { completeInLanguage, type ChatClient, type LanguageReport } from '@handbooks/llm';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -33,7 +33,7 @@ import {
   extractEntryList,
   replyExcerpt,
   pickString,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { readFileSync } from 'node:fs';
 import { closingLine, rulesFor as rulesForLang } from './prompt-lang.js';
 

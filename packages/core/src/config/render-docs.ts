@@ -139,7 +139,7 @@ export function renderEnvExample(): string {
 function typeCell(setting: Setting): string {
   if (setting.type !== 'enum') return setting.type;
   if (setting.dynamicChoices === 'languages') {
-    // The adapter registry lives in @handbook/analyzer, which this package
+    // The adapter registry lives in @handbooks/analyzer, which this package
     // must not depend on — so the choice list is described, not enumerated.
     return 'enum (`auto`, plus any registered language)';
   }

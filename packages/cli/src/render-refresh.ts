@@ -5,14 +5,14 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AdapterCapabilities, Logger } from '@handbook/core';
-import { WorkDir, loadHandbookModel } from '@handbook/pipeline';
+import type { AdapterCapabilities, Logger } from '@handbooks/core';
+import { WorkDir, loadHandbookModel } from '@handbooks/pipeline';
 import {
   renderAgentSite,
   renderHtmlSite,
   renderMarkdownHandbook,
   renderSinglePageHtml,
-} from '@handbook/renderer';
+} from '@handbooks/renderer';
 
 /**
  * Per-language analysis fidelity from the work dir's graph, for the renderers'

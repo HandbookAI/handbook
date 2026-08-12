@@ -1,18 +1,18 @@
-# @handbook/patcher
+# @handbooks/patcher
 
 [English](README.md) · **中文**
 
 > 把计划里的 EDIT 块逐字节地应用到真实源码树上。全成或全不成，
 > 并且备份**能证明自己是对的那一份**。不用 LLM，不猜，不会写一半。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpatcher-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/patcher)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpatcher-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/patcher)
 [![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
 
 ---
 
 ## 这是什么
 
-一个机械执行器。它拿 `@handbook/planner` 产出的 markdown 计划，
+一个机械执行器。它拿 `@handbooks/planner` 产出的 markdown 计划，
 把每处精确的 `old` 文本替换成精确的 `new` 文本——**不重读、不解释、循环里没有模型**。
 
 这正是它的意义。**计划是给人评审的提案；应用它必须无聊且可预测。**
@@ -23,7 +23,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/patcher
+pnpm add @handbooks/patcher
 ```
 
 ---
@@ -31,7 +31,7 @@ pnpm add @handbook/patcher
 ## 快速上手
 
 ```ts
-import { applyPlan, rollback, listBackups } from '@handbook/patcher';
+import { applyPlan, rollback, listBackups } from '@handbooks/patcher';
 import { readFileSync } from 'node:fs';
 
 // 1. 只校验，不写任何东西
@@ -200,7 +200,7 @@ parsePlan(plan: string): ParsedPlan       // 导出出来：不应用也能 lint
 ## 测试
 
 ```bash
-pnpm --filter @handbook/patcher test
+pnpm --filter @handbooks/patcher test
 ```
 
 一千多行测试，其中大部分是关于**拒绝**：有歧义的锚点、软链接逃逸、嵌套围栏、
@@ -210,4 +210,4 @@ pnpm --filter @handbook/patcher test
 ---
 
 [Handbook](../../README.zh-CN.md) 的一部分 ·
-计划来自 [`@handbook/planner`](../planner/README.zh-CN.md) · MIT
+计划来自 [`@handbooks/planner`](../planner/README.zh-CN.md) · MIT

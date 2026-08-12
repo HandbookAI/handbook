@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SETTINGS, settingByKey, type Logger } from '@handbook/core';
+import { SETTINGS, settingByKey, type Logger } from '@handbooks/core';
 import { resolveOrThrow } from './resolve-config.js';
 
 describe('resolveOrThrow', () => {

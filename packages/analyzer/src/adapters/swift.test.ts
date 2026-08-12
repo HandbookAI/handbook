@@ -20,7 +20,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { CallType, ModuleAnalysis } from '@handbook/core';
+import type { CallType, ModuleAnalysis } from '@handbooks/core';
 import { SwiftAdapter } from './swift.js';
 
 /** Can this runtime parse Swift without aborting? Measured, not assumed. */

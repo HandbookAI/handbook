@@ -20,6 +20,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SCOPE_DIR, scoped } from './scope.mjs';
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEMO = join(ROOT, 'examples', 'demo-project');
 const MOCK_PORT = 8231;
@@ -89,8 +91,8 @@ try {
   step('install them with plain npm, outside the workspace');
   // ---------------------------------------------------------------------
   sh(npmCmd, ['install', ...tarballs, '--no-audit', '--no-fund'], { cwd: project });
-  const cliDir = join(project, 'node_modules', '@handbook', 'cli');
-  if (!existsSync(cliDir)) throw new Error('@handbook/cli did not install');
+  const cliDir = join(project, 'node_modules', SCOPE_DIR, 'cli');
+  if (!existsSync(cliDir)) throw new Error(`${scoped('cli')} did not install`);
   ok('installed');
 
   // The published bin must exist as a shim, and the entry it names must be real.
@@ -172,7 +174,7 @@ try {
   // ---------------------------------------------------------------------
   step('studio serves the UI asset it publishes');
   // ---------------------------------------------------------------------
-  const studioUi = join(project, 'node_modules', '@handbook', 'studio', 'public', 'index.html');
+  const studioUi = join(project, 'node_modules', SCOPE_DIR, 'studio', 'public', 'index.html');
   existsSync(studioUi) ? ok('studio shipped public/index.html') : bad('studio did not ship its UI');
 } catch (err) {
   bad(err.stdout ? `${err.message}\n${err.stdout}\n${err.stderr}` : String(err.stack ?? err));

@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { silentLogger } from '@handbook/core';
-import { MockChatClient, type MockRule } from '@handbook/llm';
-import { generateHandbook, loadHandbookModel } from '@handbook/pipeline';
-import { renderHtmlSite, renderMarkdownHandbook } from '@handbook/renderer';
+import { silentLogger } from '@handbooks/core';
+import { MockChatClient, type MockRule } from '@handbooks/llm';
+import { generateHandbook, loadHandbookModel } from '@handbooks/pipeline';
+import { renderHtmlSite, renderMarkdownHandbook } from '@handbooks/renderer';
 import { refreshRenderedHandbook } from './render-refresh.js';
 
 function pipelineMock(): MockChatClient {

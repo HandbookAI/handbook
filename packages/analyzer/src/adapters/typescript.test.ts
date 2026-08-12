@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ModuleAnalysis } from '@handbook/core';
+import type { ModuleAnalysis } from '@handbooks/core';
 import { TypeScriptAdapter } from './typescript.js';
 
 const ENGINE_TS = `

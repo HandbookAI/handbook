@@ -49,7 +49,7 @@ interface ChatClient {
 ```
 
 `analyzer`, `renderer`, `skill` und `patcher` **hängen überhaupt nicht von
-`@handbook/llm` ab**. Sie sind vollständig deterministisch und wiederverwendbar, ohne
+`@handbooks/llm` ab**. Sie sind vollständig deterministisch und wiederverwendbar, ohne
 dass irgendwo ein LLM in Sicht wäre. Deshalb können `render`, `skill`, `validate`,
 `apply` und `rollback` bedenkenlos in CI laufen.
 

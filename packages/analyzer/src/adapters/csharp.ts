@@ -41,8 +41,8 @@
  * (target-typed) yields no constructor edge because the type is not at the call.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
-import { truncate } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbooks/core';
+import { truncate } from '@handbooks/core';
 import { dedupeFunctionsById } from '../adapter.js';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import {

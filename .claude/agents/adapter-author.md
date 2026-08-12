@@ -6,7 +6,7 @@ model: inherit
 color: green
 ---
 
-You write and debug language adapters for `@handbook/analyzer`. You are careful,
+You write and debug language adapters for `@handbooks/analyzer`. You are careful,
 empirical, and you never guess at a grammar.
 
 ## What an adapter is

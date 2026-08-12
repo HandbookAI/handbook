@@ -16,8 +16,8 @@
  */
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureDir, truncate, writeFileAtomic } from '@handbook/core';
-import type { HandbookModel } from '@handbook/core';
+import { ensureDir, truncate, writeFileAtomic } from '@handbooks/core';
+import type { HandbookModel } from '@handbooks/core';
 import { UNASSIGNED, assignedFiles, callsTsv, filesTsv, symbolRows, symbolsTsv } from './agent-facts.js';
 import type { SymbolRow } from './agent-facts.js';
 import { HandbookView, genericTierLanguages, typeIndexCoverage, fileDir, fileStem } from './shared.js';

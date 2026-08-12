@@ -1,11 +1,11 @@
-# @handbook/planner
+# @handbooks/planner
 
 [English](README.md) · **中文**
 
 > 一个只读的 agent：用手册定位、读真实源码、产出精确到能被机械执行的修改计划。
 > **它连一个字节都写不了。**
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fplanner-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/planner)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fplanner-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/planner)
 [![read-only](https://img.shields.io/badge/文件系统-只读-2dd4bf?style=flat-square)](#工具带)
 
 ---
@@ -40,7 +40,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/planner
+pnpm add @handbooks/planner
 ```
 
 ---
@@ -48,8 +48,8 @@ pnpm add @handbook/planner
 ## 快速上手
 
 ```ts
-import { runPlanner, handbookDirFromSkill } from '@handbook/planner';
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { runPlanner, handbookDirFromSkill } from '@handbooks/planner';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const result = await runPlanner({
   client: new OpenAiChatClient({ config: resolveLlmEnv() }),
@@ -102,7 +102,7 @@ handbook plan --source /path/to/repo --handbook skills/myrepo/references \
 - 编辑块编号必须**自上而下递增**。
 - 结尾的 `json` 块是机器可读的声明，由 `resync` 消费以精确其刷新范围。
 
-`@handbook/patcher` 执行这个格式。它刻意对歧义充满敌意——具体拒绝什么、为什么，
+`@handbooks/patcher` 执行这个格式。它刻意对歧义充满敌意——具体拒绝什么、为什么，
 见那个包的 README。
 
 ---
@@ -201,7 +201,7 @@ DEFAULT_PROMPT_VARS, TOOL_PROTOCOL
 ## 测试
 
 ```bash
-pnpm --filter @handbook/planner test
+pnpm --filter @handbooks/planner test
 ```
 
 每条失败路径都有脚本化测试：编造的结果、畸形 action、非字符串工具参数、
@@ -210,4 +210,4 @@ pnpm --filter @handbook/planner test
 ---
 
 [Handbook](../../README.zh-CN.md) 的一部分 · [提示词目录](../../docs/content/docs/reference/prompts.mdx) ·
-产物由 [`@handbook/patcher`](../patcher/README.zh-CN.md) 执行 · MIT
+产物由 [`@handbooks/patcher`](../patcher/README.zh-CN.md) 执行 · MIT

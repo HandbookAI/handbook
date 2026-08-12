@@ -19,8 +19,8 @@ import type {
   SelfAttrsIndex,
   TypeNode,
   UnparsedFile,
-} from '@handbook/core';
-import { writeFileAtomic, writeJsonFile } from '@handbook/core';
+} from '@handbooks/core';
+import { writeFileAtomic, writeJsonFile } from '@handbooks/core';
 
 export interface BuildGraphOptions {
   sourceRoot: string;

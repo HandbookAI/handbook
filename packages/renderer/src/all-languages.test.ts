@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { NARRATE_LANGS, checkLanguage, type NarrateLang } from '@handbook/core';
+import { NARRATE_LANGS, checkLanguage, type NarrateLang } from '@handbooks/core';
 import { ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderAgentSite } from './agent-site.js';
 import { renderHtmlSite, renderSinglePageHtml } from './html.js';

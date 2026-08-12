@@ -3,8 +3,8 @@
  * persistence, and loading a completed work directory into a
  * {@link HandbookModel} for the renderer.
  */
-import { LanguageReport, type ChatClient } from '@handbook/llm';
-import { RunProgress, type ProgressSink } from '@handbook/core';
+import { LanguageReport, type ChatClient } from '@handbooks/llm';
+import { RunProgress, type ProgressSink } from '@handbooks/core';
 import {
   MissingArtifactError,
   PIPELINE_DEFAULTS,
@@ -15,7 +15,7 @@ import {
   type Logger,
   type NarrateLang,
   type Skeleton,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -27,7 +27,7 @@ import { synthesizeWithDoctor } from './doctor.js';
 import { organizeStages } from './organize.js';
 import { extractRegisters, narrate } from './narrate.js';
 import { classifyMembers, deriveFileArtifacts, saveMemberAssignment } from './member.js';
-import { buildNavPack } from '@handbook/analyzer';
+import { buildNavPack } from '@handbooks/analyzer';
 import { WorkDir } from './workdir.js';
 
 export type Phase = '1' | '2a' | '2b' | '2c' | '3';

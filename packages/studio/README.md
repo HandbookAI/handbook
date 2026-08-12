@@ -1,4 +1,4 @@
-# @handbook/studio
+# @handbooks/studio
 
 **English** · [中文](README.zh-CN.md)
 
@@ -6,14 +6,14 @@
 > browse the handbook, plan a change, dry-run it, apply it, roll it back, resync.
 > Localhost only, by design.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fstudio-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/studio)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fstudio-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/studio)
 [![binds](https://img.shields.io/badge/binds-127.0.0.1-2dd4bf?style=flat-square)](#security-model)
 
 ---
 
 ## What it is
 
-A local web UI over every other `@handbook/*` package. Same code paths as the CLI, same
+A local web UI over every other `@handbooks/*` package. Same code paths as the CLI, same
 config resolution, same artifacts on disk — just a different way to drive it.
 
 ```bash
@@ -46,7 +46,7 @@ from a CDN. It loads instantly and it works with the network cable unplugged.
 ## Install
 
 ```bash
-pnpm add @handbook/studio
+pnpm add @handbooks/studio
 ```
 
 Or just use the CLI — `handbook studio` is this package.
@@ -56,7 +56,7 @@ Or just use the CLI — `handbook studio` is this package.
 ## Embedding it
 
 ```ts
-import { startStudio, createStudioServer } from '@handbook/studio';
+import { startStudio, createStudioServer } from '@handbooks/studio';
 
 await startStudio({
   stateDir: `${process.env.HOME}/.handbook-studio`,
@@ -190,7 +190,7 @@ that matters.
 ## Testing
 
 ```bash
-pnpm --filter @handbook/studio test
+pnpm --filter @handbooks/studio test
 ```
 
 The server is driven end to end over real HTTP: routing, the Host-header guard, the

@@ -2,8 +2,8 @@
  * Phase 2b (step B) — assign every file to exactly one primary stage
  * (batched LLM calls against a fixed stage menu, with an `unassigned` escape).
  */
-import { allFileDescriptors, buildNavPack, type NavFileDescriptor } from '@handbook/analyzer';
-import type { ChatClient } from '@handbook/llm';
+import { allFileDescriptors, buildNavPack, type NavFileDescriptor } from '@handbooks/analyzer';
+import type { ChatClient } from '@handbooks/llm';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -18,9 +18,9 @@ import {
   describeJsonShape,
   extractEntryList,
   replyExcerpt,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { stageShortDescriptions } from './skeleton.js';
-import type { ProgressSink } from '@handbook/core';
+import type { ProgressSink } from '@handbooks/core';
 
 const ASSIGN_RULES = `You are assigning whole SOURCE FILES to stages of a system handbook.
 Pick the ONE stage whose description best matches each file's PRIMARY responsibility; genuinely

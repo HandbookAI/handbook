@@ -4,7 +4,7 @@ description: 'pipeline जो भी फ़ाइल लिखती है, उ
 ---
 
 Toolchain जो भी artifact पढ़ती या लिखती है, pipeline क्रम में। सभी JSON/YAML artifacts में
-एक `version` फ़ील्ड होता है और पढ़ते समय उन्हें `@handbook/core` की zod schemas से सत्यापित
+एक `version` फ़ील्ड होता है और पढ़ते समय उन्हें `@handbooks/core` की zod schemas से सत्यापित
 किया जाता है। जब तक अलग से न कहा गया हो, रास्ते विश्लेषित स्रोत मूल के सापेक्ष POSIX रूप
 में हैं।
 
@@ -362,7 +362,7 @@ consumer किसी path से पहले गद्य खाए।
 
 monorepo में यह कोई footnote नहीं है — यही वह हिस्सा है जो एक agent सबसे ज़्यादा जानना चाहता है।
 इस repository पर मापा गया: **3,565 edges में से 1,063 boundary edges हैं**, जिनमें 284
-`@handbook/core` की ओर जाती हैं। सिर्फ़ resolved edges के साथ `checkLanguage` — जिसे दूसरे
+`@handbooks/core` की ओर जाती हैं। सिर्फ़ resolved edges के साथ `checkLanguage` — जिसे दूसरे
 package से चार बार बुलाया जाता है — **शून्य callers** के साथ दिखता था, और agent उसे dead code
 पढ़ता है। वह एक _ग़लत pointer_ है, कोई कमी नहीं, और ग़लत pointer ही वह विफलता है जिसे रोकने के
 लिए यह artifact मौजूद है।

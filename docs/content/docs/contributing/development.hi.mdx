@@ -117,13 +117,13 @@ Build प्रोजेक्ट `*.test.ts` और `*.test-helper.ts` को �
 ### Coverage की न्यूनतम सीमाएँ प्रति पैकेज हैं
 
 पूरे repo का एक अकेला आँकड़ा वही छिपा देता है जो मायने रखता है: कुल 86% पर
-`@handbook/cli` 23% पर बैठा है। हर पैकेज की अपनी सीमा `vitest.config.ts` में है, जो मापे
+`@handbooks/cli` 23% पर बैठा है। हर पैकेज की अपनी सीमा `vitest.config.ts` में है, जो मापे
 गए मान से बस थोड़ी नीचे रखी जाती है, ताकि वह **खटके की तरह आगे ही बढ़े**।
 
 अगर आपका बदलाव coverage बढ़ाता है, तो सीमा भी उसके साथ बढ़ाएँ। लाल रन को पास कराने के लिए
 खाई चौड़ी न करें।
 
-### Tests `@handbook/*` को स्रोत पर हल करते हैं, `dist` पर नहीं
+### Tests `@handbooks/*` को स्रोत पर हल करते हैं, `dist` पर नहीं
 
 वरना पैकेज सीमा के आर-पार जो भी उपभोग होता है उसकी coverage कहीं भी दर्ज नहीं होती —
 `core/src/util/hash.ts` 0% मापा जाता था जबकि pipeline उसे हर रन पर बुलाती थी।
@@ -208,5 +208,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

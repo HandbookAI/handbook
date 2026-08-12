@@ -1,19 +1,19 @@
 ---
-'@handbook/llm': minor
-'@handbook/core': minor
-'@handbook/cli': minor
-'@handbook/pipeline': minor
-'@handbook/studio': minor
-'@handbook/analyzer': patch
-'@handbook/patcher': patch
-'@handbook/planner': patch
-'@handbook/renderer': patch
-'@handbook/resync': patch
-'@handbook/skill': patch
+'@handbooks/llm': minor
+'@handbooks/core': minor
+'@handbooks/cli': minor
+'@handbooks/pipeline': minor
+'@handbooks/studio': minor
+'@handbooks/analyzer': patch
+'@handbooks/patcher': patch
+'@handbooks/planner': patch
+'@handbooks/renderer': patch
+'@handbooks/resync': patch
+'@handbooks/skill': patch
 ---
 
 Configuration is declared once and derived everywhere. A registry in
-`@handbook/core` is the single source for every setting, and the CLI options, the
+`@handbooks/core` is the single source for every setting, and the CLI options, the
 environment variables, `handbook.config.yaml`, `.env.example` and
 `docs/configuration.md` are all generated or resolved from it. Precedence is
 flag > shell env > .env > config file > default, and every resolved value carries

@@ -41,3 +41,18 @@ runs/
 # and the token in particular must not be.
 .vercel
 .env*.local
+
+# The engineering journal: specs, plans, review notes and the cross-session
+# progress log. Kept LOCAL on purpose.
+#
+# Two of its files are working logs rather than documents — they record which
+# agent was dispatched, where a session broke off, what the next round picks up
+# — and they accumulate statements that were true when written and are not
+# afterwards. Publishing a running log means publishing its stale half too, and
+# the only honest way to correct it in place is to append rather than edit,
+# which makes it steadily less readable as a document.
+#
+# The specs and reviews are genuinely useful and were public until now; they are
+# still in this repository's history. Removing them from the index only stops
+# FUTURE commits from carrying them.
+docs/internal/

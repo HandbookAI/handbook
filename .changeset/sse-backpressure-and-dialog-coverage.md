@@ -1,5 +1,5 @@
 ---
-'@handbook/studio': patch
+'@handbooks/studio': patch
 ---
 
 Studio's SSE job stream no longer lets a subscriber that stopped reading grow the

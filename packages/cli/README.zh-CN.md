@@ -1,18 +1,18 @@
-# @handbook/cli
+# @handbooks/cli
 
 [English](README.md) · **中文**
 
 > `handbook` 命令。十一个子命令、一套配置模型，
 > 外加一个能告诉你**每个值到底从哪来**的 `config` 命令。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcli-6366f1?style=flat-square)](https://www.npmjs.com/package/@handbook/cli)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcli-6366f1?style=flat-square)](https://www.npmjs.com/package/@handbooks/cli)
 
 ---
 
 ## 安装
 
 ```bash
-npm i -g @handbook/cli
+npm i -g @handbooks/cli
 handbook --help
 ```
 
@@ -77,7 +77,7 @@ pnpm handbook --help
 CLI 参数  >  shell 环境变量  >  .env 级联  >  handbook.config.yaml  >  registry 默认值
 ```
 
-每个设置在 `@handbook/core` 的 registry 里只声明一次。你看到的参数、能用的环境变量、
+每个设置在 `@handbooks/core` 的 registry 里只声明一次。你看到的参数、能用的环境变量、
 被接受的 YAML 键、`.env.example`、`handbook.config.example.yaml` 和
 `docs/configuration.md`，**全都是从那一张表生成的**。
 它们不可能互相漂移，因为漂移测试会逐字节比对。

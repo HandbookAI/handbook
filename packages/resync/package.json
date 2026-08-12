@@ -1,6 +1,6 @@
 {
-  "name": "@handbook/resync",
-  "version": "0.1.0",
+  "name": "@handbooks/resync",
+  "version": "1.1.0",
   "description": "Roll a handbook's derived layer forward after code changes (diff-driven incremental update)",
   "type": "module",
   "exports": {
@@ -18,10 +18,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@handbook/analyzer": "workspace:*",
-    "@handbook/core": "workspace:*",
-    "@handbook/llm": "workspace:*",
-    "@handbook/pipeline": "workspace:*",
+    "@handbooks/analyzer": "workspace:*",
+    "@handbooks/core": "workspace:*",
+    "@handbooks/llm": "workspace:*",
+    "@handbooks/pipeline": "workspace:*",
     "zod": "catalog:"
   },
   "license": "MIT",

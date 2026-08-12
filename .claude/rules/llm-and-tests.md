@@ -20,7 +20,7 @@ interface ChatClient {
 ```
 
 Do not add a second way to reach a model. `analyzer`, `renderer`, `skill` and `patcher`
-**do not depend on `@handbook/llm` at all**, and that boundary is what makes `render`,
+**do not depend on `@handbooks/llm` at all**, and that boundary is what makes `render`,
 `skill`, `validate`, `apply` and `rollback` free to run in CI.
 
 **No test needs an API key. Ever.** LLM-dependent flows are tested against

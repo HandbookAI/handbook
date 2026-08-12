@@ -6,7 +6,7 @@
  * exercise the cap, one test twin), two registers (one direct-only, one that
  * a leaf stage inherits via a concept word), English narration.
  */
-import type { FunctionNote, HandbookModel } from '@handbook/core';
+import type { FunctionNote, HandbookModel } from '@handbooks/core';
 
 function fn(partial: Partial<FunctionNote> & Pick<FunctionNote, 'id' | 'qualname' | 'name'>): FunctionNote {
   return {

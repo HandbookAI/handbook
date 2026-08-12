@@ -9,7 +9,7 @@
  * unassigned and the actor proposes no further changes; two consecutive
  * no-progress rounds trip the stuck detector.
  */
-import { actorCriticLoop, type ChatClient, type CriticRole } from '@handbook/llm';
+import { actorCriticLoop, type ChatClient, type CriticRole } from '@handbooks/llm';
 import {
   PIPELINE_DEFAULTS,
   silentLogger,
@@ -19,10 +19,10 @@ import {
   type Logger,
   type NarrateLang,
   type Skeleton,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { assignFiles, reassignSubset, rebuildAssignment } from './assign.js';
 import { normalizeSkeleton, synthesizeSkeleton } from './skeleton.js';
-import { buildNavPack } from '@handbook/analyzer';
+import { buildNavPack } from '@handbooks/analyzer';
 
 export interface StageStats {
   perStage: Record<string, { nFiles: number; overloaded: boolean }>;

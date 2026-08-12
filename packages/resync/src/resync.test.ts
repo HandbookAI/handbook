@@ -2,9 +2,9 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { CodeGraph, FileCard } from '@handbook/core';
-import { MockChatClient, type ChatClient, type MockRule } from '@handbook/llm';
-import { WorkDir, generateHandbook } from '@handbook/pipeline';
+import type { CodeGraph, FileCard } from '@handbooks/core';
+import { MockChatClient, type ChatClient, type MockRule } from '@handbooks/llm';
+import { WorkDir, generateHandbook } from '@handbooks/pipeline';
 import {
   detectCardDetail,
   diffGraphs,

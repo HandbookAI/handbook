@@ -5,7 +5,7 @@
  * env var, and compare.
  */
 import { basename } from 'node:path';
-import { keysFor, settingByKey, type ResolveResult, type Source } from '@handbook/core';
+import { keysFor, settingByKey, type ResolveResult, type Source } from '@handbooks/core';
 
 /**
  * The environment cascade, for display — what `main.ts`'s preAction hook

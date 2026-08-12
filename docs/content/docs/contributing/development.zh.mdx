@@ -109,12 +109,12 @@ pnpm test:coverage
 
 ### 覆盖率下限按包设定
 
-单一的全仓库数字会掩盖真正要紧的东西：整体 86% 时，`@handbook/cli` 只有 23%。
+单一的全仓库数字会掩盖真正要紧的东西：整体 86% 时，`@handbooks/cli` 只有 23%。
 每个包在 `vitest.config.ts` 中都有自己的下限，设定在实测值略下方，所以它是**棘轮式**的。
 
 如果你的改动提高了覆盖率，就把下限一并提上去。不要为了让飘红的运行变绿而拉大这个差距。
 
-### 测试把 `@handbook/*` 解析到源码，而不是 `dist`
+### 测试把 `@handbooks/*` 解析到源码，而不是 `dist`
 
 否则，任何跨包边界被使用的东西，其覆盖率都无处归属 ——
 `core/src/util/hash.ts` 测得 0%，而流水线每次运行都在调用它。
@@ -195,5 +195,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

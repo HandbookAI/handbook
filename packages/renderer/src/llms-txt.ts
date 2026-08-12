@@ -13,8 +13,8 @@
  * Both outputs are fully self-contained and honor `model.lang`.
  */
 import { join } from 'node:path';
-import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbook/core';
-import type { HandbookModel, NarrateLang } from '@handbook/core';
+import { ensureDir, firstSentence, truncate, writeFileAtomic } from '@handbooks/core';
+import type { HandbookModel, NarrateLang } from '@handbooks/core';
 import { fileOneLiner } from './file-card.js';
 import { HandbookView, mdLinkText, stageMapMermaid, genericTierLanguages } from './shared.js';
 import type { FidelityOptions } from './shared.js';

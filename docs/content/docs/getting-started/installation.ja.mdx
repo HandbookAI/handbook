@@ -52,7 +52,7 @@ pnpm handbook --help
 ## 方法 2 — グローバル CLI として
 
 ```bash
-npm i -g @handbook/cli
+npm i -g @handbooks/cli
 handbook --help
 ```
 
@@ -75,9 +75,9 @@ Studio、環境ごとの設定、`localhost` 限定の注意点については
 パッケージャー、パッチャーは LLM に一切触れないため、スタンドアロンで動作します:
 
 ```bash
-pnpm add @handbook/analyzer   # static call graphs, 18 languages
-pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
-pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+pnpm add @handbooks/analyzer   # static call graphs, 18 languages
+pnpm add @handbooks/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbooks/patcher    # apply byte-exact edit plans with rollback
 ```
 
 [パッケージ索引](/docs/reference/packages)を参照してください。

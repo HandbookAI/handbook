@@ -1,11 +1,11 @@
-# @handbook/planner
+# @handbooks/planner
 
 **English** · [中文](README.zh-CN.md)
 
 > A read-only agent that routes with the handbook, reads the real source, and emits an
 > edit plan precise enough to apply mechanically. It cannot write a single byte.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fplanner-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/planner)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fplanner-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/planner)
 [![read-only](https://img.shields.io/badge/filesystem-read--only-2dd4bf?style=flat-square)](#the-tool-belt)
 
 ---
@@ -42,7 +42,7 @@ Two artifacts, two distinct roles, and the prompt is explicit about it:
 ## Install
 
 ```bash
-pnpm add @handbook/planner
+pnpm add @handbooks/planner
 ```
 
 ---
@@ -50,8 +50,8 @@ pnpm add @handbook/planner
 ## Quick start
 
 ```ts
-import { runPlanner, handbookDirFromSkill } from '@handbook/planner';
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { runPlanner, handbookDirFromSkill } from '@handbooks/planner';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const result = await runPlanner({
   client: new OpenAiChatClient({ config: resolveLlmEnv() }),
@@ -129,7 +129,7 @@ Both sites now share one retry policy.
 - The trailing `json` block is the machine-readable declarations, consumed by `resync` to
   sharpen its refresh scope.
 
-`@handbook/patcher` executes this format. It is deliberately hostile to ambiguity — see
+`@handbooks/patcher` executes this format. It is deliberately hostile to ambiguity — see
 that package's README for exactly what it refuses and why.
 
 ---
@@ -237,7 +237,7 @@ names without forking the prompt.
 ## Testing
 
 ```bash
-pnpm --filter @handbook/planner test
+pnpm --filter @handbooks/planner test
 ```
 
 Every failure path has a scripted test: fabricated results, malformed actions, non-string
@@ -247,4 +247,4 @@ catastrophic regexes.
 ---
 
 Part of [Handbook](../../README.md) · [Prompt catalogue](../../docs/content/docs/reference/prompts.mdx) ·
-[`@handbook/patcher`](../patcher/README.md) applies what this produces · MIT
+[`@handbooks/patcher`](../patcher/README.md) applies what this produces · MIT

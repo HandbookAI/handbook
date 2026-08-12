@@ -1,6 +1,6 @@
 {
-  "name": "@handbook/patcher",
-  "version": "0.1.0",
+  "name": "@handbooks/patcher",
+  "version": "1.1.0",
   "description": "Apply a plan's EDIT blocks to a source tree byte-exactly, with dry-run, verification and rollback",
   "type": "module",
   "exports": {
@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@handbook/core": "workspace:*"
+    "@handbooks/core": "workspace:*"
   },
   "license": "MIT",
   "publishConfig": {

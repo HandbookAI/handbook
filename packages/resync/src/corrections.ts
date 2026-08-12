@@ -12,7 +12,7 @@
 import { readFileSync, renameSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { z } from 'zod';
-import { fileExists } from '@handbook/core';
+import { fileExists } from '@handbooks/core';
 
 /**
  * One correction record. `file` (the repo-relative source path to refresh) is

@@ -52,7 +52,7 @@ pnpm handbook --help
 ## Вариант 2 — как глобальный CLI
 
 ```bash
-npm i -g @handbook/cli
+npm i -g @handbooks/cli
 handbook --help
 ```
 
@@ -76,9 +76,9 @@ docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
 автономно:
 
 ```bash
-pnpm add @handbook/analyzer   # static call graphs, 18 languages
-pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
-pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+pnpm add @handbooks/analyzer   # static call graphs, 18 languages
+pnpm add @handbooks/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbooks/patcher    # apply byte-exact edit plans with rollback
 ```
 
 См. [индекс пакетов](/docs/reference/packages).

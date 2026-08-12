@@ -1,5 +1,5 @@
 ---
-'@handbook/cli': patch
+'@handbooks/cli': patch
 ---
 
 Add `HANDBOOK_ENV_FILE` as a collision-free equivalent of `--env-file`.

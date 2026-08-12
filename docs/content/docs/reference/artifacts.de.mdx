@@ -5,7 +5,7 @@ description: 'Jede Datei, die die Pipeline schreibt, ihr Schema und was sie beim
 
 Jedes Artefakt, das die Werkzeugkette liest oder schreibt, in Pipeline-Reihenfolge. Alle
 JSON-/YAML-Artefakte tragen ein `version`-Feld und werden beim Lesen mit zod-Schemata aus
-`@handbook/core` validiert. Pfade sind POSIX-relativ zur analysierten Quell-Wurzel,
+`@handbooks/core` validiert. Pfade sind POSIX-relativ zur analysierten Quell-Wurzel,
 sofern nicht anders angegeben.
 
 ## Aufbau des Arbeitsverzeichnisses
@@ -367,7 +367,7 @@ keine, und er wird nicht geraten.
 
 In einem Monorepo ist das keine Fußnote, sondern das meiste von dem, was ein Agent wissen
 will. In diesem Repository gemessen: **1.063 von 3.565 Kanten sind Grenzkanten**, 284 davon
-nach `@handbook/core`. Nur mit aufgelösten Kanten erschien `checkLanguage` — aus einem anderen
+nach `@handbooks/core`. Nur mit aufgelösten Kanten erschien `checkLanguage` — aus einem anderen
 Paket viermal aufgerufen — mit **null Aufrufern**, was ein Agent als toten Code liest. Das ist
 ein _falscher Zeiger_, keine Lücke, und ein falscher Zeiger ist genau das Versagen, dessen
 Verhinderung dieses Artefakt existiert.

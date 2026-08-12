@@ -13,7 +13,7 @@ import {
 import { hostname, tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sha256Hex, silentLogger, type Logger } from '@handbook/core';
+import { sha256Hex, silentLogger, type Logger } from '@handbooks/core';
 import { parsePlan } from './parse.js';
 import { applyPlan, listBackups, rollback } from './apply.js';
 

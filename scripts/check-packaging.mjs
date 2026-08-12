@@ -27,6 +27,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+import { scoped } from './scope.mjs';
+
 const run = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PROFILE = 'esm-only';
@@ -85,7 +87,7 @@ const results = await Promise.all(
 
 for (const { dir, publint, attw } of results) {
   const status = publint.ok && attw.ok ? 'OK  ' : 'FAIL';
-  console.log(`  ${status} @handbook/${dir}`);
+  console.log(`  ${status} ${scoped(dir)}`);
   if (!publint.ok) failures.push({ dir, tool: 'publint', output: publint.output });
   if (!attw.ok) failures.push({ dir, tool: `attw (profile: ${PROFILE})`, output: attw.output });
 }
@@ -97,7 +99,7 @@ if (failures.length === 0) {
 
 console.error(`\npackaging FAILED — ${failures.length} problem(s):\n`);
 for (const { dir, tool, output } of failures) {
-  console.error(`── @handbook/${dir} — ${tool} ${'─'.repeat(Math.max(0, 50 - dir.length))}`);
+  console.error(`── ${scoped(dir)} — ${tool} ${'─'.repeat(Math.max(0, 50 - dir.length))}`);
   console.error(output.trim());
   console.error('');
 }

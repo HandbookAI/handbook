@@ -68,7 +68,7 @@ them with `--no-verify` — if a hook is wrong, that's a bug worth fixing.
 
 The full command list is in the README's [Development](README.md#development) section, and
 the conventions the tooling enforces rather than documents (versions live in the
-`pnpm-workspace.yaml` catalog, `dist/` is the published surface, tests resolve `@handbook/*`
+`pnpm-workspace.yaml` catalog, `dist/` is the published surface, tests resolve `@handbooks/*`
 to source) are listed right below it. Read those once — each has a check that will fail on
 you otherwise.
 
@@ -110,7 +110,7 @@ pnpm changeset     # pick the affected packages and the bump, then describe the 
 Write the changeset for someone upgrading, not for the reviewer: what changed for them, and
 what they have to do about it. A `major` bump needs the migration in the body.
 
-No changeset is needed for changes that ship nothing — tests, CI, `docs/internal/`,
+No changeset is needed for changes that ship nothing — tests, CI, the docs site,
 repo tooling, or a doc that isn't part of a package's published files. If you're unsure, add
 one; a redundant patch bump is cheaper than a silent behaviour change.
 

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AdapterCapabilities } from '@handbook/core';
+import type { AdapterCapabilities } from '@handbooks/core';
 import { ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderHtmlSite, renderSinglePageHtml } from './html.js';
 

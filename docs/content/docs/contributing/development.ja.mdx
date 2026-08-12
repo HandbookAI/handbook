@@ -112,14 +112,14 @@ tarball から除外されます。**`dist/` 配下のテスト成果物はチ�
 
 ### カバレッジ下限はパッケージごと
 
-リポジトリ全体でひとつの数字は肝心なところを隠します：全体で 86% のとき、`@handbook/cli` は
+リポジトリ全体でひとつの数字は肝心なところを隠します：全体で 86% のとき、`@handbooks/cli` は
 23% でした。各パッケージは `vitest.config.ts` に自分の下限を持ち、実測値のすぐ下に設定されて
 いるため、**ラチェットのように上がっていきます**。
 
 変更によってカバレッジが上がったら、下限も一緒に上げてください。赤くなった実行を通すために
 差を広げてはいけません。
 
-### テストは `@handbook/*` を `dist` ではなくソースへ解決する
+### テストは `@handbooks/*` を `dist` ではなくソースへ解決する
 
 そうしないと、パッケージ境界をまたいで使われるもののカバレッジがどこにも計上されません —
 パイプラインが毎回呼んでいるのに `core/src/util/hash.ts` は 0% と計測されていました。
@@ -206,5 +206,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

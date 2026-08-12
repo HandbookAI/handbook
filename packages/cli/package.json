@@ -1,6 +1,6 @@
 {
-  "name": "@handbook/cli",
-  "version": "0.1.0",
+  "name": "@handbooks/cli",
+  "version": "1.1.0",
   "description": "The handbook command-line interface",
   "type": "module",
   "exports": {
@@ -21,16 +21,16 @@
     "handbook": "./dist/main.js"
   },
   "dependencies": {
-    "@handbook/analyzer": "workspace:*",
-    "@handbook/core": "workspace:*",
-    "@handbook/llm": "workspace:*",
-    "@handbook/patcher": "workspace:*",
-    "@handbook/pipeline": "workspace:*",
-    "@handbook/planner": "workspace:*",
-    "@handbook/renderer": "workspace:*",
-    "@handbook/resync": "workspace:*",
-    "@handbook/skill": "workspace:*",
-    "@handbook/studio": "workspace:*",
+    "@handbooks/analyzer": "workspace:*",
+    "@handbooks/core": "workspace:*",
+    "@handbooks/llm": "workspace:*",
+    "@handbooks/patcher": "workspace:*",
+    "@handbooks/pipeline": "workspace:*",
+    "@handbooks/planner": "workspace:*",
+    "@handbooks/renderer": "workspace:*",
+    "@handbooks/resync": "workspace:*",
+    "@handbooks/skill": "workspace:*",
+    "@handbooks/studio": "workspace:*",
     "commander": "catalog:"
   },
   "license": "MIT",

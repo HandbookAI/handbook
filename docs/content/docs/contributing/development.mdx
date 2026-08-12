@@ -113,14 +113,14 @@ name sources that are never published. **A test artifact under `dist/` fails the
 
 ### Coverage floors are per package
 
-A single repo-wide number hides what matters: at 86% overall, `@handbook/cli` sits at 23%.
+A single repo-wide number hides what matters: at 86% overall, `@handbooks/cli` sits at 23%.
 Each package has its own floor in `vitest.config.ts`, set just under what it measures, so
 it **ratchets**.
 
 If your change raises coverage, raise the floor with it. Do not widen the gap to make a
 red run pass.
 
-### Tests resolve `@handbook/*` to source, not `dist`
+### Tests resolve `@handbooks/*` to source, not `dist`
 
 Otherwise coverage of anything consumed across a package boundary is attributed nowhere —
 `core/src/util/hash.ts` measured 0% while the pipeline called it on every run.
@@ -205,5 +205,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

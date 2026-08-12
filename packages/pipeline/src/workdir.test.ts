@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ArtifactValidationError } from '@handbook/core';
+import { ArtifactValidationError } from '@handbooks/core';
 import { WorkDir } from './workdir.js';
 
 function newWork(): WorkDir {

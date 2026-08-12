@@ -1,11 +1,11 @@
-# @handbook/renderer
+# @handbooks/renderer
 
 **English** · [中文](README.zh-CN.md)
 
 > Turn a generated handbook into things people open and things agents route with.
 > Four output formats, no LLM, no network, no build step.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Frenderer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/renderer)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Frenderer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/renderer)
 [![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 
 ---
@@ -13,7 +13,7 @@
 ## What it is
 
 The presentation arm of the [Handbook](../../README.md) toolchain. It takes a
-`HandbookModel` — the boundary type produced by `@handbook/pipeline` — and writes:
+`HandbookModel` — the boundary type produced by `@handbooks/pipeline` — and writes:
 
 | Function                 | Output                                                                 | Audience |
 | ------------------------ | ---------------------------------------------------------------------- | -------- |
@@ -31,7 +31,7 @@ commit.** That split is the whole reason this is a separate package.
 ## Install
 
 ```bash
-pnpm add @handbook/renderer
+pnpm add @handbooks/renderer
 ```
 
 ---
@@ -39,14 +39,14 @@ pnpm add @handbook/renderer
 ## Quick start
 
 ```ts
-import { loadHandbookModel } from '@handbook/pipeline';
+import { loadHandbookModel } from '@handbooks/pipeline';
 import {
   renderMarkdownHandbook,
   renderHtmlSite,
   renderSinglePageHtml,
   renderAgentSite,
   renderLlmsTxt,
-} from '@handbook/renderer';
+} from '@handbooks/renderer';
 
 const model = loadHandbookModel('work/myrepo', 'MyRepo Handbook');
 const out = 'work/myrepo/handbook';
@@ -276,7 +276,7 @@ stage. Writing a new output format means using it, not re-deriving it.
 ## Testing
 
 ```bash
-pnpm --filter @handbook/renderer test
+pnpm --filter @handbooks/renderer test
 ```
 
 Rendering is asserted on real fixture models, including the ugly ones: empty stages,

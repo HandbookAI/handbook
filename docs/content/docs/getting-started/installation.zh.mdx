@@ -47,7 +47,7 @@ pnpm handbook --help
 ## 方式二——作为全局 CLI
 
 ```bash
-npm i -g @handbook/cli
+npm i -g @handbooks/cli
 handbook --help
 ```
 
@@ -68,9 +68,9 @@ docker run --rm -v "$PWD:/src:ro" -v handbook-work:/work handbook:local analyze
 每项能力都是一个可以单独使用的已发布包。分析器、渲染器、skill 打包器和补丁器从不接触 LLM，因此可以完全独立工作：
 
 ```bash
-pnpm add @handbook/analyzer   # static call graphs, 18 languages
-pnpm add @handbook/renderer   # a HandbookModel → markdown / HTML / agent index
-pnpm add @handbook/patcher    # apply byte-exact edit plans with rollback
+pnpm add @handbooks/analyzer   # static call graphs, 18 languages
+pnpm add @handbooks/renderer   # a HandbookModel → markdown / HTML / agent index
+pnpm add @handbooks/patcher    # apply byte-exact edit plans with rollback
 ```
 
 参见[包索引](/docs/reference/packages)。

@@ -122,14 +122,14 @@ die Prüfung scheitern.**
 ### Abdeckungs-Untergrenzen gelten pro Paket
 
 Eine einzige Zahl fürs ganze Repository verbirgt, worauf es ankommt: bei 86 % insgesamt
-liegt `@handbook/cli` bei 23 %. Jedes Paket hat seine eigene Untergrenze in
+liegt `@handbooks/cli` bei 23 %. Jedes Paket hat seine eigene Untergrenze in
 `vitest.config.ts`, knapp unter dem gemessenen Wert gesetzt, sodass sie als **Ratsche**
 wirkt.
 
 Wenn deine Änderung die Abdeckung hebt, hebe die Untergrenze mit. Vergrößere nicht den
 Abstand, damit ein roter Lauf durchgeht.
 
-### Tests lösen `@handbook/*` auf die Quellen auf, nicht auf `dist`
+### Tests lösen `@handbooks/*` auf die Quellen auf, nicht auf `dist`
 
 Sonst wird die Abdeckung von allem, was über eine Paketgrenze hinweg konsumiert wird,
 nirgendwo zugerechnet — `core/src/util/hash.ts` wurde mit 0 % gemessen, während die
@@ -217,5 +217,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

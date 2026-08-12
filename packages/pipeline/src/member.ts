@@ -9,7 +9,7 @@
  * members; its per-function notes keep the fine-grained story.
  */
 import { z } from 'zod';
-import type { ChatClient } from '@handbook/llm';
+import type { ChatClient } from '@handbooks/llm';
 import {
   Progress,
   isInternalNode,
@@ -27,13 +27,13 @@ import {
   describeJsonShape,
   extractEntryList,
   replyExcerpt,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { stageShortDescriptions } from './skeleton.js';
 import { fileCallAdjacency, suggestOrder } from './organize.js';
 import type { WorkDir } from './workdir.js';
-import type { ProgressSink } from '@handbook/core';
+import type { ProgressSink } from '@handbooks/core';
 
 export const memberAssignmentSchema = z.object({
   version: z.literal(1),

@@ -7,7 +7,7 @@ import {
   readBoundedBody,
   resolveLlmEnv,
 } from './client.js';
-import { PermanentError, settingByKey, silentLogger } from '@handbook/core';
+import { PermanentError, settingByKey, silentLogger } from '@handbooks/core';
 
 function fakeFetch(handler: (calls: number) => { status: number; body: unknown }): typeof fetch {
   let calls = 0;

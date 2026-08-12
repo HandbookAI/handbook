@@ -1,11 +1,11 @@
-# @handbook/resync
+# @handbooks/resync
 
 **English** · [中文](README.zh-CN.md)
 
 > The code moved on. Roll the handbook forward — diff the graph, regenerate only what
 > actually changed, and leave everything else alone. No full rebuild.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fresync-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/resync)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fresync-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/resync)
 
 ---
 
@@ -36,7 +36,7 @@ at all.
 ## Install
 
 ```bash
-pnpm add @handbook/resync
+pnpm add @handbooks/resync
 ```
 
 ---
@@ -73,8 +73,8 @@ than treated as "everything changed".
 ## Quick start
 
 ```ts
-import { resyncHandbook } from '@handbook/resync';
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { resyncHandbook } from '@handbooks/resync';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const report = await resyncHandbook({
   caseDir: 'cases/upload-retry',
@@ -196,7 +196,7 @@ The same applies to `--narrate-lang`.
 ## Testing
 
 ```bash
-pnpm --filter @handbook/resync test
+pnpm --filter @handbooks/resync test
 ```
 
 Covered end to end against `MockChatClient`: in-place body edits, renames, added and

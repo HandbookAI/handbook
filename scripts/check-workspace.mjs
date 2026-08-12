@@ -3,7 +3,7 @@
 // to state, easy to break, and invisible until something ships wrong.
 //
 // Every rule here exists because the repo already violated it at least once:
-// packages/cli depended on @handbook/patcher and @handbook/studio without
+// packages/cli depended on @handbooks/patcher and @handbooks/studio without
 // listing them as TypeScript project references (a root `tsc -b` hid it), and
 // every package emitted its own tests into dist/ while declaring
 // `"files": ["dist"]`.
@@ -14,8 +14,9 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SCOPE } from './scope.mjs';
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SCOPE = '@handbook/';
 
 const problems = [];
 const fail = (where, message) => problems.push({ where, message });

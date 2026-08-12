@@ -48,7 +48,7 @@ import {
   type Registers,
   type Skeleton,
   sha256Hex,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { readFileSync, rmSync } from 'node:fs';
 import type { ZodType } from 'zod';
 

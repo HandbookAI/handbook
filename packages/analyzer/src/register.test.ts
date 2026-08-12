@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { CallType, ModuleAnalysis, TypeKind } from '@handbook/core';
+import type { CallType, ModuleAnalysis, TypeKind } from '@handbooks/core';
 import { availableLanguages, getAdapter, type LanguageAdapter } from './adapter.js';
 import { registerBuiltinAdapters } from './register.js';
 

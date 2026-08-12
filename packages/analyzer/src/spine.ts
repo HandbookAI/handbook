@@ -28,9 +28,9 @@ import type {
   TypeKind,
   TypeNode,
   UnparsedFile,
-} from '@handbook/core';
-import { truncate } from '@handbook/core';
-import type { Logger } from '@handbook/core';
+} from '@handbooks/core';
+import { truncate } from '@handbooks/core';
+import type { Logger } from '@handbooks/core';
 import { createParser, freeParsers } from './languages.js';
 import { discoverByExtension, type LanguageAdapter } from './adapter.js';
 

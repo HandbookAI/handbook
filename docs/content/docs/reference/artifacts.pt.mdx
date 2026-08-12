@@ -5,7 +5,7 @@ description: Todo arquivo que o pipeline escreve, seu schema e o que o valida na
 
 Todo artefato que a toolchain lê ou escreve, em ordem de pipeline. Todos os artefatos
 JSON/YAML carregam um campo `version` e são validados na leitura com schemas zod de
-`@handbook/core`. Os caminhos são POSIX relativos à raiz do código-fonte analisado, salvo
+`@handbooks/core`. Os caminhos são POSIX relativos à raiz do código-fonte analisado, salvo
 indicação em contrário.
 
 ## Layout do diretório de trabalho
@@ -367,7 +367,7 @@ localização não é, e não é adivinhada.
 
 Num monorepo isso não é uma nota de pé de página — é a maior parte do que um agente quer
 saber. Medido neste repositório: **1.063 de 3.565 arestas são de fronteira**, 284 delas para
-`@handbook/core`. Com apenas arestas resolvidas, `checkLanguage` — chamada quatro vezes de
+`@handbooks/core`. Com apenas arestas resolvidas, `checkLanguage` — chamada quatro vezes de
 outro pacote — aparecia com **zero chamadores**, o que um agente lê como código morto. Isso é
 um _ponteiro errado_, não uma lacuna, e um ponteiro errado é justamente a falha que este
 artefato existe para evitar.

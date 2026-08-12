@@ -1,4 +1,4 @@
-# @handbook/pipeline
+# @handbooks/pipeline
 
 **English** · [中文](README.zh-CN.md)
 
@@ -6,17 +6,17 @@
 > reads only its upstream artifacts and writes its own — so any of them can be re-run
 > alone, and a crashed run resumes where it stopped.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpipeline-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/pipeline)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpipeline-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/pipeline)
 
 ---
 
 ## What it is
 
-`@handbook/pipeline` is the generation engine of the [Handbook](../../README.md)
+`@handbooks/pipeline` is the generation engine of the [Handbook](../../README.md)
 toolchain. It orchestrates:
 
 ```
-  phase 1   static call graph                     ← @handbook/analyzer, no LLM
+  phase 1   static call graph                     ← @handbooks/analyzer, no LLM
   phase 2a  one card per source file              ← LLM
   phase 2b  stage skeleton + file assignment      ← LLM
   phase 2c  intra-stage grouping and ordering     ← LLM
@@ -30,7 +30,7 @@ and the artifact I/O that makes all of that restartable.
 ## Install
 
 ```bash
-pnpm add @handbook/pipeline
+pnpm add @handbooks/pipeline
 ```
 
 ---
@@ -38,8 +38,8 @@ pnpm add @handbook/pipeline
 ## Quick start
 
 ```ts
-import { generateHandbook, loadHandbookModel } from '@handbook/pipeline';
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { generateHandbook, loadHandbookModel } from '@handbooks/pipeline';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const stats = await generateHandbook({
   sourceRoot: '/path/to/repo',
@@ -68,7 +68,7 @@ handbook generate --source /path/to/repo --work work/myrepo --detail deep --synt
 
 ### Phase 1 — the call graph _(no LLM)_
 
-Delegates to `@handbook/analyzer`, merges every language into one graph, and stamps a
+Delegates to `@handbooks/analyzer`, merges every language into one graph, and stamps a
 **content hash per scanned file** (resync uses those to detect in-place body edits that
 leave line numbers and signatures untouched). Records each language's declared fidelity
 so downstream renderers can disclose it.
@@ -174,7 +174,7 @@ corruption that is hard to notice.
 failure names the file:
 
 ```ts
-import { WorkDir } from '@handbook/pipeline';
+import { WorkDir } from '@handbooks/pipeline';
 
 const work = new WorkDir('work/myrepo');
 work.loadGraph(); // MissingArtifactError('phase1/graph.json', 'run phase 1 first')
@@ -238,7 +238,7 @@ normalizeSkeleton(raw, draftedBy?): Skeleton
 ## Testing
 
 ```bash
-pnpm --filter @handbook/pipeline test
+pnpm --filter @handbooks/pipeline test
 ```
 
 Every phase is tested end to end against `MockChatClient` with scripted replies —

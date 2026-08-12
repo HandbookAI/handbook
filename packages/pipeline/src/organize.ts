@@ -4,9 +4,9 @@
  * the LLM only groups and titles. Every failure degrades to a deterministic
  * flat group — a stage's files are never dropped.
  */
-import type { ChatClient } from '@handbook/llm';
+import type { ChatClient } from '@handbooks/llm';
 import { rulesFor as rulesForLang } from './prompt-lang.js';
-import type { ProgressSink } from '@handbook/core';
+import type { ProgressSink } from '@handbooks/core';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -24,7 +24,7 @@ import {
   describeJsonShape,
   extractEntryList,
   replyExcerpt,
-} from '@handbook/core';
+} from '@handbooks/core';
 
 /** file → set of files it calls into (internal→internal edges, self edges dropped). */
 export function fileCallAdjacency(graph: CodeGraph): Map<string, Set<string>> {

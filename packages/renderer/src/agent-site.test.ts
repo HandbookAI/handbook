@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AdapterCapabilities } from '@handbook/core';
+import type { AdapterCapabilities } from '@handbooks/core';
 import { renderAgentSite, strongTwins } from './agent-site.js';
 import { ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 

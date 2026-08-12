@@ -5,8 +5,8 @@
  * which is exactly why that survived twelve reviews.
  *
  * Rather than re-implement each callee, these tests mock the two injectable
- * seams the finding named — `@handbook/studio`'s `startStudio` and
- * `@handbook/pipeline`'s `generateHandbook` — and drive the REAL `program`
+ * seams the finding named — `@handbooks/studio`'s `startStudio` and
+ * `@handbooks/pipeline`'s `generateHandbook` — and drive the REAL `program`
  * (exported by main.ts for this purpose) through commander's real option
  * parsing and the real `resolveConfig` layering. A regression where a
  * resolved value is dropped before reaching the callee fails these tests;
@@ -17,11 +17,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatClient } from '@handbook/llm';
-import { PIPELINE_DEFAULTS, type Logger } from '@handbook/core';
-import type * as Pipeline from '@handbook/pipeline';
-import type { GenerateOptions, GenerateStats } from '@handbook/pipeline';
-import type { StudioOptions } from '@handbook/studio';
+import type { ChatClient } from '@handbooks/llm';
+import { PIPELINE_DEFAULTS, type Logger } from '@handbooks/core';
+import type * as Pipeline from '@handbooks/pipeline';
+import type { GenerateOptions, GenerateStats } from '@handbooks/pipeline';
+import type { StudioOptions } from '@handbooks/studio';
 import type { Server } from 'node:http';
 
 const startStudioMock = vi.fn((_options: StudioOptions) => Promise.resolve({} as Server));
@@ -32,9 +32,9 @@ const generateHandbookMock = vi.fn((_options: GenerateOptions) =>
 // `boundPort` too: the action reads the port back off the socket rather than
 // echoing the requested one, so a mock without it throws before startStudio is
 // even reached — and the failure reads as "startStudio was never called".
-vi.mock('@handbook/studio', () => ({ startStudio: startStudioMock, boundPort: () => 4860 }));
-vi.mock('@handbook/pipeline', async () => {
-  const actual = await vi.importActual<typeof Pipeline>('@handbook/pipeline');
+vi.mock('@handbooks/studio', () => ({ startStudio: startStudioMock, boundPort: () => 4860 }));
+vi.mock('@handbooks/pipeline', async () => {
+  const actual = await vi.importActual<typeof Pipeline>('@handbooks/pipeline');
   return { ...actual, generateHandbook: generateHandbookMock };
 });
 

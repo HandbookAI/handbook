@@ -1,18 +1,18 @@
-# @handbook/patcher
+# @handbooks/patcher
 
 **English** · [中文](README.zh-CN.md)
 
 > Apply a plan's EDIT blocks to a real source tree, byte-exactly. All-or-nothing, with
 > backups it can prove are the right ones. No LLM, no guessing, no partial writes.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpatcher-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/patcher)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpatcher-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/patcher)
 [![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 
 ---
 
 ## What it is
 
-A mechanical executor. It takes the markdown plan that `@handbook/planner` produces and
+A mechanical executor. It takes the markdown plan that `@handbooks/planner` produces and
 substitutes each exact `old` text with the exact `new` text — no re-reading, no
 interpretation, no model in the loop.
 
@@ -25,7 +25,7 @@ wrong thing.
 ## Install
 
 ```bash
-pnpm add @handbook/patcher
+pnpm add @handbooks/patcher
 ```
 
 ---
@@ -33,7 +33,7 @@ pnpm add @handbook/patcher
 ## Quick start
 
 ```ts
-import { applyPlan, rollback, listBackups, parsePlan } from '@handbook/patcher';
+import { applyPlan, rollback, listBackups, parsePlan } from '@handbooks/patcher';
 import { readFileSync } from 'node:fs';
 
 // 1. Verify without writing anything
@@ -212,7 +212,7 @@ parsePlan(plan: string): ParsedPlan       // exported: lint a plan without apply
 ## Testing
 
 ```bash
-pnpm --filter @handbook/patcher test
+pnpm --filter @handbooks/patcher test
 ```
 
 Over a thousand lines of tests, most of them about refusal: ambiguous anchors, symlink
@@ -222,4 +222,4 @@ file edited afterwards, and every parser rejection above.
 ---
 
 Part of [Handbook](../../README.md) ·
-plans come from [`@handbook/planner`](../planner/README.md) · MIT
+plans come from [`@handbooks/planner`](../planner/README.md) · MIT

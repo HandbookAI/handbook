@@ -2,8 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { discoverByExtension, registerAdapter, type LanguageAdapter } from '@handbook/analyzer';
-import { scanCoverageSchema, type AdapterCapabilities, type FunctionNode, type Logger } from '@handbook/core';
+import { discoverByExtension, registerAdapter, type LanguageAdapter } from '@handbooks/analyzer';
+import {
+  scanCoverageSchema,
+  type AdapterCapabilities,
+  type FunctionNode,
+  type Logger,
+} from '@handbooks/core';
 import { runPhase1 } from './phase1.js';
 import { WorkDir } from './workdir.js';
 

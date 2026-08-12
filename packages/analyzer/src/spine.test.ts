@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Node } from 'web-tree-sitter';
-import type { FunctionNode, Logger, TypeKind, TypeNode } from '@handbook/core';
+import type { FunctionNode, Logger, TypeKind, TypeNode } from '@handbooks/core';
 import {
   createAdapter,
   boundaryOf,

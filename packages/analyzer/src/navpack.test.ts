@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CodeGraph } from '@handbook/core';
+import type { CodeGraph } from '@handbooks/core';
 import { buildNavPack } from './navpack.js';
 
 function graphWithBoundaryCalls(calleeIds: string[]): CodeGraph {
@@ -82,8 +82,8 @@ describe('buildNavPack — external subsystem keys', () => {
   });
 
   it('keys scoped packages by the full package name', () => {
-    const pack = buildNavPack(graphWithBoundaryCalls(['boundary:@handbook/core::truncate']));
-    expect(pack.externalSubsystems.map((s) => s.module)).toContain('@handbook/core');
+    const pack = buildNavPack(graphWithBoundaryCalls(['boundary:@handbooks/core::truncate']));
+    expect(pack.externalSubsystems.map((s) => s.module)).toContain('@handbooks/core');
   });
 
   it('keys plain qualified names by their first segment', () => {

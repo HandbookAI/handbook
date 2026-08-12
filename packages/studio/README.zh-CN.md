@@ -1,18 +1,18 @@
-# @handbook/studio
+# @handbooks/studio
 
 [English](README.md) · **中文**
 
 > 整条工具链，装进一个浏览器标签页。注册仓库、带实时日志生成、浏览手册、规划改动、
 > dry-run、应用、回滚、resync。**设计上就只跑在 localhost。**
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fstudio-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/studio)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fstudio-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/studio)
 [![binds](https://img.shields.io/badge/绑定-127.0.0.1-2dd4bf?style=flat-square)](#安全模型)
 
 ---
 
 ## 这是什么
 
-一个覆盖所有其他 `@handbook/*` 包的本地 Web UI。**和 CLI 走同样的代码路径、
+一个覆盖所有其他 `@handbooks/*` 包的本地 Web UI。**和 CLI 走同样的代码路径、
 同样的配置解析、同样的磁盘产物**——只是换了一种驱动方式。
 
 ```bash
@@ -45,7 +45,7 @@ handbook studio --port 5000        # 或者：pnpm studio --port 5000
 ## 安装
 
 ```bash
-pnpm add @handbook/studio
+pnpm add @handbooks/studio
 ```
 
 或者直接用 CLI —— `handbook studio` 就是这个包。
@@ -55,7 +55,7 @@ pnpm add @handbook/studio
 ## 嵌入使用
 
 ```ts
-import { startStudio, createStudioServer } from '@handbook/studio';
+import { startStudio, createStudioServer } from '@handbooks/studio';
 
 await startStudio({
   stateDir: `${process.env.HOME}/.handbook-studio`,
@@ -180,7 +180,7 @@ UI 只是个客户端；这个 API 足够稳定，可以直接脚本化。
 ## 测试
 
 ```bash
-pnpm --filter @handbook/studio test
+pnpm --filter @handbooks/studio test
 ```
 
 服务端是走真实 HTTP 端到端驱动的：路由、Host 头防护、content-type 防护、路径沙箱、

@@ -1,5 +1,5 @@
 /**
- * @handbook/renderer — presentation arm of the pipeline.
+ * @handbooks/renderer — presentation arm of the pipeline.
  *
  * Renders a completed HandbookModel to a markdown handbook, an agent locator
  * site, self-contained HTML (multi-page or single-page), and the llms.txt

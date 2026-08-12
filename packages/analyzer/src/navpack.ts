@@ -3,8 +3,8 @@
  * the codebase (directory map, entry points, fan-out, external subsystems).
  * It feeds skeleton synthesis and file assignment — no LLM involved.
  */
-import type { CodeGraph } from '@handbook/core';
-import { isInternalNode, truncate } from '@handbook/core';
+import type { CodeGraph } from '@handbooks/core';
+import { isInternalNode, truncate } from '@handbooks/core';
 
 export interface NavFileDescriptor {
   file: string;

@@ -9,8 +9,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractJsonBlock, type CodeGraph, type Logger } from '@handbook/core';
-import type { ChatClient, ChatResult } from '@handbook/llm';
+import { extractJsonBlock, type CodeGraph, type Logger } from '@handbooks/core';
+import type { ChatClient, ChatResult } from '@handbooks/llm';
 import { extractCardEntries, generateCards } from './cards.js';
 import { buildTypeInventory } from './inventory.js';
 import { WorkDir } from './workdir.js';

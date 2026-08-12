@@ -1,20 +1,20 @@
-# @handbook/pipeline
+# @handbooks/pipeline
 
 [English](README.md) · **中文**
 
 > 五个阶段，把一个源码目录变成一本结构化的手册。每个阶段**只读上游产物、只写自己的**——
 > 所以任何一个阶段都能单独重跑，崩掉的运行也能从断点继续。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpipeline-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/pipeline)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fpipeline-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/pipeline)
 
 ---
 
 ## 这是什么
 
-`@handbook/pipeline` 是 [Handbook](../../README.zh-CN.md) 工具链的生成引擎。它编排：
+`@handbooks/pipeline` 是 [Handbook](../../README.zh-CN.md) 工具链的生成引擎。它编排：
 
 ```
-  阶段 1    静态调用图                      ← @handbook/analyzer，不用 LLM
+  阶段 1    静态调用图                      ← @handbooks/analyzer，不用 LLM
   阶段 2a   每个源文件一张卡片              ← LLM
   阶段 2b   阶段骨架 + 文件归属             ← LLM
   阶段 2c   阶段内分组与排序                ← LLM
@@ -28,7 +28,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/pipeline
+pnpm add @handbooks/pipeline
 ```
 
 ---
@@ -36,8 +36,8 @@ pnpm add @handbook/pipeline
 ## 快速上手
 
 ```ts
-import { generateHandbook, loadHandbookModel } from '@handbook/pipeline';
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { generateHandbook, loadHandbookModel } from '@handbooks/pipeline';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const stats = await generateHandbook({
   sourceRoot: '/path/to/repo',
@@ -66,7 +66,7 @@ handbook generate --source /path/to/repo --work work/myrepo --detail deep --synt
 
 ### 阶段 1 —— 调用图 _（不用 LLM）_
 
-委托给 `@handbook/analyzer`，把所有语言合并成一张图，并为每个扫描到的文件
+委托给 `@handbooks/analyzer`，把所有语言合并成一张图，并为每个扫描到的文件
 **盖上内容哈希**（resync 用它来检测那种「改了函数体但行号和签名都没动」的原地编辑）。
 同时记录每种语言声明的保真度，供下游渲染器公开。
 
@@ -161,7 +161,7 @@ const stats = await runPhase1({ sourceRoot, workDir, lang: 'auto', logger });
 `WorkDir` 是这一切的类型化访问器。**每次读取都做 schema 校验，每次失败都指名文件**：
 
 ```ts
-import { WorkDir } from '@handbook/pipeline';
+import { WorkDir } from '@handbooks/pipeline';
 
 const work = new WorkDir('work/myrepo');
 work.loadGraph(); // MissingArtifactError('phase1/graph.json', 'run phase 1 first')
@@ -224,7 +224,7 @@ normalizeSkeleton(raw, draftedBy?): Skeleton
 ## 测试
 
 ```bash
-pnpm --filter @handbook/pipeline test
+pnpm --filter @handbooks/pipeline test
 ```
 
 每个阶段都用 `MockChatClient` 的脚本化回复做端到端测试——**包括失败路径**：

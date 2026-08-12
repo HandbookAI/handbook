@@ -1,5 +1,5 @@
 ---
-'@handbook/analyzer': minor
+'@handbooks/analyzer': minor
 ---
 
 Fix an analyze that died partway through large polyglot repositories, and recognize

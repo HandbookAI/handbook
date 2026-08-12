@@ -61,7 +61,7 @@ core                                                     ← foundation
 
 **LLM isolation is a package boundary, not a convention.** Only `llm`, `pipeline`,
 `planner` and `resync` may reach a model, and only through the `ChatClient` interface.
-`analyzer`, `renderer`, `skill` and `patcher` do not depend on `@handbook/llm` at all.
+`analyzer`, `renderer`, `skill` and `patcher` do not depend on `@handbooks/llm` at all.
 That is what makes `render`, `skill`, `validate`, `apply` and `rollback` free to run in
 CI, and the whole test suite runnable offline.
 
@@ -103,9 +103,15 @@ high burden of proof.
 - **Build projects exclude `*.test.ts`; `dist/` must contain no test artifact.**
 - **Coverage floors are per package** and ratchet. Raise one when your change raises
   coverage; never lower one to make a red run green.
-- **Tests resolve `@handbook/*` to `src`, not `dist`** (`vitest.config.ts`), so
+- **Tests resolve `@handbooks/*` to `src`, not `dist`** (`vitest.config.ts`), so
   cross-package coverage is attributed. The real `dist` is verified by `tsc -b` and by
   `pnpm check:install`.
+- **The npm scope is `@handbooks/` — plural — and is defined once**, in
+  `scripts/scope.mjs`. `check-workspace.mjs`, `vitest.config.ts`, `check-packaging.mjs`
+  and `smoke-install.mjs` import it; only the package manifests spell it out, and
+  `check:workspace` proves they agree. Never restate the literal: a stale copy in the
+  vitest alias does not fail, it quietly resolves through `dist` and collapses
+  cross-package coverage.
 - **Conventional Commits**, enforced by `commitlint`. A change to a published package
   needs `pnpm changeset`.
 
@@ -137,7 +143,7 @@ scripts/               workspace checks, doc generation, smoke tests
 examples/              the offline demo, the mock LLM server, the fixture project
 assets/                diagrams referenced by BOTH READMEs — the single source
 docs/                  the documentation site: a SEPARATE Next.js app
-docs/internal/         the engineering journal — specs, plans, review notes
+docs/internal/         the engineering journal — LOCAL ONLY, gitignored
 ```
 
 **`docs/` is not a workspace member.** It has its own `pnpm-workspace.yaml`, so a root

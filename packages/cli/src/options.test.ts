@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
-import { resolveConfig, settingsFor } from '@handbook/core';
+import { resolveConfig, settingsFor } from '@handbooks/core';
 import { addSettings } from './options.js';
 
 describe('addSettings', () => {

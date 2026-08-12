@@ -24,7 +24,7 @@
  */
 import { cpSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ChatClient } from '@handbook/llm';
+import type { ChatClient } from '@handbooks/llm';
 import {
   MissingArtifactError,
   PIPELINE_DEFAULTS,
@@ -40,7 +40,7 @@ import {
   type Logger,
   type NarrateLang,
   type Organization,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { archiveCorrections, correctionFiles, loadCorrections } from './corrections.js';
 import {
   WorkDir,
@@ -59,7 +59,7 @@ import {
   saveMemberAssignment,
   suggestOrder,
   type MemberAssignment,
-} from '@handbook/pipeline';
+} from '@handbooks/pipeline';
 
 /** Appended once to a card's purpose when noLlm resync refreshes its facts. */
 const STALE_SUFFIX = ' (stale: code changed since narration)';

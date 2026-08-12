@@ -47,7 +47,7 @@ import {
   toPosix,
   writeJsonFile,
   type Logger,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { parsePlan, type EditBlock } from './parse.js';
 
 export type EditStatus =

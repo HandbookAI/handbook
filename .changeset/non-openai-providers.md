@@ -1,8 +1,8 @@
 ---
-'@handbook/llm': minor
-'@handbook/core': minor
-'@handbook/cli': minor
-'@handbook/studio': minor
+'@handbooks/llm': minor
+'@handbooks/core': minor
+'@handbooks/cli': minor
+'@handbooks/studio': minor
 ---
 
 Support endpoints that are not OpenAI-compatible: `--provider anthropic` and

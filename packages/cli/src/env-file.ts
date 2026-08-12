@@ -1,2 +1,2 @@
-/** Re-export: the .env loader lives in @handbook/core so studio can share it. */
-export { applyEnvFile, parseEnvFile } from '@handbook/core';
+/** Re-export: the .env loader lives in @handbooks/core so studio can share it. */
+export { applyEnvFile, parseEnvFile } from '@handbooks/core';

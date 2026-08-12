@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { MockChatClient } from '@handbook/llm';
+import { MockChatClient } from '@handbooks/llm';
 import { closeDanglingFence, parseDeclarations, runPlanner } from './planner.js';
 import { ReadOnlyTools, hasNestedUnboundedQuantifier } from './tools.js';
 

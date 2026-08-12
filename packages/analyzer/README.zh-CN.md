@@ -1,10 +1,10 @@
-# @handbook/analyzer
+# @handbooks/analyzer
 
 [English](README.md) · **中文**
 
 > 指向一个目录，拿回一张带类型的调用图。不用 LLM，不联网，不需要本地编译——解析器是 WebAssembly。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fanalyzer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/analyzer)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fanalyzer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/analyzer)
 [![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
 [![languages](https://img.shields.io/badge/languages-18-a78bfa?style=flat-square)](#支持的语言)
 
@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-`@handbook/analyzer` 是 [Handbook](../../README.zh-CN.md) 工具链的静态分析引擎——
+`@handbooks/analyzer` 是 [Handbook](../../README.zh-CN.md) 工具链的静态分析引擎——
 而且它**单独拿出来用也很有价值**。给它一个源码根目录，不管代码是什么语言写的，
 它都返回同一套与语言无关的 IR：
 
@@ -33,7 +33,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/analyzer
+pnpm add @handbooks/analyzer
 ```
 
 没有安装后编译步骤。语法以 `.wasm` 文件形式随包发布。
@@ -49,7 +49,7 @@ import {
   getAdapter,
   buildGraph,
   writeGraphArtifacts,
-} from '@handbook/analyzer';
+} from '@handbooks/analyzer';
 
 registerBuiltinAdapters();
 
@@ -310,7 +310,7 @@ pipeline 用它来合成骨架，从而**不必把整张图塞进提示词**。
 ## 测试
 
 ```bash
-pnpm --filter @handbook/analyzer test
+pnpm --filter @handbooks/analyzer test
 ```
 
 每个测试都解析真实的源码 fixture——**没有 mock 出来的语法树**，因为 mock 的树

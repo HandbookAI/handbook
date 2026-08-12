@@ -13,7 +13,7 @@
  *   resync     roll a handbook forward after a code change
  *   studio     local web UI over all of the above
  *
- * Every subcommand's options are derived from the `@handbook/core` registry
+ * Every subcommand's options are derived from the `@handbooks/core` registry
  * (see options.ts) and resolved at action time (see resolve-config.ts) —
  * neither commander defaults nor hand-written parsing live here anymore.
  */
@@ -41,7 +41,7 @@ import {
   SETTINGS,
   unknownKeyWarnings,
   type LogLevel,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { renderConfigJson, renderConfigTable } from './config-command.js';
 import {
   CachedChatClient,
@@ -49,22 +49,22 @@ import {
   llmConfigFromValues,
   providerFromValues,
   type ChatClient,
-} from '@handbook/llm';
-import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbook/pipeline';
+} from '@handbooks/llm';
+import { generateHandbook, loadHandbookModel, runPhase1, WorkDir } from '@handbooks/pipeline';
 import {
   renderAgentSite,
   renderHtmlSite,
   renderLlmsTxt,
   renderMarkdownHandbook,
   renderSinglePageHtml,
-} from '@handbook/renderer';
-import { buildSkill, validateSkill } from '@handbook/skill';
-import { runPlanner } from '@handbook/planner';
-import { resyncHandbook } from '@handbook/resync';
+} from '@handbooks/renderer';
+import { buildSkill, validateSkill } from '@handbooks/skill';
+import { runPlanner } from '@handbooks/planner';
+import { resyncHandbook } from '@handbooks/resync';
 import { graphFidelity, graphFileLanguages, refreshRenderedHandbook } from './render-refresh.js';
 
 // Exported so a test can drive it with a controlled argv and mocked seams
-// (`@handbook/studio`'s `startStudio`, `@handbook/pipeline`'s `generateHandbook`)
+// (`@handbooks/studio`'s `startStudio`, `@handbooks/pipeline`'s `generateHandbook`)
 // instead of the real `process.argv` — see main.test.ts.
 export const program = new Command();
 
@@ -475,7 +475,7 @@ addSettings(
   'apply',
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('apply', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
-  const { applyPlan } = await import('@handbook/patcher');
+  const { applyPlan } = await import('@handbooks/patcher');
   const result = applyPlan({
     sourceRoot: cfg.source as string,
     plan: readFileSync(cfg.plan as string, 'utf8'),
@@ -494,7 +494,7 @@ addSettings(
   'rollback',
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('rollback', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
-  const { rollback } = await import('@handbook/patcher');
+  const { rollback } = await import('@handbooks/patcher');
   const result = rollback(cfg.backup as string, {
     force: cfg.force as boolean,
     expectedSourceRoot: cfg.source as string | undefined,
@@ -520,7 +520,7 @@ addSettings(
   'studio',
 ).action(async (opts: Record<string, unknown>) => {
   const cfg = resolveOrThrow('studio', opts, { makeLogger: logger, shorthandLevel: shorthandLevel() });
-  const { startStudio, boundPort } = await import('@handbook/studio');
+  const { startStudio, boundPort } = await import('@handbooks/studio');
   const port = cfg.port as number;
   const host = cfg.host as string;
   const stateDir =

@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { FunctionNode } from '@handbook/core';
+import type { FunctionNode } from '@handbooks/core';
 import { dedupeFunctionsById, discoverAll, registerAdapter } from './adapter.js';
 import { registerBuiltinAdapters } from './index.js';
 

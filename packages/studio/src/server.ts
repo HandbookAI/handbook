@@ -37,17 +37,17 @@ import {
   type Logger,
   type ProgressEvent,
   type Setting,
-} from '@handbook/core';
+} from '@handbooks/core';
 import {
   CachedChatClient,
   OpenAiChatClient,
   llmConfigFromValues,
   providerFromValues,
   type ChatClient,
-} from '@handbook/llm';
-import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
-import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbook/pipeline';
-import { isInternalNode } from '@handbook/core';
+} from '@handbooks/llm';
+import { availableLanguages, registerBuiltinAdapters } from '@handbooks/analyzer';
+import { WorkDir, generateHandbook, loadHandbookModel, runPhase1 } from '@handbooks/pipeline';
+import { isInternalNode } from '@handbooks/core';
 import {
   AGENT_INDEX_FILE,
   renderAgentSite,
@@ -55,11 +55,11 @@ import {
   renderLlmsTxt,
   renderMarkdownHandbook,
   renderSinglePageHtml,
-} from '@handbook/renderer';
-import { parseDeclarations, runPlanner } from '@handbook/planner';
-import { resyncHandbook } from '@handbook/resync';
-import { buildSkill, validateSkill } from '@handbook/skill';
-import { applyPlan, listBackups, rollback } from '@handbook/patcher';
+} from '@handbooks/renderer';
+import { parseDeclarations, runPlanner } from '@handbooks/planner';
+import { resyncHandbook } from '@handbooks/resync';
+import { buildSkill, validateSkill } from '@handbooks/skill';
+import { applyPlan, listBackups, rollback } from '@handbooks/patcher';
 import { REPO_NAME_RE, StateStore, type RepoEntry } from './state.js';
 import { JobRunner, type Job, type JobKind } from './jobs.js';
 

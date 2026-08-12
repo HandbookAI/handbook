@@ -1,5 +1,5 @@
 ---
-'@handbook/pipeline': patch
+'@handbooks/pipeline': patch
 ---
 
 Fix the bundled mock LLM server truncating any path that contains a space.

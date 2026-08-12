@@ -525,19 +525,19 @@ Both are reported in the scan log — never silently dropped.
   <img src="assets/architecture.svg" alt="Package layering: entry points, capabilities, engines, foundation" width="100%">
 </p>
 
-| Package                                             | Role                                                                                                     | LLM? |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | :--: |
-| [`@handbook/core`](packages/core/README.md)         | Data model (call-graph IR + handbook model), zod schemas, the config registry, dependency-free utilities |  ❌  |
-| [`@handbook/analyzer`](packages/analyzer/README.md) | Multi-language static call-graph extraction via tree-sitter WASM                                         |  ❌  |
-| [`@handbook/llm`](packages/llm/README.md)           | OpenAI-compatible chat client, disk cache, actor–critic orchestration, offline mock                      |  ✅  |
-| [`@handbook/pipeline`](packages/pipeline/README.md) | The generation pipeline — phases 1–3, file & member strategies                                           |  ✅  |
-| [`@handbook/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, HTML site, llms.txt                                                 |  ❌  |
-| [`@handbook/skill`](packages/skill/README.md)       | SKILL packaging, validation, coverage drift detection                                                    |  ❌  |
-| [`@handbook/planner`](packages/planner/README.md)   | Handbook-guided read-only planning agent                                                                 |  ✅  |
-| [`@handbook/patcher`](packages/patcher/README.md)   | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback                              |  ❌  |
-| [`@handbook/resync`](packages/resync/README.md)     | Incremental handbook roll-forward after code changes                                                     |  ✅  |
-| [`@handbook/studio`](packages/studio/README.md)     | Local web UI: repos · generate · browse · evolve                                                         |  ✅  |
-| [`@handbook/cli`](packages/cli/README.md)           | The `handbook` command                                                                                   |  —   |
+| Package                                              | Role                                                                                                     | LLM? |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | :--: |
+| [`@handbooks/core`](packages/core/README.md)         | Data model (call-graph IR + handbook model), zod schemas, the config registry, dependency-free utilities |  ❌  |
+| [`@handbooks/analyzer`](packages/analyzer/README.md) | Multi-language static call-graph extraction via tree-sitter WASM                                         |  ❌  |
+| [`@handbooks/llm`](packages/llm/README.md)           | OpenAI-compatible chat client, disk cache, actor–critic orchestration, offline mock                      |  ✅  |
+| [`@handbooks/pipeline`](packages/pipeline/README.md) | The generation pipeline — phases 1–3, file & member strategies                                           |  ✅  |
+| [`@handbooks/renderer`](packages/renderer/README.md) | Markdown pages, agent locator index, HTML site, llms.txt                                                 |  ❌  |
+| [`@handbooks/skill`](packages/skill/README.md)       | SKILL packaging, validation, coverage drift detection                                                    |  ❌  |
+| [`@handbooks/planner`](packages/planner/README.md)   | Handbook-guided read-only planning agent                                                                 |  ✅  |
+| [`@handbooks/patcher`](packages/patcher/README.md)   | Apply a plan's EDIT blocks byte-exactly — all-or-nothing, backups, rollback                              |  ❌  |
+| [`@handbooks/resync`](packages/resync/README.md)     | Incremental handbook roll-forward after code changes                                                     |  ✅  |
+| [`@handbooks/studio`](packages/studio/README.md)     | Local web UI: repos · generate · browse · evolve                                                         |  ✅  |
+| [`@handbooks/cli`](packages/cli/README.md)           | The `handbook` command                                                                                   |  —   |
 
 Dependency direction is strictly one-way:
 `cli → pipeline/renderer/skill/planner/patcher/resync → analyzer/llm → core`.
@@ -660,9 +660,9 @@ Four conventions the tooling _enforces_ rather than documents:
   `tsconfig.tests.json` type-checks tests with `noEmit`, and source maps are excluded
   from the tarball because they name sources that are never published.
 - **Coverage floors are per package.** A single repo-wide number hides what matters: at
-  86% overall, `@handbook/cli` sits at 23%. Each package has its own floor, set just
+  86% overall, `@handbooks/cli` sits at 23%. Each package has its own floor, set just
   under what it measures, so it ratchets.
-- **Tests resolve `@handbook/*` to source, not `dist`.** Otherwise coverage of anything
+- **Tests resolve `@handbooks/*` to source, not `dist`.** Otherwise coverage of anything
   consumed across a package boundary is attributed nowhere. The real `dist` is verified
   by `tsc -b` and by `pnpm check:install`, which installs the packed tarballs with plain
   npm and drives the CLI against them.

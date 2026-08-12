@@ -1,11 +1,11 @@
-# @handbook/resync
+# @handbooks/resync
 
 [English](README.md) · **中文**
 
 > 代码变了。让手册跟上——diff 调用图，**只重新生成真正变了的那部分**，其余原样不动。
 > 不做全量重建。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fresync-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/resync)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fresync-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/resync)
 
 ---
 
@@ -35,7 +35,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/resync
+pnpm add @handbooks/resync
 ```
 
 ---
@@ -71,8 +71,8 @@ handbook resync --case cases/upload-retry --work work/myrepo
 ## 快速上手
 
 ```ts
-import { resyncHandbook } from '@handbook/resync';
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { resyncHandbook } from '@handbooks/resync';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const report = await resyncHandbook({
   caseDir: 'cases/upload-retry',
@@ -190,7 +190,7 @@ archiveCorrections(path, stamp): string | undefined
 ## 测试
 
 ```bash
-pnpm --filter @handbook/resync test
+pnpm --filter @handbooks/resync test
 ```
 
 用 `MockChatClient` 做端到端覆盖：原地函数体编辑、改名、新增与删除文件、空 diff、

@@ -10,8 +10,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { allFileDescriptors, buildNavPack, type NavFileDescriptor } from '@handbook/analyzer';
-import type { ChatClient } from '@handbook/llm';
+import { allFileDescriptors, buildNavPack, type NavFileDescriptor } from '@handbooks/analyzer';
+import type { ChatClient } from '@handbooks/llm';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -30,11 +30,11 @@ import {
   type Logger,
   type NarrateLang,
   type TypeNote,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { buildInventory, buildTypeInventory } from './inventory.js';
 import type { WorkDir } from './workdir.js';
 import { rulesFor as rulesForLang } from './prompt-lang.js';
-import type { ProgressSink } from '@handbook/core';
+import type { ProgressSink } from '@handbooks/core';
 
 export type CardDetail = 'brief' | 'deep';
 

@@ -1,6 +1,6 @@
 {
-  "name": "@handbook/pipeline",
-  "version": "0.1.0",
+  "name": "@handbooks/pipeline",
+  "version": "1.1.0",
   "description": "Handbook generation pipeline: static graph -> cards -> skeleton -> assignment -> narration",
   "type": "module",
   "exports": {
@@ -18,9 +18,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@handbook/analyzer": "workspace:*",
-    "@handbook/core": "workspace:*",
-    "@handbook/llm": "workspace:*",
+    "@handbooks/analyzer": "workspace:*",
+    "@handbooks/core": "workspace:*",
+    "@handbooks/llm": "workspace:*",
     "yaml": "catalog:",
     "zod": "catalog:"
   },

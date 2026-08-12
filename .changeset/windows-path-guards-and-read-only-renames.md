@@ -1,6 +1,6 @@
 ---
-'@handbook/patcher': patch
-'@handbook/studio': patch
+'@handbooks/patcher': patch
+'@handbooks/studio': patch
 ---
 
 Fix three path guards that were quietly platform-dependent, all found by running the

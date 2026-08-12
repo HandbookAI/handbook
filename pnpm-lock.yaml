@@ -131,7 +131,7 @@ importers:
 
   packages/analyzer:
     dependencies:
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
       tree-sitter-wasms:
@@ -143,34 +143,34 @@ importers:
 
   packages/cli:
     dependencies:
-      '@handbook/analyzer':
+      '@handbooks/analyzer':
         specifier: workspace:*
         version: link:../analyzer
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
-      '@handbook/llm':
+      '@handbooks/llm':
         specifier: workspace:*
         version: link:../llm
-      '@handbook/patcher':
+      '@handbooks/patcher':
         specifier: workspace:*
         version: link:../patcher
-      '@handbook/pipeline':
+      '@handbooks/pipeline':
         specifier: workspace:*
         version: link:../pipeline
-      '@handbook/planner':
+      '@handbooks/planner':
         specifier: workspace:*
         version: link:../planner
-      '@handbook/renderer':
+      '@handbooks/renderer':
         specifier: workspace:*
         version: link:../renderer
-      '@handbook/resync':
+      '@handbooks/resync':
         specifier: workspace:*
         version: link:../resync
-      '@handbook/skill':
+      '@handbooks/skill':
         specifier: workspace:*
         version: link:../skill
-      '@handbook/studio':
+      '@handbooks/studio':
         specifier: workspace:*
         version: link:../studio
       commander:
@@ -188,25 +188,25 @@ importers:
 
   packages/llm:
     dependencies:
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
 
   packages/patcher:
     dependencies:
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
 
   packages/pipeline:
     dependencies:
-      '@handbook/analyzer':
+      '@handbooks/analyzer':
         specifier: workspace:*
         version: link:../analyzer
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
-      '@handbook/llm':
+      '@handbooks/llm':
         specifier: workspace:*
         version: link:../llm
       yaml:
@@ -218,16 +218,16 @@ importers:
 
   packages/planner:
     dependencies:
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
-      '@handbook/llm':
+      '@handbooks/llm':
         specifier: workspace:*
         version: link:../llm
 
   packages/renderer:
     dependencies:
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
       markdown-it:
@@ -240,16 +240,16 @@ importers:
 
   packages/resync:
     dependencies:
-      '@handbook/analyzer':
+      '@handbooks/analyzer':
         specifier: workspace:*
         version: link:../analyzer
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
-      '@handbook/llm':
+      '@handbooks/llm':
         specifier: workspace:*
         version: link:../llm
-      '@handbook/pipeline':
+      '@handbooks/pipeline':
         specifier: workspace:*
         version: link:../pipeline
       zod:
@@ -258,37 +258,37 @@ importers:
 
   packages/skill:
     dependencies:
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
 
   packages/studio:
     dependencies:
-      '@handbook/analyzer':
+      '@handbooks/analyzer':
         specifier: workspace:*
         version: link:../analyzer
-      '@handbook/core':
+      '@handbooks/core':
         specifier: workspace:*
         version: link:../core
-      '@handbook/llm':
+      '@handbooks/llm':
         specifier: workspace:*
         version: link:../llm
-      '@handbook/patcher':
+      '@handbooks/patcher':
         specifier: workspace:*
         version: link:../patcher
-      '@handbook/pipeline':
+      '@handbooks/pipeline':
         specifier: workspace:*
         version: link:../pipeline
-      '@handbook/planner':
+      '@handbooks/planner':
         specifier: workspace:*
         version: link:../planner
-      '@handbook/renderer':
+      '@handbooks/renderer':
         specifier: workspace:*
         version: link:../renderer
-      '@handbook/resync':
+      '@handbooks/resync':
         specifier: workspace:*
         version: link:../resync
-      '@handbook/skill':
+      '@handbooks/skill':
         specifier: workspace:*
         version: link:../skill
       zod:

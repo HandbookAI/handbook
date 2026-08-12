@@ -120,14 +120,14 @@ pnpm test:coverage
 
 ### Пороги покрытия — попакетные
 
-Одно число на весь репозиторий прячет то, что важно: при 86% в целом `@handbook/cli`
+Одно число на весь репозиторий прячет то, что важно: при 86% в целом `@handbooks/cli`
 сидит на 23%. У каждого пакета свой порог в `vitest.config.ts`, выставленный чуть ниже
 измеренного, поэтому он работает **храповиком**.
 
 Если ваше изменение повышает покрытие, поднимайте порог вместе с ним. Не расширяйте
 разрыв, чтобы красный прогон стал зелёным.
 
-### Тесты разрешают `@handbook/*` в исходники, а не в `dist`
+### Тесты разрешают `@handbooks/*` в исходники, а не в `dist`
 
 Иначе покрытие всего, что потребляется через границу пакета, не приписывается никуда —
 `core/src/util/hash.ts` показывал 0%, пока конвейер вызывал его на каждом запуске.
@@ -214,5 +214,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

@@ -117,13 +117,13 @@ verificação falhar.**
 ### Os pisos de cobertura são por pacote
 
 Um único número para o repositório inteiro esconde o que importa: com 86% no geral, o
-`@handbook/cli` está em 23%. Cada pacote tem seu próprio piso no `vitest.config.ts`,
+`@handbooks/cli` está em 23%. Cada pacote tem seu próprio piso no `vitest.config.ts`,
 definido logo abaixo do que ele mede, de modo que ele funciona como uma **catraca**.
 
 Se a sua mudança eleva a cobertura, eleve o piso junto. Não alargue a distância para fazer
 uma execução vermelha passar.
 
-### Os testes resolvem `@handbook/*` para o código-fonte, não para `dist`
+### Os testes resolvem `@handbooks/*` para o código-fonte, não para `dist`
 
 Caso contrário, a cobertura de qualquer coisa consumida através da fronteira de um pacote
 não é atribuída a lugar nenhum — `core/src/util/hash.ts` media 0% enquanto o pipeline o
@@ -210,5 +210,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

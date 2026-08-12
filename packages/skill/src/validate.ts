@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { basename, join, normalize, resolve, sep } from 'node:path';
-import { fileExists, listFilesRecursive, readJsonFile, sha256Hex } from '@handbook/core';
+import { fileExists, listFilesRecursive, readJsonFile, sha256Hex } from '@handbooks/core';
 
 export interface ValidationResult {
   ok: boolean;

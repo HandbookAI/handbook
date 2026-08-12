@@ -1,5 +1,5 @@
 ---
-'@handbook/pipeline': patch
+'@handbooks/pipeline': patch
 ---
 
 Take `organization`'s `nFunctions` from the call graph instead of the card.

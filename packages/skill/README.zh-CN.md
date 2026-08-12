@@ -1,11 +1,11 @@
-# @handbook/skill
+# @handbooks/skill
 
 [English](README.md) · **中文**
 
 > 把渲染好的手册重新打包成 agent SKILL —— 每个文件带一个内容哈希，
 > 于是「这一页已经落后于代码了」变成一件**能被检测**的事，而不是你吃了亏才发现的事。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fskill-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/skill)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fskill-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/skill)
 [![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
 
 ---
@@ -24,7 +24,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/skill
+pnpm add @handbooks/skill
 ```
 
 ---
@@ -32,7 +32,7 @@ pnpm add @handbook/skill
 ## 快速上手
 
 ```ts
-import { buildSkill, validateSkill } from '@handbook/skill';
+import { buildSkill, validateSkill } from '@handbooks/skill';
 
 buildSkill({
   handbookDir: 'work/myrepo/handbook',
@@ -201,7 +201,7 @@ interface ValidationResult { ok: boolean; errors: string[]; warnings: string[] }
 ## 测试
 
 ```bash
-pnpm --filter @handbook/skill test
+pnpm --filter @handbooks/skill test
 ```
 
 覆盖两种布局（扁平与嵌套 `stages/`）、缺页、outDir 吃掉输入的拒绝、

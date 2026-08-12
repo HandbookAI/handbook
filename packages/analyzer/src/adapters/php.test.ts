@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { CallType, ModuleAnalysis } from '@handbook/core';
+import type { CallType, ModuleAnalysis } from '@handbooks/core';
 import { PhpAdapter } from './php.js';
 
 /** The type the app file leans on, plus a free function in the same namespace. */

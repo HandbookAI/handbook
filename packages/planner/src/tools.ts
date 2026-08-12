@@ -4,7 +4,7 @@
  */
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, normalize, resolve, sep } from 'node:path';
-import { listFilesRecursive, toPosix, truncate } from '@handbook/core';
+import { listFilesRecursive, toPosix, truncate } from '@handbooks/core';
 
 export interface ToolResult {
   ok: boolean;

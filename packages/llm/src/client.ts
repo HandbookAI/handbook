@@ -18,7 +18,7 @@ import {
   type Logger,
   silentLogger,
   type LimitFn,
-} from '@handbook/core';
+} from '@handbooks/core';
 
 /** Every registry key in the llm* group — derived, not restated, so this list
  *  can never drift from registry.ts's own `LLM_COMMANDS` grouping. */

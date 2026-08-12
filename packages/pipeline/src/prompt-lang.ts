@@ -12,7 +12,7 @@
  * block plus an explicit directive naming the target language. Adding a ninth
  * language is then one entry in `NARRATE_LANGUAGES`, not six new prompts.
  */
-import { languageDirective, type NarrateLang } from '@handbook/core';
+import { languageDirective, type NarrateLang } from '@handbooks/core';
 
 /**
  * The rules to send for `lang`, given the hand-written English and Chinese

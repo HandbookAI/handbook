@@ -5,8 +5,8 @@
  * content gating (a stage gets a page iff it has children or direct files),
  * organization-ordered file lists, subtree file counts and summary fallbacks.
  */
-import { StageTree } from '@handbook/core';
-import type { AdapterCapabilities, FileCard, HandbookModel, RegisterEntry } from '@handbook/core';
+import { StageTree } from '@handbooks/core';
+import type { AdapterCapabilities, FileCard, HandbookModel, RegisterEntry } from '@handbooks/core';
 
 /** One organization group resolved against the stage's actual bucket. */
 export interface ResolvedGroup {

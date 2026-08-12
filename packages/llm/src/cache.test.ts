@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractJsonBlock, sha256Hex } from '@handbook/core';
+import { extractJsonBlock, sha256Hex } from '@handbooks/core';
 import { CachedChatClient } from './cache.js';
 import type { ChatClient, ChatResult } from './client.js';
 

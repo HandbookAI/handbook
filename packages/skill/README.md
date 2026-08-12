@@ -1,4 +1,4 @@
-# @handbook/skill
+# @handbooks/skill
 
 **English** · [中文](README.zh-CN.md)
 
@@ -6,7 +6,7 @@
 > "this page has fallen behind the code" becomes something you can _detect_ instead of
 > something you discover the hard way.
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fskill-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/skill)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fskill-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/skill)
 [![no LLM](https://img.shields.io/badge/LLM-never-2dd4bf?style=flat-square)](#)
 
 ---
@@ -27,7 +27,7 @@ The package never embeds source code. It ships the _map_, not the territory.
 ## Install
 
 ```bash
-pnpm add @handbook/skill
+pnpm add @handbooks/skill
 ```
 
 ---
@@ -35,7 +35,7 @@ pnpm add @handbook/skill
 ## Quick start
 
 ```ts
-import { buildSkill, validateSkill } from '@handbook/skill';
+import { buildSkill, validateSkill } from '@handbooks/skill';
 
 buildSkill({
   handbookDir: 'work/myrepo/handbook',
@@ -222,7 +222,7 @@ interface ValidationResult { ok: boolean; errors: string[]; warnings: string[] }
 ## Testing
 
 ```bash
-pnpm --filter @handbook/skill test
+pnpm --filter @handbooks/skill test
 ```
 
 Covers both layouts (flat and nested `stages/`), missing pages, the outDir-eats-input

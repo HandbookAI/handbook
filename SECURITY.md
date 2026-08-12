@@ -22,7 +22,7 @@ and when, and credit you in the advisory unless you'd rather we didn't. Please g
 
 ## Supported versions
 
-Only the latest published minor of each `@handbook/*` package receives fixes. There are no
+Only the latest published minor of each `@handbooks/*` package receives fixes. There are no
 long-term support branches. Versions are managed by
 [changesets](https://github.com/changesets/changesets); see each package's `CHANGELOG.md`.
 

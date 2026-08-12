@@ -2,10 +2,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractJsonBlock } from '@handbook/core';
-import { MockChatClient } from '@handbook/llm';
+import { extractJsonBlock } from '@handbooks/core';
+import { MockChatClient } from '@handbooks/llm';
 import { extractRegisters, parseRegisterLines } from './narrate.js';
-import type { Narration, Skeleton } from '@handbook/core';
+import type { Narration, Skeleton } from '@handbooks/core';
 
 const skeleton: Skeleton = {
   metadata: { version: 1 },

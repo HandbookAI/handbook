@@ -43,7 +43,7 @@ interface ChatClient {
 }
 ```
 
-`analyzer`、`renderer`、`skill` 和 `patcher` **完全不依赖 `@handbook/llm`**。它们是完全确定性的，在任何见不到 LLM 的地方都能复用。这就是 `render`、`skill`、`validate`、`apply` 和 `rollback` 可以放心跑在 CI 里的原因。
+`analyzer`、`renderer`、`skill` 和 `patcher` **完全不依赖 `@handbooks/llm`**。它们是完全确定性的，在任何见不到 LLM 的地方都能复用。这就是 `render`、`skill`、`validate`、`apply` 和 `rollback` 可以放心跑在 CI 里的原因。
 
 这也是整个测试套件可以离线运行的原因：一道接缝，一个 mock。
 

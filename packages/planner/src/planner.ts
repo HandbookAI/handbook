@@ -8,8 +8,8 @@
  * required) and trivially scriptable with MockChatClient in tests.
  */
 import { join } from 'node:path';
-import type { ChatClient } from '@handbook/llm';
-import { silentLogger, settingByKey, truncate, type Logger } from '@handbook/core';
+import type { ChatClient } from '@handbooks/llm';
+import { silentLogger, settingByKey, truncate, type Logger } from '@handbooks/core';
 import { ReadOnlyTools } from './tools.js';
 import {
   DEFAULT_PROMPT_VARS,

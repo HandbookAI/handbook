@@ -1,17 +1,17 @@
-# @handbook/core
+# @handbooks/core
 
 [English](README.md) · **中文**
 
-> 共同语言。所有其他 `@handbook/*` 包都说这门语言，并且**都不许自己再定义一套**。
+> 共同语言。所有其他 `@handbooks/*` 包都说这门语言，并且**都不许自己再定义一套**。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcore-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/core)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fcore-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/core)
 [![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
 
 ---
 
 ## 这是什么
 
-`@handbook/core` 是 [Handbook](../../README.zh-CN.md) 工具链的地基层。它只包含四样东西，
+`@handbooks/core` 是 [Handbook](../../README.zh-CN.md) 工具链的地基层。它只包含四样东西，
 **刻意不多一样**：
 
 1. **数据模型** —— 调用图*是什么*、手册*是什么*，用 zod schema 表达。
@@ -33,7 +33,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/core
+pnpm add @handbooks/core
 ```
 
 ---
@@ -45,7 +45,7 @@ pnpm add @handbook/core
 与语言无关。每个分析器只产出这一套东西，所以下游没人知道、也不需要知道某个事实来自哪种语言。
 
 ```ts
-import { codeGraphSchema, type CodeGraph, isInternalNode } from '@handbook/core';
+import { codeGraphSchema, type CodeGraph, isInternalNode } from '@handbooks/core';
 
 const graph: CodeGraph = codeGraphSchema.parse(JSON.parse(raw)); // 不匹配时带路径抛错
 
@@ -121,7 +121,7 @@ interface AdapterCapabilities {
 加一个设置是一行改动，四个面同时出现——**否则构建失败**，因为漂移测试会逐字节比对生成物。
 
 ```ts
-import { resolveConfig, envName, scopedEnvName, loadConfigFile } from '@handbook/core';
+import { resolveConfig, envName, scopedEnvName, loadConfigFile } from '@handbooks/core';
 
 envName('readWorkers'); // 'HANDBOOK_READ_WORKERS'
 scopedEnvName('generate', 'readWorkers'); // 'HANDBOOK_GENERATE_READ_WORKERS'
@@ -156,7 +156,7 @@ errors; // 全部问题，而不是第一个
 ## `.env` 级联
 
 ```ts
-import { applyEnvFiles } from '@handbook/core';
+import { applyEnvFiles } from '@handbooks/core';
 
 applyEnvFiles(process.cwd(), 'prod');
 // 依次尝试：.env.prod.local → .env.prod → .env.local → .env
@@ -203,7 +203,7 @@ applyEnvFiles(process.cwd(), 'prod');
 ## 测试
 
 ```bash
-pnpm --filter @handbook/core test
+pnpm --filter @handbooks/core test
 ```
 
 完全离线，除了临时目录不需要任何 fixture。覆盖率下限在仓库根的 `vitest.config.ts` 里强制。

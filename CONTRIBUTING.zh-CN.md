@@ -62,7 +62,7 @@ pnpm check:all    # 动到打包或 manifest 的 PR 前——再加 publint/attw
 
 完整命令表在 README 的[开发](README.zh-CN.md#开发)一节，紧随其后就是"由工具强制、而非仅写在
 文档里的约定"（版本只在 `pnpm-workspace.yaml` 的 catalog 里、`dist/` 就是发布面、测试把
-`@handbook/*` 解析到源码）。这几条各自都有一道会拦住你的检查，值得先读一遍。
+`@handbooks/*` 解析到源码）。这几条各自都有一道会拦住你的检查，值得先读一遍。
 
 ## 提交信息
 
@@ -98,7 +98,7 @@ pnpm changeset     # 选中受影响的包和升级方式，然后描述这次�
 changeset 是写给升级的人看的，不是写给 reviewer 看的：对他们变了什么，他们需要做什么。
 `major` 的正文里要给出迁移方式。
 
-不发布任何东西的改动不需要 changeset——测试、CI、`docs/internal/`、仓库工具链，或不在任何包
+不发布任何东西的改动不需要 changeset——测试、CI、文档站、仓库工具链，或不在任何包
 发布文件里的文档。拿不准就加：多一次 patch 升版本，比一次静默的行为变更便宜得多。
 
 ## 测试

@@ -116,13 +116,13 @@ fallar el control.**
 ### Los umbrales de cobertura son por paquete
 
 Un único número para todo el repositorio esconde lo que importa: con un 86% global,
-`@handbook/cli` está en el 23%. Cada paquete tiene su propio umbral en `vitest.config.ts`,
+`@handbooks/cli` está en el 23%. Cada paquete tiene su propio umbral en `vitest.config.ts`,
 fijado justo por debajo de lo que mide, de modo que **avanza como un trinquete**.
 
 Si tu cambio sube la cobertura, sube el umbral con ella. No amplíes la brecha para que pase
 una ejecución en rojo.
 
-### Las pruebas resuelven `@handbook/*` al código fuente, no a `dist`
+### Las pruebas resuelven `@handbooks/*` al código fuente, no a `dist`
 
 De lo contrario, la cobertura de todo lo que se consume cruzando el límite de un paquete no
 se atribuye a ninguna parte — `core/src/util/hash.ts` medía 0% mientras el pipeline lo
@@ -209,5 +209,5 @@ scripts/                     repo tooling (workspace checks, doc generation, smo
 examples/                    the offline demo, the mock LLM server, the fixture project
 assets/                      diagrams referenced by both READMEs
 docs/                        the documentation site (a standalone Next.js app)
-docs/internal/               the engineering journal — specs, plans, review notes
+docs/internal/               the engineering journal — LOCAL ONLY, gitignored
 ```

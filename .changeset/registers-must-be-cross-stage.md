@@ -1,5 +1,5 @@
 ---
-'@handbook/pipeline': minor
+'@handbooks/pipeline': minor
 ---
 
 Discard "state registers" that touch fewer than two stages.

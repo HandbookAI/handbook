@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CallEdge, CodeGraph, GraphNode } from '@handbook/core';
+import type { CallEdge, CodeGraph, GraphNode } from '@handbooks/core';
 import { fileCallAdjacency, functionCountsByFile, suggestOrder } from './organize.js';
 
 function adjacencyOf(pairs: Array<[string, string[]]>): Map<string, Set<string>> {

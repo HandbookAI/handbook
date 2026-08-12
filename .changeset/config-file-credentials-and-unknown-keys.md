@@ -1,6 +1,6 @@
 ---
-'@handbook/core': minor
-'@handbook/cli': minor
+'@handbooks/core': minor
+'@handbooks/cli': minor
 ---
 
 Three fixes to the one config layer that gets committed.

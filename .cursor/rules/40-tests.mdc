@@ -21,7 +21,7 @@ every parser rejection.
 they ratchet. Raise one when your change raises coverage. **Never lower one to make a red
 run green.**
 
-**Tests resolve `@handbook/*` to `src`, not `dist`**, so cross-package coverage is
+**Tests resolve `@handbooks/*` to `src`, not `dist`**, so cross-package coverage is
 attributed. The real `dist` is verified by `tsc -b` and by `pnpm check:install`.
 
 ```bash

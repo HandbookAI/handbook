@@ -1,5 +1,5 @@
 /**
- * Parse the EDIT blocks out of a plan produced by `@handbook/planner`.
+ * Parse the EDIT blocks out of a plan produced by `@handbooks/planner`.
  *
  * ```
  * ### EDIT 1

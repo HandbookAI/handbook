@@ -1,18 +1,18 @@
-# @handbook/renderer
+# @handbooks/renderer
 
 [English](README.md) · **中文**
 
 > 把生成好的手册变成「人会打开的东西」和「agent 会用来定位的东西」。
 > 四种输出格式，不用 LLM，不联网，没有构建步骤。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Frenderer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbook/renderer)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Frenderer-14b8a6?style=flat-square)](https://www.npmjs.com/package/@handbooks/renderer)
 [![no LLM](https://img.shields.io/badge/LLM-从不-2dd4bf?style=flat-square)](#)
 
 ---
 
 ## 这是什么
 
-[Handbook](../../README.zh-CN.md) 工具链的呈现层。它拿 `@handbook/pipeline` 产出的
+[Handbook](../../README.zh-CN.md) 工具链的呈现层。它拿 `@handbooks/pipeline` 产出的
 边界类型 `HandbookModel`，写出：
 
 | 函数                     | 输出                                                               | 受众  |
@@ -31,7 +31,7 @@
 ## 安装
 
 ```bash
-pnpm add @handbook/renderer
+pnpm add @handbooks/renderer
 ```
 
 ---
@@ -39,14 +39,14 @@ pnpm add @handbook/renderer
 ## 快速上手
 
 ```ts
-import { loadHandbookModel } from '@handbook/pipeline';
+import { loadHandbookModel } from '@handbooks/pipeline';
 import {
   renderMarkdownHandbook,
   renderHtmlSite,
   renderSinglePageHtml,
   renderAgentSite,
   renderLlmsTxt,
-} from '@handbook/renderer';
+} from '@handbooks/renderer';
 
 const model = loadHandbookModel('work/myrepo', 'MyRepo 手册');
 const out = 'work/myrepo/handbook';
@@ -214,7 +214,7 @@ stageSectionMarker(lang): string
 ## 测试
 
 ```bash
-pnpm --filter @handbook/renderer test
+pnpm --filter @handbooks/renderer test
 ```
 
 渲染是对着真实 fixture 模型断言的，**包括那些难看的**：空阶段、缺失散文、零寄存器、

@@ -13,7 +13,7 @@ import {
   silentLogger,
   truncate,
   type Logger,
-} from '@handbook/core';
+} from '@handbooks/core';
 import type { ChatClient } from './client.js';
 
 export type CriticDecision = 'APPROVE' | 'REVISE' | 'REJECT';

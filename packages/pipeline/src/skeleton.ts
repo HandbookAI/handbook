@@ -3,10 +3,10 @@
  * narrative spine, drafted from a per-directory rollup of file purposes plus
  * the call-graph entry points.
  */
-import type { NavPack } from '@handbook/analyzer';
-import type { ChatClient } from '@handbook/llm';
-import { describeJsonShape, extractEntryList, replyExcerpt } from '@handbook/core';
-import type { FileCard, NarrateLang, Skeleton, Stage } from '@handbook/core';
+import type { NavPack } from '@handbooks/analyzer';
+import type { ChatClient } from '@handbooks/llm';
+import { describeJsonShape, extractEntryList, replyExcerpt } from '@handbooks/core';
+import type { FileCard, NarrateLang, Skeleton, Stage } from '@handbooks/core';
 import { rulesFor as rulesForLang } from './prompt-lang.js';
 
 export interface DirRollup {

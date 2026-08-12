@@ -15,7 +15,7 @@ globs: packages/**/*.ts
 - **Every persisted artifact is a zod schema plus an inferred type**, with a `version`
   field, validated on read. A corrupted artifact must fail loudly and name itself; it must
   never propagate into a later phase.
-- **Write files atomically** — `writeFileAtomic` / `writeJsonFile` from `@handbook/core`.
+- **Write files atomically** — `writeFileAtomic` / `writeJsonFile` from `@handbooks/core`.
   A crash mid-write must never leave a half-written artifact.
 - **Errors carry a code.** Extend `HandbookError`. `MissingArtifactError` names the
   remedy, not just the problem: `phase1/graph.json — run phase 1 first`.

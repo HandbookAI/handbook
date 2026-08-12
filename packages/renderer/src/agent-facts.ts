@@ -23,8 +23,8 @@
  * Every byte is a pure function of the model: sorts are explicit and byte-wise,
  * never locale-aware, so an unchanged model re-renders identically.
  */
-import { truncate } from '@handbook/core';
-import type { FileCard, FunctionNote, HandbookModel, TypeKind } from '@handbook/core';
+import { truncate } from '@handbooks/core';
+import type { FileCard, FunctionNote, HandbookModel, TypeKind } from '@handbooks/core';
 import type { FidelityOptions, HandbookView } from './shared.js';
 
 /** Stage id used for a file the assignment pass could not route. */
@@ -323,7 +323,7 @@ export function filesTsv(view: HandbookView, fidelity: FidelityOptions = {}): st
  * The second kind exists because this repository is a monorepo, and it turns
  * out that in one, the edges an agent most wants are exactly the ones that
  * cross a package. `checkLanguage` is called four times from `lang-guard.ts`
- * via `@handbook/core`, and with resolved edges only it appeared with zero
+ * via `@handbooks/core`, and with resolved edges only it appeared with zero
  * callers — which reads as dead code. That is a wrong pointer, not a gap, and a
  * wrong pointer is the failure this whole artifact is built to avoid. A
  * `boundary:` prefix cannot be mistaken for a path, so nothing is invented.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Writes the three generated configuration surfaces. The rendering itself lives
-// in @handbook/core so the drift test can call exactly the same functions —
+// in @handbooks/core so the drift test can call exactly the same functions —
 // a generator and a checker that could disagree would defeat the point.
 //
 // Run: pnpm run config:docs

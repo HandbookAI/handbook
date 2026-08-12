@@ -503,19 +503,19 @@ handbook config --check                      # 有任何非法或缺失就非零
   <img src="assets/architecture.zh.svg" alt="分层结构：入口、能力包、引擎、地基" width="100%">
 </p>
 
-| 包                                                  | 职责                                                                    | 用 LLM？ |
-| --------------------------------------------------- | ----------------------------------------------------------------------- | :------: |
-| [`@handbook/core`](packages/core/README.md)         | 数据模型（调用图 IR + 手册模型）、zod schema、配置 registry、零依赖工具 |    ❌    |
-| [`@handbook/analyzer`](packages/analyzer/README.md) | 基于 tree-sitter WASM 的多语言静态调用图提取                            |    ❌    |
-| [`@handbook/llm`](packages/llm/README.md)           | OpenAI 兼容 chat 客户端、磁盘缓存、actor–critic 编排、离线 mock         |    ✅    |
-| [`@handbook/pipeline`](packages/pipeline/README.md) | 生成管线 —— 阶段 1–3，file 与 member 两种策略                           |    ✅    |
-| [`@handbook/renderer`](packages/renderer/README.md) | Markdown 页面、agent 定位索引、HTML 站点、llms.txt                      |    ❌    |
-| [`@handbook/skill`](packages/skill/README.md)       | SKILL 打包、校验、覆盖漂移检测                                          |    ❌    |
-| [`@handbook/planner`](packages/planner/README.md)   | 手册驱动的只读规划 agent                                                |    ✅    |
-| [`@handbook/patcher`](packages/patcher/README.md)   | 逐字节应用计划中的 EDIT 块 —— 全成或全不成、备份、回滚                  |    ❌    |
-| [`@handbook/resync`](packages/resync/README.md)     | 代码变更后的手册增量前滚                                                |    ✅    |
-| [`@handbook/studio`](packages/studio/README.md)     | 本地 Web UI：仓库 · 生成 · 浏览 · 演进                                  |    ✅    |
-| [`@handbook/cli`](packages/cli/README.md)           | `handbook` 命令                                                         |    —     |
+| 包                                                   | 职责                                                                    | 用 LLM？ |
+| ---------------------------------------------------- | ----------------------------------------------------------------------- | :------: |
+| [`@handbooks/core`](packages/core/README.md)         | 数据模型（调用图 IR + 手册模型）、zod schema、配置 registry、零依赖工具 |    ❌    |
+| [`@handbooks/analyzer`](packages/analyzer/README.md) | 基于 tree-sitter WASM 的多语言静态调用图提取                            |    ❌    |
+| [`@handbooks/llm`](packages/llm/README.md)           | OpenAI 兼容 chat 客户端、磁盘缓存、actor–critic 编排、离线 mock         |    ✅    |
+| [`@handbooks/pipeline`](packages/pipeline/README.md) | 生成管线 —— 阶段 1–3，file 与 member 两种策略                           |    ✅    |
+| [`@handbooks/renderer`](packages/renderer/README.md) | Markdown 页面、agent 定位索引、HTML 站点、llms.txt                      |    ❌    |
+| [`@handbooks/skill`](packages/skill/README.md)       | SKILL 打包、校验、覆盖漂移检测                                          |    ❌    |
+| [`@handbooks/planner`](packages/planner/README.md)   | 手册驱动的只读规划 agent                                                |    ✅    |
+| [`@handbooks/patcher`](packages/patcher/README.md)   | 逐字节应用计划中的 EDIT 块 —— 全成或全不成、备份、回滚                  |    ❌    |
+| [`@handbooks/resync`](packages/resync/README.md)     | 代码变更后的手册增量前滚                                                |    ✅    |
+| [`@handbooks/studio`](packages/studio/README.md)     | 本地 Web UI：仓库 · 生成 · 浏览 · 演进                                  |    ✅    |
+| [`@handbooks/cli`](packages/cli/README.md)           | `handbook` 命令                                                         |    —     |
 
 依赖方向严格单向：
 `cli → pipeline/renderer/skill/planner/patcher/resync → analyzer/llm → core`。
@@ -632,8 +632,8 @@ mock HTTP 端点测试；确定性的包直接测。**没有任何一个测试�
 - **`dist/` 就是发布面。** 构建工程排除 `*.test.ts`；`tsconfig.tests.json` 用 `noEmit`
   检查测试；source map 被排除出 tarball，因为它们指向永远不会发布的源文件。
 - **覆盖率下限是逐包的。** 一个全仓数字会掩盖真正的问题：整体 86% 的时候，
-  `@handbook/cli` 只有 23%。每个包有自己的下限，卡在实测值下面一点，于是只能往上棘轮。
-- **测试把 `@handbook/*` 解析到源码而不是 `dist`。** 否则跨包被消费的代码，覆盖率会算不到任何地方。
+  `@handbooks/cli` 只有 23%。每个包有自己的下限，卡在实测值下面一点，于是只能往上棘轮。
+- **测试把 `@handbooks/*` 解析到源码而不是 `dist`。** 否则跨包被消费的代码，覆盖率会算不到任何地方。
   真实的 `dist` 由 `tsc -b` 和 `pnpm check:install`（用原生 npm 安装打好的 tarball 再驱动 CLI）验证。
 
 贡献指南：[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md) · 安全：[SECURITY.md](SECURITY.md) ·

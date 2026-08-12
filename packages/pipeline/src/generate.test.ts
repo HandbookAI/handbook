@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { MockChatClient, type MockRule } from '@handbook/llm';
+import { MockChatClient, type MockRule } from '@handbooks/llm';
 import { expandPhases, generateHandbook, loadHandbookModel, runManifestSchema } from './generate.js';
 import { WorkDir } from './workdir.js';
 

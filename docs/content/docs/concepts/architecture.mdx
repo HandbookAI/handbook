@@ -47,7 +47,7 @@ interface ChatClient {
 }
 ```
 
-`analyzer`, `renderer`, `skill` and `patcher` **do not depend on `@handbook/llm` at all**.
+`analyzer`, `renderer`, `skill` and `patcher` **do not depend on `@handbooks/llm` at all**.
 They are fully deterministic and reusable with no LLM anywhere in sight. That is why
 `render`, `skill`, `validate`, `apply` and `rollback` are free to run in CI.
 

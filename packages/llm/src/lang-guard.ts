@@ -21,7 +21,7 @@
  * The fourth layer is the one that matters most. Everything else is an attempt;
  * this is the promise: the output never claims a language it did not deliver.
  */
-import { checkLanguage, languageName, type Logger, type NarrateLang } from '@handbook/core';
+import { checkLanguage, languageName, type Logger, type NarrateLang } from '@handbooks/core';
 import type { ChatClient, ChatOptions, ChatResult } from './client.js';
 
 /** One wrong-language answer that survived the retry. */

@@ -1,6 +1,6 @@
 {
-  "name": "@handbook/planner",
-  "version": "0.1.0",
+  "name": "@handbooks/planner",
+  "version": "1.1.0",
   "description": "Handbook-guided read-only planning agent that localizes code changes into a precise edit plan",
   "type": "module",
   "exports": {
@@ -18,8 +18,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@handbook/core": "workspace:*",
-    "@handbook/llm": "workspace:*"
+    "@handbooks/core": "workspace:*",
+    "@handbooks/llm": "workspace:*"
   },
   "license": "MIT",
   "publishConfig": {

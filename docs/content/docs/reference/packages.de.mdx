@@ -6,26 +6,26 @@ description: 'Elf npm-Pakete, was jedes exportiert und welche davon ganz ohne LL
 Handbook ist ein Monorepo aus elf Paketen. **Vier davon fassen nie ein LLM an** und sind
 ganz für sich allein nützlich.
 
-| Paket                | Rolle                                                         | LLM? | Doku                                                       |
-| -------------------- | ------------------------------------------------------------- | :--: | ---------------------------------------------------------- |
-| `@handbook/core`     | Datenmodell, zod-Schemata, Konfigurations-Registry, Utilities |  ❌  | [README](https://www.npmjs.com/package/@handbook/core)     |
-| `@handbook/analyzer` | Mehrsprachige Extraktion des statischen Aufrufgraphen         |  ❌  | [README](https://www.npmjs.com/package/@handbook/analyzer) |
-| `@handbook/llm`      | OpenAI-kompatibler Client, Cache, Akteur-Kritiker, Mock       |  ✅  | [README](https://www.npmjs.com/package/@handbook/llm)      |
-| `@handbook/pipeline` | Die Generierungs-Pipeline, Phasen 1–3                         |  ✅  | [README](https://www.npmjs.com/package/@handbook/pipeline) |
-| `@handbook/renderer` | Markdown, HTML, Agent-Index, llms.txt                         |  ❌  | [README](https://www.npmjs.com/package/@handbook/renderer) |
-| `@handbook/skill`    | SKILL-Verpackung, Validierung, Drift-Hashes                   |  ❌  | [README](https://www.npmjs.com/package/@handbook/skill)    |
-| `@handbook/planner`  | Nur lesender Planungsagent                                    |  ✅  | [README](https://www.npmjs.com/package/@handbook/planner)  |
-| `@handbook/patcher`  | Byte-genaues Anwenden, Sicherungen, Rollback                  |  ❌  | [README](https://www.npmjs.com/package/@handbook/patcher)  |
-| `@handbook/resync`   | Inkrementelles Nachziehen                                     |  ✅  | [README](https://www.npmjs.com/package/@handbook/resync)   |
-| `@handbook/studio`   | Lokale Weboberfläche                                          |  ✅  | [README](https://www.npmjs.com/package/@handbook/studio)   |
-| `@handbook/cli`      | Der `handbook`-Befehl                                         |  —   | [README](https://www.npmjs.com/package/@handbook/cli)      |
+| Paket                 | Rolle                                                         | LLM? | Doku                                                        |
+| --------------------- | ------------------------------------------------------------- | :--: | ----------------------------------------------------------- |
+| `@handbooks/core`     | Datenmodell, zod-Schemata, Konfigurations-Registry, Utilities |  ❌  | [README](https://www.npmjs.com/package/@handbooks/core)     |
+| `@handbooks/analyzer` | Mehrsprachige Extraktion des statischen Aufrufgraphen         |  ❌  | [README](https://www.npmjs.com/package/@handbooks/analyzer) |
+| `@handbooks/llm`      | OpenAI-kompatibler Client, Cache, Akteur-Kritiker, Mock       |  ✅  | [README](https://www.npmjs.com/package/@handbooks/llm)      |
+| `@handbooks/pipeline` | Die Generierungs-Pipeline, Phasen 1–3                         |  ✅  | [README](https://www.npmjs.com/package/@handbooks/pipeline) |
+| `@handbooks/renderer` | Markdown, HTML, Agent-Index, llms.txt                         |  ❌  | [README](https://www.npmjs.com/package/@handbooks/renderer) |
+| `@handbooks/skill`    | SKILL-Verpackung, Validierung, Drift-Hashes                   |  ❌  | [README](https://www.npmjs.com/package/@handbooks/skill)    |
+| `@handbooks/planner`  | Nur lesender Planungsagent                                    |  ✅  | [README](https://www.npmjs.com/package/@handbooks/planner)  |
+| `@handbooks/patcher`  | Byte-genaues Anwenden, Sicherungen, Rollback                  |  ❌  | [README](https://www.npmjs.com/package/@handbooks/patcher)  |
+| `@handbooks/resync`   | Inkrementelles Nachziehen                                     |  ✅  | [README](https://www.npmjs.com/package/@handbooks/resync)   |
+| `@handbooks/studio`   | Lokale Weboberfläche                                          |  ✅  | [README](https://www.npmjs.com/package/@handbooks/studio)   |
+| `@handbooks/cli`      | Der `handbook`-Befehl                                         |  —   | [README](https://www.npmjs.com/package/@handbooks/cli)      |
 
 ## Die drei nützlichsten für sich allein
 
-### `@handbook/analyzer` — ein Aufrufgraph für 18 Sprachen
+### `@handbooks/analyzer` — ein Aufrufgraph für 18 Sprachen
 
 ```ts
-import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbook/analyzer';
+import { registerBuiltinAdapters, discoverAll, getAdapter, buildGraph } from '@handbooks/analyzer';
 
 registerBuiltinAdapters();
 const byLanguage = discoverAll('/path/to/repo');
@@ -46,10 +46,10 @@ const { graph, stats } = buildGraph(
 
 Kein LLM, kein Netzwerk, keine native Kompilierung.
 
-### `@handbook/patcher` — einen Änderungsplan sicher anwenden
+### `@handbooks/patcher` — einen Änderungsplan sicher anwenden
 
 ```ts
-import { applyPlan, rollback, parsePlan } from '@handbook/patcher';
+import { applyPlan, rollback, parsePlan } from '@handbooks/patcher';
 
 const problems = parsePlan(planText).problems; // lint a plan without applying it
 const dry = applyPlan({ sourceRoot, plan: planText, dryRun: true });
@@ -60,13 +60,13 @@ if (dry.ok) {
 ```
 
 Das Planformat ist unter [Änderungen anwenden](/docs/guides/applying-changes) dokumentiert.
-Nichts verlangt, dass der Plan von `@handbook/planner` stammt — du kannst einen von Hand
+Nichts verlangt, dass der Plan von `@handbooks/planner` stammt — du kannst einen von Hand
 schreiben.
 
-### `@handbook/renderer` — beliebiges `HandbookModel` rendern
+### `@handbooks/renderer` — beliebiges `HandbookModel` rendern
 
 ```ts
-import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbook/renderer';
+import { renderMarkdownHandbook, renderAgentSite, renderLlmsTxt } from '@handbooks/renderer';
 
 renderMarkdownHandbook(model, 'out/');
 renderAgentSite(model, 'out/agent');
@@ -79,50 +79,50 @@ Skill-Verpackung und Planung funktionieren allesamt.
 ## Wichtige Exporte auf einen Blick
 
 ```ts
-// @handbook/core — the vocabulary
+// @handbooks/core — the vocabulary
 CodeGraph · FunctionNode · CallEdge · AdapterCapabilities
 FileCard · Skeleton · Assignment · Organization · Narration · RegisterEntry
 HandbookModel · StageTree · coerceRole
 resolveConfig · settingsFor · envName · scopedEnvName · loadConfigFile · applyEnvFiles
 writeFileAtomic · readValidatedJson · pLimit · withRetry · withDirLock · sha256Hex
 
-// @handbook/analyzer — the parser
+// @handbooks/analyzer — the parser
 registerBuiltinAdapters · registerAdapter · getAdapter · availableLanguages
 discoverAll · adapterForFile · buildGraph · writeGraphArtifacts · buildNavPack
 
-// @handbook/llm — the model seam
+// @handbooks/llm — the model seam
 ChatClient · OpenAiChatClient · CachedChatClient · MockChatClient
 resolveLlmEnv · llmConfigFromValues · actorCriticLoop · ROLE_PROMPTS
 
-// @handbook/pipeline — generation
+// @handbooks/pipeline — generation
 generateHandbook · loadHandbookModel · runPhase1 · generateCards
 synthesizeSkeleton · synthesizeWithDoctor · assignFiles · organizeStages
 narrate · extractRegisters · classifyMembers · WorkDir
 
-// @handbook/renderer — presentation
+// @handbooks/renderer — presentation
 renderMarkdownHandbook · renderHtmlSite · renderSinglePageHtml
 renderAgentSite · renderLlmsTxt · HandbookView · stageMapMermaid
 
-// @handbook/skill — packaging
+// @handbooks/skill — packaging
 buildSkill · validateSkill
 
-// @handbook/planner — localization
+// @handbooks/planner — localization
 runPlanner · handbookDirFromSkill · parseDeclarations · ReadOnlyTools
 
-// @handbook/patcher — execution
+// @handbooks/patcher — execution
 applyPlan · rollback · listBackups · parsePlan
 
-// @handbook/resync — roll-forward
+// @handbooks/resync — roll-forward
 resyncHandbook · loadCase · diffGraphs · detectCardDetail · loadCorrections
 
-// @handbook/studio — the UI
+// @handbooks/studio — the UI
 startStudio · createStudioServer · StateStore · JobRunner
 ```
 
 ## Installation
 
 ```bash
-pnpm add @handbook/analyzer     # or npm / yarn
+pnpm add @handbooks/analyzer     # or npm / yarn
 ```
 
 Jedes Paket ist reines ESM (`"type": "module"`), liefert Typdeklarationen mit, verlangt

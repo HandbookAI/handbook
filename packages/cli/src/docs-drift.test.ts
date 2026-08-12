@@ -10,8 +10,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
-import { renderConfigDocs, renderConfigExampleYaml, renderEnvExample } from '@handbook/core';
+import { availableLanguages, registerBuiltinAdapters } from '@handbooks/analyzer';
+import { renderConfigDocs, renderConfigExampleYaml, renderEnvExample } from '@handbooks/core';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), 'utf8');

@@ -56,8 +56,8 @@
  *     other keeps the old first-definition-wins fallback.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, FunctionNode } from '@handbook/core';
-import { truncate } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, FunctionNode } from '@handbooks/core';
+import { truncate } from '@handbooks/core';
 import { fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';
 import { dirOf, SpineAdapter, type BaseScan, type LanguageSpec, type Resolved } from '../spine.js';
 

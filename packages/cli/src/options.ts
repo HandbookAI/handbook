@@ -20,8 +20,8 @@
  * check.
  */
 import { Option, type Command } from 'commander';
-import { availableLanguages, registerBuiltinAdapters } from '@handbook/analyzer';
-import { envName, scopedEnvName, settingsFor, type Setting } from '@handbook/core';
+import { availableLanguages, registerBuiltinAdapters } from '@handbooks/analyzer';
+import { envName, scopedEnvName, settingsFor, type Setting } from '@handbooks/core';
 
 function helpText(command: string, setting: Setting): string {
   const parts = [setting.doc];

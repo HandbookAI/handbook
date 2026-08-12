@@ -6,7 +6,7 @@
 import { dirname, join, resolve, sep } from 'node:path';
 import { readlinkSync, realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
-import { fileExists, readValidatedJson, writeJsonFile } from '@handbook/core';
+import { fileExists, readValidatedJson, writeJsonFile } from '@handbooks/core';
 
 /**
  * URL-safe repo name: alphanumeric start, then letters/digits/`. _ -`. Shared

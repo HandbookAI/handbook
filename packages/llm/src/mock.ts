@@ -6,7 +6,7 @@
  * of the prompt, which is enough to script entire pipeline runs in tests.
  */
 import type { ChatClient, ChatOptions, ChatResult } from './client.js';
-import { extractJsonBlock } from '@handbook/core';
+import { extractJsonBlock } from '@handbooks/core';
 
 export type MockResponse = string | object | ((prompt: string, callIndex: number) => string | object);
 

@@ -37,10 +37,10 @@
   <rect x="40" y="98" width="1040" height="94" rx="13" fill="url(#lane)" stroke="#2E3A66"/>
   <text class="t lane" x="60" y="120">EINSTIEGSPUNKTE · was ein Mensch oder ein Container ausführt</text>
   <rect x="60" y="130" width="330" height="48" rx="10" fill="#1E2A52" stroke="#3D4E86"/>
-  <text class="m pkg" x="78" y="152">@handbook/cli</text>
+  <text class="m pkg" x="78" y="152">@handbooks/cli</text>
   <text class="t role" x="78" y="169">das `handbook`-Binary — 11 Unterbefehle</text>
   <rect x="410" y="130" width="330" height="48" rx="10" fill="#1E2A52" stroke="#3D4E86"/>
-  <text class="m pkg" x="428" y="152">@handbook/studio</text>
+  <text class="m pkg" x="428" y="152">@handbooks/studio</text>
   <text class="t role" x="428" y="169">lokale Web-UI auf 127.0.0.1, Jobs + Live-Logs</text>
   <rect x="760" y="130" width="300" height="48" rx="10" fill="#141B36" stroke="#2A3357" stroke-dasharray="4 4"/>
   <text class="t role" x="775" y="150" fill="#7E8CB6">Beide lösen Konfiguration über DIESELBE</text>
@@ -52,32 +52,32 @@
 
   <rect x="60" y="242" width="322" height="56" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="60" y="242" width="4" height="56" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="78" y="265">@handbook/pipeline</text>
+  <text class="m pkg" x="78" y="265">@handbooks/pipeline</text>
   <text class="t role" x="78" y="284">Phase 1 → 3, Datei- &amp; Member-Strategien</text>
 
   <rect x="399" y="242" width="322" height="56" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="399" y="242" width="4" height="56" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="417" y="265">@handbook/renderer</text>
+  <text class="m pkg" x="417" y="265">@handbooks/renderer</text>
   <text class="t role" x="417" y="284">Markdown · HTML · Agenten-Index · llms.txt</text>
 
   <rect x="738" y="242" width="322" height="56" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="738" y="242" width="4" height="56" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="756" y="265">@handbook/skill</text>
+  <text class="m pkg" x="756" y="265">@handbooks/skill</text>
   <text class="t role" x="756" y="284">SKILL-Paketierung, Validierung, Drift-Hashes</text>
 
   <rect x="60" y="308" width="322" height="56" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="60" y="308" width="4" height="56" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="78" y="331">@handbook/planner</text>
+  <text class="m pkg" x="78" y="331">@handbooks/planner</text>
   <text class="t role" x="78" y="350">Nur-Lese-Agentenschleife → präziser Edit-Plan</text>
 
   <rect x="399" y="308" width="322" height="56" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="399" y="308" width="4" height="56" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="417" y="331">@handbook/patcher</text>
+  <text class="m pkg" x="417" y="331">@handbooks/patcher</text>
   <text class="t role" x="417" y="350">byte-exaktes apply · Backups · rollback</text>
 
   <rect x="738" y="308" width="322" height="56" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="738" y="308" width="4" height="56" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="756" y="331">@handbook/resync</text>
+  <text class="m pkg" x="756" y="331">@handbooks/resync</text>
   <text class="t role" x="756" y="350">diff-getriebenes inkrementelles Fortschreiben</text>
 
   <!-- lane 2: engines -->
@@ -85,11 +85,11 @@
   <text class="t lane" x="60" y="412">ENGINES · worauf alles andere aufbaut</text>
   <rect x="60" y="422" width="490" height="48" rx="10" fill="#16233F" stroke="#2F6F68"/>
   <rect x="60" y="422" width="4" height="48" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="80" y="444">@handbook/analyzer</text>
+  <text class="m pkg" x="80" y="444">@handbooks/analyzer</text>
   <text class="t role" x="80" y="461">tree-sitter WASM · 18 Sprachen · kein nativer Build, kein LLM</text>
   <rect x="570" y="422" width="490" height="48" rx="10" fill="#2A2440" stroke="#7A6535"/>
   <rect x="570" y="422" width="4" height="48" rx="2" fill="#FBBF24"/>
-  <text class="m pkg" x="590" y="444">@handbook/llm</text>
+  <text class="m pkg" x="590" y="444">@handbooks/llm</text>
   <text class="t role" x="590" y="461">jeder OpenAI-kompatible Endpunkt · Retry · Cache · Actor–Critic</text>
 
   <!-- lane 1: core -->
@@ -97,7 +97,7 @@
   <text class="t lane" x="60" y="522">FUNDAMENT · keine fremden Laufzeitabhängigkeiten außer zod + yaml</text>
   <rect x="60" y="532" width="1000" height="30" rx="8" fill="#16233F" stroke="#2F6F68"/>
   <rect x="60" y="532" width="4" height="30" rx="2" fill="#2DD4BF"/>
-  <text class="m pkg" x="80" y="553" font-size="14">@handbook/core</text>
+  <text class="m pkg" x="80" y="553" font-size="14">@handbooks/core</text>
   <text class="t role" x="230" y="553">Aufrufgraph-IR + Handbook-Modell · zod-Schemas · Config-Registry · Logger · atomare Datei-I/O · Locks</text>
 
   <!-- dependency arrows (downward only; kept clear of the lane captions) -->

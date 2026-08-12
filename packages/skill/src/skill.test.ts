@@ -2,9 +2,9 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, w
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { NARRATE_LANGS, checkLanguage, fileExists, sha256Hex } from '@handbook/core';
-import type { NarrateLang } from '@handbook/core';
-import type { Assignment } from '@handbook/core';
+import { NARRATE_LANGS, checkLanguage, fileExists, sha256Hex } from '@handbooks/core';
+import type { NarrateLang } from '@handbooks/core';
+import type { Assignment } from '@handbooks/core';
 import { buildSkill } from './build.js';
 import { validateSkill } from './validate.js';
 

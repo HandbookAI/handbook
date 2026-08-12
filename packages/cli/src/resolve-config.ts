@@ -5,7 +5,7 @@
  * env file loaded by the preAction hook is already in `process.env` and the
  * config file discovered alongside it is in scope.
  */
-import { resolveConfig, settingByKey, type ConfigFileData, type Logger, type Source } from '@handbook/core';
+import { resolveConfig, settingByKey, type ConfigFileData, type Logger, type Source } from '@handbooks/core';
 
 let configFile: ConfigFileData | undefined;
 let configFileFailure: ConfigFileFailure | undefined;

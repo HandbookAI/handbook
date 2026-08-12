@@ -7,7 +7,7 @@
 // differs in every one. Two things depend on them:
 //
 //   - The npm page for each package links back to source. Without it a
-//     published `@handbook/*` is a tarball with no visible origin.
+//     published `@handbooks/*` is a tarball with no visible origin.
 //   - npm provenance (`NPM_CONFIG_PROVENANCE`) *requires* `repository` to point
 //     at the public repo the build ran in. Turning provenance on before these
 //     fields exist fails the publish rather than securing it — see the comment

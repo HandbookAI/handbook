@@ -5,7 +5,7 @@
  * writers on the same work dir.
  */
 import { randomUUID } from 'node:crypto';
-import type { Logger, ProgressEvent } from '@handbook/core';
+import type { Logger, ProgressEvent } from '@handbooks/core';
 
 export type JobKind = 'analyze' | 'generate' | 'render' | 'skill' | 'plan' | 'resync' | 'apply' | 'rollback';
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';

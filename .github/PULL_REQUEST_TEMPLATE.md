@@ -22,7 +22,7 @@ Delete any section below that doesn't apply. An empty template is worse than a s
 
 ## Release impact
 
-- [ ] Changeset added (`pnpm changeset`), **or** this ships nothing — tests, CI, `docs/internal/`, repo tooling
+- [ ] Changeset added (`pnpm changeset`), **or** this ships nothing — tests, CI, the docs site, repo tooling
 - [ ] Breaking change — the migration is described above and the changeset is a `major`
 
 ## Docs

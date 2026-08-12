@@ -3,10 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
+import { SCOPE } from './scripts/scope.mjs';
+
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Resolve `@handbook/*` to each package's TypeScript source for the test run.
+ * Resolve `@handbooks/*` to each package's TypeScript source for the test run.
  *
  * Without this, a cross-package import resolves through the workspace symlink
  * into `dist`, and coverage attributes nothing back to `src` — so any code
@@ -18,11 +20,15 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
  * The build is still verified: `tsc -b` typechecks the real emit, and
  * `scripts/smoke-install.mjs` installs the packed tarballs with plain npm and
  * drives the CLI, which is a stronger check on dist than a unit test was.
+ *
+ * The scope is imported rather than written out because an alias that stops
+ * matching does not fail — it silently reverts to resolving through `dist`, and
+ * the resulting collapse reads as a coverage regression rather than as a typo.
  */
 const workspaceAliases = Object.fromEntries(
   readdirSync(join(ROOT, 'packages'))
     .filter((name) => statSync(join(ROOT, 'packages', name)).isDirectory())
-    .map((name) => [`@handbook/${name}`, join(ROOT, 'packages', name, 'src', 'index.ts')]),
+    .map((name) => [`${SCOPE}${name}`, join(ROOT, 'packages', name, 'src', 'index.ts')]),
 );
 
 export default defineConfig({
@@ -59,10 +65,10 @@ export default defineConfig({
       // analyzer paths — do not widen it to make a red run pass.
       //
       // Per package, not just globally, because a single repo-wide number hides
-      // exactly what matters: at 86% overall, @handbook/cli sits at 23%.
+      // exactly what matters: at 86% overall, @handbooks/cli sits at 23%.
       // A global floor would let any one package rot to nothing unnoticed.
       thresholds: {
-        // @handbook/cli used to sit at 22/22/21/20 with a note saying nothing
+        // @handbooks/cli used to sit at 22/22/21/20 with a note saying nothing
         // drove it. That is no longer true: the config-resolution, env-cascade
         // and broken-config-file paths are now covered in-process, and
         // `scripts/smoke-cli.sh` drives the built binary from the outside for

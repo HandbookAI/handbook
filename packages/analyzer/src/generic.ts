@@ -25,8 +25,8 @@
  * evidence that a call happened.
  */
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, CallType } from '@handbook/core';
-import { truncate } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, CallType } from '@handbooks/core';
+import { truncate } from '@handbooks/core';
 import type { LanguageAdapter } from './adapter.js';
 import { lineEnd, lineStart, walk } from './tsx-util.js';
 import {

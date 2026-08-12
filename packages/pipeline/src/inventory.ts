@@ -2,8 +2,8 @@
  * Deterministic per-file function inventory derived from the call graph.
  * These are the FACTS merged into deep cards — the LLM adds prose, never facts.
  */
-import type { CodeGraph, FunctionNote, TypeNote } from '@handbook/core';
-import { isInternalNode, truncate } from '@handbook/core';
+import type { CodeGraph, FunctionNote, TypeNote } from '@handbooks/core';
+import { isInternalNode, truncate } from '@handbooks/core';
 
 const REL_CAP = 25;
 

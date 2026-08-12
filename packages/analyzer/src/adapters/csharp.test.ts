@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ModuleAnalysis } from '@handbook/core';
+import type { ModuleAnalysis } from '@handbooks/core';
 import { CSharpAdapter } from './csharp.js';
 
 /** Types the App file leans on. Same namespace AND same directory as App.cs. */

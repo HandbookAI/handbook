@@ -1,8 +1,8 @@
 ---
-'@handbook/core': minor
-'@handbook/analyzer': minor
-'@handbook/pipeline': minor
-'@handbook/renderer': minor
+'@handbooks/core': minor
+'@handbooks/analyzer': minor
+'@handbooks/pipeline': minor
+'@handbooks/renderer': minor
 ---
 
 Index named types — class, interface, struct, record, enum, trait, alias — as parsed facts,

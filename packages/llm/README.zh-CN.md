@@ -1,11 +1,11 @@
-# @handbook/llm
+# @handbooks/llm
 
 [English](README.md) · **中文**
 
 > 一个小而诚实的客户端，接任意 OpenAI 兼容端点——外加磁盘缓存、离线 mock，
 > 以及 pipeline 用来「让 LLM 跟自己吵到答案站得住」的 actor–critic 循环。
 
-[![npm](https://img.shields.io/badge/npm-%40handbook%2Fllm-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbook/llm)
+[![npm](https://img.shields.io/badge/npm-%40handbook%2Fllm-fbbf24?style=flat-square)](https://www.npmjs.com/package/@handbooks/llm)
 [![deps](https://img.shields.io/badge/运行时依赖-无-2dd4bf?style=flat-square)](#)
 
 ---
@@ -39,7 +39,7 @@ interface ChatClient {
 ## 安装
 
 ```bash
-pnpm add @handbook/llm
+pnpm add @handbooks/llm
 ```
 
 ---
@@ -47,7 +47,7 @@ pnpm add @handbook/llm
 ## 快速上手
 
 ```ts
-import { OpenAiChatClient, resolveLlmEnv } from '@handbook/llm';
+import { OpenAiChatClient, resolveLlmEnv } from '@handbooks/llm';
 
 const client = new OpenAiChatClient({ config: resolveLlmEnv(), concurrency: 16 });
 
@@ -103,7 +103,7 @@ CLI 就是这样把 `--model` 和 `--base-url` 送进客户端的。
 模型会把 JSON 包在散文里、代码块里、解释里，或者结尾多个逗号。
 `ChatResult.json` 是一次宽容提取的结果，上面这些都能处理——
 并且在**确实找不到**的时候返回 `undefined`，而不是一个错误的对象。
-失败时，`replyExcerpt` 和 `describeJsonShape`（来自 `@handbook/core`）
+失败时，`replyExcerpt` 和 `describeJsonShape`（来自 `@handbooks/core`）
 会把回复变成可读的诊断，而不是一堵文字墙。
 
 ---
@@ -111,7 +111,7 @@ CLI 就是这样把 `--model` 和 `--base-url` 送进客户端的。
 ## 缓存
 
 ```ts
-import { CachedChatClient } from '@handbook/llm';
+import { CachedChatClient } from '@handbooks/llm';
 
 const cached = new CachedChatClient(client, '<work>/phase3/cache');
 ```
@@ -127,7 +127,7 @@ const cached = new CachedChatClient(client, '<work>/phase3/cache');
 ## 离线 mock
 
 ```ts
-import { MockChatClient } from '@handbook/llm';
+import { MockChatClient } from '@handbooks/llm';
 
 const client = new MockChatClient(
   [
@@ -159,7 +159,7 @@ pnpm mock-llm    # → http://127.0.0.1:8099/v1
 然后 actor 有一轮修订机会来回应汇总后的意见。
 
 ```ts
-import { actorCriticLoop, ROLE_PROMPTS } from '@handbook/llm';
+import { actorCriticLoop, ROLE_PROMPTS } from '@handbooks/llm';
 
 const result = await actorCriticLoop({
   client,
@@ -211,7 +211,7 @@ ROLE_PROMPTS: Record<CriticRole, string>
 ## 测试
 
 ```bash
-pnpm --filter @handbook/llm test
+pnpm --filter @handbooks/llm test
 ```
 
 客户端是对着一个本地 HTTP 服务器测的——重试、超时、限流、取消、网关页面、

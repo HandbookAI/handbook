@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { request, type Server, type ServerResponse } from 'node:http';
 import { connect, type Socket } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SETTINGS, envName, type Logger } from '@handbook/core';
-import { MockChatClient, type MockRule } from '@handbook/llm';
+import { SETTINGS, envName, type Logger } from '@handbooks/core';
+import { MockChatClient, type MockRule } from '@handbooks/llm';
 import { HANDBOOK_CSP, startStudio } from './server.js';
 
 function writeFixtureRepo(root: string): void {

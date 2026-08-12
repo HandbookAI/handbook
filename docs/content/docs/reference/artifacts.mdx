@@ -4,7 +4,7 @@ description: Every file the pipeline writes, its schema, and what validates it o
 ---
 
 Every artifact the toolchain reads or writes, in pipeline order. All JSON/YAML artifacts
-carry a `version` field and are validated with zod schemas from `@handbook/core` on read.
+carry a `version` field and are validated with zod schemas from `@handbooks/core` on read.
 Paths are POSIX-relative to the analyzed source root unless stated otherwise.
 
 ## Work-directory layout
@@ -362,7 +362,7 @@ callee location, never a path. The name is a fact; the location is not, and is n
 
 This is not a footnote in a monorepo — it is most of what an agent wants to know. Measured on
 this repository: **1,063 of 3,565 edges are boundary edges**, 284 of them into
-`@handbook/core`. With resolved edges only, `checkLanguage` — called four times from another
+`@handbooks/core`. With resolved edges only, `checkLanguage` — called four times from another
 package — appeared with **zero callers**, which an agent reads as dead code. That is a _wrong
 pointer_, not a gap, and a wrong pointer is the failure this artifact exists to prevent.
 

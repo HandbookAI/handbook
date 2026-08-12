@@ -26,7 +26,7 @@ import {
   writeJsonFile,
   type Assignment,
   type NarrateLang,
-} from '@handbook/core';
+} from '@handbooks/core';
 
 export interface BuildSkillOptions {
   /** Rendered handbook dir (contains overview.md/index.md/register.md/<sid>.md). */

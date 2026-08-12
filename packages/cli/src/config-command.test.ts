@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveConfig } from '@handbook/core';
+import { resolveConfig } from '@handbooks/core';
 import { maskSecret, renderConfigJson, renderConfigTable } from './config-command.js';
 
 const resolved = (env: NodeJS.ProcessEnv = {}, flags: Record<string, unknown> = {}) =>

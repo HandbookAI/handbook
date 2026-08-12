@@ -12,8 +12,8 @@
  */
 import { readFileSync } from 'node:fs';
 import type { Node } from 'web-tree-sitter';
-import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbook/core';
-import { truncate } from '@handbook/core';
+import type { AdapterCapabilities, CallEdge, TypeKind } from '@handbooks/core';
+import { truncate } from '@handbooks/core';
 import { createParser, freeParsers } from '../languages.js';
 import { dedupeFunctionsById } from '../adapter.js';
 import { collectLineSpans, fieldText, lineEnd, lineStart, walk } from '../tsx-util.js';

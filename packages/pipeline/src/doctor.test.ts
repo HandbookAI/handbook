@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MockChatClient, type MockRule } from '@handbook/llm';
-import type { Assignment, Logger, Skeleton, Stage } from '@handbook/core';
+import { MockChatClient, type MockRule } from '@handbooks/llm';
+import type { Assignment, Logger, Skeleton, Stage } from '@handbooks/core';
 import {
   applyChange,
   computeStageStats,

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AdapterCapabilities } from '@handbook/core';
+import type { AdapterCapabilities } from '@handbooks/core';
 import { ENGINE, ORPHAN, makeFixtureModel, makeUnassignedFixtureModel } from './fixture.test-helper.js';
 import { renderMarkdownHandbook, stageSectionMarker } from './markdown.js';
 import type { RenderOptions } from './shared.js';

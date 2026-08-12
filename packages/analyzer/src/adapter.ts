@@ -5,8 +5,8 @@
  * ({@link ModuleAnalysis}); the graph builder does everything downstream.
  * Adding a language = implementing this interface and registering it.
  */
-import type { AdapterCapabilities, FunctionNode, ModuleAnalysis } from '@handbook/core';
-import { listFilesRecursive, type Logger } from '@handbook/core';
+import type { AdapterCapabilities, FunctionNode, ModuleAnalysis } from '@handbooks/core';
+import { listFilesRecursive, type Logger } from '@handbooks/core';
 
 /** Directory names skipped by every adapter's discovery. */
 export const COMMON_SKIP_DIRS: ReadonlySet<string> = new Set([

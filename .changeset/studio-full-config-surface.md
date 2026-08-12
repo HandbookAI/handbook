@@ -1,7 +1,7 @@
 ---
-'@handbook/studio': minor
-'@handbook/renderer': minor
-'@handbook/cli': patch
+'@handbooks/studio': minor
+'@handbooks/renderer': minor
+'@handbooks/cli': patch
 ---
 
 Studio now exposes the whole config registry, and the rendered HTML got a real docs UI.

@@ -1,6 +1,6 @@
 {
-  "name": "@handbook/renderer",
-  "version": "0.1.0",
+  "name": "@handbooks/renderer",
+  "version": "1.1.0",
   "description": "Render a handbook model to markdown pages, an agent locator index, and a self-contained HTML site",
   "type": "module",
   "exports": {
@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@handbook/core": "workspace:*",
+    "@handbooks/core": "workspace:*",
     "markdown-it": "catalog:"
   },
   "devDependencies": {

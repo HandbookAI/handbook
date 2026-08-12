@@ -4,8 +4,8 @@
  * `renderFileCardMd` is the leaf content of both the markdown handbook and the
  * agent locator site; the HTML renderers rebuild the same structure with tags.
  */
-import { capList, leafName } from '@handbook/core';
-import type { FileCard, FunctionNote, NarrateLang } from '@handbook/core';
+import { capList, leafName } from '@handbooks/core';
+import type { FileCard, FunctionNote, NarrateLang } from '@handbooks/core';
 import { sourceFileUrl } from './shared.js';
 import type { SourceLinkOptions } from './shared.js';
 

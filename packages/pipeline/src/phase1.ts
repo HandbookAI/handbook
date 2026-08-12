@@ -7,10 +7,10 @@ import {
   getAdapter,
   registerBuiltinAdapters,
   writeGraphArtifacts,
-} from '@handbook/analyzer';
+} from '@handbooks/analyzer';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AdapterCapabilities, ModuleAnalysis, UnparsedFile } from '@handbook/core';
+import type { AdapterCapabilities, ModuleAnalysis, UnparsedFile } from '@handbooks/core';
 import {
   adapterCapabilitiesSchema,
   ensureDir,
@@ -18,7 +18,7 @@ import {
   silentLogger,
   withDirLock,
   type Logger,
-} from '@handbook/core';
+} from '@handbooks/core';
 import { WorkDir } from './workdir.js';
 
 export interface Phase1Options {

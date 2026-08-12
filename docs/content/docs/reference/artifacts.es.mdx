@@ -5,7 +5,7 @@ description: Cada archivo que escribe el pipeline, su esquema y qué lo valida a
 
 Cada artefacto que la cadena de herramientas lee o escribe, en orden de pipeline. Todos
 los artefactos JSON/YAML llevan un campo `version` y se validan con esquemas zod de
-`@handbook/core` al leerlos. Las rutas son relativas POSIX a la raíz del código fuente
+`@handbooks/core` al leerlos. Las rutas son relativas POSIX a la raíz del código fuente
 analizado salvo que se indique lo contrario.
 
 ## Estructura del directorio de trabajo
@@ -367,7 +367,7 @@ ubicación no lo es, y no se adivina.
 
 En un monorepo esto no es una nota al pie: es la mayor parte de lo que un agente quiere saber.
 Medido en este repositorio: **1.063 de 3.565 aristas son de frontera**, 284 de ellas hacia
-`@handbook/core`. Con solo aristas resueltas, `checkLanguage` — llamada cuatro veces desde otro
+`@handbooks/core`. Con solo aristas resueltas, `checkLanguage` — llamada cuatro veces desde otro
 paquete — aparecía con **cero llamadores**, lo que un agente lee como código muerto. Eso es un
 _puntero equivocado_, no una laguna, y un puntero equivocado es precisamente el fallo que este
 artefacto existe para evitar.
