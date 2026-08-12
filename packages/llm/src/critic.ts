@@ -6,7 +6,14 @@
  * This module is deliberately domain-agnostic: the pipeline supplies the
  * actor prompt, the evidence block, and the proposal schema hint.
  */
-import { describeJsonShape, mapLimit, replyExcerpt, silentLogger, type Logger } from '@handbook/core';
+import {
+  describeJsonShape,
+  mapLimit,
+  replyExcerpt,
+  silentLogger,
+  truncate,
+  type Logger,
+} from '@handbook/core';
 import type { ChatClient } from './client.js';
 
 export type CriticDecision = 'APPROVE' | 'REVISE' | 'REJECT';
@@ -47,6 +54,22 @@ Return EXACTLY one JSON block:
 \`\`\``;
 
 /**
+ * Bounds on the concerns one verdict may carry.
+ *
+ * A critic's concerns are not just data: every one of them is copied verbatim
+ * into the next revision prompt, so an unbounded list is an unbounded prompt
+ * built from model output — and with a panel of three, three times over. Fifty
+ * actionable concerns is already more than an actor can address in one round;
+ * anything past that is a model looping, and two kilobytes is a paragraph.
+ *
+ * Trimming is disclosed in the rationale rather than done quietly: a critic that
+ * sent 500 concerns and got 50 back is a fact the run's log should carry, the
+ * same way `[normalized vacuous REVISE]` is.
+ */
+const MAX_CONCERNS = 50;
+const MAX_CONCERN_CHARS = 2_000;
+
+/**
  * Read a critic's verdict.
  *
  * A verdict that cannot be read counts as REJECT, so shape tolerance here is
@@ -79,16 +102,19 @@ export function parseVerdict(json: unknown, text?: string): Verdict | undefined 
     rawSuggested !== null && typeof rawSuggested === 'object' && !Array.isArray(rawSuggested)
       ? (rawSuggested as Record<string, unknown>)
       : null;
-  const concerns = Array.isArray(v.concerns) ? v.concerns.map(String) : [];
+  const rawConcerns = Array.isArray(v.concerns) ? v.concerns.map(String) : [];
+  const concerns = rawConcerns.slice(0, MAX_CONCERNS).map((c) => truncate(c, MAX_CONCERN_CHARS));
   if (usableSuggestion === null && rawSuggested !== null) {
     const asProse = typeof rawSuggested === 'string' ? rawSuggested.trim() : '';
-    if (asProse.length > 0) concerns.push(asProse);
+    if (asProse.length > 0) concerns.push(truncate(asProse, MAX_CONCERN_CHARS));
   }
+  const overflow = Math.max(0, rawConcerns.length - MAX_CONCERNS);
+  const rationale = typeof v.rationale === 'string' ? v.rationale : '';
   let verdict: Verdict = {
     decision,
     concerns,
     suggestedRevision: usableSuggestion,
-    rationale: typeof v.rationale === 'string' ? v.rationale : '',
+    rationale: overflow > 0 ? `[dropped ${overflow} concern(s) over the cap] ${rationale}` : rationale,
   };
   // A REVISE with no concerns gives the actor nothing to act on — treat as APPROVE.
   if (verdict.decision === 'REVISE' && verdict.concerns.length === 0) {
@@ -176,6 +202,15 @@ export interface ActorCriticOptions {
   /** Concurrent critic calls. Default = number of roles. */
   criticConcurrency?: number;
   temperature?: number;
+  /**
+   * Cooperative cancellation: tested before the actor call, before each critic
+   * in the panel, and before each revision round, and passed into every model
+   * call. An abort REJECTS the loop with the signal's reason — it is never
+   * folded into a verdict. A cancelled run that came back as
+   * `{accepted: false}` would be indistinguishable from a panel that said no,
+   * and the doctor round above it would score it as a clean no-op round.
+   */
+  signal?: AbortSignal;
   logger?: Logger;
 }
 
@@ -205,6 +240,7 @@ export async function actorCriticLoop(
 ): Promise<ActorCriticResult> {
   const roles = options.roles ?? ['engineer'];
   const logger = options.logger ?? silentLogger;
+  const { signal } = options;
   // A non-finite maxReviseRounds must not decide termination: Infinity would let
   // an always-REVISE panel loop forever, and NaN would silently mean "0 rounds"
   // by accident (`round < NaN` is false). Clamp garbage to the documented
@@ -226,10 +262,15 @@ export async function actorCriticLoop(
   );
 
   const callActor = async (prompt: string): Promise<unknown | undefined> => {
+    signal?.throwIfAborted();
     try {
-      const result = await client.complete(prompt, { temperature });
+      const result = await client.complete(prompt, { temperature, signal });
       return typeof result.json === 'object' && result.json !== null ? result.json : undefined;
     } catch (error) {
+      // A cancellation is a verdict on the RUN, not on this proposal. Returning
+      // undefined here would report it as "no proposal arrived", which the loop
+      // turns into a perfectly ordinary `{accepted: false}`.
+      signal?.throwIfAborted();
       logger.warn(`actor call failed: ${String(error)}`);
       return undefined;
     }
@@ -245,6 +286,9 @@ export async function actorCriticLoop(
     // above: an empty panel then reviews nothing and the proposal is accepted
     // vacuously.
     mapLimit(roles, criticConcurrency, async (role) => {
+      // The panel is a fan-out: a critic still queued behind the limiter when
+      // the signal fires must never open its own call.
+      signal?.throwIfAborted();
       try {
         const prompt = buildCriticPrompt({
           role,
@@ -254,7 +298,7 @@ export async function actorCriticLoop(
           evidence: options.evidence,
           roundNote: roundNotes.get(role),
         });
-        const result = await client.complete(prompt, { temperature });
+        const result = await client.complete(prompt, { temperature, signal });
         const verdict = parseVerdict(result.json, result.text);
         if (verdict) return { role, verdict };
         // Fail-closed is the design, but say what arrived: a critic that always
@@ -265,6 +309,10 @@ export async function actorCriticLoop(
           )}`,
         );
       } catch (error) {
+        // Fail-closed applies to a BROKEN reviewer. An AbortError is not one:
+        // scoring it REJECT discards the proposal and returns normally, so a
+        // cancelled run reads as "the panel said no" — an answer, not a stop.
+        signal?.throwIfAborted();
         logger.warn(`critic ${role} failed: ${String(error)} — treating as REJECT`);
       }
       return {
@@ -286,6 +334,7 @@ export async function actorCriticLoop(
   const allVerdicts = [...verdicts];
 
   for (let round = 0; round < maxReviseRounds; round += 1) {
+    signal?.throwIfAborted(); // no further round is bought after a cancel
     if (verdicts.every((v) => v.verdict.decision === 'APPROVE')) {
       return { proposal, accepted: true, rounds, verdicts: allVerdicts };
     }

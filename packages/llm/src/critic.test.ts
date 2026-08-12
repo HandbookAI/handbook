@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { actorCriticLoop, parseVerdict } from './critic.js';
 import { MockChatClient } from './mock.js';
+import type { ChatClient, ChatResult } from './client.js';
 
 const approve = { decision: 'APPROVE', concerns: [], suggested_revision: null, rationale: 'ok' };
 const reject = { decision: 'REJECT', concerns: ['bad'], suggested_revision: null, rationale: 'no' };
+const revise = { decision: 'REVISE', concerns: ['tighten it'], suggested_revision: null, rationale: '' };
 
 describe('parseVerdict', () => {
   it('parses and uppercases decisions', () => {
@@ -147,6 +149,148 @@ describe('actorCriticLoop', () => {
     // revision; the point is that it TERMINATES with a bounded round count.
     expect(result.rounds).toBeLessThan(10);
   }, 10_000);
+});
+
+describe('actorCriticLoop — cancellation', () => {
+  it('threads the signal into the actor call and every critic call', async () => {
+    const client = new MockChatClient([
+      { match: 'Proposal under review', respond: approve },
+      { match: 'ACTOR', respond: { plan: 1 } },
+    ]);
+    const controller = new AbortController();
+    await actorCriticLoop(client, 'ACTOR: propose', {
+      roles: ['engineer', 'architect'],
+      taskContext: 'test',
+      signal: controller.signal,
+    });
+    expect(client.calls).toHaveLength(3); // one actor, two critics
+    expect(client.calls.every((c) => c.options?.signal === controller.signal)).toBe(true);
+  });
+
+  it('rejects a pre-aborted loop without asking the actor', async () => {
+    const client = new MockChatClient([{ match: 'ACTOR', respond: { plan: 1 } }]);
+    const controller = new AbortController();
+    controller.abort();
+    const error = await actorCriticLoop(client, 'ACTOR: propose', {
+      taskContext: 'test',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it('does not swallow an aborted actor call as "actor call failed"', async () => {
+    // `catch → return undefined` reported a cancelled run as a proposal that
+    // simply did not arrive: `{accepted: false}` is a verdict on the PROPOSAL,
+    // and the doctor round above it counts that as a clean no-op round.
+    const controller = new AbortController();
+    const client: ChatClient = {
+      model: 'aborting',
+      async complete(): Promise<ChatResult> {
+        controller.abort();
+        controller.signal.throwIfAborted();
+        throw new Error('unreachable');
+      },
+    };
+    const error = await actorCriticLoop(client, 'ACTOR: propose', {
+      taskContext: 'test',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+  });
+
+  it('does not swallow an aborted critic call as a REJECT verdict', async () => {
+    // An AbortError is not a broken reviewer. Counting it as REJECT discards the
+    // proposal and returns normally, so a cancelled run reads as "the panel said
+    // no" — a real answer, which something downstream then acts on.
+    const controller = new AbortController();
+    let call = 0;
+    const client: ChatClient = {
+      model: 'aborting',
+      async complete(): Promise<ChatResult> {
+        call += 1;
+        if (call === 1) return { text: '```json\n{"plan":1}\n```', json: { plan: 1 }, elapsedSec: 0 };
+        controller.abort();
+        controller.signal.throwIfAborted();
+        throw new Error('unreachable');
+      },
+    };
+    const error = await actorCriticLoop(client, 'ACTOR: propose', {
+      roles: ['engineer'],
+      taskContext: 'test',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+  });
+
+  it('never starts a queued critic once the signal has fired', async () => {
+    // The panel is a fan-out through pLimit. A queued critic that starts anyway
+    // is a model call bought by a run that was cancelled before it was queued.
+    const controller = new AbortController();
+    const client = new MockChatClient([
+      {
+        match: 'Proposal under review',
+        respond: () => {
+          controller.abort();
+          return approve;
+        },
+      },
+      { match: 'ACTOR', respond: { plan: 1 } },
+    ]);
+    const error = await actorCriticLoop(client, 'ACTOR: propose', {
+      roles: ['engineer', 'architect', 'reader'],
+      criticConcurrency: 1,
+      taskContext: 'test',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    expect(client.calls).toHaveLength(2); // the actor and exactly one critic
+  });
+
+  it('stops between rounds instead of buying another revision', async () => {
+    const controller = new AbortController();
+    const client = new MockChatClient([
+      {
+        match: 'Proposal under review',
+        respond: () => {
+          controller.abort();
+          return revise;
+        },
+      },
+      { match: "REVIEWER'S CONCERNS", respond: { plan: 2 } },
+      { match: 'ACTOR', respond: { plan: 1 } },
+    ]);
+    const error = await actorCriticLoop(client, 'ACTOR: propose', {
+      taskContext: 'test',
+      signal: controller.signal,
+    }).catch((e: unknown) => e);
+    expect((error as Error).name).toBe('AbortError');
+    // The revision actor call must never have been made.
+    expect(client.calls.some((c) => c.prompt.includes("REVIEWER'S CONCERNS"))).toBe(false);
+  });
+});
+
+describe('parseVerdict — bounded input', () => {
+  it('caps how many concerns one verdict can carry, and says it did', () => {
+    const verdict = parseVerdict({
+      decision: 'REVISE',
+      concerns: Array.from({ length: 500 }, (_, i) => `concern ${i}`),
+    });
+    expect(verdict?.concerns).toHaveLength(50);
+    expect(verdict?.concerns[0]).toBe('concern 0');
+    expect(verdict?.rationale).toContain('450');
+  });
+
+  it('caps the length of a single concern', () => {
+    const verdict = parseVerdict({ decision: 'REVISE', concerns: ['c'.repeat(10_000)] });
+    expect(verdict?.concerns[0]?.length).toBeLessThanOrEqual(2_000);
+  });
+
+  it('leaves the concerns of an ordinary verdict exactly as written', () => {
+    const verdict = parseVerdict({ decision: 'REVISE', concerns: ['a', 'b'] });
+    expect(verdict?.concerns).toEqual(['a', 'b']);
+    expect(verdict?.rationale).toBe('');
+  });
 });
 
 describe('parseVerdict shape tolerance', () => {

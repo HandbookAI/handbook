@@ -1,5 +1,13 @@
 /** Filesystem helpers: atomic writes, validated JSON I/O, recursive discovery. */
-import { mkdirSync, renameSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  mkdirSync,
+  renameSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import { dirname, join, posix, relative, sep, win32 } from 'node:path';
 import type { z } from 'zod';
 import { ArtifactValidationError } from '../errors.js';
@@ -66,6 +74,37 @@ export function fileExists(path: string): boolean {
   return existsSync(path);
 }
 
+/**
+ * Read a text file, refusing one that is implausibly large for its purpose.
+ *
+ * `readFileSync` has no ceiling below Node's ~2 GB string limit, so a file
+ * between "big" and "impossible" is read in full and the process dies of memory
+ * exhaustion — reported as an out-of-memory crash rather than as the input
+ * problem it is. `what` names the thing in the error, because "a file was too
+ * big" is not actionable and "the diff at path X is 900 MiB" is.
+ */
+export function readTextFileBounded(path: string, maxBytes: number, what: string): string {
+  const bytes = statSync(path).size;
+  if (bytes > maxBytes) {
+    const mib = (n: number): string => `${(n / (1024 * 1024)).toFixed(1)} MiB`;
+    throw new Error(
+      `${what} at ${path} is ${mib(bytes)}, above the ${mib(maxBytes)} limit — refusing to read it`,
+    );
+  }
+  return readFileSync(path, 'utf8');
+}
+
+/**
+ * How deep the walk will go before it refuses.
+ *
+ * Symlinks are never followed, so a link loop cannot produce infinite depth —
+ * but a real tree can still be deeper than the JS stack, and the recursion
+ * below would then die of `RangeError` and take the whole run with it. Real
+ * source trees are single digits deep; anything past this is a generated or
+ * pathological layout, and skipping it with a report is better than crashing.
+ */
+const MAX_WALK_DEPTH = 64;
+
 export interface DiscoverOptions {
   /** Directory names to skip anywhere in the tree. */
   skipDirs?: ReadonlySet<string>;
@@ -73,6 +112,17 @@ export interface DiscoverOptions {
   extensions?: readonly string[];
   /** Additional per-file filter on the relative POSIX path. */
   filter?: (relPath: string) => boolean;
+  /**
+   * Called for a directory the walk could not enter or refused to descend into.
+   *
+   * Discovery silently swallowing an unreadable directory is the same defect as
+   * silently swallowing an unreadable file: every path beneath it disappears
+   * from the analysis, and nothing downstream can tell "no files there" from "we
+   * were not allowed to look". `path` is relative POSIX, like the results.
+   */
+  onSkip?: (path: string, reason: string) => void;
+  /** Override the depth ceiling. Present for tests; the default is right. */
+  maxDepth?: number;
 }
 
 /**
@@ -81,27 +131,34 @@ export interface DiscoverOptions {
  */
 export function listFilesRecursive(root: string, options: DiscoverOptions = {}): string[] {
   const skipDirs = options.skipDirs ?? new Set<string>();
+  const maxDepth = options.maxDepth ?? MAX_WALK_DEPTH;
   const results: string[] = [];
-  const walk = (dir: string): void => {
+  const rel = (full: string): string => toPosix(relative(root, full)) || '.';
+  const walk = (dir: string, depth: number): void => {
+    if (depth > maxDepth) {
+      options.onSkip?.(rel(dir), `deeper than ${maxDepth} directories — not descended`);
+      return;
+    }
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      options.onSkip?.(rel(dir), (error as Error).message);
       return;
     }
     for (const entry of entries) {
       const full = join(dir, entry.name);
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
-        if (!skipDirs.has(entry.name)) walk(full);
+        if (!skipDirs.has(entry.name)) walk(full, depth + 1);
       } else if (entry.isFile()) {
         if (options.extensions && !options.extensions.some((ext) => entry.name.endsWith(ext))) continue;
-        const rel = toPosix(relative(root, full));
-        if (options.filter && !options.filter(rel)) continue;
-        results.push(rel);
+        const relPath = rel(full);
+        if (options.filter && !options.filter(relPath)) continue;
+        results.push(relPath);
       }
     }
   };
-  walk(root);
+  walk(root, 0);
   return results.sort();
 }
