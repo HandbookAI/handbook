@@ -7,7 +7,7 @@
  * deterministic fallback prose so the build never blocks.
  */
 import { join } from 'node:path';
-import type { ChatClient } from '@handbook/llm';
+import { completeInLanguage, type ChatClient, type LanguageReport } from '@handbook/llm';
 import {
   PIPELINE_DEFAULTS,
   Progress,
@@ -69,6 +69,12 @@ export interface NarrateOptions {
   workers?: number;
   /** Machine-readable progress, for a UI drawing a bar. */
   onProgress?: ProgressSink;
+  /**
+   * Collects passages that came back in the wrong language after a retry, so
+   * the run can disclose them. Without it the guard still asks and still
+   * retries; it just has nowhere to record a failure that survived both.
+   */
+  languageReport?: LanguageReport;
   refresh?: boolean;
   lang?: NarrateLang;
   cacheDir?: string;
@@ -182,7 +188,15 @@ export async function narrate(
         options.cacheDir,
         key,
         refresh,
-        async () => (await client.complete(prompt, { temperature: 0, signal })).text,
+        async () =>
+          (
+            await completeInLanguage(client, prompt, lang, {
+              where: `stage ${sid}`,
+              chat: { temperature: 0, signal },
+              report: options.languageReport,
+              logger,
+            })
+          ).text,
         () => stage.description || stage.title,
         logger,
         signal,
@@ -210,7 +224,15 @@ export async function narrate(
     options.cacheDir,
     systemKey,
     refresh,
-    async () => (await client.complete(systemPrompt, { temperature: 0, signal })).text,
+    async () =>
+      (
+        await completeInLanguage(client, systemPrompt, lang, {
+          where: 'system overview',
+          chat: { temperature: 0, signal },
+          report: options.languageReport,
+          logger,
+        })
+      ).text,
     () => archetype || '(system overview generation failed.)',
     logger,
     signal,

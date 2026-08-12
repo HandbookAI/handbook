@@ -29,8 +29,9 @@ import {
   type FunctionNote,
   type Logger,
   type NarrateLang,
+  type TypeNote,
 } from '@handbook/core';
-import { buildInventory } from './inventory.js';
+import { buildInventory, buildTypeInventory } from './inventory.js';
 import type { WorkDir } from './workdir.js';
 import { rulesFor as rulesForLang } from './prompt-lang.js';
 import type { ProgressSink } from '@handbook/core';
@@ -284,6 +285,7 @@ function entryToCard(
   file: string,
   detail: CardDetail,
   inventory: FunctionNote[] | undefined,
+  types: TypeNote[] | undefined,
 ): FileCard {
   const card: FileCard = {
     version: 1,
@@ -296,6 +298,10 @@ function entryToCard(
     card.description = typeof entry.description === 'string' ? entry.description : '';
     card.functions = mergeFunctionNotes(inventory ?? [], entry.functions);
   }
+  // Outside the `deep` branch on purpose: a type note is a parser fact with no
+  // prose to wait for, so gating it on the LLM detail level would withhold it for
+  // nothing. Only attached when non-empty — see `FileCard.types`.
+  if (types && types.length > 0) card.types = types;
   return card;
 }
 
@@ -326,6 +332,10 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   const nav = buildNavPack(graph);
   const files = allFileDescriptors(graph, nav);
   const inventory = detail === 'deep' ? buildInventory(graph) : {};
+  // Built in both detail modes: unlike the function inventory, this is not raw
+  // material for a prompt — it is the finished fact, and the model is never asked
+  // about it. `undefined` when the graph has no `types` at all.
+  const typeInventory = buildTypeInventory(graph);
 
   const cards: Record<string, FileCard> = {};
   let todo = files;
@@ -363,6 +373,11 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   work.clearRejectedReplies(); // a diagnosis must read THIS run's replies
 
   const describeBatch = async (batch: NavFileDescriptor[]): Promise<Record<string, FileCard>> => {
+    // Here, not only at the mapLimit checkpoint: the degradation tiers below
+    // call this in a loop, once per dropped file, and a client that does not
+    // honour the signal itself (a cache hit, a mock) would let a cancelled pass
+    // buy every one of those retries.
+    signal?.throwIfAborted();
     attempted += 1;
     const blocks = batch.map((d) => fileBlock(d, readSource(d.file), maxCharsPerFile, inventory[d.file]));
     const prompt = [
@@ -389,7 +404,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
         // the model explicitly wrote for that path.
         if (exact.has(file)) continue;
         if (named && valid.has(named)) exact.add(file);
-        const card = entryToCard(entry, file, detail, inventory[file]);
+        const card = entryToCard(entry, file, detail, inventory[file], typeInventory?.[file]);
         // An entry that produced no purpose is not a description. Leaving it out
         // keeps the file in `dropped` so the single-file and chunk fallbacks
         // still run for it.
@@ -440,6 +455,7 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
     let base: FileCard | undefined;
     const annotations: unknown[] = [];
     for (const chunk of chunks) {
+      signal?.throwIfAborted(); // a cancel mid-file must not buy the rest of it
       const chunkBlocks = chunk.map((fn) => {
         const body = sourceLines.slice(fn.lineRange[0] - 1, fn.lineRange[1]).join('\n');
         return [
@@ -461,7 +477,13 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
         const entry = extractCardEntries(response.json)[0];
         if (!entry) continue;
         if (!base) {
-          base = entryToCard(entry, descriptor.file, detail, inventory[descriptor.file]);
+          base = entryToCard(
+            entry,
+            descriptor.file,
+            detail,
+            inventory[descriptor.file],
+            typeInventory?.[descriptor.file],
+          );
         } else if (typeof entry.description === 'string' && entry.description) {
           base.description = `${base.description ?? ''} ${entry.description}`.trim();
         }
@@ -532,9 +554,37 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
       card.description = '';
       card.functions = inventory[descriptor.file] ?? [];
     }
+    // A backfilled card is an honest empty card, not an incomplete one: the prose
+    // is missing because the model failed, and every parser fact the run DID
+    // produce still belongs on it. Dropping the types here would make a file the
+    // LLM could not describe also unfindable by name.
+    const backfilledTypes = typeInventory?.[descriptor.file];
+    if (backfilledTypes && backfilledTypes.length > 0) card.types = backfilledTypes;
     cards[descriptor.file] = card;
     work.saveCard(card);
   }
+  // Cards for files that no longer exist are removed here.
+  //
+  // Keyed on `files` — every file in the GRAPH — and deliberately not on `todo`,
+  // which `onlyFiles` narrows to the handful a resync touched. Those are the two
+  // easy-to-confuse lists, and confusing them deletes the whole handbook and
+  // reports success. `files` is authoritative because phase 1 built the graph by
+  // walking the source tree: a deleted file is not in it.
+  //
+  // This runs on a subset pass too, precisely because the key is the full set —
+  // gating it on `!onlyFiles` would buy nothing and would leave a deleted file's
+  // card alive until somebody happened to run a full pass.
+  //
+  // Reported, not silent: a handbook that quietly lost pages between runs is
+  // indistinguishable from one whose generation partly failed.
+  const evicted = work.evictCardsOutside(files.map((d) => d.file));
+  if (evicted.length > 0) {
+    for (const file of evicted) delete cards[file];
+    logger.info(
+      `[cards] removed ${evicted.length} card(s) for files no longer in the codebase: ${evicted.slice(0, 5).join(', ')}${evicted.length > 5 ? `, +${evicted.length - 5} more` : ''}`,
+    );
+  }
+
   const coverage: CardCoverage = {
     nFiles: files.length,
     nDescribed: files.length - missing.length,

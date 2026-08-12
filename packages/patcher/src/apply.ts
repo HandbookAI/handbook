@@ -13,7 +13,12 @@
  *    can prove it is restoring the bytes this patch replaced — and refuse when
  *    someone has edited the file since.
  * 4. **No path escapes the source root**, including through symlinked parent
- *    directories on creation, and symlinked targets are never replaced.
+ *    directories on creation, and symlinked targets are never replaced. The
+ *    check is made on the RESOLVED real path on both sides: apply and rollback.
+ * 5. **Nothing on the write path follows a symlink.** Staging names are
+ *    unguessable and created exclusively, so a pre-planted link cannot redirect
+ *    the bytes, and the final `rename` replaces a link rather than writing
+ *    through it.
  */
 import {
   accessSync,
@@ -32,6 +37,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import {
@@ -135,6 +141,35 @@ function realpathOr(path: string): string {
   } catch {
     return path;
   }
+}
+
+/**
+ * Is `path` `root` itself, or inside it? Compared case-INSENSITIVELY as well as
+ * exactly, because macOS and Windows ship case-folding filesystems by default:
+ * there `.HANDBOOK-PATCHES/x` and `.handbook-patches/x` are one file, and a
+ * case-sensitive `startsWith` waved the first spelling past a guard written for
+ * the second. Over-refusing a genuinely distinct casing on a case-sensitive
+ * volume costs a rename; letting a patch into the backup tree costs the ability
+ * to roll back at all.
+ */
+function isInside(root: string, path: string): boolean {
+  const under = (a: string, b: string): boolean => b === a || b.startsWith(a + sep);
+  return under(root, path) || under(root.toLowerCase(), path.toLowerCase());
+}
+
+/**
+ * A staging name nobody outside this process can predict.
+ *
+ * `<target>.handbook-tmp-<pid>-<n>` was guessable, and `writeFileSync` follows a
+ * symlink at the path it is given — so anyone able to create a file next to the
+ * target could point the patch's bytes at any file the user can write, and the
+ * rename that followed then moved the LINK over the source file. The token
+ * removes the guess; the `wx` flag below (`O_CREAT|O_EXCL`) removes the follow
+ * even if the name leaks, because `O_EXCL` refuses an existing path outright,
+ * dangling symlink included.
+ */
+function stagingSuffix(): string {
+  return randomBytes(9).toString('hex');
 }
 
 /**
@@ -298,10 +333,21 @@ function readTextExact(path: string): { text: string; mode: number } | undefined
 
 const CRLF = '\r\n';
 
-/** Dominant line ending of a text (CRLF only when it clearly dominates). */
+/**
+ * Dominant line ending of a text (CRLF only when it clearly dominates).
+ *
+ * Counted in a loop rather than with `text.match(/\r\n/g)`: that materialises
+ * one string per line ending, so a multi-megabyte file spends hundreds of
+ * megabytes of heap to produce two integers.
+ */
 function dominantEol(text: string): '\n' | '\r\n' {
-  const crlf = (text.match(/\r\n/g) ?? []).length;
-  const lf = (text.match(/(?<!\r)\n/g) ?? []).length;
+  let crlf = 0;
+  let lf = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== '\n') continue;
+    if (i > 0 && text[i - 1] === '\r') crlf += 1;
+    else lf += 1;
+  }
   return crlf > lf ? CRLF : '\n';
 }
 
@@ -328,6 +374,11 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
   const effectiveBackupRoot = resolve(
     options.backupRoot ?? join(resolve(options.sourceRoot), '.handbook-patches'),
   );
+  // Two roots, not one: the tree lock always lives in `<sourceRoot>/.handbook-patches`
+  // whatever `backupRoot` says, so pointing backups elsewhere used to leave the
+  // lock directory — and any backups a previous default-rooted run left in it —
+  // patchable by the plan itself.
+  const offLimits = [effectiveBackupRoot, join(resolve(options.sourceRoot), '.handbook-patches')];
   const { edits, problems } = parsePlan(options.plan);
   const outcomes: EditOutcome[] = [];
   const resolvedByPath = new Map<string, ResolvedEdit>();
@@ -365,8 +416,8 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
       fail(edit, 'unsafe-path', 'path escapes the source root (directly or through a symlink)');
       continue;
     }
-    if (absolutePath === effectiveBackupRoot || absolutePath.startsWith(effectiveBackupRoot + sep)) {
-      fail(edit, 'unsafe-path', 'target is inside the patch backup tree');
+    if (offLimits.some((guard) => isInside(guard, absolutePath))) {
+      fail(edit, 'unsafe-path', 'target is inside the patch backup tree (or the lock directory beside it)');
       continue;
     }
     const blocked = blockingAncestor(options.sourceRoot, edit.file);
@@ -511,6 +562,39 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     return { ok: true, dryRun: false, outcomes, changedFiles: [], problems };
   }
 
+  // Verification and the write are two separate steps, and the tree lock only
+  // excludes other handbook runs — an editor, a formatter or a build script can
+  // still save over a target in the window between them. Re-read every file
+  // immediately before staging: a byte that moved since verification means the
+  // anchor was resolved against content that no longer exists, so writing would
+  // destroy someone else's work AND record a `sha256Before` for bytes the
+  // backup does not contain, which is how a later rollback restores the wrong
+  // thing. Nothing has been written yet, so the honest move is to give up.
+  for (const item of pending) {
+    const rel = toPosix(relative(resolve(options.sourceRoot), item.absolutePath));
+    if (safeResolve(options.sourceRoot, rel) !== item.absolutePath) {
+      throw new Error(`${rel} no longer resolves inside the source root since it was verified`);
+    }
+    const expected = originalContent.get(item.absolutePath);
+    let stat;
+    try {
+      stat = lstatSync(item.absolutePath);
+    } catch {
+      stat = undefined;
+    }
+    if (expected === undefined) {
+      if (stat) throw new Error(`${rel} appeared on disk since it was verified — refusing to overwrite it`);
+      continue;
+    }
+    if (!stat || stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`${rel} changed on disk since it was verified (no longer a plain file)`);
+    }
+    const now = readTextExact(item.absolutePath);
+    if (!now || now.text !== expected) {
+      throw new Error(`${rel} changed on disk since it was verified — refusing to overwrite the newer bytes`);
+    }
+  }
+
   const backupDir = createStampDir(effectiveBackupRoot);
   const manifest: Array<{ file: string; existed: boolean; sha256Before?: string; sha256After?: string }> = [];
   for (const item of pending) {
@@ -519,7 +603,9 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
     if (before !== undefined) {
       const backupPath = join(backupDir, 'files', rel);
       mkdirSync(dirname(backupPath), { recursive: true });
-      copyFileSync(item.absolutePath, backupPath);
+      // COPYFILE_EXCL: the stamp dir is brand new, so a destination that
+      // already exists is not ours and must never be written through.
+      copyFileSync(item.absolutePath, backupPath, constants.COPYFILE_EXCL);
       manifest.push({
         file: rel,
         existed: true,
@@ -542,8 +628,8 @@ function applyPlanInner(options: ApplyOptions, logger: Logger): ApplyResult {
   try {
     for (const item of pending) {
       mkdirSync(dirname(item.absolutePath), { recursive: true });
-      const tmp = `${item.absolutePath}.handbook-tmp-${process.pid}-${staged.length}`;
-      writeFileSync(tmp, item.nextContent, 'utf8');
+      const tmp = `${item.absolutePath}.handbook-tmp-${stagingSuffix()}`;
+      writeFileSync(tmp, item.nextContent, { encoding: 'utf8', flag: 'wx' });
       staged.push({ tmp, target: item.absolutePath });
     }
   } catch (error) {
@@ -693,9 +779,34 @@ function rollbackInner(
   const skipped: RollbackResult['skipped'] = [];
 
   for (const entry of manifest.files) {
-    const target = join(manifest.sourceRoot, entry.file);
+    // readManifest only proves the path is lexically inside the root. A
+    // symlinked directory inside the tree passes every string test and then
+    // redirects the restore — or the delete — clean out of it, so the real
+    // path is resolved here, where the filesystem can be asked.
+    const target = safeResolve(manifest.sourceRoot, entry.file);
+    if (!target) {
+      skipped.push({
+        file: entry.file,
+        reason: 'path escapes the source root (directly or through a symlink) — refusing to restore',
+      });
+      continue;
+    }
+    let tmp: string | undefined;
     try {
-      const currentHash = existsSync(target) ? sha256Hex(readFileSync(target)) : undefined;
+      // A symlink is not what the patch replaced, so it is not what rollback
+      // restores: `existsSync`/`readFileSync` below would follow it and hash
+      // whatever it points at.
+      let targetStat;
+      try {
+        targetStat = lstatSync(target);
+      } catch {
+        targetStat = undefined;
+      }
+      if (targetStat?.isSymbolicLink()) {
+        skipped.push({ file: entry.file, reason: 'target is a symlink — refusing to restore through it' });
+        continue;
+      }
+      const currentHash = targetStat ? sha256Hex(readFileSync(target)) : undefined;
 
       if (!options.force && entry.sha256After && currentHash && currentHash !== entry.sha256After) {
         const reason =
@@ -722,9 +833,14 @@ function rollbackInner(
           continue;
         }
         mkdirSync(dirname(target), { recursive: true });
-        const tmp = `${target}.handbook-rollback-${process.pid}`;
-        copyFileSync(backupPath, tmp);
+        // Unguessable name + COPYFILE_EXCL, for the same reason `applyPlan`
+        // stages exclusively: `copyFileSync` follows a symlink at the
+        // destination, and the bytes it would push through one here are a
+        // previous revision of the user's source.
+        tmp = `${target}.handbook-rollback-${stagingSuffix()}`;
+        copyFileSync(backupPath, tmp, constants.COPYFILE_EXCL);
         renameSync(tmp, target);
+        tmp = undefined;
         restored.push(entry.file);
       } else {
         if (currentHash === undefined) {
@@ -736,6 +852,7 @@ function rollbackInner(
       }
     } catch (error) {
       // One unwritable file must not abandon the rest of the rollback.
+      if (tmp) rmSync(tmp, { force: true });
       skipped.push({
         file: entry.file,
         reason: `restore failed: ${error instanceof Error ? error.message : String(error)}`,

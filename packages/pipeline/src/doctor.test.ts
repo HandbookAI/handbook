@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MockChatClient, type MockRule } from '@handbook/llm';
-import type { Assignment, Skeleton, Stage } from '@handbook/core';
+import type { Assignment, Logger, Skeleton, Stage } from '@handbook/core';
 import {
   applyChange,
   computeStageStats,
@@ -299,5 +299,78 @@ describe('runDoctorRound — mechanical validate/apply/normalize interplay (mock
       nRejected: 0,
     });
     expect(skeleton.stages.map((s) => s.id)).toEqual(before);
+  });
+
+  it('refuses a proposal carrying far more changes than were asked for', async () => {
+    // The actor is asked for AT MOST 3. A reply with hundreds is not a
+    // prioritized repair — applying it mechanically would restructure the whole
+    // skeleton from one unreviewable blob. Refuse the round and say so.
+    const { skeleton, assignment } = fixture();
+    const before = skeleton.stages.map((s) => s.id);
+    const changes = Array.from({ length: 200 }, (_, i) => ({
+      action: 'add_stage',
+      new_stage: { id: `bulk-${i}`, title: `Bulk ${i}`, description: 'x', parent: null },
+    }));
+    const warnings: string[] = [];
+    const logger: Logger = {
+      info: () => {},
+      warn: (message: string) => warnings.push(message),
+      error: () => {},
+      debug: () => {},
+      child: () => logger,
+    };
+    const rules: MockRule[] = [
+      { match: 'You are the SKELETON DOCTOR', respond: { changes, rationale: 'everything' } },
+      {
+        match: 'reviewing a proposed change to a codebase handbook',
+        respond: { decision: 'APPROVE', concerns: [], suggested_revision: null, rationale: 'ok' },
+      },
+    ];
+    const result = await runDoctorRound(new MockChatClient(rules), skeleton, assignment, {}, logger);
+    expect(result.skeletonChanged).toBe(false);
+    expect(result.nApplied).toBe(0);
+    expect(result.nProposed).toBe(200);
+    expect(result.nRejected).toBe(200);
+    expect(skeleton.stages.map((s) => s.id)).toEqual(before); // nothing was applied
+    expect(warnings.join('\n')).toMatch(/200 change/);
+  });
+});
+
+describe('runDoctorRound — cancellation', () => {
+  it('threads the signal into the actor call and every critic call', async () => {
+    const { skeleton, assignment } = fixture();
+    const client = new MockChatClient([
+      { match: 'You are the SKELETON DOCTOR', respond: { changes: [], rationale: 'healthy' } },
+      {
+        match: 'reviewing a proposed change to a codebase handbook',
+        respond: { decision: 'APPROVE', concerns: [], suggested_revision: null, rationale: 'ok' },
+      },
+    ]);
+    const controller = new AbortController();
+    await runDoctorRound(client, skeleton, assignment, {}, undefined, controller.signal);
+    expect(client.calls).toHaveLength(4); // one actor, three critic roles
+    expect(client.calls.every((c) => c.options?.signal === controller.signal)).toBe(true);
+  });
+
+  it('rejects when the panel is cancelled instead of reporting an empty round', async () => {
+    // A doctor round that returns all zeros reads as "the skeleton is healthy",
+    // which is exactly how `synthesizeWithDoctor` decides to stop looping — so a
+    // cancelled round used to end the phase with a green, converged skeleton.
+    const { skeleton, assignment } = fixture();
+    const controller = new AbortController();
+    const client = new MockChatClient([
+      { match: 'You are the SKELETON DOCTOR', respond: { changes: [], rationale: 'healthy' } },
+      {
+        match: 'reviewing a proposed change to a codebase handbook',
+        respond: () => {
+          controller.abort();
+          return { decision: 'APPROVE', concerns: [], suggested_revision: null, rationale: 'ok' };
+        },
+      },
+    ]);
+    const error = await runDoctorRound(client, skeleton, assignment, {}, undefined, controller.signal).catch(
+      (e: unknown) => e,
+    );
+    expect((error as Error).name).toBe('AbortError');
   });
 });

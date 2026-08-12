@@ -62,20 +62,24 @@ export default defineConfig({
       // exactly what matters: at 86% overall, @handbook/cli sits at 23%.
       // A global floor would let any one package rot to nothing unnoticed.
       thresholds: {
-        // @handbook/cli is the product's entry point and is barely tested:
-        // src/main.ts is 94 statements at 0%, because nothing imports the CLI
-        // and no test drives it. `scripts/smoke-install.mjs` covers it from the
-        // outside, which is why this is a low floor rather than a failing gate,
-        // but the floor is deliberately honest about the hole. Raise it.
-        'packages/cli/src/**': { statements: 22, branches: 22, functions: 21, lines: 20 },
+        // @handbook/cli used to sit at 22/22/21/20 with a note saying nothing
+        // drove it. That is no longer true: the config-resolution, env-cascade
+        // and broken-config-file paths are now covered in-process, and
+        // `scripts/smoke-cli.sh` drives the built binary from the outside for
+        // everything a unit test cannot see — exit codes, signals, real files.
+        // Still the lowest floor in the workspace, because `main.ts` is mostly
+        // commander wiring that only the smoke suite executes.
+        'packages/cli/src/**': { statements: 63, branches: 66, functions: 73, lines: 61 },
 
         'packages/resync/src/**': { statements: 78, branches: 70, functions: 85, lines: 80 },
-        'packages/studio/src/**': { statements: 81, branches: 69, functions: 87, lines: 83 },
-        'packages/pipeline/src/**': { statements: 81, branches: 68, functions: 84, lines: 83 },
+        // Ratcheted 2026-08-12 with the SSE backpressure work: measured
+        // 89.64/77.39/93.46/91.96, so these sit the usual ~2 points under.
+        'packages/studio/src/**': { statements: 87, branches: 75, functions: 91, lines: 89 },
+        'packages/pipeline/src/**': { statements: 85, branches: 70, functions: 86, lines: 87 },
         'packages/analyzer/src/**': { statements: 84, branches: 70, functions: 94, lines: 89 },
-        'packages/core/src/**': { statements: 84, branches: 78, functions: 81, lines: 86 },
-        'packages/skill/src/**': { statements: 86, branches: 77, functions: 98, lines: 89 },
-        'packages/patcher/src/**': { statements: 86, branches: 82, functions: 94, lines: 88 },
+        'packages/core/src/**': { statements: 90, branches: 83, functions: 92, lines: 91 },
+        'packages/skill/src/**': { statements: 88, branches: 80, functions: 98, lines: 91 },
+        'packages/patcher/src/**': { statements: 87, branches: 83, functions: 94, lines: 88 },
         'packages/planner/src/**': { statements: 93, branches: 87, functions: 92, lines: 93 },
         'packages/llm/src/**': { statements: 93, branches: 89, functions: 96, lines: 96 },
         'packages/renderer/src/**': { statements: 94, branches: 78, functions: 94, lines: 96 },

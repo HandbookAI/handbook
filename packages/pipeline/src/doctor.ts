@@ -271,12 +271,28 @@ export interface DoctorRoundResult {
 
 const CRITIC_ROLES: CriticRole[] = ['engineer', 'architect', 'reader'];
 
+/**
+ * Structural changes one round will consider.
+ *
+ * The actor is asked for AT MOST 3, prioritized. Four times that is already
+ * generous room for a model that ignored the instruction but still did the
+ * work; hundreds is not a prioritized repair, it is a rewrite of the whole
+ * spine arriving as one unreviewable blob — and `applyChange` would perform
+ * every one of them mechanically, `normalizeSkeleton` would then walk the
+ * result, and the reassignment pass would re-batch the entire codebase against
+ * a skeleton nobody proposed. Refuse the round rather than truncate it: taking
+ * "the first 12 of 400" would apply an arbitrary slice of a plan whose parts
+ * were meant to fit together.
+ */
+const MAX_CHANGES_PER_ROUND = 12;
+
 export async function runDoctorRound(
   client: ChatClient,
   skeleton: Skeleton,
   assignment: Assignment,
   cards: Record<string, FileCard>,
   logger: Logger = silentLogger,
+  signal?: AbortSignal,
 ): Promise<DoctorRoundResult> {
   const stats = computeStageStats(skeleton, assignment);
   const evidence = renderStats(skeleton, stats, cards);
@@ -286,6 +302,7 @@ export async function runDoctorRound(
     taskContext: `File-level skeleton doctor. ${skeleton.stages.length} stages, ${stats.nFiles} files, ${stats.nUnassigned} unassigned.`,
     schemaHint: SCHEMA_HINT,
     evidence,
+    signal,
     logger,
   });
 
@@ -295,6 +312,19 @@ export async function runDoctorRound(
   const changes = Array.isArray((result.proposal as Record<string, unknown>).changes)
     ? ((result.proposal as Record<string, unknown>).changes as DoctorChange[])
     : [];
+  if (changes.length > MAX_CHANGES_PER_ROUND) {
+    logger.warn(
+      `[doctor] refused a proposal of ${changes.length} change(s) — at most ${MAX_CHANGES_PER_ROUND} ` +
+        'are reviewable in one round, and the prompt asks for 3',
+    );
+    return {
+      skeletonChanged: false,
+      affectedFiles: [],
+      nApplied: 0,
+      nProposed: changes.length,
+      nRejected: changes.length,
+    };
+  }
   const affected = new Set<string>();
   let applied = 0;
   let rejected = 0;
@@ -371,7 +401,7 @@ export async function synthesizeWithDoctor(
     const before = computeStageStats(skeleton, assignment);
     const overloadedBefore = Object.values(before.perStage).filter((s) => s.overloaded).length;
 
-    const doctor = await runDoctorRound(client, skeleton, assignment, cards, logger);
+    const doctor = await runDoctorRound(client, skeleton, assignment, cards, logger, signal);
     if (doctor.skeletonChanged) {
       const subset = [...new Set([...doctor.affectedFiles, ...assignment.coverage.unassigned])];
       assignment = await reassignSubset(client, graph, skeleton, subset, assignment, assignOptions);

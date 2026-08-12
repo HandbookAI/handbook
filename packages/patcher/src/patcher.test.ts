@@ -1,7 +1,19 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { sha256Hex, silentLogger, type Logger } from '@handbook/core';
 import { parsePlan } from './parse.js';
 import { applyPlan, listBackups, rollback } from './apply.js';
 
@@ -1050,5 +1062,329 @@ describe('patcher — deep adversarial pass 2', () => {
     // The tree is left at the patched content — never overwritten with garbage.
     expect(readFileSync(engine, 'utf8')).toBe(patched);
     expect(readFileSync(engine, 'utf8')).not.toContain('GARBAGE');
+  });
+});
+
+describe('patcher — audit A7: filesystem hardening', () => {
+  /** A tree OUTSIDE the source root, standing in for ~/.ssh or /etc. */
+  function outside(name: string, content: string): string {
+    const dir = mkdtempSync(join(tmpdir(), 'hb-victim-'));
+    const path = join(dir, name);
+    writeFileSync(path, content);
+    return path;
+  }
+
+  // A7-1: the staging file was named `<target>.handbook-tmp-<pid>-<index>` —
+  // fully predictable from outside the process — and written with a plain
+  // `writeFileSync`, which follows a symlink at that path. Anyone able to
+  // create a file next to the target could redirect the patch's bytes to any
+  // file the user can write, and the following rename then moved the SYMLINK
+  // over the source file.
+  it('A7-1: never writes through a pre-planted staging temp file', () => {
+    const root = repo();
+    const victim = outside('authorized_keys', 'ORIGINAL KEY\n');
+    symlinkSync(victim, join(root, 'app', `engine.py.handbook-tmp-${process.pid}-0`));
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 7' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(readFileSync(victim, 'utf8')).toBe('ORIGINAL KEY\n');
+    expect(result.ok).toBe(true);
+    expect(lstatSync(join(root, 'app/engine.py')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toContain('self.rpm += 7');
+  });
+
+  // A7-2: the same predictable-name-plus-following-write bug in rollback, where
+  // the bytes written through the link are the BACKUP's — i.e. old source code
+  // landing on an arbitrary file.
+  it('A7-2: never restores through a pre-planted rollback temp file', () => {
+    const root = repo();
+    const victim = outside('id_rsa', 'ORIGINAL KEY\n');
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 7' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    symlinkSync(victim, join(root, 'app', `engine.py.handbook-rollback-${process.pid}`));
+    const back = rollback(applied.backupDir as string, { expectedSourceRoot: root });
+    expect(readFileSync(victim, 'utf8')).toBe('ORIGINAL KEY\n');
+    expect(back.restored).toEqual(['app/engine.py']);
+  });
+
+  // A7-3: readManifest only checks the manifest path LEXICALLY. A symlinked
+  // directory inside the tree passes every string test and then redirects the
+  // restore (and the delete, for a created file) clean out of the tree.
+  it('A7-3: rollback refuses a manifest path that leaves the tree through a symlink', () => {
+    const root = repo();
+    const victim = outside('authorized_keys', 'ORIGINAL KEY\n');
+    symlinkSync(join(victim, '..'), join(root, 'link'));
+    const backupDir = mkdtempSync(join(tmpdir(), 'hb-crafted-'));
+    mkdirSync(join(backupDir, 'files', 'link'), { recursive: true });
+    writeFileSync(join(backupDir, 'files', 'link', 'authorized_keys'), 'PWNED KEY\n');
+    writeFileSync(
+      join(backupDir, 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        sourceRoot: resolve(root),
+        files: [
+          {
+            file: 'link/authorized_keys',
+            existed: true,
+            sha256Before: sha256Hex('PWNED KEY\n'),
+            sha256After: sha256Hex('ORIGINAL KEY\n'),
+          },
+        ],
+      }),
+    );
+    const back = rollback(backupDir, { expectedSourceRoot: root });
+    expect(readFileSync(victim, 'utf8')).toBe('ORIGINAL KEY\n');
+    expect(back.restored).toEqual([]);
+    expect(back.skipped[0]?.reason).toMatch(/escapes|symlink/);
+  });
+
+  it('A7-3b: rollback refuses to DELETE through a symlinked directory', () => {
+    const root = repo();
+    const victim = outside('precious.txt', 'KEEP ME\n');
+    symlinkSync(join(victim, '..'), join(root, 'link'));
+    const backupDir = mkdtempSync(join(tmpdir(), 'hb-crafted2-'));
+    writeFileSync(
+      join(backupDir, 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        sourceRoot: resolve(root),
+        files: [{ file: 'link/precious.txt', existed: false, sha256After: sha256Hex('KEEP ME\n') }],
+      }),
+    );
+    const back = rollback(backupDir, { expectedSourceRoot: root });
+    expect(existsSync(victim)).toBe(true);
+    expect(back.removed).toEqual([]);
+    expect(back.skipped[0]?.reason).toMatch(/escapes|symlink/);
+  });
+
+  // A7-4: the backup-tree guard was a case-SENSITIVE string comparison, so on
+  // the case-insensitive filesystems that macOS and Windows ship by default a
+  // different spelling of the same directory walked straight past it.
+  it('A7-4: refuses an edit that reaches the backup tree through a case variant', () => {
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: '.HANDBOOK-PATCHES/evil.json', old: '', next: '{}' }]),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.detail).toMatch(/backup tree/);
+    expect(existsSync(join(root, '.HANDBOOK-PATCHES', 'evil.json'))).toBe(false);
+  });
+
+  // A7-5: the lock lives in `<sourceRoot>/.handbook-patches` whatever
+  // `backupRoot` says, so pointing backups elsewhere left the lock directory
+  // itself patchable.
+  it('A7-5: refuses an edit aimed at the lock directory when backups live elsewhere', () => {
+    const root = repo();
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: '.handbook-patches/.gitignore', old: '*', next: 'evil' }]),
+      backupRoot: join(mkdtempSync(join(tmpdir(), 'hb-elsewhere-')), 'patches'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.outcomes[0]?.detail).toMatch(/backup tree/);
+  });
+
+  // A7-6: verification and the write are separate steps. Anything that edits a
+  // target in that window — another process's editor, a build script — was
+  // silently overwritten, and the backup taken alongside recorded a hash of
+  // content it did not contain. The logger call for a read-only file is the
+  // only deterministic way to run code inside that window.
+  it('A7-6: refuses to write a file that changed between verification and the write', () => {
+    const root = repo();
+    const engine = join(root, 'app/engine.py');
+    writeFileSync(join(root, 'app/ro.py'), 'VALUE = 1\n', { mode: 0o444 });
+    let injected = false;
+    const meddling: Logger = {
+      ...silentLogger,
+      warn: () => {
+        if (injected) return;
+        injected = true;
+        appendFileSync(engine, '# a colleague saved this file\n');
+      },
+    };
+    expect(() =>
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([
+          { file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 7' },
+          { file: 'app/ro.py', old: 'VALUE = 1', next: 'VALUE = 2' },
+        ]),
+        backupRoot: join(root, '.patches'),
+        logger: meddling,
+      }),
+    ).toThrow(/changed on disk|since it was verified/);
+    expect(injected).toBe(true);
+    const text = readFileSync(engine, 'utf8');
+    expect(text).toContain('# a colleague saved this file');
+    expect(text).toContain('self.rpm += 1');
+    expect(readFileSync(join(root, 'app/ro.py'), 'utf8')).toBe('VALUE = 1\n');
+  });
+
+  /**
+   * Runs `meddle()` inside the window between verification and the write —
+   * the read-only warning is the only deterministic hook into it — with a plan
+   * that touches `subject` first and the read-only file second.
+   */
+  function meddleMidRun(root: string, subject: string, meddle: () => void): () => void {
+    writeFileSync(join(root, 'app/ro.py'), 'VALUE = 1\n', { mode: 0o444 });
+    let done = false;
+    const meddling: Logger = {
+      ...silentLogger,
+      warn: () => {
+        if (done) return;
+        done = true;
+        meddle();
+      },
+    };
+    return () =>
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([
+          { file: subject, old: 'self.rpm += 1', next: 'self.rpm += 7' },
+          { file: 'app/ro.py', old: 'VALUE = 1', next: 'VALUE = 2' },
+        ]),
+        backupRoot: join(root, '.patches'),
+        logger: meddling,
+      });
+  }
+
+  it('A7-6b: refuses when the target became a symlink out of the tree mid-run', () => {
+    const root = repo();
+    const engine = join(root, 'app/engine.py');
+    const victim = outside('elsewhere.py', 'NOT MINE\n');
+    const run = meddleMidRun(root, 'app/engine.py', () => {
+      rmSync(engine);
+      symlinkSync(victim, engine);
+    });
+    expect(run).toThrow(/no longer resolves inside the source root/);
+    expect(readFileSync(victim, 'utf8')).toBe('NOT MINE\n');
+  });
+
+  it('A7-6c: refuses when the target stopped being a plain file mid-run', () => {
+    const root = repo();
+    const engine = join(root, 'app/engine.py');
+    const run = meddleMidRun(root, 'app/engine.py', () => {
+      rmSync(engine);
+      mkdirSync(engine);
+    });
+    expect(run).toThrow(/no longer a plain file/);
+    expect(lstatSync(engine).isDirectory()).toBe(true);
+  });
+
+  it('A7-6d: refuses when a file the plan CREATES appeared mid-run', () => {
+    const root = repo();
+    const created = join(root, 'app/fresh.py');
+    writeFileSync(join(root, 'app/ro.py'), 'VALUE = 1\n', { mode: 0o444 });
+    let done = false;
+    const meddling: Logger = {
+      ...silentLogger,
+      warn: () => {
+        if (done) return;
+        done = true;
+        writeFileSync(created, 'someone got here first\n');
+      },
+    };
+    expect(() =>
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([
+          { file: 'app/fresh.py', old: '', next: 'x = 1' },
+          { file: 'app/ro.py', old: 'VALUE = 1', next: 'VALUE = 2' },
+        ]),
+        backupRoot: join(root, '.patches'),
+        logger: meddling,
+      }),
+    ).toThrow(/appeared on disk since it was verified/);
+    expect(readFileSync(created, 'utf8')).toBe('someone got here first\n');
+  });
+
+  // A7-9: the audit brief's question — if the backup cannot be written, does
+  // the apply proceed anyway? It must not: a patch with no backup is a patch
+  // with no rollback. Forced deterministically (no reliance on permission bits,
+  // which a root CI ignores) by pointing backupRoot at an existing FILE.
+  it('A7-9: aborts without touching the tree when the backup cannot be created', () => {
+    const root = repo();
+    const before = readFileSync(join(root, 'app/engine.py'), 'utf8');
+    const blocked = join(root, 'not-a-dir');
+    writeFileSync(blocked, 'i am a file\n');
+    expect(() =>
+      applyPlan({
+        sourceRoot: root,
+        plan: plan([{ file: 'app/engine.py', old: 'self.rpm += 1', next: 'self.rpm += 7' }]),
+        backupRoot: blocked,
+      }),
+    ).toThrow();
+    expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toBe(before);
+  });
+
+  // A7-10: "byte-exactly" has to survive a file whose line endings are not
+  // uniform. A direct hit must not trigger the EOL retry, and the retry — when
+  // it does fire — must rewrite only the matched region, never normalise the
+  // file around it.
+  it('A7-10: leaves mixed line endings exactly as they were on a direct hit', () => {
+    const root = repo();
+    const target = join(root, 'app/mixed.txt');
+    writeFileSync(target, 'a\r\nb\nc\r\nd\n');
+    const result = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/mixed.txt', old: 'b', next: 'B' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(target, 'utf8')).toBe('a\r\nB\nc\r\nd\n');
+  });
+
+  it('A7-10b: the CRLF retry rewrites only the match, not the rest of the file', () => {
+    const root = repo();
+    const target = join(root, 'app/mostly-crlf.txt');
+    writeFileSync(target, 'p\nq\r\nr\r\ns\r\n'); // one lone LF line among CRLF ones
+    const p = [
+      '### EDIT 1',
+      '- file: `app/mostly-crlf.txt`',
+      '```old',
+      'q',
+      'r',
+      '```',
+      '```new',
+      'Q',
+      'R',
+      '```',
+    ].join('\n');
+    const result = applyPlan({ sourceRoot: root, plan: p, backupRoot: join(root, '.patches') });
+    expect(result.ok).toBe(true);
+    // The anchor arrived LF-joined and matched only after conversion; the lone
+    // `p\n` above it keeps its LF.
+    expect(readFileSync(target, 'utf8')).toBe('p\nQ\r\nR\r\ns\r\n');
+  });
+
+  // A7-7/8: a plan is model output and was read whole with no ceiling. Matching
+  // is O(edits x file size), so an absurd edit count is a denial of service on
+  // the machine holding the tree lock.
+  it('A7-7: refuses a plan with more EDIT blocks than the cap', () => {
+    const parsed = parsePlan(
+      plan(Array.from({ length: 600 }, (_, i) => ({ file: `f${i}.py`, old: 'a', next: 'b' }))),
+    );
+    expect(parsed.edits).toEqual([]);
+    expect(parsed.problems.join(' ')).toMatch(/too many EDIT blocks/);
+  });
+
+  it('A7-8: refuses a plan larger than the size cap before parsing it', () => {
+    const parsed = parsePlan('x'.repeat(5 * 1024 * 1024));
+    expect(parsed.edits).toEqual([]);
+    expect(parsed.problems.join(' ')).toMatch(/too large/);
+  });
+
+  it('A7-8b: an oversized plan aborts apply without touching the tree', () => {
+    const root = repo();
+    const before = readFileSync(join(root, 'app/engine.py'), 'utf8');
+    const result = applyPlan({ sourceRoot: root, plan: 'x'.repeat(5 * 1024 * 1024) });
+    expect(result.ok).toBe(false);
+    expect(readFileSync(join(root, 'app/engine.py'), 'utf8')).toBe(before);
   });
 });

@@ -22,7 +22,7 @@
  * 6. re-narrate affected stages + system overview (content-hash cache does the
  *    minimal work) and refresh registers.
  */
-import { cpSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChatClient } from '@handbook/llm';
 import {
@@ -31,6 +31,7 @@ import {
   fileExists,
   isAbsoluteAnyPlatform,
   isInternalNode,
+  readTextFileBounded,
   silentLogger,
   withDirLock,
   writeJsonFile,
@@ -79,11 +80,19 @@ export function loadCase(caseDir: string): ResyncCase | undefined {
   const diffPath = join(caseDir, 'change.diff');
   let diffText: string | undefined;
   if (fileExists(diffPath)) {
-    diffText = readFileSync(diffPath, 'utf8');
+    // A diff is only mined for the paths it names, so it never reaches a
+    // prompt — but it is still read into memory in full, and a mechanical
+    // refactor can produce one large enough to matter. Refusing with the size
+    // named beats an out-of-memory crash that reads as a tool bug.
+    diffText = readTextFileBounded(diffPath, MAX_DIFF_BYTES, 'the diff');
     if (diffText.trim() === '') return undefined; // empty diff — nothing to resync
   }
   const planPath = join(caseDir, 'plan.md');
-  const planText = fileExists(planPath) ? readFileSync(planPath, 'utf8') : undefined;
+  // The plan is a document a person (or the planner) wrote; the same ceiling
+  // applies for the same reason.
+  const planText = fileExists(planPath)
+    ? readTextFileBounded(planPath, MAX_DIFF_BYTES, 'the plan')
+    : undefined;
   return {
     editedRoot,
     planText,
@@ -91,6 +100,15 @@ export function loadCase(caseDir: string): ResyncCase | undefined {
     diffText,
   };
 }
+
+/**
+ * The largest diff `resync` will read.
+ *
+ * A diff is text about a change, not the codebase: even a repo-wide rename
+ * across ten thousand files stays in the low tens of megabytes. 64 MiB is well
+ * past any real change and well short of anything that threatens the process.
+ */
+const MAX_DIFF_BYTES = 64 * 1024 * 1024;
 
 export function parsePlanDeclarations(
   planText: string,
