@@ -43,6 +43,17 @@ function sh(cmd, args, opts = {}) {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
+    // A `.cmd` is a batch script, not an executable, so Windows can only run it
+    // through the shell. Node used to do that implicitly and stopped in 2024,
+    // when the fix for the argument-injection advisory made `execFile` refuse a
+    // `.cmd` outright: `spawnSync npm.cmd EINVAL`, thrown before this script
+    // reaches a single assertion. That is why `smoke (windows-latest)` failed
+    // for a reason no test change could address.
+    //
+    // Scoped to the three `.cmd` invocations rather than turned on everywhere:
+    // `shell: true` re-parses the arguments, and every other call here passes
+    // paths from `mkdtemp` that must not be re-split.
+    shell: cmd.endsWith('.cmd'),
     ...opts,
   });
 }

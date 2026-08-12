@@ -796,6 +796,42 @@ describe('patcher — R4 regressions', () => {
     expect(statSync(target).mode & 0o777).toBe(0o444);
   });
 
+  it('rolls a read-only file back, rather than failing inside the failure path', () => {
+    // The restore loop is the ERROR path: it runs when a write has already
+    // partly landed. `copyFileSync` onto an existing read-only destination is
+    // allowed for the owner on POSIX and refused on Windows — so a second throw
+    // here would mask the original error AND leave the tree half-patched, which
+    // is the one outcome this whole block exists to prevent.
+    //
+    // Driven through `rollback` rather than by forcing a mid-apply failure,
+    // because that is the same `copyFileSync` on the same kind of destination
+    // and it can be exercised deterministically.
+    //
+    // Written as coverage for a SUSPECTED Windows defect, deliberately without
+    // a speculative fix: POSIX lets the owner write a read-only file, so this
+    // passes here, and if Windows refuses the copy this is the test that will
+    // say so instead of the defect being found by a user. Fixing a platform I
+    // cannot run, on a path I cannot see fail, is how the eight failures above
+    // got written in the first place.
+    const root = repo();
+    const target = join(root, 'app/ro-roll.py');
+    writeFileSync(target, 'VALUE = 1\n', { mode: 0o444 });
+    const applied = applyPlan({
+      sourceRoot: root,
+      plan: plan([{ file: 'app/ro-roll.py', old: 'VALUE = 1', next: 'VALUE = 2' }]),
+      backupRoot: join(root, '.patches'),
+    });
+    expect(applied.ok).toBe(true);
+    expect(statSync(target).mode & 0o777).toBe(0o444);
+
+    const back = rollback(applied.backupDir as string, { expectedSourceRoot: root });
+    expect(back.restored, JSON.stringify(back)).toEqual(['app/ro-roll.py']);
+    expect(back.skipped).toEqual([]);
+    expect(readFileSync(target, 'utf8')).toContain('VALUE = 1');
+    // The mode the file had is part of what "rolled back" means.
+    expect(statSync(target).mode & 0o777).toBe(0o444);
+  });
+
   it('rollback reports an already-restored file honestly', () => {
     const root = repo();
     const engine = join(root, 'app/engine.py');
