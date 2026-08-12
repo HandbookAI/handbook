@@ -61,7 +61,7 @@ import {
 import { buildSkill, validateSkill } from '@handbook/skill';
 import { runPlanner } from '@handbook/planner';
 import { resyncHandbook } from '@handbook/resync';
-import { graphFidelity, refreshRenderedHandbook } from './render-refresh.js';
+import { graphFidelity, graphFileLanguages, refreshRenderedHandbook } from './render-refresh.js';
 
 // Exported so a test can drive it with a controlled argv and mocked seams
 // (`@handbook/studio`'s `startStudio`, `@handbook/pipeline`'s `generateHandbook`)
@@ -341,14 +341,16 @@ addSettings(
   const outDir = (cfg.out as string | undefined) ?? join(workDir, 'handbook');
   const model = loadHandbookModel(workDir, cfg.title as string);
   const languages = graphFidelity(workDir);
+  const fileLanguages = graphFileLanguages(workDir);
   const render = {
     languages,
+    fileLanguages,
     ...(cfg.sourceBaseUrl ? { sourceBaseUrl: cfg.sourceBaseUrl as string } : {}),
   };
   const md = renderMarkdownHandbook(model, outDir, render);
   const result: Record<string, unknown> = { outDir, nStagePages: md.nStagePages };
   if (cfg.agentSite) {
-    result.agent = renderAgentSite(model, `${outDir}/agent`, { languages });
+    result.agent = renderAgentSite(model, `${outDir}/agent`, { languages, fileLanguages });
   }
   if (cfg.html) {
     result.html = renderHtmlSite(model, `${outDir}/html`, render);

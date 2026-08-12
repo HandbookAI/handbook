@@ -283,6 +283,75 @@ describe('renderAgentSite — a file the assignment claims but no card describes
   });
 });
 
+describe('renderAgentSite — per-row analysis fidelity', () => {
+  /**
+   * Invariant 3: fidelity is declared per adapter AND disclosed in the output.
+   * It was disclosed globally — "call relations for Kotlin are best-effort" —
+   * which a reader of a 180-row table cannot connect to any row. Measured on a
+   * real repository (okio): 338 Kotlin files at generic tier sitting beside 28
+   * Java files at full tier, in one table, previously indistinguishable.
+   */
+  const fidelity = {
+    languages: {
+      typescript: {
+        tier: 'full' as const,
+        callTypes: ['internal_func' as const],
+        selfAttrs: true,
+        statementSpans: true,
+      },
+      kotlin: {
+        tier: 'generic' as const,
+        callTypes: ['unresolved' as const],
+        selfAttrs: false,
+        statementSpans: false,
+      },
+    },
+  };
+
+  it('names the adapter and its tier on the row it governs', () => {
+    const dir4 = mkdtempSync(join(tmpdir(), 'hb-agent-tier-'));
+    const files = Object.keys(model.assignment.fileStage);
+    renderAgentSite(model, dir4, {
+      ...fidelity,
+      fileLanguages: Object.fromEntries(files.map((f, i) => [f, i === 0 ? 'kotlin' : 'typescript'])),
+    });
+    const table = readFileSync(join(dir4, 'files.tsv'), 'utf8');
+    expect(table).toContain('language/tier');
+    expect(table).toContain('\tkotlin/generic\t');
+    expect(table).toContain('\ttypescript/full\t');
+    rmSync(dir4, { recursive: true, force: true });
+  });
+
+  it('explains in the header what generic tier means for those rows', () => {
+    const dir4 = mkdtempSync(join(tmpdir(), 'hb-agent-tier-2-'));
+    renderAgentSite(model, dir4, { ...fidelity, fileLanguages: {} });
+    expect(readFileSync(join(dir4, 'files.tsv'), 'utf8')).toMatch(/edges are leads/);
+    rmSync(dir4, { recursive: true, force: true });
+  });
+
+  it('omits the column entirely when the graph did not record who scanned what', () => {
+    // A `?` in every cell is worse than no column: it looks like a fact the
+    // renderer failed to compute rather than one the artifact never carried.
+    // This is also the shape of every graph written before the field existed.
+    const table = read('files.tsv');
+    expect(table).not.toContain('language/tier');
+    expect(table.split('\n')[0]).toBe('# path\tstage\trole\tnSymbols\tpurpose[prose]');
+  });
+
+  it('prints the language alone when its capabilities were not recorded', () => {
+    // Which adapter read the file is still the answer to a real question, even
+    // when nobody wrote down what that adapter can do.
+    const dir4 = mkdtempSync(join(tmpdir(), 'hb-agent-tier-3-'));
+    const first = Object.keys(model.assignment.fileStage)[0] ?? '';
+    renderAgentSite(model, dir4, { fileLanguages: { [first]: 'ocaml' } });
+    const table = readFileSync(join(dir4, 'files.tsv'), 'utf8');
+    expect(table).toContain('\tocaml\t');
+    // And a file the map does not mention is `?`, not silently blank.
+    expect(table).toContain('\t?\t');
+    rmSync(dir4, { recursive: true, force: true });
+  });
+});
+
 describe('renderAgentSite — calls.tsv', () => {
   /**
    * A model whose `calls` hold real node IDS. The shared fixture stores a

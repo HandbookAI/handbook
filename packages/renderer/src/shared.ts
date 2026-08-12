@@ -156,6 +156,14 @@ export interface FidelityOptions {
    * fidelity (which is also what every pre-existing graph.json supports).
    */
   languages?: Record<string, AdapterCapabilities>;
+  /**
+   * `graph.metadata.fileLanguages` — relative path → the adapter that scanned it.
+   *
+   * Turns `languages` above from a global footnote into a per-row fact. Absent
+   * on an artifact written before it existed, in which case a fidelity caveat
+   * can still be stated globally and simply is not attached to rows.
+   */
+  fileLanguages?: Record<string, string>;
 }
 
 /** Everything the markdown and multi-page HTML renderers accept. */

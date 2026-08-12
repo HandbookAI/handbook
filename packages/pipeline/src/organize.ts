@@ -278,6 +278,10 @@ export async function organizeStages(
   const work = skeleton.stages.filter((s) => (assignment.buckets[s.id]?.length ?? 0) > 0);
   const progress = new Progress(logger, 'organize', work.length, options.onProgress);
   const results = new Map<string, StageOrganization>();
+  // 2c, not 2b: this runs in the file-strategy branch of phase 2c. The label had
+  // it as 2b, which put the line after "[2b] done" in the log — a timestamped
+  // contradiction is worse than no line.
+  logger.debug(`[2c] organizing ${work.length} stage(s) at ${workers} worker(s)`);
   await mapLimit(work, workers, async (stage) => {
     signal?.throwIfAborted(); // cooperative checkpoint: no new stage after abort
     const bucket = assignment.buckets[stage.id] ?? [];
