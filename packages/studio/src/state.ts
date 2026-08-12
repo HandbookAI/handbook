@@ -4,7 +4,7 @@
  * evolution history) lives in each repo's work dir.
  */
 import { dirname, join, resolve, sep } from 'node:path';
-import { realpathSync, statSync } from 'node:fs';
+import { readlinkSync, realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
 import { fileExists, readValidatedJson, writeJsonFile } from '@handbook/core';
 
@@ -43,6 +43,23 @@ const stateSchema = z.object({
 export type StudioState = z.infer<typeof stateSchema>;
 
 /**
+ * How many links `realOf` follows by hand before giving up.
+ *
+ * `realpath` reports ELOOP for a cycle; the manual walk below has to count for
+ * itself, or `link -> link` spins until the stack ends.
+ */
+const MAX_LINK_HOPS = 32;
+
+/** The target of `path` if it is a symlink, else undefined (EINVAL, ENOENT). */
+function readlinkOrUndefined(path: string): string | undefined {
+  try {
+    return readlinkSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The real path of `path`, resolved as far as the filesystem allows.
  *
  * `realpathSync` throws for anything that does not exist yet, which is the
@@ -52,13 +69,24 @@ export type StudioState = z.infer<typeof stateSchema>;
  * still hypothetical — without it, `/w/link/handbook` (where `link` points at
  * another repo's work dir) compares as a string nobody has seen before.
  */
-function realOf(path: string): string {
+function realOf(path: string, hops = 0): string {
   let head = resolve(path);
   const tail: string[] = [];
   for (;;) {
     try {
       return tail.length === 0 ? realpathSync(head) : join(realpathSync(head), ...tail);
     } catch {
+      // A link `realpath` cannot resolve still NAMES the directory the run
+      // would write to, and reading it is the only way to see that. Two real
+      // cases reach here: a work dir link whose target does not exist yet
+      // (`link -> src/generated`, created by the first run — the interesting
+      // one, because that first run is what puts artifacts inside the source
+      // tree), and on Windows a file-typed symlink pointing at a directory,
+      // which that platform will not resolve at all. Both fell through to the
+      // lexical fallback below, which turns every containment check in this
+      // file back into the string comparison it exists to replace.
+      const link = hops < MAX_LINK_HOPS ? readlinkOrUndefined(head) : undefined;
+      if (link !== undefined) return join(realOf(resolve(dirname(head), link), hops + 1), ...tail);
       const parent = dirname(head);
       if (parent === head) return resolve(path); // reached the root: nothing resolves
       tail.unshift(head.slice(parent.length + 1));
