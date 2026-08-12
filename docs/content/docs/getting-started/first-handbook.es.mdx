@@ -21,7 +21,14 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 **Esto es gratis y es tu prueba de humo.** Sin LLM, sin clave, sin tokens.
@@ -32,7 +39,10 @@ handbook analyze --source $REPO --work $WORK
   `node_modules`, `vendor` o un directorio de build. Los habituales se saltan automáticamente; apunta
   `--source` a la raíz real del código fuente en lugar de a la raíz del repo si no es así. - **¿`edgesDropped`
   enorme en relación con `edgesKept`?** Normal en lenguajes dinámicos. Mira `phase1/dropped-calls.json` — cada
-  llamada sin resolver está categorizada ahí, no oculta.
+  llamada sin resolver está categorizada ahí, no oculta. - **¿`filesUnparsed` distinto de cero?** Esos
+  archivos aparecen con su motivo en `phase1/scan-coverage.json`. Los marcados como `unreadable` o
+  `unparsable` no aportan nada y no reciben página, así que un handbook construido ahora tendrá un agujero
+  justo ahí — vale la pena arreglarlo antes de pagar por la prosa.
 </Callout>
 
 Corrige cualquiera de los puntos anteriores **ahora**. Cada problema aquí se convierte en
@@ -104,8 +114,10 @@ handbook skill --handbook $WORK/handbook --out skills/myrepo \
 **Eso es lo que hace que la deriva del handbook sea detectable** en lugar de
 silenciosamente errónea más adelante.
 
-`--agent-dir` incluye las páginas localizadoras y añade un paso de desambiguación al
-protocolo de enrutamiento de la SKILL.
+`--agent-dir` incluye el índice para agentes y sus tablas de hechos, y le da al protocolo
+de enrutamiento de la SKILL sus recetas de grep — de modo que el agente puede convertir el
+nombre de un símbolo en `path:startLine-endLine` con un solo comando, en lugar de leer
+prosa y adivinar.
 
 ## Paso 5 — Valídalo
 

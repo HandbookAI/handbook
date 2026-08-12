@@ -74,9 +74,11 @@ Duas coisas que você precisa saber:
   funcionando não importa de onde você execute o comando.
 
 <Callout type="warn" title="Segredos são rejeitados aqui">
-  `llmApiKey` / `OPENAI_API_KEY` nunca devem aparecer em um arquivo de configuração — arquivos de configuração
-  acabam commitados. O carregador recusa o arquivo de imediato e diz por quê. Coloque o segredo no `.env` ou
-  no ambiente do shell.
+  `llmApiKey` / `OPENAI_API_KEY` e `llmExtraBody` / `OPENAI_EXTRA_BODY` nunca devem aparecer em um arquivo de
+  configuração — arquivos de configuração acabam commitados. O carregador recusa o arquivo de imediato e diz
+  por quê. Coloque os dois no `.env` ou no ambiente do shell. O `baseUrl` pode ser commitado sem problema, a
+  menos que a própria URL carregue credenciais (`https://user:pass@host/v1`), o que é recusado pelo mesmo
+  motivo.
 </Callout>
 
 Copie o `handbook.config.example.yaml` para começar; ele é gerado a partir do registro,

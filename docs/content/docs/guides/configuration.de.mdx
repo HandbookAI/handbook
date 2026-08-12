@@ -74,9 +74,11 @@ Zwei Dinge, die man wissen sollte:
   funktionsfähig, egal von wo Sie den Befehl ausführen.
 
 <Callout type="warn" title="Secrets werden hier zurückgewiesen">
-  `llmApiKey` / `OPENAI_API_KEY` dürfen niemals in einer Konfigurationsdatei stehen — Konfigurationsdateien
-  werden committet. Der Loader weist die Datei rundweg zurück und sagt, warum. Legen Sie den Schlüssel in
-  `.env` oder in die Shell-Umgebung.
+  `llmApiKey` / `OPENAI_API_KEY` und `llmExtraBody` / `OPENAI_EXTRA_BODY` dürfen niemals in einer
+  Konfigurationsdatei stehen — Konfigurationsdateien werden committet. Der Loader weist die Datei rundweg
+  zurück und sagt, warum. Legen Sie beide in `.env` oder in die Shell-Umgebung. `baseUrl` dürfen Sie
+  bedenkenlos committen — es sei denn, die URL selbst trägt Zugangsdaten (`https://user:pass@host/v1`), was
+  aus demselben Grund zurückgewiesen wird.
 </Callout>
 
 Kopieren Sie zum Einstieg `handbook.config.example.yaml`; die Datei wird aus der Registry

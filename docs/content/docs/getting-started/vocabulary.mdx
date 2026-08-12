@@ -16,6 +16,17 @@ between them, typed by how it was resolved. **Produced by a parser, never by a m
 Lives at `<work>/phase1/graph.json`. Everything downstream reads it and nothing
 re-parses source.
 
+### Scan coverage
+
+The other half of phase 1's honesty: the list of files the analyzer could **not** turn
+into facts, each with a reason — `unreadable` (the read failed), `unparsable` (the grammar
+threw) or `partial` (it parsed, but with syntax errors, so its facts are real yet
+incomplete).
+
+The first two are also removed from the graph's `scannedFiles`, so nothing downstream
+describes a file the parser never opened. An empty list is a claim that everything parsed;
+the file being missing is not. Lives at `<work>/phase1/scan-coverage.json`.
+
 ### Card
 
 One per source file. Answers _what is this file for?_ in three fields — **purpose**,
@@ -82,7 +93,7 @@ Where every pipeline artifact lives. One per repository you are documenting.
 
 ```text
 <work>/
-  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
   phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
   phase3/   narration.json · registers.json · cache/
   handbook/ the rendered output, once you run `render`
@@ -131,13 +142,13 @@ What you hand to `resync` to describe a change:
 
 ## The phases
 
-| Phase | Produces              | LLM? |
-| ----- | --------------------- | :--: |
-| `1`   | the call graph        |  ❌  |
-| `2a`  | one card per file     |  ✅  |
-| `2b`  | skeleton + assignment |  ✅  |
-| `2c`  | organization          |  ✅  |
-| `3`   | narration + registers |  ✅  |
+| Phase | Produces                  | LLM? |
+| ----- | ------------------------- | :--: |
+| `1`   | the call graph            |  ❌  |
+| `2a`  | one card per scanned file |  ✅  |
+| `2b`  | skeleton + assignment     |  ✅  |
+| `2c`  | organization              |  ✅  |
+| `3`   | narration + registers     |  ✅  |
 
 `--phase` accepts `all`, `1`, `2` (meaning 2a+2b+2c), any single phase, or a comma list
 like `2c,3`.

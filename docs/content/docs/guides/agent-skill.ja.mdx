@@ -23,12 +23,12 @@ handbook skill \
   --agent-dir work/api/handbook/agent
 ```
 
-| フラグ                | 使う理由                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| `--work` + `--source` | **ファイルごとのコンテンツハッシュ** を持つ `coverage.json` を生成します — ドリフトのシグナルです |
-| `--agent-dir`         | ロケータページを同梱し、ルーティングプロトコルに曖昧さ解消のステップを追加します                  |
-| `--project`           | 本文で使われる人間向けの名前。デフォルトは `--name` です                                          |
-| `--lang zh`           | 中国語の **本文**。frontmatter は英語のままです — 後述                                            |
+| フラグ                | 使う理由                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| `--work` + `--source` | **ファイルごとのコンテンツハッシュ** を持つ `coverage.json` を生成します — ドリフトのシグナルです  |
+| `--agent-dir`         | エージェントインデックスとその事実テーブルを同梱し、ルーティングプロトコルに grep レシピを与えます |
+| `--project`           | 本文で使われる人間向けの名前。デフォルトは `--name` です                                           |
+| `--lang zh`           | 中国語の **本文**。frontmatter は英語のままです — 後述                                             |
 
 ## 得られるもの
 
@@ -41,13 +41,24 @@ skills/api/
     index.md                  every subsystem → its files
     registers.md              cross-stage state
     stages/<id>.md            one page per stage
-    agent/how_to_use.md
-    agent/disambiguation.md
+    agent/index.md            lookup recipes, stage table, registers, coverage
+    agent/symbols.tsv         name → path:startLine-endLine
+    agent/files.tsv           path → stage, role, purpose
+    agent/calls.tsv           call edges (callee located, or boundary:<specifier>)
+    agent/stages/<id>.md      second hop per stage
     coverage.json             file → stage + sha256
 ```
 
 パッケージは **自己完結していて共有可能** であり、ソースコードを埋め込むことは決して
 ありません。同梱するのは地図であって、土地そのものではありません。
+
+**読み手は 2 種類、パッケージは 1 つ。** `references/` は人間向けのハンドブックです —
+説明します。`references/agent/` は位置を示します: 「`sendPayment` はどこで定義されて
+いるか」に grep 1 回で答えます。どれだけ文章を積んでも、これはできません。両者は同じ
+テキストを 2 通りにレンダリングしたものではなく、エージェント側が文章側をコピーすることも
+なくなりました。エージェントに説明が必要なときは、ステージページがそこへリンクします。
+`--agent-dir` が同梱の経路として存在する前は、インデックス全体が生成されたまま一度も
+届けられていませんでした — いまはプロダクトの主要な経路を通ります。
 
 ## SKILL.md の契約
 
@@ -75,7 +86,10 @@ description: Navigate the Payments API codebase by behavior and source location.
    そのファイル群に対応付けます。
 3. 関係のある `references/stages/<id>.md` ページだけを開く。
 4. 横断的な状態は `references/registers.md` で確認する — 広範囲に波及する変更では非常に有用です。
-5. _(`--agent-dir` 使用時)_ 用語が曖昧な場合は曖昧さを解消する。
+5. _(`--agent-dir` 使用時)_ 推測せず、事実テーブルを grep する: `symbols.tsv` は名前を
+   `path:startLine-endLine` に変え、`calls.tsv` はそれを呼び出し元に変えます。別のパッケージに
+   ある呼び出し元も含まれ、それらは `boundary:<specifier>` の行として現れます。レシピの
+   一覧は `references/agent/index.md` にあります。
 6. **変更を提案・実施する前に、引用されたすべてのパスの実際のソースを `read_file` で読む。**
 
 そして最初の行に、最も重要なことが書かれています:
@@ -165,8 +179,10 @@ handbook plan --source ~/code/api --handbook skills/api/references \
 - **`--out` はハンドブックディレクトリやその祖先であってはなりません。** ビルドは最初に
   `--out` を消去します。それを許すと、パッケージ化しようとしているものそれ自体を削除し、
   黙って空のスキルを生成してしまいます。
-- **ロケータページはペアで同梱されるか、まったく同梱されないかのどちらかです。** `SKILL.md` が
-  存在しないファイルへルーティングすることは決してあってはなりません。
+- **エージェントインデックスとその事実テーブルは、一式で同梱されるか、まったく同梱されないか
+  のどちらかです。** `SKILL.md` が存在しないファイルへルーティングすることは決してあっては
+  ならないので、`index.md`、`symbols.tsv`、`files.tsv`、`calls.tsv` のいずれかを欠いた
+  `references/agent/` は、中途半端に同梱されるのではなく拒否されます。
 - **状態レジスタのページは常に存在します。** レジスタが 1 つもないハンドブックでも同様です。
   安定した参照レイアウトは契約の一部だからです。
 

@@ -153,6 +153,20 @@ registerAdapter('elixir', () => new ElixirAdapter());
 **绝不猜测。** 对下游的一切来说，一条猜出来的边与一条真实的边无从分辨，这会同时毒化分组、
 协同变更提示和 agent 定位索引。
 
+### 披露规则
+
+同样的道理向上适用于整个文件。你的适配器读不了、解析不了、或者只解析出一部分的文件，必须经由
+`ModuleAnalysis.unparsedFiles` 报回来 —— 绝不能无声地跳过：
+
+- `unreadable` —— 读取抛错。`detail` 是 errno 消息。
+- `unparsable` —— 语法抛错，或者没有返回语法树。
+- `partial` —— `tree.rootNode.hasError`。你确实提取到的事实是真的；落在错误节点里的那些东西
+  则不在其中。
+
+共用的骨干代码会替你记下这三类，所以规格驱动的适配器不用做什么就已经具备这项行为。流水线会把
+前两类从 `scannedFiles` 中剔除，并把每一条都写进 `phase1/scan-coverage.json`。一个从分析里无声
+消失的文件，正是下游任何环节都察觉不到的那种失败。
+
 ## 从外部注册适配器
 
 注册表是公开的，所以你无需 fork 就能添加一门语言：
@@ -175,6 +189,7 @@ registerAdapter('mylang', () => new MyAdapter());
 - [ ] 已在 `register.ts` 中注册（generic 层的条目会被自动拾取）
 - [ ] 有一个在临时目录中解析 **真实** 源码的测试
 - [ ] 能力已如实声明
+- [ ] 读不了、解析不了和只解析出一部分的文件都已上报，绝不无声跳过
 - [ ] 显示名称已加入漂移测试的 `DISPLAY` 映射
 - [ ] 两份 README、analyzer 的 README 以及语言参考都已更新
 - [ ] `pnpm check` 通过

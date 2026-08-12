@@ -61,6 +61,7 @@ interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  provenance?: { commit?: string; generatedAt: string };
 }
 ```
 
@@ -72,7 +73,7 @@ interface HandbookModel {
 source tree
    │  analyzer — tree-sitter WASM, one adapter per language
    ▼
-phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
    │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
    ▼
 phase2/cards/<rel>.json + _coverage.json
@@ -94,6 +95,14 @@ HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.h
 
 **工作目录契约：**每个阶段只读上游产物、只写自己的产物，全部在读取时做带 `version` 字段的 schema 校验。任何阶段都可以单独重跑。崩溃后可恢复——卡片按批写入，叙述有内容哈希缓存。
 
+### 人类产物负责解释，智能体产物负责定位
+
+一个 `HandbookModel`，两份工作确实不同的输出——这个分工本身就是设计，不是打包时的细节。
+
+markdown 和 HTML 手册是写来**读**的：文字、次序、一条叙事主线。`agent/` 是写来 **grep** 的：`symbols.tsv` 用一行回答*“`sendPayment` 定义在哪里”*，这是再多文字也做不到的。
+
+它们从前是同一份文字的两种形状，代价很具体：智能体索引最后**体积是人类索引的 2.1 倍，却一个符号位置都不含**，因为其中 42% 是从人类页面逐字节抄过来的模型文字。如今智能体这一侧承载的是事实，外加每个文件一行剪短的文字；需要解释的地方，每个阶段页面**链接**到人类页面，而不是把它复制一份。
+
 ## 分析器内部
 
 每种语言实现一个 `LanguageAdapter`：`discover`、`analyze`，以及可选的 `statementSpans`。所有语法都是 WebAssembly，因此安装时从不编译原生代码。
@@ -104,6 +113,8 @@ HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.h
 2. **解析**——每个调用点变成一条带类型的边：`self_method`、`self_attr_method`、`param_method`、`internal_func`、`internal_constructor`、`boundary`、`boundary_constructor`——或者 `unresolved`，由图构建器隔离进 `dropped-calls.json` 并标注类别。
 
 **保留下来的图里只有解析成功、有名有姓的被调方。** 这正是图中每条边值得信任的原因。
+
+同一条规则也适用于往上一层——整个文件。适配器读不了的文件、让语法抛错的文件、以及带着语法错误解析出来的文件，都会连同原因记进 `scan-coverage.json`；前两类还会被挡在 `scannedFiles` **之外**，这样后面任何一个阶段都不可能去描述一个解析器从没见过的文件。
 
 **nav-pack** 是从图推导出来的确定性定位摘要——目录汇总、入口点候选、扇出、外部子系统。它是骨架合成器能看到的*唯一*代码库视图，这让那条提示词既小又有据可依。
 

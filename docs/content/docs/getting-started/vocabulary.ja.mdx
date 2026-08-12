@@ -17,6 +17,17 @@ Phase 1 の出力。コード内のすべての関数とメソッドに加え、
 `<work>/phase1/graph.json` にあります。下流のすべてがこれを読み、何もソースを再パース
 しません。
 
+### スキャンカバレッジ (scan coverage)
+
+Phase 1 の誠実さのもう半分。アナライザが事実へ変換**できなかった**ファイルの一覧で、
+1 つずつ理由が付きます — `unreadable`（読み取りが失敗した）、`unparsable`（文法が例外を
+投げた）、`partial`（パースはできたが構文エラーを含むため、その事実は本物でも不完全）。
+
+前の 2 つはグラフの `scannedFiles` からも取り除かれるため、パーサーが一度も開いていない
+ファイルを下流が記述することはありません。一覧が空であることは「すべてパースできた」という
+主張です。ファイルが存在しないことは、主張ではありません。
+`<work>/phase1/scan-coverage.json` にあります。
+
 ### カード (card)
 
 ソースファイルごとに 1 つ。「このファイルは何のためにあるのか?」に 3 つのフィールド —
@@ -81,7 +92,7 @@ Phase 1 の出力。コード内のすべての関数とメソッドに加え、
 
 ```text
 <work>/
-  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
   phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
   phase3/   narration.json · registers.json · cache/
   handbook/ the rendered output, once you run `render`
@@ -130,13 +141,13 @@ Phase 1 の出力。コード内のすべての関数とメソッドに加え、
 
 ## フェーズ
 
-| Phase | 生成物                  | LLM? |
-| ----- | ----------------------- | :--: |
-| `1`   | コールグラフ            |  ❌  |
-| `2a`  | ファイルごとのカード    |  ✅  |
-| `2b`  | スケルトン + 割り当て   |  ✅  |
-| `2c`  | 編成                    |  ✅  |
-| `3`   | ナレーション + レジスタ |  ✅  |
+| Phase | 生成物                           | LLM? |
+| ----- | -------------------------------- | :--: |
+| `1`   | コールグラフ                     |  ❌  |
+| `2a`  | スキャンしたファイルごとのカード |  ✅  |
+| `2b`  | スケルトン + 割り当て            |  ✅  |
+| `2c`  | 編成                             |  ✅  |
+| `3`   | ナレーション + レジスタ          |  ✅  |
 
 `--phase` は `all`、`1`、`2`（2a+2b+2c の意味）、任意の単一フェーズ、または `2c,3` のような
 カンマ区切りリストを受け付けます。

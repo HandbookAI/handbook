@@ -97,6 +97,29 @@ jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
 Языки generic-уровня отбрасывают больше — так задумано. См.
 [Достоверность анализа](/docs/concepts/analysis-fidelity).
 
+### Файла, который точно существует, нет в руководстве
+
+Спросите сначала phase 1: файл, не ставший фактами, не станет и страницей.
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | Что означает                                      | Что делать                                                               |
+| ------------ | ------------------------------------------------- | ------------------------------------------------------------------------ |
+| `unreadable` | чтение не удалось — права, висячий симлинк, гонка | почините файл или права доступа и перезапустите `analyze`                |
+| `unparsable` | грамматика упала или не вернула дерева            | обычно shell + `case`; см. [Поддержка языков](/docs/reference/languages) |
+| `partial`    | разобрался, но с синтаксическими ошибками         | страница есть, но она **неполная** — прочитайте сам файл                 |
+
+Файлы `unreadable` и `unparsable` намеренно убираются из `scannedFiles` в `graph.json`,
+поэтому карточка о файле, которого парсер не читал, не пишется, а `_coverage.json` не
+может зачесть его как описанный. Файлы `partial` свою страницу сохраняют: факты на ней
+настоящие, просто не все.
+
+Пустой массив `files` означает, что разобралось всё. Если артефакта нет вовсе, рабочий
+каталог старше самой этой записи — перезапустите `analyze`.
+
 ### Swift убивает процесс
 
 ```text
@@ -278,6 +301,7 @@ handbook config --command <cmd> --json     # full resolved configuration
 cat work/api/run-manifest.json             # what the last good run did
 ls work/api/phase2/cards/_rejected/        # what the model actually replied
 jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
 ```
 
 Если проблема воспроизводится, перечисленные артефакты — ровно то, что нужно для отчёта

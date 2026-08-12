@@ -24,7 +24,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -50,15 +50,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 特に見ておく価値があるもの:
 
-| これを開いて                          | 注目すべき点                                                                     |
-| ------------------------------------- | -------------------------------------------------------------------------------- |
-| `handbook/overview.md`                | コールグラフから生成された mermaid の**ステージマップ**                          |
-| `handbook/index.md`                   | すべてのステージが入れ子で並び、それぞれに段落が付いている                       |
-| `handbook/register.md`                | ステージ横断の状態と、それぞれに触れるステージ                                   |
-| `handbook/agent/index.md`             | エージェント用ロケーター形式 — 文章はなく、アドレスだけ                          |
-| `handbook/agent/disambiguation.md`    | 正当に複数のステージを指す用語                                                   |
-| `skill/references/coverage.json`      | ファイルごとのコンテンツハッシュ。これがドリフトのシグナルです                   |
-| `work/demo/phase1/dropped-calls.json` | アナライザーが解決**できなかった**呼び出し。推測せず、分類したうえで保持されます |
+| これを開いて                          | 注目すべき点                                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | コールグラフから生成された mermaid の**ステージマップ**                                                                   |
+| `handbook/index.md`                   | すべてのステージが入れ子で並び、それぞれに段落が付いている                                                                |
+| `handbook/register.md`                | ステージ横断の状態と、それぞれに触れるステージ                                                                            |
+| `handbook/agent/index.md`             | エージェントインデックス — 検索レシピ、ステージ表、カバレッジ。まるごと読むもの                                           |
+| `handbook/agent/symbols.tsv`          | すべてのシンボル → `path:startLine-endLine`。文章のページが決して持たなかったものです                                     |
+| `skill/references/coverage.json`      | ファイルごとのコンテンツハッシュ。これがドリフトのシグナルです                                                            |
+| `work/demo/phase1/dropped-calls.json` | アナライザーが解決**できなかった**呼び出し。推測せず、分類したうえで保持されます                                          |
+| `work/demo/phase1/scan-coverage.json` | アナライザーが読み取り、あるいは完全にパース**できなかった**ファイル。ここが `[]` なら 5 ファイルすべてパースできています |
 
 ## ステップ 4 — 内部をのぞく
 
@@ -97,8 +98,8 @@ pnpm mock-llm         # just the mock server, on port 8099
   />
 </div>
 
-1. **`analyze`** が、tree-sitter ですべてのファイルを解析して型付きコールグラフを
-   構築しました。LLM 不使用。
+1. **`analyze`** が、tree-sitter で読み取れたすべてのファイルを解析して型付きコールグラフを
+   構築し、読み取れなかったものを `phase1/scan-coverage.json` に書き出しました。LLM 不使用。
 2. **`generate`** が、ファイルごとにカードを書き、ステージのスケルトンを合成し、
    すべてのファイルをステージに割り当て、グループ化して並べ、それからボトムアップで
    ナレーションを書き、ステージ横断の状態レジスタを抽出しました。

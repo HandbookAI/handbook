@@ -24,7 +24,7 @@ pnpm demo
 == build ==
 == start mock LLM (offline; prose will be placeholder text) ==
 == 1. analyze (no LLM) ==
-{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4 }
+{ "language": "multi", "files": 5, "functions": 23, "edgesKept": 31, "edgesDropped": 4, "filesUnparsed": 0 }
 == 2. generate (phases 2+3) ==
 { "phasesRun": ["2a","2b","2c","3"], "nCards": 5, "nStages": 4, "nRegisters": 2 }
 == 3. render markdown + HTML site + agent index + llms.txt ==
@@ -51,15 +51,16 @@ open examples/work/demo/skill/SKILL.md              # the agent SKILL package
 
 Cosas que vale la pena mirar en concreto:
 
-| Abre esto                             | Y fíjate en                                                                                       |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `handbook/overview.md`                | Un **mapa de etapas** en mermaid generado a partir del grafo de llamadas                          |
-| `handbook/index.md`                   | Cada etapa, anidada, cada una con un párrafo                                                      |
-| `handbook/register.md`                | El estado transversal a las etapas, con las etapas que tocan cada pieza                           |
-| `handbook/agent/index.md`             | El formato localizador para agentes — sin prosa, solo direcciones                                 |
-| `handbook/agent/disambiguation.md`    | Términos que legítimamente apuntan a varias etapas                                                |
-| `skill/references/coverage.json`      | Un hash de contenido por archivo. Esta es la señal de deriva.                                     |
-| `work/demo/phase1/dropped-calls.json` | Llamadas que el analizador **no** pudo resolver, conservadas y categorizadas en vez de adivinadas |
+| Abre esto                             | Y fíjate en                                                                                                    |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `handbook/overview.md`                | Un **mapa de etapas** en mermaid generado a partir del grafo de llamadas                                       |
+| `handbook/index.md`                   | Cada etapa, anidada, cada una con un párrafo                                                                   |
+| `handbook/register.md`                | El estado transversal a las etapas, con las etapas que tocan cada pieza                                        |
+| `handbook/agent/index.md`             | El índice para agentes — recetas de búsqueda, la tabla de etapas, cobertura. Se lee entero                     |
+| `handbook/agent/symbols.tsv`          | Cada símbolo → `path:startLine-endLine`. Esto es lo que las páginas en prosa nunca tuvieron                    |
+| `skill/references/coverage.json`      | Un hash de contenido por archivo. Esta es la señal de deriva.                                                  |
+| `work/demo/phase1/dropped-calls.json` | Llamadas que el analizador **no** pudo resolver, conservadas y categorizadas en vez de adivinadas              |
+| `work/demo/phase1/scan-coverage.json` | Archivos que el analizador **no** pudo leer o parsear del todo. Un `[]` aquí significa que los cinco parsearon |
 
 ## Paso 4 — Mira bajo el capó
 
@@ -100,8 +101,8 @@ genuina.
   />
 </div>
 
-1. **`analyze`** parseó cada archivo con tree-sitter y produjo un grafo de llamadas
-   tipado. Sin LLM.
+1. **`analyze`** parseó con tree-sitter cada archivo que pudo leer y produjo un grafo de
+   llamadas tipado, y escribió en `phase1/scan-coverage.json` lo que no pudo leer. Sin LLM.
 2. **`generate`** escribió una ficha por archivo, sintetizó un esqueleto de etapas, asignó
    cada archivo a una etapa, los agrupó y ordenó, y después narró de abajo hacia arriba y
    extrajo los registros de estado transversales a las etapas.

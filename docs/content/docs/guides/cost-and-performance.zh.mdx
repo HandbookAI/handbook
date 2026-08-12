@@ -10,7 +10,7 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611, "filesUnparsed": 3 }
 ```
 
 **免费。** 驱动成本的是 `files` 这个数字，因为最贵的 Phase 2a 与它大致成线性关系。
@@ -141,7 +141,8 @@ jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
 handbook analyze --source $REPO --work $WORK
 ```
 
-检查文件数和 `dropped-calls.json`。先把扫描修对，再花任何一分钱。
+检查文件数、`dropped-calls.json` 和 `scan-coverage.json`。`filesUnparsed` 不为零，就是你即将
+掏钱买下的那本手册里的一个洞。先把扫描修对，再花任何一分钱。
 
 </Step>
 

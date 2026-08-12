@@ -158,8 +158,24 @@ A call you cannot pin down becomes `unresolved`, and the graph builder quarantin
 `dropped-calls.json` with a category and its raw text.
 
 **Never guess.** A guessed edge is indistinguishable from a real one to everything
-downstream, which poisons grouping, co-change hints and the agent locator index all at
+downstream, which poisons grouping, co-change hints and the agent index all at
 once.
+
+### The disclosure rule
+
+The same applies to whole files. A file your adapter cannot read, cannot parse, or parses
+only partially must come back in `ModuleAnalysis.unparsedFiles` — never be skipped in
+silence:
+
+- `unreadable` — the read threw. `detail` is the errno message.
+- `unparsable` — the grammar threw, or returned no tree.
+- `partial` — `tree.rootNode.hasError`. The facts you did extract are real; whatever sat
+  inside the error node is not there.
+
+The shared spine records all three for you, so a spec-driven adapter gets this for free.
+The pipeline drops the first two from `scannedFiles` and writes every entry to
+`phase1/scan-coverage.json`. A file silently missing from the analysis is the one failure
+mode nothing downstream can detect.
 
 ## Registering an adapter from outside
 
@@ -183,6 +199,7 @@ graph metadata** rather than having a fidelity claim invented for it.
 - [ ] Registered in `register.ts` (generic-tier entries are picked up automatically)
 - [ ] A test that parses **real** source in a temp directory
 - [ ] Capabilities declared honestly
+- [ ] Unreadable, unparsable and partial files reported, never skipped in silence
 - [ ] Display name added to the drift test's `DISPLAY` map
 - [ ] Both READMEs, the analyzer READMEs and the language reference updated
 - [ ] `pnpm check` passes

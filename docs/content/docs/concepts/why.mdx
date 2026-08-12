@@ -60,6 +60,7 @@ its first line:
 | ----------------------------------------- | -------------------------------- | -------------------------------------- |
 | Files, functions, line ranges, call edges | tree-sitter                      | No — it is a parse                     |
 | Which calls could **not** be resolved     | tree-sitter                      | No — they are quarantined, not guessed |
+| Which files could **not** be parsed       | tree-sitter                      | No — they are disclosed, not dropped   |
 | Stage structure                           | LLM, then mechanically validated | Structurally, no; judgment, yes        |
 | Purpose, walkthroughs, overviews          | LLM                              | Yes — and it is labelled as prose      |
 
@@ -74,6 +75,9 @@ Every design choice here follows one rule: **when something does not work, say s
   listed in `_coverage.json`. It is never dropped and never invented.
 - A call the analyzer could not resolve goes into `dropped-calls.json` with its category
   and raw text. It is never guessed into a plausible edge.
+- A file the analyzer could not read, or could only partly parse, goes into
+  `scan-coverage.json` with the reason. It is never counted as covered — a file nobody
+  opened is not "a file with no functions".
 - A language analyzed by the config-driven engine is **named in the overview**, so
   "best-effort call relations" cannot be read as "exact".
 - A planner run that gave up exits non-zero, so no script mistakes its apology for a plan.

@@ -70,6 +70,7 @@ interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  provenance?: { commit?: string; generatedAt: string };
 }
 ```
 
@@ -83,7 +84,7 @@ will: Das ist der gesamte Vertrag, der zu erfüllen ist.
 source tree
    │  analyzer — tree-sitter WASM, one adapter per language
    ▼
-phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
    │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
    ▼
 phase2/cards/<rel>.json + _coverage.json
@@ -108,6 +109,22 @@ und schreibt nur ihre eigenen — alle beim Lesen schema-validiert, mit einem
 `version`-Feld. Jede Phase kann allein erneut laufen. Abstürze sind fortsetzbar — Karten
 werden pro Batch geschrieben, der Erzähltext ist per Content-Hash gecacht.
 
+### Das Artefakt für Menschen erklärt; das Artefakt für Agenten verortet
+
+Ein `HandbookModel`, zwei Ausgaben mit wirklich verschiedenen Aufgaben — und diese Teilung
+ist das Design, kein Detail der Verpackung.
+
+Das Markdown- und das HTML-Handbuch sind zum **Lesen** geschrieben: Prosa, Reihenfolge, ein
+erzählerisches Rückgrat. `agent/` ist zum **Greppen** geschrieben: `symbols.tsv` beantwortet
+_„wo ist `sendPayment` definiert“_ in einer Zeile, was keine Menge Prosa schafft.
+
+Früher waren beide dieselbe Prosa in zwei Formen, und der Preis war konkret: Der
+Agenten-Index kam auf das **2,1-Fache der Größe des Index für Menschen und enthielt dabei
+keine einzige Symbolposition**, weil 42 % davon Modellprosa waren, Byte für Byte von den
+Seiten für Menschen kopiert. Jetzt trägt die Agentenseite Fakten und eine gekürzte Zeile
+Prosa pro Datei; wo die Erklärung gebraucht wird, **verlinkt** jede Etappenseite die Seite
+für Menschen, statt sie zu duplizieren.
+
 ## Im Inneren des Analyzers
 
 Jede Sprache implementiert einen `LanguageAdapter`: `discover`, `analyze` und optional
@@ -127,6 +144,12 @@ Adapter machen **zwei Durchgänge** pro Modul:
 
 **Der behaltene Graph enthält ausschließlich aufgelöste, benannte Aufrufziele.** Genau
 das macht eine Kante darin vertrauenswürdig.
+
+Dieselbe Regel gilt eine Ebene höher, für ganze Dateien. Eine Datei, die der Adapter
+nicht lesen konnte, bei der die Grammatik geworfen hat oder die mit Syntaxfehlern geparst
+wurde, wird mit ihrem Grund in `scan-coverage.json` festgehalten — und die ersten beiden
+Fälle bleiben **aus** `scannedFiles` heraus, damit keine spätere Phase eine Datei
+beschreiben kann, die der Parser nie gesehen hat.
 
 Das **Nav-Pack** ist eine deterministische Orientierungszusammenfassung aus dem
 Graphen — Verzeichnis-Rollups, Einstiegspunkt-Kandidaten, Fan-out, externe Subsysteme.

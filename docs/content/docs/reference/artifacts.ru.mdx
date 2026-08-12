@@ -17,6 +17,7 @@ JSON/YAML-артефакты несут поле `version` и при чтени�
     functions.csv         one row per internal function
     graph.dot             Graphviz view (files as clusters; await edges colored)
     dropped-calls.json    unresolved calls, categorized
+    scan-coverage.json    files the scan could NOT turn into facts, and why
   phase2/
     cards/<rel>.json      one card per source file (tree-mirrored paths)
     cards/_coverage.json  {nFiles, nDescribed, missing[]}
@@ -39,11 +40,15 @@ JSON/YAML-артефакты несут поле `version` и при чтени�
     "generatedAt": "2026-08-02T10:00:00.000Z",
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
-    "scannedFiles": ["app/main.py", "…"],
+    "scannedFiles": ["app/main.py", "…"], // only files that were actually read and parsed
     "nInternalFunctions": 316,
     "nBoundaryNodes": 45,
     "nEdges": 903,
     "policy": "Edges are emitted only when the callee resolves …",
+    "unparsedFiles": [
+      // optional; [] means every scanned file parsed cleanly
+      { "file": "app/legacy.py", "reason": "partial", "detail": "…" },
+    ],
   },
   "nodes": {
     "app.main.main": {
@@ -117,6 +122,59 @@ internal_constructor · boundary · boundary_constructor` (никогда не `
 
 Категории: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `builtin`,
 `local_var_method`, `bare_name`.
+
+## phase1/scan-coverage.json
+
+Родной брат `dropped-calls.json`, только уровнем выше: тот файл отчитывается за каждый
+**вызов**, который анализатор отказался угадывать, а этот — за каждый **файл**, о котором
+он отказался заявить, что проанализировал его.
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "…",
+    "nScanned": 412, // files that reached the graph — i.e. graph.metadata.scannedFiles
+    "nUnparsed": 3,
+    "byReason": { "partial": 1, "unparsable": 1, "unreadable": 1 },
+  },
+  "files": [
+    // sorted by path, so an unchanged tree re-runs byte-identically
+    { "file": "app/legacy.py", "reason": "partial", "detail": "the parse tree contains syntax errors…" },
+    { "file": "scripts/deploy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
+    { "file": "vendor/dangling.py", "reason": "unreadable", "detail": "ENOENT: no such file or directory…" },
+  ],
+}
+```
+
+| `reason`     | Что получил парсер           | В `scannedFiles`? | Получает карточку? |
+| ------------ | ---------------------------- | :---------------: | :----------------: |
+| `unreadable` | ничего — чтение не удалось   |        ❌         |         ❌         |
+| `unparsable` | ничего — упала грамматика    |        ❌         |         ❌         |
+| `partial`    | настоящие факты, но неполные |        ✅         |         ✅         |
+
+- **`unreadable`** — обнаружение перечислило путь, но чтение не удалось: права доступа,
+  висячий симлинк, файл, удалённый сборкой прямо под запуском. В `detail` — сообщение
+  errno.
+- **`unparsable`** — грамматика упала или вообще не вернула дерева. Ноль фактов. Именно
+  это сегодня даёт shell-скрипт с `case`.
+- **`partial`** — файл разобрался, но `rootNode.hasError`: tree-sitter сложил текст,
+  который не смог понять, в узел ошибки и продолжил дальше. Всё извлечённое из остальной
+  части файла **настоящее**; недостаёт того, что оказалось внутри этого узла, а снаружи это
+  не видно. Ровно поэтому такой файл стоит прочитать самому, прежде чем доверять странице о
+  нём.
+
+**Пустой массив `files` — это утвердительное заявление**: «каждый просканированный файл
+разобрался чисто». _Отсутствие_ артефакта означает, что анализ старше самой этой записи, а
+это совсем не то же самое.
+
+<Callout title="Почему первые два убираются из scannedFiles">
+  Файл, не давший ни одного факта, раньше оставался в `scannedFiles`, поэтому phase 2a писала о нём карточку,
+  а `_coverage.json` считал его описанным. Руководство после этого утверждало — как *факт от парсера*, — что
+  файл, которого никто не читал, не содержит ни одной функции. Выбрасывание таких путей отсюда оставляет за
+  каждым списком ровно один смысл: `scannedFiles` — это то, что анализатор прочитал, `scan-coverage.json` —
+  то, что не смог.
+</Callout>
 
 ## `phase2/cards/<rel>.json` — FileCard
 
@@ -237,10 +295,121 @@ coverage: { nFiles: 5, nOrganized: 5 }
   <sid>.md             one page per content-bearing stage (summary, sub-stages,
                        organization groups, per-file cards with function details,
                        📊 state-registers section when touched)
-  agent/               (--agent-site) how_to_use.md · index.md · disambiguation.md · <sid>.md
+  agent/               (--agent-site) index.md · symbols.tsv · files.tsv · calls.tsv · stages/<sid>.md
   html/                (--html) self-contained multi-page site (no external requests)
   handbook.html        (--html-single) one self-contained page
 ```
+
+## Индекс для агента (`--agent-site`)
+
+```
+<out>/agent/
+  index.md            the only file meant to be read whole: lookup recipes, the stage
+                      table, the register table, coverage
+  symbols.tsv         name → path:startLine-endLine, kind, stage, nCalledBy, signature
+  files.tsv           path → stage, role, nSymbols, purpose[prose]
+  calls.tsv           call edges: the caller always located, the callee located or
+                      marked boundary:<import specifier>
+  stages/<sid>.md     second hop: the stage's file list and its co-change pairs
+```
+
+**Артефакт для человека объясняет; артефакт для агента указывает, где что лежит.** Это не
+два рендеринга одного текста. Там, где агенту нужно объяснение, оно в одном переходе:
+страница этапа ссылается на человеческую страницу, а не копирует её.
+
+### Почему TSV, а не markdown-таблицы
+
+- Markdown-таблица **молча искорёжила бы 338 строк с сигнатурами в этом репозитории**,
+  потому что union-тип TypeScript содержит `|`. Табуляция с текстом исходников не
+  сталкивается.
+- **Один факт на строку переживает обрезку.** Любой grep-рецепт возвращает полный ответ
+  одной строкой — имя, местоположение, вид, этап, вызывающие и сигнатура вместе, — поэтому
+  и обрезанный результат остаётся пригодным к делу.
+- **Табуляция закрепляет целую колонку**: `grep "^scan\t"` находит символ с именем `scan`,
+  а не каждую строку, где встречается это слово.
+
+**Порядок колонок — это порядок ценности, проза последняя**, чтобы потребитель,
+обрезающий длинные строки, съел прозу раньше, чем путь.
+
+### Строки заголовка
+
+Каждая таблица открывается строками-комментариями `#`, которые называют колонки и границу
+доверия, — то же раскрытие, что конвейер делает везде, перенесённое на несущий его
+артефакт:
+
+```
+# name	location	kind	stage	nCalledBy	signature
+# parser facts. kind=fn is a function or method. kind=type:<class|interface|struct|record|enum|
+# trait|alias|other> is a parsed type DECLARATION, span read off the declaration itself.
+# kind=class-derived is the fallback where a language's adapter extracts no types: the SPAN is
+# min..max of the class's METHODS, not of the declaration. Which languages are indexed and which
+# fall back is stated in index.md under "coverage" — a miss here is not proof a name does not exist.
+# nCalledBy counts callers inside the scanned set PLUS callers that reach it through an import
+# (see calls.tsv boundary rows); a cross-package-only callee would otherwise read as dead code.
+```
+
+В `calls.tsv` заявлено парное к этому, и там же названа разница между двумя видами строк,
+которые он содержит:
+
+```
+# callerQualname	callerLocation	calleeQualname	calleeLocation
+# calleeLocation is path:line when the analyzer resolved it, or boundary:<import specifier>
+# when the call leaves the scanned set — the name is known, the location is not and is not guessed.
+# A call the analyzer could not pin down at all is in phase1/dropped-calls.json,
+# never guessed here — so absence is not proof nothing calls it.
+```
+
+### Граничные дуги и зачем они нужны монорепозиторию
+
+Вызов, уходящий за пределы просканированного набора через import, получает в качестве
+местоположения вызываемого `boundary:<specifier>`, но никогда не путь. Имя — это факт;
+местоположение — нет, и его не угадывают.
+
+В монорепозитории это не сноска, а большая часть того, что агент хочет знать. Измерено на этом
+репозитории: **1 063 из 3 565 дуг — граничные**, 284 из них ведут в `@handbook/core`. Если
+брать только разрешённые дуги, `checkLanguage` — вызываемая из другого пакета четыре раза —
+показывалась с **нулём вызывающих**, что агент читает как мёртвый код. Это _неверный
+указатель_, а не пробел, и неверный указатель — именно тот отказ, ради предотвращения которого
+существует этот артефакт.
+
+По той же причине `nCalledBy` в `symbols.tsv` считает граничных вызывающих наравне с
+внутрипакетными, и его заголовок об этом говорит. `boundary:` невозможно принять за путь,
+поэтому их включение ничего не выдумывает.
+
+### Строки типов и отступной вариант под ними
+
+`symbols.tsv` содержит три вида строк. `fn` — функция или метод. `type:<kind>` — **разобранное
+объявление типа**, где диапазон считан с самого объявления, из закрытого словаря: `class`,
+`interface`, `struct`, `record`, `enum`, `trait`, `alias`, `other`. `record` не сложен внутрь
+`struct`, потому что `record` в Java или C# — **ссылочный** тип, а `struct` — единственное
+слово этого словаря, которое означает ещё и тип-значение. `other` не свалка, а несущий
+элемент: определённый тип в Go (`type Celsius float64`) — не алиас, `union` в Rust — не
+struct, `@interface` в Java — не интерфейс, и `signature` хранит объявление **как оно
+написано**, так что родное ключевое слово не теряется никогда.
+
+Какие языки действительно извлекают типы — **объявляется на уровне адаптера** и раскрывается в
+`index.md`, так же как точность анализа (инвариант 3). `AdapterCapabilities.typeKinds` — это
+**список**, а не логическое значение, потому что адаптер может находить классы и упускать все
+интерфейсы; `[]` — положительное утверждение, а **отсутствие** поля означает, что артефакт
+старше него, и это сообщается как _unknown_, но никогда как ноль.
+
+`class-derived` — отступной вариант там, где адаптер не извлекает типы: диапазон равен
+`min…max` **методов** класса, то есть где находятся члены, а не где объявление, — поэтому он
+помечен, а не подан как разобранный факт. На этом репозитории добавление настоящего извлечения
+типов снизило `class-derived` с 45 строк до 19, и каждая из оставшихся — объектный литерал, а
+не объявление типа, что ровно то, что этот отступной вариант и должен ловить.
+
+Раскрытие важнее покрытия: агент, который ищет имя типа через grep, ничего не находит и
+заключает, что типа не существует, — это тот самый _неверный указатель_, ради предотвращения
+которого существует этот артефакт. Константы, переменные и макросы не индексируются ни в одном
+языке, и `index.md` об этом говорит.
+
+### Свежесть
+
+Шапка `index.md` несёт `HandbookModel.provenance` — `{ commit?, generatedAt }`,
+прочитанный из манифеста запуска. Номера строк теперь основная полезная нагрузка, а
+устаревший номер строки — ровно тот факт, который ломается **молча**, поэтому артефакт
+сообщает, когда он был сделан и по какому коммиту.
 
 ## SKILL-пакет (`handbook skill`)
 
@@ -251,6 +420,8 @@ coverage: { nFiles: 5, nOrganized: 5 }
   references/
     overview.md  index.md  registers.md
     stages/<sid>.md
+    agent/                       (--agent-dir) index.md · symbols.tsv · files.tsv ·
+                                 calls.tsv · stages/<sid>.md
     coverage.json                (optional) {schemaVersion, summary, files:[{path,stage,sha256}]}
 ```
 
@@ -259,6 +430,9 @@ coverage: { nFiles: 5, nOrganized: 5 }
 ссылается на `references/index.md` и направляет к настоящему исходнику; overview / index /
 registers / stages присутствуют; индекс ссылается на каждую страницу этапа; нет
 дублирующихся путей в покрытии; с `--source` хеши должны совпадать с живым деревом.
+Каталог `references/agent/` необязателен, но если он есть, в нём должны быть `index.md` и
+все три таблицы: индекс и его таблицы фактов поставляются вместе или не поставляются
+вовсе.
 
 ## Результат планировщика (`handbook plan`)
 

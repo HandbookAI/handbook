@@ -17,6 +17,7 @@ JSON/YAML のアーティファクトはすべて `version` フィールドを�
     functions.csv         one row per internal function
     graph.dot             Graphviz view (files as clusters; await edges colored)
     dropped-calls.json    unresolved calls, categorized
+    scan-coverage.json    files the scan could NOT turn into facts, and why
   phase2/
     cards/<rel>.json      one card per source file (tree-mirrored paths)
     cards/_coverage.json  {nFiles, nDescribed, missing[]}
@@ -39,11 +40,15 @@ JSON/YAML のアーティファクトはすべて `version` フィールドを�
     "generatedAt": "2026-08-02T10:00:00.000Z",
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
-    "scannedFiles": ["app/main.py", "…"],
+    "scannedFiles": ["app/main.py", "…"], // only files that were actually read and parsed
     "nInternalFunctions": 316,
     "nBoundaryNodes": 45,
     "nEdges": 903,
     "policy": "Edges are emitted only when the callee resolves …",
+    "unparsedFiles": [
+      // optional; [] means every scanned file parsed cleanly
+      { "file": "app/legacy.py", "reason": "partial", "detail": "…" },
+    ],
   },
   "nodes": {
     "app.main.main": {
@@ -117,6 +122,59 @@ internal_constructor · boundary · boundary_constructor`（`unresolved` にな�
 
 カテゴリ：`inherited_method`、`self_attr_unknown`、`string_literal_method`、`builtin`、
 `local_var_method`、`bare_name`。
+
+## phase1/scan-coverage.json
+
+`dropped-calls.json` の 1 つ上の階層にある兄弟です。あちらがアナライザの推測を拒んだすべての
+**呼び出し**を記録するのに対し、こちらは「解析した」と主張することを拒んだすべての
+**ファイル**を記録します。
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "…",
+    "nScanned": 412, // files that reached the graph — i.e. graph.metadata.scannedFiles
+    "nUnparsed": 3,
+    "byReason": { "partial": 1, "unparsable": 1, "unreadable": 1 },
+  },
+  "files": [
+    // sorted by path, so an unchanged tree re-runs byte-identically
+    { "file": "app/legacy.py", "reason": "partial", "detail": "the parse tree contains syntax errors…" },
+    { "file": "scripts/deploy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
+    { "file": "vendor/dangling.py", "reason": "unreadable", "detail": "ENOENT: no such file or directory…" },
+  ],
+}
+```
+
+| `reason`     | パーサーが得たもの        | `scannedFiles` に入る? | カードを得る? |
+| ------------ | ------------------------- | :--------------------: | :-----------: |
+| `unreadable` | 何も — 読み取りが失敗した |           ❌           |      ❌       |
+| `unparsable` | 何も — 文法が例外を投げた |           ❌           |      ❌       |
+| `partial`    | 本物の事実。ただし不完全  |           ✅           |      ✅       |
+
+- **`unreadable`** — 探索はそのパスを列挙したが、読み取りが失敗した: パーミッション、
+  リンク切れのシンボリックリンク、ランの足元でビルドが消したファイル。`detail` が errno の
+  メッセージを持ちます。
+- **`unparsable`** — 文法が例外を投げたか、木をまったく返さなかった。事実はゼロです。現状、
+  `case` を含むシェルスクリプトがこれに当たります。
+- **`partial`** — パースはできたが `rootNode.hasError`: tree-sitter は理解できなかった
+  テキストをエラーノードに置いたまま先へ進みました。ファイルの残りから抽出されたものはすべて
+  **本物**です — 欠けているのはそのノードの中にあったもので、外からは見えません。そのページを
+  信用する前に自分でファイルを読むべき理由が、これです。
+
+**`files` 配列が空であることは肯定的な主張**です — 「スキャンしたすべてのファイルがきれいに
+パースできた」。成果物が*存在しない*ことは、その解析がこの記録より前だという意味であって、
+同じことではありません。
+
+<Callout title="なぜ前の 2 つは scannedFiles から取り除かれるのか">
+  かつては、事実を何も生まなかったファイルも `scannedFiles` に残っていました。そのため Phase 2a
+  はそれにカードを書き、`_coverage.json`
+  はそれを記述済みとして数えていました。そしてハンドブックは、誰も読んでいないファイルに関数が 0
+  個あると、*パーサーの事実*として断言していたのです。ここでそれらのパスを落とすことで、1 つのリストが 1
+  つの意味だけを持ちます: `scannedFiles` はアナライザが読めたもの、`scan-coverage.json`
+  は読めなかったものです。
+</Callout>
 
 ## `phase2/cards/<rel>.json` — FileCard
 
@@ -237,10 +295,120 @@ coverage: { nFiles: 5, nOrganized: 5 }
   <sid>.md             one page per content-bearing stage (summary, sub-stages,
                        organization groups, per-file cards with function details,
                        📊 state-registers section when touched)
-  agent/               (--agent-site) how_to_use.md · index.md · disambiguation.md · <sid>.md
+  agent/               (--agent-site) index.md · symbols.tsv · files.tsv · calls.tsv · stages/<sid>.md
   html/                (--html) self-contained multi-page site (no external requests)
   handbook.html        (--html-single) one self-contained page
 ```
+
+## エージェントインデックス（`--agent-site`）
+
+```
+<out>/agent/
+  index.md            the only file meant to be read whole: lookup recipes, the stage
+                      table, the register table, coverage
+  symbols.tsv         name → path:startLine-endLine, kind, stage, nCalledBy, signature
+  files.tsv           path → stage, role, nSymbols, purpose[prose]
+  calls.tsv           call edges: the caller always located, the callee located or
+                      marked boundary:<import specifier>
+  stages/<sid>.md     second hop: the stage's file list and its co-change pairs
+```
+
+**人間向けアーティファクトは説明し、エージェント向けアーティファクトは位置を示します。**
+両者は 1 つのテキストを 2 通りにレンダリングしたものではありません。エージェントに説明が
+必要なときは、それは 1 ホップ先にあります — 各ステージページは、人間向けページをコピー
+するのではなく、そこへリンクします。
+
+### なぜ markdown テーブルではなく TSV なのか
+
+- markdown テーブルは、**このリポジトリの 338 行のシグネチャを静かに壊します**。
+  TypeScript の union 型が `|` を含むからです。タブがソーステキストと衝突することは
+  ありません。
+- **1 行 1 事実なので、切り詰められても生き残ります。** どの grep レシピも、名前・位置・
+  kind・ステージ・呼び出し元・シグネチャをまとめて 1 行で返すので、途中で切れた結果でも
+  そのまま使えます。
+- **タブは列全体を固定します**: `grep "^scan\t"` は `scan` という名前のシンボルに
+  マッチし、その語を含むすべての行にマッチするわけではありません。
+
+**列の順序は価値の順序で、文章が最後です。** 長い行を切り詰める消費側は、パスより先に
+文章を失います。
+
+### ヘッダー行
+
+どのテーブルも、列と信頼境界を示す `#` コメント行で始まります — パイプラインが他のあらゆる
+場所で行っているのと同じ開示を、それを担うアーティファクトの上に移したものです:
+
+```
+# name	location	kind	stage	nCalledBy	signature
+# parser facts. kind=fn is a function or method. kind=type:<class|interface|struct|record|enum|
+# trait|alias|other> is a parsed type DECLARATION, span read off the declaration itself.
+# kind=class-derived is the fallback where a language's adapter extracts no types: the SPAN is
+# min..max of the class's METHODS, not of the declaration. Which languages are indexed and which
+# fall back is stated in index.md under "coverage" — a miss here is not proof a name does not exist.
+# nCalledBy counts callers inside the scanned set PLUS callers that reach it through an import
+# (see calls.tsv boundary rows); a cross-package-only callee would otherwise read as dead code.
+```
+
+`calls.tsv` には、それに対応する開示が書かれており、そこに載る二種類の行の違いも明記されて
+います:
+
+```
+# callerQualname	callerLocation	calleeQualname	calleeLocation
+# calleeLocation is path:line when the analyzer resolved it, or boundary:<import specifier>
+# when the call leaves the scanned set — the name is known, the location is not and is not guessed.
+# A call the analyzer could not pin down at all is in phase1/dropped-calls.json,
+# never guessed here — so absence is not proof nothing calls it.
+```
+
+### 境界エッジ、そして monorepo がそれを必要とする理由
+
+走査対象の外へ import を通じて出ていく呼び出しは、呼び出し先の位置として
+`boundary:<specifier>` を持ちます。パスにはなりません。名前は事実ですが、位置は事実ではなく、
+推測もしません。
+
+monorepo ではこれは脚注ではなく、エージェントが最も知りたいことのほぼ全部です。このリポジトリ
+で実測すると、**3,565 本のエッジのうち 1,063 本が境界エッジ**で、そのうち 284 本が
+`@handbook/core` に向かっています。解決済みのエッジだけを載せると、別パッケージから 4 回呼ばれ
+ている `checkLanguage` が**呼び出し元ゼロ**として現れ、エージェントはそれを死んだコードと読み
+ます。それは*誤ったポインタ*であって欠落ではありません。そして誤ったポインタこそ、この成果物が
+防ぐために存在している失敗です。
+
+同じ理由で `symbols.tsv` の `nCalledBy` は境界の呼び出し元もパッケージ内の呼び出し元と一緒に数
+え、ヘッダにもそう書いてあります。`boundary:` はパスと見間違えようがないので、それらを含めても
+何も捏造していません。
+
+### 型の行、そしてその下にあるフォールバック
+
+`symbols.tsv` には三種類の行があります。`fn` は関数またはメソッドです。`type:<kind>` は
+**解析された型宣言**で、範囲は宣言そのものから読み取られ、閉じた語彙から取られます:
+`class`、`interface`、`struct`、`record`、`enum`、`trait`、`alias`、`other`。
+`record` を `struct` にまとめていないのは、Java や C# の `record` が**参照**型であり、
+`struct` はこの語彙の中で値型も意味する唯一の語だからです。`other` はゴミ箱ではなく荷重を
+受け持ちます: Go の defined type（`type Celsius float64`）は alias ではなく、Rust の `union`
+は struct ではなく、Java の `@interface` は interface ではありません。そして `signature` は
+宣言を**書かれたまま**保持するので、その言語固有のキーワードが失われることはありません。
+
+どの言語が実際に型を抽出するかは**アダプタごとに宣言**され、解析の忠実度と同じやり方で
+（不変条件 3）`index.md` で開示されます。`AdapterCapabilities.typeKinds` が真偽値ではなく
+**リスト**なのは、あるアダプタがクラスは見つけられても interface を全部取りこぼす可能性が
+あるからです。`[]` は肯定的な主張であり、フィールドが**存在しない**ことは成果物がその機能
+より古いという意味で、_unknown_ として報告され、ゼロとして報告されることはありません。
+
+`class-derived` はアダプタが型を抽出しない場合のフォールバックです。範囲はそのクラスの
+**メソッド**の `min…max`、つまりメンバーがどこにあるかであって宣言がどこにあるかではないので、
+解析済みの事実として出さずにラベル付けされます。このリポジトリでは、本物の型抽出を入れた
+ことで `class-derived` は 45 行から 19 行に減り、残っているものはすべて型宣言ではなく
+オブジェクトリテラルです。フォールバックが捕まえるべきなのはまさにそれです。
+
+開示はカバレッジより重要です。エージェントが型名を grep して何も出てこず、その型は存在しない
+と結論するのは、この成果物が防ぐために存在している*誤ったポインタ*そのものです。定数・変数・
+マクロはどの言語でも索引されず、`index.md` がそう述べています。
+
+### 鮮度
+
+`index.md` のヘッダーは `HandbookModel.provenance` — `{ commit?, generatedAt }` — を
+持ちます。ランマニフェストから読み取られたものです。いまや行番号が主たるペイロードであり、
+古くなった行番号は **静かに** 間違う唯一の事実です。だからこのアーティファクトは、いつ、
+何に対して作られたのかを述べます。
 
 ## SKILL パッケージ（`handbook skill`）
 
@@ -251,6 +419,8 @@ coverage: { nFiles: 5, nOrganized: 5 }
   references/
     overview.md  index.md  registers.md
     stages/<sid>.md
+    agent/                       (--agent-dir) index.md · symbols.tsv · files.tsv ·
+                                 calls.tsv · stages/<sid>.md
     coverage.json                (optional) {schemaVersion, summary, files:[{path,stage,sha256}]}
 ```
 
@@ -259,6 +429,9 @@ coverage: { nFiles: 5, nOrganized: 5 }
 `references/index.md` を参照し実際のソースへ誘導すること、overview/index/registers/stages
 が揃っていること、index がすべてのステージページへリンクしていること、coverage のパスが
 重複しないこと、`--source` を付けた場合はハッシュが実際のツリーと一致すること。
+`references/agent/` ディレクトリは任意ですが、存在する場合は `index.md` と 3 つの
+テーブルすべてを備えていなければなりません — インデックスとその事実テーブルは、まとめて
+同梱されるか、まったく同梱されないかのどちらかです。
 
 ## プランナーの出力（`handbook plan`）
 

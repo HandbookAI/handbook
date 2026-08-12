@@ -93,6 +93,29 @@ jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
 Generic-tier languages drop more by design. See
 [Analysis fidelity](/docs/concepts/analysis-fidelity).
 
+### A file I know exists has no page in the handbook
+
+Ask phase 1 first — a file that never became facts never becomes a page:
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | Meaning                                                   | What to do                                                                |
+| ------------ | --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `unreadable` | the read failed — permissions, a dangling symlink, a race | fix the file or the mode, then re-run `analyze`                           |
+| `unparsable` | the grammar threw or returned no tree                     | usually shell + `case`; see [Language support](/docs/reference/languages) |
+| `partial`    | it parsed, but with syntax errors                         | the page exists but is **incomplete** — read the file itself              |
+
+`unreadable` and `unparsable` files are deliberately removed from `graph.json`'s
+`scannedFiles`, so no card is written about a file the parser never read and
+`_coverage.json` cannot count it as described. `partial` files keep their page: the facts
+in it are real, just not all of them.
+
+An empty `files` array means everything parsed. If the artifact is missing entirely, the
+work directory predates this record — re-run `analyze`.
+
 ### Swift kills the process
 
 ```text
@@ -272,6 +295,7 @@ handbook config --command <cmd> --json     # full resolved configuration
 cat work/api/run-manifest.json             # what the last good run did
 ls work/api/phase2/cards/_rejected/        # what the model actually replied
 jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
 ```
 
 If it is reproducible, the artifacts above are exactly what a bug report needs.

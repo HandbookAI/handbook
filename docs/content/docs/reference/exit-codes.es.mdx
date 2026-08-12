@@ -71,7 +71,14 @@ un sitio que no esperabas.
 ## Formas del resultado
 
 ```json title="analyze"
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 ```json title="generate"
@@ -101,8 +108,12 @@ un sitio que no esperabas.
   "outDir": "skills/api",
   "nStagePages": 9,
   "references": [
-    "agent/how_to_use.md",
-    "agent/disambiguation.md",
+    "agent/index.md",
+    "agent/symbols.tsv",
+    "agent/files.tsv",
+    "agent/calls.tsv",
+    "agent/stages/stage-1.md",
+    "…",
     "overview.md",
     "index.md",
     "registers.md",

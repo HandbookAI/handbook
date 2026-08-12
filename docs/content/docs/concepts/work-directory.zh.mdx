@@ -12,6 +12,7 @@ description: 流水线产出的每一个工件、它存放在哪里、由什么�
     functions.csv       every function, flat, for grepping or a spreadsheet
     graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
     dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+    scan-coverage.json  files we could NOT read or fully parse — not counted as covered
   phase2/
     cards/<rel>.json    one card per source file, mirroring the source tree
     cards/_coverage.json  how many files got prose, and which did not
@@ -43,7 +44,7 @@ handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
 有两个刻意保留的例外，都是出于韧性而非松懈：
 
 - **卡片** —— 单个无法解析的卡片文件会被*跳过*，而不是致命错误。否则，卡片目录里只要有一个外来的或半同步的 JSON，就会搞垮断点续跑、Phase 2b/2c/3 以及每一次模型加载。
-- **`graph.json` 中的 `languages` 元数据** —— 可选，因为这里没有工件迁移机制，而在分析保真度声明存在之前写出的每一份调用图都必须继续通过校验。
+- **`graph.json` 中的 `languages` 元数据** —— 可选，因为这里没有工件迁移机制，而在分析保真度声明存在之前写出的每一份调用图都必须继续通过校验。`unparsedFiles` 可选出于同一个理由：它不在，说明这次分析早于这项记录，**而不是**说明什么都没失败。
 
 ### 每次写入都是原子的
 
@@ -82,11 +83,22 @@ jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
 # what could not be resolved, by category
 jq '.metadata.byCategory' phase1/dropped-calls.json
 
+# which files the scan could not turn into facts, and why
+jq '.metadata.byReason, .files' phase1/scan-coverage.json
+
 # which files never got prose
 jq '.missing' phase2/cards/_coverage.json
 ```
 
 `functions.csv` 存在的理由相同——有时最快的工具就是电子表格。
+
+### 两份覆盖文件回答的是不同的问题
+
+`_coverage.json` 回答的是*“哪些文件模型没能描述出来？”*。`scan-coverage.json` 回答的是它底下那一层问题：_“哪些文件解析器压根就没能读进来？”_——并给出 `unreadable`、`unparsable` 或 `partial` 之一的 `reason`。
+
+前两类**不贡献**任何事实，所以它们也会从 `graph.json` 的 `scannedFiles` 中移除：不会再有下游环节替一个没人打开过的文件写卡片，然后把它算作已描述。`partial` 的文件会留下——tree-sitter 从语法错误中恢复了过来，它确实找到的那些函数是真的，只是不完整。
+
+`files` 数组为空，意思是每个扫描到的文件都干净地解析成功了。这是一句断言；这份工件干脆不存在，则不是。
 
 ## 还有哪些地方会被写入
 

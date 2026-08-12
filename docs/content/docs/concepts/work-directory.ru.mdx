@@ -13,6 +13,7 @@ description: 'Каждый артефакт, который производит
     functions.csv       every function, flat, for grepping or a spreadsheet
     graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
     dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+    scan-coverage.json  files we could NOT read or fully parse — not counted as covered
   phase2/
     cards/<rel>.json    one card per source file, mirroring the source tree
     cards/_coverage.json  how many files got prose, and which did not
@@ -49,7 +50,9 @@ handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
   возобновление, фазы 2b/2c/3 и каждую загрузку модели.
 - **Метаданные `languages` в `graph.json`** — опциональны, потому что механизма миграции
   артефактов здесь нет, и каждый граф, записанный до появления деклараций достоверности,
-  должен продолжать проходить валидацию.
+  должен продолжать проходить валидацию. По той же причине опционально и поле
+  `unparsedFiles`: его отсутствие означает, что анализ старше самой этой записи, а **не**
+  то, что сбоев не было.
 
 ### Каждая запись атомарна
 
@@ -91,12 +94,29 @@ jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
 # what could not be resolved, by category
 jq '.metadata.byCategory' phase1/dropped-calls.json
 
+# which files the scan could not turn into facts, and why
+jq '.metadata.byReason, .files' phase1/scan-coverage.json
+
 # which files never got prose
 jq '.missing' phase2/cards/_coverage.json
 ```
 
 `functions.csv` существует по той же причине — иногда самый быстрый инструмент — это
 электронная таблица.
+
+### Два файла покрытия отвечают на разные вопросы
+
+`_coverage.json` отвечает на вопрос _«какие файлы модель не смогла описать?»_.
+`scan-coverage.json` отвечает на вопрос, лежащий уровнем ниже: _«какие файлы парсер вообще
+не сумел прочитать?»_ — с `reason`, равным `unreadable`, `unparsable` или `partial`.
+
+Первые два не дают **никаких** фактов, поэтому их вдобавок убирают из `scannedFiles` в
+`graph.json`: ничто ниже по потоку не напишет карточку о файле, которого никто не
+открывал, чтобы затем зачесть его как описанный. Файлы `partial` остаются — tree-sitter
+оправился от синтаксической ошибки, и найденные им функции настоящие, просто неполные.
+
+Пустой массив `files` означает, что каждый просканированный файл разобрался чисто. Это
+утверждение; отсутствие самого артефакта утверждением не является.
 
 ## Куда ещё пишутся файлы
 

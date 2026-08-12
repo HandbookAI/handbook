@@ -75,9 +75,11 @@ Dos cosas que debes saber:
   comando.
 
 <Callout type="warn" title="Aquí los secretos se rechazan">
-  `llmApiKey` / `OPENAI_API_KEY` nunca deben aparecer en un archivo de configuración — los archivos de
-  configuración se suben al repositorio. El cargador rechaza el archivo de plano y explica por qué. Ponlo en
-  `.env` o en el entorno de la shell.
+  `llmApiKey` / `OPENAI_API_KEY` y `llmExtraBody` / `OPENAI_EXTRA_BODY` nunca deben aparecer en un archivo de
+  configuración — los archivos de configuración se suben al repositorio. El cargador rechaza el archivo de
+  plano y explica por qué. Ponlos en `.env` o en el entorno de la shell. `baseUrl` sí se puede subir al
+  repositorio, salvo que la propia URL lleve credenciales (`https://user:pass@host/v1`), lo que se rechaza por
+  el mismo motivo.
 </Callout>
 
 Copia `handbook.config.example.yaml` para empezar; se genera a partir del registro, así

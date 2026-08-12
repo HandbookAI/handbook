@@ -26,7 +26,7 @@ handbook skill \
 | 标志                  | 为什么需要它                                                       |
 | --------------------- | ------------------------------------------------------------------ |
 | `--work` + `--source` | 生成 `coverage.json`，其中**每个文件都有内容哈希**——这就是漂移信号 |
-| `--agent-dir`         | 随包附带定位页面，并在路由协议中加入一步消歧                       |
+| `--agent-dir`         | 随包带上智能体索引和它的事实表，并给路由协议配上 grep 配方         |
 | `--project`           | 行文中使用的人类可读名称。默认取 `--name`                          |
 | `--lang zh`           | 中文**正文**。frontmatter 保持英文——见下文                         |
 
@@ -41,12 +41,21 @@ skills/api/
     index.md                  every subsystem → its files
     registers.md              cross-stage state
     stages/<id>.md            one page per stage
-    agent/how_to_use.md
-    agent/disambiguation.md
+    agent/index.md            lookup recipes, stage table, registers, coverage
+    agent/symbols.tsv         name → path:startLine-endLine
+    agent/files.tsv           path → stage, role, purpose
+    agent/calls.tsv           call edges (callee located, or boundary:<specifier>)
+    agent/stages/<id>.md      second hop per stage
     coverage.json             file → stage + sha256
 ```
 
 这个包**自包含、可分享**，并且从不内嵌源代码。它交付的是地图，不是疆域本身。
+
+**两类读者，一个包。** `references/` 是给人读的手册——它负责解释。`references/agent/`
+负责定位：一次 grep 就回答“`sendPayment` 定义在哪里”，这是再多文字也做不到的。它们
+不是同一份文本的两种渲染，智能体这一侧也不再照抄叙述那一侧；智能体需要那段解释时，阶
+段页面会链接过去。在 `--agent-dir` 成为一条交付通道之前，整个索引生成出来却从未送达
+过——如今它走的是产品的主通道。
 
 ## SKILL.md 契约
 
@@ -72,7 +81,9 @@ description: Navigate the Payments API codebase by behavior and source location.
 2. 经由 `references/index.md` 路由——阶段索引把每个子系统映射到它的文件。
 3. 只打开相关的 `references/stages/<id>.md` 页面。
 4. 查看 `references/registers.md` 了解横切状态——对扇出式修改极有价值。
-5. _（带 `--agent-dir` 时）_ 术语有歧义时先消歧。
+5. _（带 `--agent-dir` 时）_ 别猜，去 grep 事实表：`symbols.tsv` 把一个名字变成
+   `path:startLine-endLine`，`calls.tsv` 把它变成它的调用方——包括在别的包里的那些，
+   它们以 `boundary:<specifier>` 行出现。`references/agent/index.md` 列出了全部配方。
 6. **在提出或做出任何修改之前，对每个被引用的路径 `read_file` 真实源码。**
 
 而它的第一行就说出了最要紧的事：
@@ -159,8 +170,9 @@ handbook plan --source ~/code/api --handbook skills/api/references \
 
 - **`--out` 不得是手册目录本身，也不得是它的祖先目录。** 构建的第一步就是清空
   `--out`；否则会先删掉正要打包的东西，然后不声不响地产出一个空技能包。
-- **定位页面要么成对出现，要么完全不出现。** `SKILL.md` 绝不能路由到一个不存在的
-  文件。
+- **智能体索引和它的事实表要么整套交付，要么完全不交付。** `SKILL.md` 绝不能路由到
+  一个不存在的文件，所以一个缺了 `index.md`、`symbols.tsv`、`files.tsv` 或
+  `calls.tsv` 中任何一个的 `references/agent/`，会被拒绝，而不是半成品打包出去。
 - **寄存器页面永远存在**，哪怕这本手册一个寄存器都没有，因为稳定的 references 布
   局是契约的一部分。
 

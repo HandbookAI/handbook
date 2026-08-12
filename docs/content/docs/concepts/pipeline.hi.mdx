@@ -9,7 +9,7 @@ description: 'हर generation phase क्या बनाता है, उ�
 | Phase  | क्या बनाता है                           | LLM? | अकेले दोबारा चलने योग्य? |
 | :----: | --------------------------------------- | :--: | :----------------------: |
 | **1**  | call graph                              |  ❌  |            ✅            |
-| **2a** | हर source file के लिए एक card           |  ✅  |            ✅            |
+| **2a** | हर scanned file का एक card              |  ✅  |            ✅            |
 | **2b** | stage skeleton + file assignment        |  ✅  |            ✅            |
 | **2c** | stage के भीतर grouping और क्रम          |  ✅  |            ✅            |
 | **3**  | narration + cross-stage state registers |  ✅  |            ✅            |
@@ -37,7 +37,31 @@ intermediate representation बनाते हैं। फिर graph builder
 in-place body edit पकड़ने देता है जो line numbers और signatures को छुए बिना होता है — ठीक
 वही case जो एक विशुद्ध structural diff से पूरी तरह छूट जाता है।
 
-**Output:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`.
+### जो वह पढ़ नहीं सका
+
+Discovery ने जिस file को सूची में रखा पर analyzer उसे facts में नहीं बदल सका, वह चुपचाप
+छोड़ी नहीं जाती — उसे **दर्ज किया जाता है**। हर ऐसी file अपने reason के साथ
+`phase1/scan-coverage.json` में पहुँचती है:
+
+- **`unreadable`** — पढ़ना ही विफल हो गया (कोई permission mode, कोई dangling symlink, या ऐसी
+  file जिसे build ने run के बीचोंबीच मिटा दिया)। कोई facts नहीं।
+- **`unparsable`** — grammar ने throw कर दिया, या कोई tree लौटाया ही नहीं। कोई facts नहीं।
+  आम मामला है `case` वाली कोई shell script।
+- **`partial`** — file parse तो हुई, पर syntax errors के साथ। उसके बाक़ी हिस्से में मिले
+  functions और calls **असली** हैं; ग़ायब बस वही है जो error node के भीतर बैठा था।
+
+पहली दो categories की files `scannedFiles` से भी हटा दी जाती हैं, क्योंकि जिस file से कुछ
+निकला ही नहीं उसे phase 2a के हाथ में ऐसे नहीं थमाया जाना चाहिए मानो वह ख़ाली हो। Phase 1
+अपने अंत में log में उस चूक का नाम ले लेता है:
+
+```text
+[scan] coverage: 409 files analyzed; 3 recorded in scan-coverage.json (partial=1 unparsable=1 unreadable=1)
+```
+
+उस artifact में ख़ाली `files` array इसी बात का सकारात्मक रूप है: सब कुछ parse हो गया।
+
+**Output:** `phase1/graph.json`, `functions.csv`, `graph.dot`, `dropped-calls.json`,
+`scan-coverage.json`.
 
 <Callout title="इसे हमेशा सबसे पहले चलाएँ">
   `handbook analyze` ठीक यही phase है। इसकी कोई लागत नहीं, और tokens ख़र्च करने से *पहले* यह पता लगाने का यही
@@ -50,7 +74,9 @@ in-place body edit पकड़ने देता है जो line numbers �
 
 **LLM। आम तौर पर सबसे महँगा phase।**
 
-हर source file को एक card मिलता है:
+Phase 1 ने जो-जो file सचमुच पढ़ी, उसी को एक card मिलता है — यानी `graph.json` की
+`scannedFiles`, जिसमें `scan-coverage.json` में दर्ज unreadable और unparsable paths शामिल
+नहीं होते:
 
 - **purpose** — सादी भाषा में एक-दो वाक्य
 - **role** — एक closed vocabulary से (`entrypoint`, `domain_logic`, `io_transport`, …)

@@ -68,6 +68,7 @@ interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  provenance?: { commit?: string; generatedAt: string };
 }
 ```
 
@@ -81,7 +82,7 @@ interface HandbookModel {
 source tree
    │  analyzer — tree-sitter WASM, one adapter per language
    ▼
-phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
    │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
    ▼
 phase2/cards/<rel>.json + _coverage.json
@@ -106,6 +107,23 @@ HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.h
 単独で再実行できます。クラッシュしても再開できます — カードはバッチごとに書き込まれ、
 ナレーションはコンテンツハッシュでキャッシュされます。
 
+### 人間向けアーティファクトは説明し、エージェント向けアーティファクトは位置を示す
+
+1 つの `HandbookModel` から、本当に別の仕事をする 2 つの出力が生まれます — そしてこの分割は
+設計であって、パッケージングの細部ではありません。
+
+markdown と HTML のハンドブックは **読まれる** ために書かれています: 文章、順序、物語の
+背骨です。`agent/` は **grep される** ために書かれています: `symbols.tsv` は
+_「`sendPayment` はどこで定義されているか」_ に 1 行で答えます。どれだけ文章を積んでも、
+これはできません。
+
+かつては同じ文章を 2 つの形にしたものでした。その代償は具体的でした: エージェント
+インデックスは、**シンボルの位置を 1 つも含まないまま、人間向けインデックスの 2.1 倍の
+サイズ** になっていたのです。その 42% が、人間向けページからバイト単位でコピーされたモデルの
+文章だったからです。いまはエージェント側が持つのは、事実と、ファイルごとに切り詰めた 1 行の
+文章です。説明が必要な場所では、各ステージページが人間向けページを複製せずに **リンク**
+します。
+
 ## アナライザの内側
 
 各言語は 1 つの `LanguageAdapter` を実装します: `discover`、`analyze`、そして任意で
@@ -124,6 +142,11 @@ HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.h
 
 **保持されるグラフには、解決済みで名前の付いた呼び出し先しか決して含まれません。** それこそ
 が、その中のエッジを信頼できるものにしています。
+
+同じルールは 1 つ上、ファイル全体にも当てはまります。アダプタが読めなかったファイル、文法が
+例外を投げたファイル、構文エラーを含んだままパースされたファイルは、理由と共に
+`scan-coverage.json` に記録されます — そして前の 2 つは `scannedFiles` から**外され**ます。
+パーサーが一度も見ていないファイルを、後続のどのフェーズも記述できないようにするためです。
 
 **nav-pack** は、グラフから導出される決定的なオリエンテーション要約です — ディレクトリの
 集計、エントリポイント候補、ファンアウト、外部サブシステム。スケルトン合成器が目にする

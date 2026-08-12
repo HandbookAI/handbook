@@ -30,11 +30,12 @@ A few settings are **scoped-only**, because their meaning changes per command:
 
 ## Vendor aliases
 
-Six settings also accept the names people already have exported:
+Seven settings also accept the names people already have exported:
 
 | Setting        | Alias               |
 | -------------- | ------------------- |
 | `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmProvider`  | `OPENAI_PROVIDER`   |
 | `llmModel`     | `OPENAI_MODEL`      |
 | `llmBaseUrl`   | `OPENAI_BASE_URL`   |
 | `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
@@ -98,12 +99,22 @@ handbook.
 
 ## Secrets
 
-`llmApiKey` / `OPENAI_API_KEY` is marked `secret` in the registry, which means:
+Two settings are marked `secret` in the registry — `llmApiKey` / `OPENAI_API_KEY` and
+`llmExtraBody` / `OPENAI_EXTRA_BODY`. For both that means:
 
 - it is **never** a command-line flag (flags land in shell history and `ps` output);
 - it is **rejected** if it appears in a config file, with a message saying why — config
   files get committed;
 - it is **masked** in `handbook config` output.
+
+`llmExtraBody` is a secret because it is **free-form**. It merges whatever you put in it
+into every request body, and gateways do accept auth in the body — so the tool cannot
+enumerate what is in there, and cannot tell a tuning field from a credential. It has no
+flag at all; use the environment variable.
+
+`llmBaseUrl` is deliberately **not** a secret: a team pointing every checkout at one shared
+gateway has a legitimate reason to commit it. Only a URL carrying embedded credentials
+(`https://user:pass@gw.internal/v1`) is refused in a config file — there and nowhere else.
 
 ```text
 handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)

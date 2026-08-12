@@ -63,6 +63,7 @@ sagt das in seiner ersten Zeile:
 | ------------------------------------------------- | ------------------------------ | ------------------------------------------------------- |
 | Dateien, Funktionen, Zeilenbereiche, Aufrufkanten | tree-sitter                    | Nein — es ist ein Parse                                 |
 | Welche Aufrufe **nicht** aufgelöst werden konnten | tree-sitter                    | Nein — sie werden in Quarantäne gestellt, nicht geraten |
+| Welche Dateien **nicht** geparst werden konnten   | tree-sitter                    | Nein — sie werden offengelegt, nicht verworfen          |
 | Etappenstruktur                                   | LLM, dann mechanisch validiert | Strukturell nein; im Urteil ja                          |
 | Zweck, Rundgänge, Überblicke                      | LLM                            | Ja — und es ist als Prosa gekennzeichnet                |
 
@@ -79,6 +80,9 @@ das gesagt.**
   erfunden.
 - Ein Aufruf, den der Analyzer nicht auflösen konnte, wandert mit Kategorie und Rohtext
   nach `dropped-calls.json`. Er wird nie zu einer plausiblen Kante erraten.
+- Eine Datei, die der Analyzer nicht lesen oder nur teilweise parsen konnte, wandert mit
+  dem Grund nach `scan-coverage.json`. Sie gilt nie als abgedeckt — eine Datei, die
+  niemand geöffnet hat, ist nicht „eine Datei ohne Funktionen“.
 - Eine von der konfigurationsgetriebenen Engine analysierte Sprache wird **im Überblick
   namentlich genannt**, damit „Best-Effort-Aufrufbeziehungen“ nicht als „exakt“ gelesen
   werden können.

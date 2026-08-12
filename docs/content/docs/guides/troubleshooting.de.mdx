@@ -102,6 +102,29 @@ jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
 Sprachen der generischen Stufe verwerfen konstruktionsbedingt mehr. Siehe
 [Analysetreue](/docs/concepts/analysis-fidelity).
 
+### Eine Datei, die es garantiert gibt, hat keine Seite im Handbuch
+
+Fragen Sie zuerst Phase 1 — was nie zu Fakten wurde, wird auch nie zu einer Seite:
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | Bedeutung                                                                 | Was zu tun ist                                                               |
+| ------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `unreadable` | das Lesen schlug fehl — Rechte, ein ins Leere zeigender Symlink, ein Race | Datei oder Rechte reparieren, dann `analyze` erneut ausführen                |
+| `unparsable` | die Grammatik hat geworfen oder keinen Baum geliefert                     | meist Shell + `case`; siehe [Sprachunterstützung](/docs/reference/languages) |
+| `partial`    | geparst, aber mit Syntaxfehlern                                           | die Seite existiert, ist aber **unvollständig** — lesen Sie die Datei selbst |
+
+`unreadable`- und `unparsable`-Dateien werden bewusst aus `scannedFiles` in `graph.json`
+entfernt, damit über eine Datei, die der Parser nie gelesen hat, keine Karte geschrieben
+wird und `_coverage.json` sie nicht als beschrieben zählen kann. `partial`-Dateien
+behalten ihre Seite: Die Fakten darin sind echt, nur nicht alle.
+
+Ein leeres `files`-Array heißt, dass alles geparst wurde. Fehlt das Artefakt ganz, ist das
+Arbeitsverzeichnis älter als dieser Nachweis — führen Sie `analyze` erneut aus.
+
 ### Swift bringt den Prozess um
 
 ```text
@@ -289,6 +312,7 @@ handbook config --command <cmd> --json     # full resolved configuration
 cat work/api/run-manifest.json             # what the last good run did
 ls work/api/phase2/cards/_rejected/        # what the model actually replied
 jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
 ```
 
 Ist es reproduzierbar, sind die Artefakte oben genau das, was ein Bug-Report braucht.

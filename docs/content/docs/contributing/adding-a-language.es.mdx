@@ -167,6 +167,22 @@ texto en bruto.
 viene después, lo que envenena de golpe la agrupación, las pistas de co-cambio y el índice
 localizador del agente.
 
+### La regla de divulgación
+
+Lo mismo vale para los archivos enteros. Un archivo que tu adaptador no puede leer, no
+puede parsear o solo parsea a medias tiene que volver en `ModuleAnalysis.unparsedFiles` —
+nunca omitirse en silencio:
+
+- `unreadable` — la lectura lanzó una excepción. `detail` es el mensaje de errno.
+- `unparsable` — la gramática lanzó una excepción, o no devolvió árbol.
+- `partial` — `tree.rootNode.hasError`. Los hechos que sí extrajiste son reales; lo que
+  quedó dentro del nodo de error no está.
+
+El tronco común registra los tres por ti, así que un adaptador guiado por
+especificación lo obtiene gratis. El pipeline quita los dos primeros de `scannedFiles` y
+escribe cada entrada en `phase1/scan-coverage.json`. Un archivo que desaparece en silencio
+del análisis es el único modo de fallo que nada aguas abajo puede detectar.
+
 ## Registrar un adaptador desde fuera
 
 El registro es público, así que puedes añadir un lenguaje sin hacer un fork:
@@ -189,6 +205,7 @@ de los metadatos del grafo** en lugar de inventarle una afirmación de fidelidad
 - [ ] Registrado en `register.ts` (las entradas de nivel genérico se recogen automáticamente)
 - [ ] Una prueba que parsea código fuente **real** en un directorio temporal
 - [ ] Capacidades declaradas honestamente
+- [ ] Archivos ilegibles, imparseables y parciales reportados, nunca omitidos en silencio
 - [ ] Nombre visible añadido al mapa `DISPLAY` de la prueba de deriva
 - [ ] Ambos READMEs, los READMEs del analizador y la referencia de lenguajes actualizados
 - [ ] `pnpm check` pasa

@@ -96,6 +96,10 @@ node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work wor
 merely unresolved — install.sh, nvm.sh, …
 ```
 
+Каждый такой файл вдобавок назван поимённо в `phase1/scan-coverage.json` с
+`reason: "unparsable"` и не попадает в `scannedFiles` графа — так что это _видимый_
+пробел, а не молчаливый.
+
 </Callout>
 
 ## Что пропускается везде
@@ -132,6 +136,7 @@ handbook analyze --source ~/code/repo --work work/x -v
 ```bash
 jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
 jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+jq '.metadata.byReason, .files' work/x/phase1/scan-coverage.json  # what could not be parsed at all
 ```
 
 ## Добавление языка

@@ -13,6 +13,7 @@ repository का दस्तावेज़ बना रहे हैं, ह
     functions.csv       every function, flat, for grepping or a spreadsheet
     graph.dot           Graphviz:  dot -Tsvg graph.dot -o graph.svg
     dropped-calls.json  calls we could NOT resolve, categorized — not hidden
+    scan-coverage.json  files we could NOT read or fully parse — not counted as covered
   phase2/
     cards/<rel>.json    one card per source file, mirroring the source tree
     cards/_coverage.json  how many files got prose, and which did not
@@ -49,7 +50,8 @@ handbook: error: work/myrepo/phase2/skeleton.yaml: stages.3.id: Invalid
   model load को crash कर देता।
 - **`graph.json` का `languages` metadata** — optional है, क्योंकि यहाँ कोई artifact
   migration mechanism नहीं है और fidelity declarations के आने से पहले लिखा गया हर graph
-  आगे भी validate होते रहना चाहिए।
+  आगे भी validate होते रहना चाहिए। `unparsedFiles` भी इसी वजह से optional है: उसका न होना
+  यह कहता है कि analysis इस record से पुरानी है, यह **नहीं** कि कुछ विफल ही नहीं हुआ।
 
 ### हर write atomic है
 
@@ -91,11 +93,28 @@ jq -r '.nodes | to_entries | map(select(.value.kind=="internal"))
 # what could not be resolved, by category
 jq '.metadata.byCategory' phase1/dropped-calls.json
 
+# which files the scan could not turn into facts, and why
+jq '.metadata.byReason, .files' phase1/scan-coverage.json
+
 # which files never got prose
 jq '.missing' phase2/cards/_coverage.json
 ```
 
 `functions.csv` भी इसी वजह से है — कभी-कभी सबसे तेज़ tool एक spreadsheet ही होती है।
+
+### दोनों coverage files अलग-अलग सवालों के जवाब देती हैं
+
+`_coverage.json` इसका जवाब देती है कि _"model किन files का वर्णन नहीं कर पाया?"_।
+`scan-coverage.json` उसके नीचे बैठे सवाल का जवाब देती है: _"parser किन files को शुरू में
+पढ़ ही नहीं पाया?"_ — `unreadable`, `unparsable` या `partial` में से एक `reason` के साथ।
+
+पहली दो से **कोई** facts नहीं आते, इसलिए वे `graph.json` की `scannedFiles` से भी हटा दी
+जाती हैं: downstream कुछ भी ऐसी file का card लिखकर उसे described नहीं गिनता जिसे किसी ने
+खोला तक नहीं। `partial` files बनी रहती हैं — tree-sitter syntax error से उबर आया था, और
+उसे जो functions मिले वे असली हैं, बस अधूरे।
+
+ख़ाली `files` array का मतलब है कि हर scanned file साफ़-साफ़ parse हुई। यह एक दावा है;
+artifact का सिरे से ग़ायब होना दावा नहीं।
 
 ## और कहाँ-कहाँ लिखा जाता है
 

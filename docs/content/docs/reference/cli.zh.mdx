@@ -79,10 +79,21 @@ handbook analyze --source <dir> --work <dir> [--lang <lang>]
 `ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift` `typescript` `zig`。
 **`auto` 会在一趟里检测并合并所有语言**，几乎总是你想要的那个。
 
-**写出** `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`。
+**写出** `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`、
+`scan-coverage.json`。
+
+`files` 数的是真正被读到并解析成功的文件；`filesUnparsed` 数的是没做到的那些，而它们每一个都
+带着原因写在 `scan-coverage.json` 里。参见[产物格式](/docs/reference/artifacts)。
 
 ```json title="stdout"
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 ---
@@ -126,6 +137,7 @@ handbook generate --source <dir> --work <dir> [options]
 
 | 参数                        | 默认值                      | 环境变量别名        |
 | --------------------------- | --------------------------- | ------------------- |
+| `--provider <name>`         | `openai`                    | `OPENAI_PROVIDER`   |
 | `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
 | `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
 | `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
@@ -133,13 +145,21 @@ handbook generate --source <dir> --work <dir> [options]
 | `--llm-retries <n>`         | `6`                         | —                   |
 | `--llm-retry-backoff <sec>` | `3`                         | —                   |
 | `--llm-concurrency <n>`     | `16`                        | —                   |
-| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
 
 API 密钥**永远不是一个参数**。请在环境变量或 `.env` 文件里设置 `OPENAI_API_KEY`（或
 `HANDBOOK_LLM_API_KEY`）。它在配置文件里会被拒绝，因为配置文件是要提交进仓库的。
 
-`--extra-body` 会把厂商特有的字段合并进每一个请求体——比如
-`{"thinking":{"type":"disabled"}}`。模型、消息和 token 相关的字段不能通过它覆盖。
+额外请求体**同样永远不是一个参数**，出于同样的原因，它在配置文件里也会被拒绝。请在
+环境变量里设置 `OPENAI_EXTRA_BODY`（或 `HANDBOOK_LLM_EXTRA_BODY`）：它会把厂商特有的
+字段合并进每一个请求体——比如 `{"thinking":{"type":"disabled"}}`——而由于它的内容完全
+自由，没有办法分辨里面哪个字段是调参、哪个字段是鉴权。模型、消息和 token 相关的字段
+不能通过它覆盖。
+
+`--base-url` **是**一个参数，也欢迎写进配置文件——团队让所有本地检出都指向同一个共享
+网关，正是这个文件存在的意义。只有内嵌了凭据的 URL（`https://user:pass@gw.internal/v1`）
+会在那里被拒绝，而且仅限于那里；凭据请留在环境变量里。
+
+`--provider` 选的是协议格式，而不是厂商：`openai`（默认）能对接所有兼容 OpenAI 的端点，也就是绝大多数；`anthropic` 和 `gemini` 是为剩下那两家准备的。
 
 ```json title="stdout"
 {
@@ -162,16 +182,16 @@ API 密钥**永远不是一个参数**。请在环境变量或 `.env` 文件里�
 handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
 ```
 
-| 参数                      | 默认值            | 作用                                         |
-| ------------------------- | ----------------- | -------------------------------------------- |
-| `--work <dir>`            | **必填**          | 要渲染的工作目录                             |
-| `--title <title>`         | `System Handbook` | 输出中使用的 handbook 标题                   |
-| `--out <dir>`             | `<work>/handbook` | 写到哪里                                     |
-| `--html`                  | `false`           | 同时生成多页 HTML 站点，放在 `<out>/html`    |
-| `--html-single`           | `false`           | 同时生成单文件自包含的 `<out>/handbook.html` |
-| `--agent-site`            | `false`           | 同时生成智能体定位索引，放在 `<out>/agent`   |
-| `--llms-txt`              | `false`           | 同时生成 `llms.txt` 和 `llms-full.txt`       |
-| `--source-base-url <url>` | —                 | 把每张文件卡片链接到 `<url>/<relative path>` |
+| 参数                      | 默认值            | 作用                                           |
+| ------------------------- | ----------------- | ---------------------------------------------- |
+| `--work <dir>`            | **必填**          | 要渲染的工作目录                               |
+| `--title <title>`         | `System Handbook` | 输出中使用的 handbook 标题                     |
+| `--out <dir>`             | `<work>/handbook` | 写到哪里                                       |
+| `--html`                  | `false`           | 同时生成多页 HTML 站点，放在 `<out>/html`      |
+| `--html-single`           | `false`           | 同时生成单文件自包含的 `<out>/handbook.html`   |
+| `--agent-site`            | `false`           | 同时生成智能体索引和事实表，放在 `<out>/agent` |
+| `--llms-txt`              | `false`           | 同时生成 `llms.txt` 和 `llms-full.txt`         |
+| `--source-base-url <url>` | —                 | 把每张文件卡片链接到 `<url>/<relative path>`   |
 
 <Callout type="info">
   不加 `--source-base-url` 时，输出里**完全不含任何外部 URL**——如果你要为一个私有代码库 交付
@@ -199,7 +219,7 @@ handbook skill --handbook <dir> --out <dir> --name <slug> [options]
 | `--project <name>`  | _(`--name`)_ | 正文里使用的人类可读项目名                       |
 | `--work <dir>`      | —            | 从 phase-2 的归属结果补上 `coverage.json`        |
 | `--source <dir>`    | —            | 与 `--work` 一起用时，为**每个文件加上内容哈希** |
-| `--agent-dir <dir>` | —            | 把定位页面一并放进 `references/agent/`           |
+| `--agent-dir <dir>` | —            | 把智能体索引和它的事实表放进 `references/agent/` |
 | `--lang <l>`        | `en`         | SKILL.md **正文**的语言。frontmatter 保持英文    |
 
 <Callout type="warn" title="两条值得知道的拒绝规则">

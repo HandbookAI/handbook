@@ -69,6 +69,7 @@ interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  provenance?: { commit?: string; generatedAt: string };
 }
 ```
 
@@ -82,7 +83,7 @@ planning मुफ़्त मिल जाती है।** अगर आप 
 source tree
    │  analyzer — tree-sitter WASM, one adapter per language
    ▼
-phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
    │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
    ▼
 phase2/cards/<rel>.json + _coverage.json
@@ -107,6 +108,21 @@ HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.h
 अकेला दोबारा चलाया जा सकता है। Crash के बाद resume होता है — cards हर batch पर लिखे जाते हैं,
 narration content-hash cached है।
 
+### मानवीय artifact समझाता है; agent artifact पता बताता है
+
+एक ही `HandbookModel`, और दो ऐसे outputs जिनके काम सचमुच अलग हैं — और यह बँटवारा packaging
+का ब्योरा नहीं, ख़ुद design है।
+
+Markdown और HTML handbooks **पढ़े** जाने के लिए लिखे गए हैं: गद्य, क्रम, एक कथात्मक रीढ़।
+`agent/` **grep** किए जाने के लिए लिखा गया है: _"`sendPayment` कहाँ परिभाषित है"_ का जवाब
+`symbols.tsv` एक पंक्ति में दे देता है, जो कितना भी गद्य नहीं कर पाता।
+
+पहले ये दोनों एक ही गद्य के दो रूप थे, और उसकी क़ीमत ठोस थी: agent index **मानवीय index से
+2.1× बड़ा निकला, जबकि उसमें एक भी symbol का स्थान नहीं था**, क्योंकि उसका 42% मानवीय पृष्ठों
+से byte-दर-byte नक़ल किया गया model का गद्य था। अब agent वाला पक्ष facts ढोता है और हर file
+के लिए गद्य की एक कटी हुई पंक्ति; और जहाँ व्याख्या चाहिए, हर stage पृष्ठ उसकी नक़ल करने के
+बजाय मानवीय पृष्ठ से **जोड़** देता है।
+
 ## Analyzer के भीतर
 
 हर language एक `LanguageAdapter` लागू करती है: `discover`, `analyze`, और वैकल्पिक रूप से
@@ -125,6 +141,11 @@ Adapters हर module पर **दो passes** चलाते हैं:
 
 **रखे गए graph में हमेशा सिर्फ़ resolved, named callees होते हैं।** इसी से उसका हर edge भरोसे
 लायक़ बनता है।
+
+यही नियम एक स्तर ऊपर, पूरी files पर भी लागू होता है। जिस file को adapter पढ़ नहीं सका, या
+जिसकी grammar ने throw कर दिया, या जो syntax errors के साथ parse हुई — वह अपने reason के साथ
+`scan-coverage.json` में दर्ज होती है, और पहली दो `scannedFiles` से **बाहर** रखी जाती हैं,
+ताकि कोई बाद का phase ऐसी file का वर्णन न कर सके जिसे parser ने कभी देखा ही नहीं।
 
 **Nav-pack** graph से निकाली गई एक deterministic orientation summary है — directory
 rollups, entry-point candidates, fan-out, external subsystems। Skeleton synthesizer

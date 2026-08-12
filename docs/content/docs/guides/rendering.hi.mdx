@@ -70,25 +70,43 @@ sidebar TOC, breadcrumbs, आपकी पसंद याद रखने व�
 `--agent-site` → `<out>/agent/`
 
 ```text
-how_to_use.md      the agent-side search protocol
-index.md           every stage, as locator blocks
-disambiguation.md  terms that legitimately point at several stages
-<stage-id>.md      one locator page per stage
+index.md         lookup recipes, the stage table, registers, coverage — read whole
+symbols.tsv      name → path:startLine-endLine, kind, stage, nCalledBy, signature
+files.tsv        path → stage, role, nSymbols, purpose[prose]
+calls.tsv        call edges; callee located or boundary:<import specifier>
+stages/<id>.md   second hop: the stage's files and its co-change pairs
 ```
 
-हर stage को एक निश्चित-schema ब्लॉक मिलता है: **duty**, **entry concepts**, **state**,
-**exemplar**, **core files**, और **strong co-change**।
+**मानवीय artifact समझाता है; agent artifact पता बताता है।** पूरा बँटवारा यही है। ऊपर वाला
+markdown handbook पढ़े जाने के लिए लिखा गया है; यह वाला grep किए जाने के लिए, और यह वही एक
+चीज़ ढोता है जो गद्य पृष्ठों के पास कभी नहीं थी — **हर symbol कहाँ है**।
 
-सत्रह वास्तविक रिपॉज़िटरियों पर मापने पर, पहले पाँच फ़ील्ड अधिकांश पृष्ठों पर भरते हैं;
-**strong co-change जानबूझकर सबसे विरल है** — यह केवल वहीं सक्रिय होता है जहाँ कोई test
-फ़ाइल अपने स्रोत के _ठीक बगल में_ बैठी हो (`engine.go` + `engine_test.go`), और अधिकांश
-प्रोजेक्ट इसके बजाय tests को एक अलग tree में रखते हैं। वहाँ किसी फ़ील्ड की अनुपस्थिति gating
-के काम करने का प्रमाण है, कोई कमी नहीं।
+`index.md` ही अकेली ऐसी फ़ाइल है जो पूरी पढ़ी जाने के लिए बनी है, और इस repo पर वह **3.2 KB**
+की है। उसका `## lookup` अनुभाग किसी search protocol का लिंक नहीं, बल्कि ख़ुद वही protocol है,
+क्योंकि एक hop दूर रखा नुस्ख़ा वह नुस्ख़ा है जिस पर कोई चलता नहीं:
 
-अपरिवर्तनीय नियम: **कोई फ़ील्ड तभी और केवल तभी लिखा जाता है जब उसका संरचनात्मक संकेत
-मौजूद हो।** कोई placeholder नहीं, कोई "N/A" नहीं। खाली फ़ील्ड का अर्थ है _"graph के पास
-यहाँ कोई संकेत नहीं है"_ — वास्तविक जानकारी — न कि _"model को पता नहीं था"_, जो ऐसा शोर
-है जिसके ऊपर कोई agent तर्क करने लगेगा।
+```text
+symbol -> location     grep -m5 "^NAME	" symbols.tsv
+file   -> its symbols  grep "	PATH:" symbols.tsv
+callers of a symbol    grep "	NAME	" calls.tsv
+callees of a symbol    grep "^NAME	" calls.tsv
+file   -> stage, role  grep "^PATH	" files.tsv
+stage  -> its files    read stages/<sid>.md
+```
+
+तालिकाएँ TSV हैं, markdown नहीं, क्योंकि `|` वाला कोई भी signature — यानी हर TypeScript union
+type — markdown तालिका को चुपचाप बिगाड़ देता। प्रति पंक्ति एक तथ्य truncation के बाद भी बचा
+रहता है, और एक tab पूरे column को बाँध देता है।
+
+गद्य घटाकर **प्रति फ़ाइल एक कटी हुई पंक्ति, सबसे आख़िरी column में** कर दिया गया है, ताकि लंबी
+पंक्तियाँ काटने वाला कोई consumer किसी path से पहले गद्य खाए। पूरी व्याख्या मानवीय पृष्ठ पर ही
+रहती है, जिससे हर stage पृष्ठ जोड़ देता है।
+
+**Co-change जानबूझकर सबसे विरल संकेत है** — यह केवल वहीं सक्रिय होता है जहाँ कोई test फ़ाइल
+अपने स्रोत के _ठीक बगल में_ बैठी हो (`engine.go` + `engine_test.go`), और अधिकांश प्रोजेक्ट
+इसके बजाय tests को एक अलग tree में रखते हैं। वहाँ किसी फ़ील्ड की अनुपस्थिति gating के काम करने
+का प्रमाण है, कोई कमी नहीं: **कोई फ़ील्ड तभी और केवल तभी लिखा जाता है जब उसका संरचनात्मक संकेत
+मौजूद हो।** कोई placeholder नहीं, कोई "N/A" नहीं।
 
 इस निर्देशिका को SKILL पैकेज के अंदर शामिल करने के लिए `handbook skill --agent-dir` को
 पास करें।

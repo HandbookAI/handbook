@@ -66,24 +66,41 @@ deep 卡片还带逐函数注记。
 `--agent-site` → `<out>/agent/`
 
 ```text
-how_to_use.md      the agent-side search protocol
-index.md           every stage, as locator blocks
-disambiguation.md  terms that legitimately point at several stages
-<stage-id>.md      one locator page per stage
+index.md         lookup recipes, the stage table, registers, coverage — read whole
+symbols.tsv      name → path:startLine-endLine, kind, stage, nCalledBy, signature
+files.tsv        path → stage, role, nSymbols, purpose[prose]
+calls.tsv        call edges; callee located or boundary:<import specifier>
+stages/<id>.md   second hop: the stage's files and its co-change pairs
 ```
 
-每个阶段得到一个模式固定的区块：**duty（职责）**、**entry concepts（入口概念）**、
-**state（状态）**、**exemplar（范例）**、**core files（核心文件）**，以及
-**strong co-change（强共同变更）**。
+**人类产物负责解释，智能体产物负责定位。** 这就是整个分工。上面那本 markdown 手册
+是写来读的；这一份是写来 grep 的，而且它带上了那些叙述页面从来没有过的东西——**每
+个符号在哪儿**。
 
-在十七个真实仓库上的实测中，前五个字段在多数页面上都有内容；**strong co-change 刻
-意做成最稀疏的一个**——只有当测试文件与源文件*相邻*时（`engine.go` +
-`engine_test.go`）它才会出现，而大多数项目把测试放在单独的目录树里。这个字段的缺
-席说明门控在起作用，而不是缺漏。
+`index.md` 是唯一一份打算让人整篇读完的文件，在本仓库上是 **3.2 KB**。它的
+`## lookup` 小节本身就是搜索协议，而不是指向协议的一个链接，因为隔着一跳的配方就是
+不会被照着做的配方：
 
-不变式是：**一个字段被输出，当且仅当它的结构信号存在。** 没有占位符，没有
-“N/A”。空字段的含义是*“图里没有这个信号”*——这是真实的信息——而不是*“模型不
-知道”*，后者只是智能体会在其上继续推理的噪声。
+```text
+symbol -> location     grep -m5 "^NAME	" symbols.tsv
+file   -> its symbols  grep "	PATH:" symbols.tsv
+callers of a symbol    grep "	NAME	" calls.tsv
+callees of a symbol    grep "^NAME	" calls.tsv
+file   -> stage, role  grep "^PATH	" files.tsv
+stage  -> its files    read stages/<sid>.md
+```
+
+这些表是 TSV 而不是 markdown，因为签名里只要含 `|`——每一个 TypeScript 联合类型都
+含——就会无声地把 markdown 表格搞坏。一行一个事实，被截断之后依然成立；而一个制表符
+就锚定一整列。
+
+文字被压缩成**每个文件一行、剪短后放在最后一列**，这样一个会剪掉长行的消费者，先吃
+掉的是文字，而不是路径。完整的解释留在人类页面里，每个阶段页面都链接过去。
+
+**共同变更刻意做成最稀疏的信号**——只有当测试文件与源文件*相邻*时（`engine.go` +
+`engine_test.go`）它才会出现，而大多数项目把测试放在单独的目录树里。这个字段的缺席
+说明门控在起作用，而不是缺漏：**一个字段被输出，当且仅当它的结构信号存在。** 没有占
+位符，没有 “N/A”。
 
 把这个目录传给 `handbook skill --agent-dir`，就能把它装进 SKILL 包一起分发。
 

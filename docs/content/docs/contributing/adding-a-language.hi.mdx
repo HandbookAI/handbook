@@ -160,6 +160,22 @@ registerAdapter('elixir', () => new ElixirAdapter());
 **कभी अनुमान न लगाएँ।** आगे की हर चीज़ के लिए अनुमान लगाया edge असली edge से अलग नहीं दिखता,
 जो समूहन, co-change संकेतों और agent locator index — तीनों को एक साथ विषाक्त कर देता है।
 
+### Disclosure का नियम
+
+यही बात पूरी फ़ाइलों पर भी लागू होती है। जिस फ़ाइल को आपका adapter पढ़ न सके, parse न कर
+सके, या सिर्फ़ आंशिक रूप से parse कर सके, उसे `ModuleAnalysis.unparsedFiles` में लौटना
+**ही चाहिए** — चुपचाप छोड़ा नहीं जाना चाहिए:
+
+- `unreadable` — पढ़ने पर throw हुआ। `detail` में errno का संदेश रहता है।
+- `unparsable` — grammar ने throw किया, या कोई tree नहीं लौटाया।
+- `partial` — `tree.rootNode.hasError`। आपने जो facts निकाले वे असली हैं; error node के
+  भीतर जो कुछ बैठा था, वह वहाँ नहीं है।
+
+साझा रीढ़ ये तीनों आपके लिए दर्ज कर देती है, इसलिए spec-आधारित adapter को यह मुफ़्त मिल
+जाता है। Pipeline पहली दो को `scannedFiles` से हटा देती है और हर प्रविष्टि
+`phase1/scan-coverage.json` में लिख देती है। विश्लेषण से चुपचाप ग़ायब हो गई फ़ाइल ही वह
+अकेली विफलता है जिसे आगे की कोई चीज़ पकड़ नहीं सकती।
+
 ## बाहर से adapter पंजीकृत करना
 
 Registry सार्वजनिक है, इसलिए आप बिना fork किए एक भाषा जोड़ सकते हैं:
@@ -182,6 +198,7 @@ registerAdapter('mylang', () => new MyAdapter());
 - [ ] `register.ts` में पंजीकृत (generic स्तर की प्रविष्टियाँ अपने आप उठ जाती हैं)
 - [ ] एक test जो अस्थायी directory में **असली** स्रोत parse करता है
 - [ ] क्षमताएँ ईमानदारी से घोषित
+- [ ] Unreadable, unparsable और partial फ़ाइलें दर्ज की गईं, चुपचाप छोड़ी नहीं गईं
 - [ ] Drift test के `DISPLAY` map में प्रदर्शन नाम जोड़ा गया
 - [ ] दोनों READMEs, analyzer के READMEs और भाषा संदर्भ अपडेट किए गए
 - [ ] `pnpm check` पास होता है

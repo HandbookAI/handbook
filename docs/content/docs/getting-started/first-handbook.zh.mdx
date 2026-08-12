@@ -20,7 +20,14 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 **这一步免费，而且是你的冒烟测试。** 不用 LLM、不用 key、不花 token。
@@ -30,7 +37,9 @@ handbook analyze --source $REPO --work $WORK
   **`files` 高得离谱？** 你正在分析 `node_modules`、`vendor`
   或某个构建目录。常见目录会被自动跳过；如果没有跳过，就把 `--source` 指向真正的源码根目录，而不是仓库根目录。
   - **`edgesDropped` 相对 `edgesKept` 大得吓人？** 对动态语言来说这很正常。看看
-  `phase1/dropped-calls.json`——每一个未解析的调用都在那里被分了类，而不是被藏起来。
+  `phase1/dropped-calls.json`——每一个未解析的调用都在那里被分了类，而不是被藏起来。 - **`filesUnparsed` 不是
+  0？** 这些文件都带着原因写在 `phase1/scan-coverage.json` 里。其中 `unreadable` 和 `unparsable`
+  的那些什么事实都贡献不了，也不会有自己的页面，所以现在生成出来的手册，恰恰在那里有个洞——值得在为文字付钱之前先补上。
 </Callout>
 
 上面这些问题**现在**就修。这里的每个问题拖到后面都会变得更贵。
@@ -91,7 +100,7 @@ handbook skill --handbook $WORK/handbook --out skills/myrepo \
 
 `--work` 加 `--source` 一起会产出 `coverage.json`：每个文件一个内容哈希。**正是它让手册的漂移日后可以被检测出来**，而不是悄悄出错。
 
-`--agent-dir` 会带上定位页面，并在 SKILL 的路由协议中加入一个消歧步骤。
+`--agent-dir` 会带上代理索引和它的事实表，并给 SKILL 的路由协议配上 grep 配方——这样代理一条命令就能把一个符号名变成 `path:startLine-endLine`，而不必读一堆文字再去猜。
 
 ## 第 5 步——校验
 

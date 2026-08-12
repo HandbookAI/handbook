@@ -10,7 +10,7 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611, "filesUnparsed": 3 }
 ```
 
 **無料です。** コストを左右するのは `files` の数です。最も高価なフェーズである Phase 2a は、
@@ -144,8 +144,9 @@ jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
 handbook analyze --source $REPO --work $WORK
 ```
 
-ファイル数と `dropped-calls.json` を確認します。何かを支払う前にスキャンを修正して
-ください。
+ファイル数、`dropped-calls.json`、そして `scan-coverage.json` を確認します。`filesUnparsed`
+が 0 でないなら、それはこれから支払って作るハンドブックに空く穴です。何かを支払う前に
+スキャンを修正してください。
 
 </Step>
 

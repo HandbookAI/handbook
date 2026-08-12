@@ -5,13 +5,13 @@ description: '每个生成阶段做什么、花多少钱、失败时降级成什
 
 `handbook generate` 运行五个阶段。只有第一个是免费的；其余都要和你的 LLM 端点对话。
 
-| Phase  | 产出                    | LLM？ | 可单独重跑？ |
-| :----: | ----------------------- | :---: | :----------: |
-| **1**  | 调用图                  |  ❌   |      ✅      |
-| **2a** | 每个源文件一张卡片      |  ✅   |      ✅      |
-| **2b** | 阶段骨架 + 文件归属     |  ✅   |      ✅      |
-| **2c** | 阶段内分组与排序        |  ✅   |      ✅      |
-| **3**  | 叙述 + 跨阶段状态寄存器 |  ✅   |      ✅      |
+| Phase  | 产出                     | LLM？ | 可单独重跑？ |
+| :----: | ------------------------ | :---: | :----------: |
+| **1**  | 调用图                   |  ❌   |      ✅      |
+| **2a** | 每个扫描到的文件一张卡片 |  ✅   |      ✅      |
+| **2b** | 阶段骨架 + 文件归属      |  ✅   |      ✅      |
+| **2c** | 阶段内分组与排序         |  ✅   |      ✅      |
+| **3**  | 叙述 + 跨阶段状态寄存器  |  ✅   |      ✅      |
 
 ```bash
 --phase all        # everything (default)
@@ -31,7 +31,23 @@ description: '每个生成阶段做什么、花多少钱、失败时降级成什
 
 它还会为**每个扫描过的文件盖上内容哈希**。正是这个哈希，让 `resync` 之后能发现那种行号和签名都没动的就地函数体修改——纯结构性 diff 会完全漏掉的情形。
 
-**产出：** `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`。
+### 它读不进来的那些文件
+
+发现阶段列出了、但分析器没能变成事实的文件，会被**如实记下**，绝不悄悄跳过。每一个都带着原因落进 `phase1/scan-coverage.json`：
+
+- **`unreadable`**——读取这一步本身就失败了（权限位、悬空的符号链接、运行途中被构建删掉的文件）。没有任何事实。
+- **`unparsable`**——语法抛错，或者没有返回语法树。没有任何事实。含 `case` 的 shell 脚本就是最常见的那一类。
+- **`partial`**——文件解析出来了，但带着语法错误。在其余部分里找到的函数和调用都是**真的**；缺的是落在那个错误节点里的东西。
+
+前两类文件还会被从 `scannedFiles` 中剔除，因为一个什么都没产出的文件，不该被当成一个空文件交给 Phase 2a。Phase 1 收尾时会在日志里把这个缺口点出来：
+
+```text
+[scan] coverage: 409 files analyzed; 3 recorded in scan-coverage.json (partial=1 unparsable=1 unreadable=1)
+```
+
+这份产物里 `files` 数组为空，是同一句话的正面说法：全都解析成功了。
+
+**产出：** `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`、`scan-coverage.json`。
 
 <Callout title="永远先跑这个">
   `handbook analyze` 就是这个阶段。它分文不花，而且是唯一能让你在花 token *之前*就发现自己正在扫描
@@ -44,7 +60,7 @@ description: '每个生成阶段做什么、花多少钱、失败时降级成什
 
 **用 LLM。通常是最贵的阶段。**
 
-每个源文件得到一张卡片：
+Phase 1 真正读到的每个文件都会得到一张卡片——也就是 `graph.json` 里的 `scannedFiles`，其中不含记在 `scan-coverage.json` 里的那些 `unreadable` 和 `unparsable` 路径：
 
 - **purpose**——一两句大白话
 - **role**——取自封闭词表（`entrypoint`、`domain_logic`、`io_transport`……）

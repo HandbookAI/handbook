@@ -62,7 +62,7 @@ the system prose:
 > inventory and the structure of these languages are exact.
 
 And **nowhere at all** when every language is full-tier, so the common case stays
-noise-free. The same disclosure appears in the HTML site, the agent locator index and
+noise-free. The same disclosure appears in the HTML site, the agent index and
 `llms-full.txt`.
 
 ## Which tier is my language?
@@ -103,7 +103,9 @@ adapter **refuses at discovery** on such a runtime and names the remedy
 **Shell.** A script containing a `case` statement is skipped, because that grammar throws
 — its external scanner imports a symbol the pinned WASM linker does not provide. Because
 `case` is ubiquitous this is most non-trivial scripts (measured on `nvm`: all 6 files,
-all 122 functions), so **treat shell coverage as partial**. The scan log names the cause.
+all 122 functions), so **treat shell coverage as partial**. The scan log names the cause,
+and every skipped script is listed individually in `phase1/scan-coverage.json` with
+`reason: "unparsable"` — a gap you can enumerate, not one you have to guess at.
 
 Both are reported through the logger during the scan. Run with `-v` to see them.
 

@@ -68,6 +68,7 @@ interface HandbookModel {
   organization: Organization;
   narration: Narration;
   registers: RegisterEntry[];
+  provenance?: { commit?: string; generatedAt: string };
 }
 ```
 
@@ -81,7 +82,7 @@ contract you have to satisfy.
 source tree
    │  analyzer — tree-sitter WASM, one adapter per language
    ▼
-phase1/graph.json · functions.csv · graph.dot · dropped-calls.json
+phase1/graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
    │  pipeline 2a — cards (batched LLM, three-tier degradation, resumable)
    ▼
 phase2/cards/<rel>.json + _coverage.json
@@ -105,6 +106,21 @@ HandbookModel ──▶ renderer ──▶ handbook/  (md · html/ · handbook.h
 only its own, all schema-validated on read with a `version` field. Any phase can be re-run
 alone. Crashes resume — cards are written per batch, narration is content-hash cached.
 
+### The human artifact explains; the agent artifact locates
+
+One `HandbookModel`, two outputs with genuinely different jobs — and the split is the
+design, not a packaging detail.
+
+The markdown and HTML handbooks are written to be **read**: prose, ordering, a narrative
+spine. `agent/` is written to be **grepped**: `symbols.tsv` answers _"where is
+`sendPayment` defined"_ in one line, which no amount of prose does.
+
+They used to be the same prose in two shapes, and the cost was concrete: the agent index
+came out **2.1× the size of the human index while containing no symbol locations at all**,
+because 42% of it was model prose copied byte-for-byte from the human pages. Now the agent
+side carries facts and one clipped line of prose per file; where the explanation is needed,
+each stage page **links** to the human page instead of duplicating it.
+
 ## Inside the analyzer
 
 Each language implements one `LanguageAdapter`: `discover`, `analyze`, and optionally
@@ -123,6 +139,11 @@ Adapters run **two passes** per module:
 
 **The kept graph only ever contains resolved, named callees.** That is what makes an edge
 in it trustworthy.
+
+The same rule applies one level up, to whole files. A file the adapter could not read, or
+whose grammar threw, or which parsed with syntax errors, is recorded in
+`scan-coverage.json` with its reason — and the first two are kept **out** of
+`scannedFiles`, so no later phase can describe a file the parser never saw.
 
 The **nav-pack** is a deterministic orientation summary derived from the graph — directory
 rollups, entry-point candidates, fan-out, external subsystems. It is the _only_ view of

@@ -17,6 +17,7 @@ indicação em contrário.
     functions.csv         one row per internal function
     graph.dot             Graphviz view (files as clusters; await edges colored)
     dropped-calls.json    unresolved calls, categorized
+    scan-coverage.json    files the scan could NOT turn into facts, and why
   phase2/
     cards/<rel>.json      one card per source file (tree-mirrored paths)
     cards/_coverage.json  {nFiles, nDescribed, missing[]}
@@ -39,11 +40,15 @@ indicação em contrário.
     "generatedAt": "2026-08-02T10:00:00.000Z",
     "language": "python | typescript | go | rust | shell | multi",
     "sourceRoot": "/abs/path",
-    "scannedFiles": ["app/main.py", "…"],
+    "scannedFiles": ["app/main.py", "…"], // only files that were actually read and parsed
     "nInternalFunctions": 316,
     "nBoundaryNodes": 45,
     "nEdges": 903,
     "policy": "Edges are emitted only when the callee resolves …",
+    "unparsedFiles": [
+      // optional; [] means every scanned file parsed cleanly
+      { "file": "app/legacy.py", "reason": "partial", "detail": "…" },
+    ],
   },
   "nodes": {
     "app.main.main": {
@@ -117,6 +122,59 @@ em dropped-calls.json).
 
 Categorias: `inherited_method`, `self_attr_unknown`, `string_literal_method`, `builtin`,
 `local_var_method`, `bare_name`.
+
+## phase1/scan-coverage.json
+
+O irmão do `dropped-calls.json`, um nível acima: aquele arquivo presta contas de cada
+**chamada** que o analisador se recusou a adivinhar; este presta contas de cada
+**arquivo** que ele se recusou a alegar que tinha analisado.
+
+```jsonc
+{
+  "version": 1,
+  "metadata": {
+    "generatedAt": "…",
+    "nScanned": 412, // files that reached the graph — i.e. graph.metadata.scannedFiles
+    "nUnparsed": 3,
+    "byReason": { "partial": 1, "unparsable": 1, "unreadable": 1 },
+  },
+  "files": [
+    // sorted by path, so an unchanged tree re-runs byte-identically
+    { "file": "app/legacy.py", "reason": "partial", "detail": "the parse tree contains syntax errors…" },
+    { "file": "scripts/deploy.sh", "reason": "unparsable", "detail": "resolved is not a function" },
+    { "file": "vendor/dangling.py", "reason": "unreadable", "detail": "ENOENT: no such file or directory…" },
+  ],
+}
+```
+
+| `reason`     | O que o parser obteve          | Está em `scannedFiles`? | Ganha ficha? |
+| ------------ | ------------------------------ | :---------------------: | :----------: |
+| `unreadable` | nada — a leitura falhou        |           ❌            |      ❌      |
+| `unparsable` | nada — a gramática lançou erro |           ❌            |      ❌      |
+| `partial`    | fatos reais, mas incompletos   |           ✅            |      ✅      |
+
+- **`unreadable`** — a descoberta listou o caminho, mas a leitura falhou: um modo de
+  permissão, um symlink quebrado, um arquivo que o build apagou por baixo da execução. O
+  `detail` carrega a mensagem de errno.
+- **`unparsable`** — a gramática lançou erro, ou não devolveu árvore alguma. Zero fatos. É
+  o que um script de shell contendo `case` produz hoje.
+- **`partial`** — o arquivo parseou, mas com `rootNode.hasError`: o tree-sitter estacionou
+  em um nó de erro o texto que não conseguiu entender e seguiu em frente. Tudo o que foi
+  extraído do resto do arquivo é **real** — o que falta é o que quer que estivesse dentro
+  desse nó, e isso é invisível de fora. É esta a razão para ler o arquivo você mesmo antes
+  de confiar em uma página sobre ele.
+
+Um **array `files` vazio é uma afirmação positiva** — "todo arquivo varrido parseou sem
+problemas". O artefato estar _ausente_ significa que a análise é anterior a esse registro,
+o que não é a mesma coisa.
+
+<Callout title="Por que os dois primeiros saem de scannedFiles">
+  Um arquivo que não rendia fato algum costumava permanecer em `scannedFiles`, então a Phase 2a escrevia uma
+  ficha para ele e o `_coverage.json` o contava como descrito. O handbook então afirmava, como *fato do
+  parser*, que um arquivo que ninguém tinha lido contém zero funções. Tirar esses caminhos daqui mantém cada
+  lista significando uma coisa só: `scannedFiles` é o que o analisador leu, `scan-coverage.json` é o que ele
+  não conseguiu.
+</Callout>
 
 ## `phase2/cards/<rel>.json` — FileCard
 
@@ -237,10 +295,124 @@ coverage: { nFiles: 5, nOrganized: 5 }
   <sid>.md             one page per content-bearing stage (summary, sub-stages,
                        organization groups, per-file cards with function details,
                        📊 state-registers section when touched)
-  agent/               (--agent-site) how_to_use.md · index.md · disambiguation.md · <sid>.md
+  agent/               (--agent-site) index.md · symbols.tsv · files.tsv · calls.tsv · stages/<sid>.md
   html/                (--html) self-contained multi-page site (no external requests)
   handbook.html        (--html-single) one self-contained page
 ```
+
+## Índice para agentes (`--agent-site`)
+
+```
+<out>/agent/
+  index.md            the only file meant to be read whole: lookup recipes, the stage
+                      table, the register table, coverage
+  symbols.tsv         name → path:startLine-endLine, kind, stage, nCalledBy, signature
+  files.tsv           path → stage, role, nSymbols, purpose[prose]
+  calls.tsv           call edges: the caller always located, the callee located or
+                      marked boundary:<import specifier>
+  stages/<sid>.md     second hop: the stage's file list and its co-change pairs
+```
+
+**O artefato humano explica; o artefato para agentes localiza.** Não são duas renderizações
+de um mesmo texto. Onde um agente precisa da explicação, ela está a um salto de distância —
+cada página de etapa liga para a página humana em vez de copiá-la.
+
+### Por que TSV e não tabelas markdown
+
+- Uma tabela markdown **estragaria silenciosamente 338 linhas de assinatura neste
+  repositório**, porque um tipo union do TypeScript contém `|`. Uma tabulação não colide com
+  o texto do código-fonte.
+- **Um fato por linha sobrevive ao truncamento.** Toda receita de grep devolve uma resposta
+  completa em uma linha — nome, localização, kind, etapa, quem chama e assinatura juntos —
+  então um resultado cortado ainda é acionável.
+- **Uma tabulação ancora uma coluna inteira**: `grep "^scan\t"` casa com o símbolo chamado
+  `scan`, e não com toda linha que contém a palavra.
+
+**A ordem das colunas é a ordem do valor, com a prosa por último**, para que um consumidor
+que corta linhas longas coma a prosa antes de comer um caminho.
+
+### As linhas de cabeçalho
+
+Toda tabela abre com linhas de comentário `#` que nomeiam as colunas e a fronteira de
+confiança — a mesma divulgação que o pipeline faz em todo o resto, trazida para o artefato
+que a carrega:
+
+```
+# name	location	kind	stage	nCalledBy	signature
+# parser facts. kind=fn is a function or method. kind=type:<class|interface|struct|record|enum|
+# trait|alias|other> is a parsed type DECLARATION, span read off the declaration itself.
+# kind=class-derived is the fallback where a language's adapter extracts no types: the SPAN is
+# min..max of the class's METHODS, not of the declaration. Which languages are indexed and which
+# fall back is stated in index.md under "coverage" — a miss here is not proof a name does not exist.
+# nCalledBy counts callers inside the scanned set PLUS callers that reach it through an import
+# (see calls.tsv boundary rows); a cross-package-only callee would otherwise read as dead code.
+```
+
+O `calls.tsv` declara a sua, e nomeia a diferença entre os dois tipos de linha que ele
+carrega:
+
+```
+# callerQualname	callerLocation	calleeQualname	calleeLocation
+# calleeLocation is path:line when the analyzer resolved it, or boundary:<import specifier>
+# when the call leaves the scanned set — the name is known, the location is not and is not guessed.
+# A call the analyzer could not pin down at all is in phase1/dropped-calls.json,
+# never guessed here — so absence is not proof nothing calls it.
+```
+
+### Arestas de fronteira, e por que um monorepo precisa delas
+
+Uma chamada que sai do conjunto analisado através de um import recebe
+`boundary:<specifier>` como localização do destino, nunca um caminho. O nome é um fato; a
+localização não é, e não é adivinhada.
+
+Num monorepo isso não é uma nota de pé de página — é a maior parte do que um agente quer
+saber. Medido neste repositório: **1.063 de 3.565 arestas são de fronteira**, 284 delas para
+`@handbook/core`. Com apenas arestas resolvidas, `checkLanguage` — chamada quatro vezes de
+outro pacote — aparecia com **zero chamadores**, o que um agente lê como código morto. Isso é
+um _ponteiro errado_, não uma lacuna, e um ponteiro errado é justamente a falha que este
+artefato existe para evitar.
+
+Pelo mesmo motivo, o `nCalledBy` de `symbols.tsv` conta os chamadores de fronteira junto com
+os do próprio pacote, e seu cabeçalho diz isso. `boundary:` não pode ser confundido com um
+caminho, então incluí-los não inventa nada.
+
+### Linhas de tipo, e o fallback abaixo delas
+
+O `symbols.tsv` carrega três tipos de linha. `fn` é uma função ou um método. `type:<kind>` é
+uma **declaração de tipo parseada** — o intervalo é lido da própria declaração — sobre um
+vocabulário fechado: `class`, `interface`, `struct`, `record`, `enum`, `trait`, `alias`,
+`other`. `record` não é dobrado dentro de `struct` porque um `record` de Java ou C# é um tipo
+por **referência**, e `struct` é a única palavra deste vocabulário que também significa tipo
+por valor. `other` não é uma gaveta de descarte, e sim uma peça que sustenta: um tipo definido
+de Go (`type Celsius float64`) não é um alias, uma `union` de Rust não é um struct, um
+`@interface` de Java não é uma interface — e `signature` guarda a declaração **como foi
+escrita**, então a palavra-chave nativa nunca se perde.
+
+Quais linguagens realmente extraem tipos é **declarado por adaptador** e divulgado no
+`index.md`, do mesmo jeito que a fidelidade da análise (invariante 3).
+`AdapterCapabilities.typeKinds` é uma **lista** e não um booleano, porque um adaptador poderia
+encontrar classes e perder todas as interfaces; `[]` é uma afirmação positiva, e o campo estar
+**ausente** significa que o artefato é anterior a ele — reportado como _unknown_, nunca como
+zero.
+
+`class-derived` é o fallback para quando um adaptador não extrai tipos: o intervalo é o
+`min…max` dos **métodos** da classe — onde os membros estão, não onde está a declaração — então
+ele é rotulado em vez de apresentado como um fato parseado. Neste repositório, acrescentar
+extração real de tipos derrubou `class-derived` de 45 linhas para 19, e cada uma das restantes
+é um objeto literal e não uma declaração de tipo, que é exatamente o que o fallback deveria
+estar pegando.
+
+A divulgação importa mais do que a cobertura: um agente que faz grep de um nome de tipo, não
+obtém nada e conclui que o tipo não existe é o _ponteiro errado_ que este artefato existe para
+evitar. Constantes, variáveis e macros não são indexadas em nenhuma linguagem, e o `index.md`
+diz isso.
+
+### Atualidade
+
+O cabeçalho do `index.md` carrega `HandbookModel.provenance` — `{ commit?, generatedAt }`,
+lido do manifesto da execução. Os números de linha agora são a carga principal, e um número
+de linha desatualizado é o único fato que dá errado **silenciosamente**, então o artefato diz
+quando foi feito e contra o quê.
 
 ## Pacote SKILL (`handbook skill`)
 
@@ -251,6 +423,8 @@ coverage: { nFiles: 5, nOrganized: 5 }
   references/
     overview.md  index.md  registers.md
     stages/<sid>.md
+    agent/                       (--agent-dir) index.md · symbols.tsv · files.tsv ·
+                                 calls.tsv · stages/<sid>.md
     coverage.json                (optional) {schemaVersion, summary, files:[{path,stage,sha256}]}
 ```
 
@@ -258,7 +432,9 @@ Contrato de validação (`handbook validate`): o frontmatter tem exatamente `nam
 `description`; a description declara quando usar E quando não usar; o corpo referencia
 `references/index.md` e direciona para o código-fonte real; overview/index/registers/stages
 presentes; o índice liga todas as páginas de etapa; nenhum caminho de cobertura duplicado;
-com `--source`, os hashes precisam bater com a árvore ao vivo.
+com `--source`, os hashes precisam bater com a árvore ao vivo. Um diretório
+`references/agent/` é opcional, mas quando existe ele precisa carregar o `index.md` e as
+três tabelas — o índice e suas tabelas de fatos são entregues juntos ou não são entregues.
 
 ## Saída do planner (`handbook plan`)
 

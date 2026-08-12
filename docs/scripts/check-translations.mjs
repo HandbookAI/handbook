@@ -15,16 +15,44 @@
  *   - the number of each JSX component used
  *   - every link href
  *   - the frontmatter keys (values are translated; keys are not)
+ *   - table shape, and the identifier keys in a table's first column
+ *
+ * It also checks that every English page HAS a translation in every locale —
+ * see ENGLISH_ONLY below for why that is a failure rather than a warning.
  *
  * Run: node docs/scripts/check-translations.mjs
  * Exit 0 = every translation matches its source structurally.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'content', 'docs');
 const LOCALES = ['zh', 'hi', 'es', 'pt', 'ru', 'ja', 'de'];
+
+/**
+ * Pages that are deliberately English-only, each with the reason.
+ *
+ * This list is the ONLY way to declare that: a page missing from a locale is
+ * otherwise a hard failure, not a warning.
+ *
+ * The argument for failing: the requirement on this site is that all eight
+ * locales are complete, and a missing page is invisible to every other check
+ * here — those only compare translations that already exist, so the one file
+ * nobody wrote is exactly the one nothing looked at. That is not hypothetical.
+ * `guides/troubleshooting.zh.mdx` was absent for as long as the check existed,
+ * while `first-handbook.zh.mdx` linked to it, so Chinese readers followed that
+ * link to a 404. A warning would have scrolled past in CI the same way.
+ *
+ * Failing by default also puts the cost in the right place. Adding an English
+ * page and its seven translations in one change is ordinary work; discovering
+ * a year later that seven locales silently diverged is not. If a page really
+ * should ship English-only, saying so here is one line and leaves a reason in
+ * the diff — which is the point. Omission must never be the way that is said.
+ */
+const ENGLISH_ONLY = new Map([
+  // ['reference/some-page.mdx', 'why this one is English-only'],
+]);
 
 /** Every `.md`/`.mdx` under the content root. */
 function walk(dir) {
@@ -74,6 +102,54 @@ function frontmatterKeys(text) {
   const m = /^---\n([\s\S]*?)\n---/.exec(text);
   if (!m) return [];
   return [...m[1].matchAll(/^([A-Za-z_][\w-]*):/gm)].map((x) => x[1]).sort();
+}
+
+/** Blank out fenced blocks so a `|` inside example code is not read as a table. */
+function stripFences(text) {
+  return text.replace(/^([ \t]*)(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)^[ \t]*\2[ \t]*$/gm, (block) =>
+    block.replace(/[^\n]/g, ''),
+  );
+}
+
+/**
+ * Markdown tables, as arrays of body rows (the header row included, the
+ * `| --- |` separator dropped). Consecutive `|` lines are one table.
+ */
+function tables(text) {
+  const out = [];
+  let current = null;
+  for (const line of stripFences(text).split('\n')) {
+    if (/^\s*\|/.test(line)) {
+      (current ??= []).push(line);
+    } else if (current) {
+      out.push(current);
+      current = null;
+    }
+  }
+  if (current) out.push(current);
+  return out
+    .map((rows) => rows.filter((r) => !/^\s*\|[\s:|-]*\|[\s:|-]*$/.test(r)))
+    .filter((rows) => rows.length > 0);
+}
+
+/** A row's first cell. Splits on unescaped `|` — `enum (a\|b)` is one cell. */
+function firstCell(row) {
+  return row
+    .trim()
+    .replace(/^\|/, '')
+    .split(/(?<!\\)\|/)[0]
+    .trim();
+}
+
+/**
+ * Is this first-column cell an identifier rather than prose? Reference tables
+ * are keyed by setting name, flag or env var — all in backticks, none of them
+ * translated — whereas a concept page's first column is a sentence. Comparing
+ * only the code-like ones is what lets this run over every page instead of
+ * just the generated reference.
+ */
+function isKeyCell(cell) {
+  return /^`[^`]+`$/.test(cell);
 }
 
 const problems = [];
@@ -132,9 +208,91 @@ for (const path of walk(root)) {
   if (JSON.stringify(fa) !== JSON.stringify(fb)) {
     problems.push(`${rel}: frontmatter keys differ (${fa.join(',')} vs ${fb.join(',')})`);
   }
+
+  // Tables. A hand-maintained reference table drifts one row at a time and
+  // nothing else here notices: a row dropped from all seven translations
+  // leaves every other signal identical. `llmProvider` went missing from all
+  // seven copies of the configuration reference exactly this way.
+  const ta = tables(source);
+  const tb = tables(translated);
+  if (ta.length !== tb.length) {
+    problems.push(`${rel}: ${tb.length} table(s), source has ${ta.length}`);
+  } else {
+    for (let i = 0; i < ta.length; i += 1) {
+      if (ta[i].length !== tb[i].length) {
+        problems.push(`${rel}: table #${i + 1} has ${tb[i].length} row(s), source has ${ta[i].length}`);
+        continue;
+      }
+      // Row counts agree, so compare position by position. Only the cells that
+      // are identifiers in English are compared — a concept page's first
+      // column is prose, and prose is supposed to differ.
+      for (let r = 0; r < ta[i].length; r += 1) {
+        const key = firstCell(ta[i][r]);
+        if (!isKeyCell(key)) continue;
+        const got = firstCell(tb[i][r]);
+        if (got !== key) {
+          problems.push(`${rel}: table #${i + 1} row ${r + 1} key is ${got || '(empty)'}, source has ${key}`);
+        }
+      }
+    }
+  }
 }
 
-console.log(`checked ${checked} translated page(s) against their English sources`);
+// Every English page must exist in every locale. This runs over sources rather
+// than translations precisely because the failure being caught is a file that
+// does not exist — the loop above can never see it.
+const englishPages = walk(root).filter((p) => !sourceOf(p));
+for (const page of englishPages) {
+  const rel = relative(root, page);
+  if (ENGLISH_ONLY.has(rel)) continue;
+  const ext = /\.mdx?$/.exec(page)[0];
+  const stem = page.slice(0, -ext.length);
+  const absent = LOCALES.filter((locale) => !existsSync(`${stem}.${locale}${ext}`));
+  if (absent.length > 0) {
+    problems.push(
+      `${rel}: no translation in ${absent.join(', ')} ` +
+        `(translate it, or add it to ENGLISH_ONLY with a reason)`,
+    );
+  }
+}
+
+/**
+ * A paragraph beginning with `import` or `export` is parsed as an ESM statement.
+ *
+ * MDX does not care that the rest of the line is prose: it hands the line to
+ * acorn, which fails on the first non-JavaScript character. The failure surfaces
+ * as `Could not parse import/exports with acorn` pointing at a line number, with
+ * no hint that the cause is the first WORD of a sentence — and it only appears
+ * at build time, so a translation can pass every structural check here and still
+ * break the site.
+ *
+ * Hit for real in `artifacts.ja.mdx`, where a sentence legitimately opened with
+ * "import を通じて…". Any language can do this; a translator has no reason to
+ * suspect that one English keyword is reserved at the start of a line.
+ */
+for (const page of walk(root)) {
+  const lines = readFileSync(page, 'utf8').split('\n');
+  let inFence = false;
+  for (const [i, line] of lines.entries()) {
+    if (line.startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    // A real ESM statement continues with an identifier, `{`, `*` or a quote.
+    if (/^(import|export)\b/.test(line) && !/^(import|export)\s*(?:[A-Za-z_$*{]|["'])/.test(line)) {
+      problems.push(
+        `${relative(root, page)}:${i + 1}: a paragraph starting with "${line.split(/\s/)[0]}" is ` +
+          'parsed as an ESM statement — reword so the line does not begin with that word',
+      );
+    }
+  }
+}
+
+console.log(
+  `checked ${checked} translated page(s) against their English sources, ` +
+    `and ${englishPages.length} English page(s) for locale coverage`,
+);
 if (problems.length > 0) {
   console.error(`\n${problems.length} problem(s):`);
   for (const p of problems) console.error(`  ${p}`);

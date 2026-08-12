@@ -13,6 +13,12 @@ Phase 1 的产出。你代码中的每个函数和方法，加上它们之间的
 
 位于 `<work>/phase1/graph.json`。下游的一切都读它，任何环节都不会重新解析源码。
 
+### 扫描覆盖
+
+Phase 1 诚实的另一半：分析器**无法**变成事实的那批文件，每个都带一条原因——`unreadable`（读取失败）、`unparsable`（语法抛错）或 `partial`（解析出来了，但带着语法错误，所以它的事实是真的，只是不完整）。
+
+前两类还会从图的 `scannedFiles` 中移除，这样下游就不会去描述一个解析器从没打开过的文件。清单为空，是一句“全都解析成功了”的断言；文件干脆不在，则不是。位于 `<work>/phase1/scan-coverage.json`。
+
 ### 卡片
 
 每个源文件一张。用三个字段回答*这个文件是干什么的？*——**purpose**、**role**、**lifecycle**——在 `--detail deep` 下还有一段 120–300 词的讲解和每个函数一条说明。
@@ -59,7 +65,7 @@ Phase 1 的产出。你代码中的每个函数和方法，加上它们之间的
 
 ```text
 <work>/
-  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
   phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
   phase3/   narration.json · registers.json · cache/
   handbook/ the rendered output, once you run `render`
@@ -105,13 +111,13 @@ Phase 1 的产出。你代码中的每个函数和方法，加上它们之间的
 
 ## 阶段
 
-| Phase | 产出             | LLM？ |
-| ----- | ---------------- | :---: |
-| `1`   | 调用图           |  ❌   |
-| `2a`  | 每个文件一张卡片 |  ✅   |
-| `2b`  | 骨架 + 归属      |  ✅   |
-| `2c`  | 组织             |  ✅   |
-| `3`   | 叙述 + 寄存器    |  ✅   |
+| Phase | 产出                     | LLM？ |
+| ----- | ------------------------ | :---: |
+| `1`   | 调用图                   |  ❌   |
+| `2a`  | 每个扫描到的文件一张卡片 |  ✅   |
+| `2b`  | 骨架 + 归属              |  ✅   |
+| `2c`  | 组织                     |  ✅   |
+| `3`   | 叙述 + 寄存器            |  ✅   |
 
 `--phase` 接受 `all`、`1`、`2`（即 2a+2b+2c）、任意单个阶段，或像 `2c,3` 这样的逗号列表。
 

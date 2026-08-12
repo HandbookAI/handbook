@@ -73,9 +73,10 @@ studio:
   भी चलाएँ।
 
 <Callout type="warn" title="यहाँ secrets अस्वीकार कर दिए जाते हैं">
-  `llmApiKey` / `OPENAI_API_KEY` कभी भी किसी config फ़ाइल में नहीं होने चाहिए — config फ़ाइलें commit हो जाती
-  हैं। Loader ऐसी फ़ाइल को सिरे से अस्वीकार कर देता है और कारण बताता है। इसे `.env` में या shell environment
-  में रखें।
+  `llmApiKey` / `OPENAI_API_KEY` और `llmExtraBody` / `OPENAI_EXTRA_BODY` कभी भी किसी config फ़ाइल में नहीं
+  होने चाहिए — config फ़ाइलें commit हो जाती हैं। Loader ऐसी फ़ाइल को सिरे से अस्वीकार कर देता है और कारण
+  बताता है। इन्हें `.env` में या shell environment में रखें। `baseUrl` commit करना ठीक है, बशर्ते URL खुद
+  credentials न ढो रहा हो (`https://user:pass@host/v1`) — वैसा URL उसी वजह से अस्वीकार कर दिया जाता है।
 </Callout>
 
 शुरू करने के लिए `handbook.config.example.yaml` कॉपी करें; यह registry से जनरेट होती है,

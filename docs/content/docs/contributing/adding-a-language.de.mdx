@@ -163,6 +163,23 @@ ihn mit einer Kategorie und seinem Rohtext in `dropped-calls.json` unter Quarant
 unterscheiden, was Gruppierung, Co-Change-Hinweise und den Agent-Locator-Index auf einen
 Schlag vergiftet.
 
+### Die Offenlegungsregel
+
+Dasselbe gilt für ganze Dateien. Eine Datei, die dein Adapter nicht lesen, nicht parsen
+oder nur teilweise parsen kann, muss in `ModuleAnalysis.unparsedFiles` zurückkommen — und
+darf nie stillschweigend übersprungen werden:
+
+- `unreadable` — das Lesen hat geworfen. `detail` ist die errno-Meldung.
+- `unparsable` — die Grammatik hat geworfen oder keinen Baum geliefert.
+- `partial` — `tree.rootNode.hasError`. Die Fakten, die du extrahiert hast, sind echt; was
+  im Fehlerknoten steckte, fehlt.
+
+Das gemeinsame Rückgrat hält alle drei für dich fest, ein spezifikationsgetriebener
+Adapter bekommt das also geschenkt. Die Pipeline wirft die ersten beiden aus
+`scannedFiles` und schreibt jeden Eintrag nach `phase1/scan-coverage.json`. Eine Datei,
+die still aus der Analyse verschwindet, ist der eine Fehlerfall, den nichts Nachgelagertes
+bemerken kann.
+
 ## Einen Adapter von außen registrieren
 
 Die Registry ist öffentlich, du kannst also eine Sprache hinzufügen, ohne zu forken:
@@ -187,6 +204,8 @@ wird.
       abgegriffen)
 - [ ] Ein Test, der **echte** Quellen in einem temporären Verzeichnis parst
 - [ ] Fähigkeiten ehrlich deklariert
+- [ ] Unlesbare, nicht parsebare und teilweise geparste Dateien gemeldet, nie
+      stillschweigend übersprungen
 - [ ] Anzeigename zur `DISPLAY`-Map des Drift-Tests hinzugefügt
 - [ ] Beide READMEs, die Analyzer-READMEs und die Sprachreferenz aktualisiert
 - [ ] `pnpm check` läuft durch

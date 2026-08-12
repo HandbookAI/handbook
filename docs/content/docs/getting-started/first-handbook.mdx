@@ -21,7 +21,14 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 **This is free and it is your smoke test.** No LLM, no key, no tokens.
@@ -31,7 +38,10 @@ handbook analyze --source $REPO --work $WORK
   Check the scan log with `-v`. - **`files` far higher?** You are analyzing `node_modules`, `vendor` or a
   build directory. The common ones are skipped automatically; point `--source` at the real source root rather
   than the repo root if it is not. - **`edgesDropped` enormous relative to `edgesKept`?** Normal for dynamic
-  languages. Look at `phase1/dropped-calls.json` — every unresolved call is categorized there, not hidden.
+  languages. Look at `phase1/dropped-calls.json` — every unresolved call is categorized there, not hidden. -
+  **`filesUnparsed` not zero?** Those files are named in `phase1/scan-coverage.json` with a reason. The
+  unreadable and unparsable ones contribute nothing and get no page, so a handbook built now has a hole
+  exactly there — worth fixing before you pay for prose.
 </Callout>
 
 Fix any of the above **now**. Every problem here becomes a more expensive problem later.
@@ -100,8 +110,9 @@ handbook skill --handbook $WORK/handbook --out skills/myrepo \
 `--work` + `--source` together produce `coverage.json`: a content hash per file. **That
 is what makes handbook drift detectable** rather than silently wrong later.
 
-`--agent-dir` ships the locator pages, and adds a disambiguation step to the SKILL's
-routing protocol.
+`--agent-dir` ships the agent index and its fact tables, and gives the SKILL's routing
+protocol its grep recipes — so the agent can turn a symbol name into
+`path:startLine-endLine` in one command instead of reading prose and guessing.
 
 ## Step 5 — Validate it
 

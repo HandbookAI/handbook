@@ -83,10 +83,22 @@ handbook analyze --source <dir> --work <dir> [--lang <lang>]
 `ocaml` `php` `python` `ruby` `rust` `scala` `shell` `solidity` `swift` `typescript` `zig`。
 **`auto` は 1 回のパスですべての言語を検出してマージします**。ほとんどの場合、これが求めているものです。
 
-**出力するファイル**: `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`。
+**出力するファイル**: `phase1/graph.json`、`functions.csv`、`graph.dot`、`dropped-calls.json`、
+`scan-coverage.json`。
+
+`files` は実際に読み取ってパースできたものの数、`filesUnparsed` はそうでなかったものの数で、
+後者は 1 つ残らず理由付きで `scan-coverage.json` に名指しされます。
+[アーティファクト形式](/docs/reference/artifacts) を参照してください。
 
 ```json title="stdout"
-{ "language": "multi", "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{
+  "language": "multi",
+  "files": 412,
+  "functions": 3187,
+  "edgesKept": 9042,
+  "edgesDropped": 611,
+  "filesUnparsed": 3
+}
 ```
 
 ---
@@ -130,6 +142,7 @@ handbook generate --source <dir> --work <dir> [options]
 
 | フラグ                      | デフォルト                  | 環境変数エイリアス  |
 | --------------------------- | --------------------------- | ------------------- |
+| `--provider <name>`         | `openai`                    | `OPENAI_PROVIDER`   |
 | `--model <id>`              | `gpt-4o-mini`               | `OPENAI_MODEL`      |
 | `--base-url <url>`          | `https://api.openai.com/v1` | `OPENAI_BASE_URL`   |
 | `--max-tokens <n>`          | `16000`                     | `OPENAI_MAX_TOKENS` |
@@ -137,14 +150,25 @@ handbook generate --source <dir> --work <dir> [options]
 | `--llm-retries <n>`         | `6`                         | —                   |
 | `--llm-retry-backoff <sec>` | `3`                         | —                   |
 | `--llm-concurrency <n>`     | `16`                        | —                   |
-| `--extra-body <json>`       | —                           | `OPENAI_EXTRA_BODY` |
 
 API キーは **決してフラグにはなりません**。環境または `.env` ファイルで `OPENAI_API_KEY`
 (または `HANDBOOK_LLM_API_KEY`) を設定してください。設定ファイルはコミットされるものなので、
 設定ファイル内での指定は拒否されます。
 
-`--extra-body` はベンダー固有のフィールドをすべてのリクエストボディにマージします — たとえば `{"thinking":{"type":"disabled"}}`
-です。model、message、token の各フィールドをこれで上書きすることはできません。
+追加のリクエストボディも **決してフラグにはなりません**。同じ理由で、設定ファイル内での指定も
+拒否されます。環境で `OPENAI_EXTRA_BODY` (または `HANDBOOK_LLM_EXTRA_BODY`) を設定してください。
+これはベンダー固有のフィールドをすべてのリクエストボディにマージします — たとえば `{"thinking":{"type":"disabled"}}`
+です — が、中身が自由形式であるため、チューニング用のフィールドと認証用のフィールドを見分ける手段が
+ありません。model、message、token の各フィールドをこれで上書きすることはできません。
+
+`--base-url` は **フラグです**。設定ファイルに書いても構いません — チームがすべてのチェックアウトを
+1 つの共有ゲートウェイに向ける、というのはまさにあのファイルの用途そのものです。ただし認証情報を
+埋め込んだ URL (`https://user:pass@gw.internal/v1`) だけは、そこで拒否されます。拒否されるのはそこ
+だけです。認証情報は環境に置いてください。
+
+`--provider` が選ぶのはベンダーではなくワイヤフォーマットです: `openai`（デフォルト）は
+OpenAI 互換のあらゆるエンドポイント、つまりほとんどのものと話せます。`anthropic` と
+`gemini` は、そうでない 2 つのためにあります。
 
 ```json title="stdout"
 {
@@ -167,16 +191,16 @@ API キーは **決してフラグにはなりません**。環境または `.en
 handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-site] [--llms-txt]
 ```
 
-| フラグ                    | デフォルト        | 内容                                                                |
-| ------------------------- | ----------------- | ------------------------------------------------------------------- |
-| `--work <dir>`            | **必須**          | レンダリング対象の作業ディレクトリ                                  |
-| `--title <title>`         | `System Handbook` | 出力に使う Handbook のタイトル                                      |
-| `--out <dir>`             | `<work>/handbook` | 書き出し先                                                          |
-| `--html`                  | `false`           | 複数ページの HTML サイトも `<out>/html` の下に出力します            |
-| `--html-single`           | `false`           | 自己完結した `<out>/handbook.html` も出力します                     |
-| `--agent-site`            | `false`           | エージェント用ロケータインデックスも `<out>/agent` の下に出力します |
-| `--llms-txt`              | `false`           | `llms.txt` と `llms-full.txt` も出力します                          |
-| `--source-base-url <url>` | —                 | すべてのファイルカードを `<url>/<relative path>` にリンクします     |
+| フラグ                    | デフォルト        | 内容                                                                    |
+| ------------------------- | ----------------- | ----------------------------------------------------------------------- |
+| `--work <dir>`            | **必須**          | レンダリング対象の作業ディレクトリ                                      |
+| `--title <title>`         | `System Handbook` | 出力に使う Handbook のタイトル                                          |
+| `--out <dir>`             | `<work>/handbook` | 書き出し先                                                              |
+| `--html`                  | `false`           | 複数ページの HTML サイトも `<out>/html` の下に出力します                |
+| `--html-single`           | `false`           | 自己完結した `<out>/handbook.html` も出力します                         |
+| `--agent-site`            | `false`           | エージェントインデックスと事実テーブルも `<out>/agent` の下に出力します |
+| `--llms-txt`              | `false`           | `llms.txt` と `llms-full.txt` も出力します                              |
+| `--source-base-url <url>` | —                 | すべてのファイルカードを `<url>/<relative path>` にリンクします         |
 
 <Callout type="info">
   `--source-base-url` を指定しない場合、出力には **外部 URL がまったく含まれません**。プライベートな
@@ -196,16 +220,16 @@ handbook render --work <dir> [--title <t>] [--html] [--html-single] [--agent-sit
 handbook skill --handbook <dir> --out <dir> --name <slug> [options]
 ```
 
-| フラグ              | デフォルト   | 内容                                                                     |
-| ------------------- | ------------ | ------------------------------------------------------------------------ |
-| `--handbook <dir>`  | **必須**     | レンダリング済みの handbook ディレクトリ                                 |
-| `--out <dir>`       | **必須**     | SKILL パッケージの出力先                                                 |
-| `--name <slug>`     | **必須**     | 小文字とハイフンの slug。`<slug>-handbook` を生成します                  |
-| `--project <name>`  | _(`--name`)_ | 文章中で使われる、人間向けのプロジェクト名                               |
-| `--work <dir>`      | —            | phase-2 の割り当てから `coverage.json` を追加します                      |
-| `--source <dir>`    | —            | `--work` と併用すると、**ファイルごとのコンテンツハッシュ** を追加します |
-| `--agent-dir <dir>` | —            | ロケータページを `references/agent/` の下に同梱します                    |
-| `--lang <l>`        | `en`         | SKILL.md の **本文** の言語。フロントマターは英語のままです              |
+| フラグ              | デフォルト   | 内容                                                                              |
+| ------------------- | ------------ | --------------------------------------------------------------------------------- |
+| `--handbook <dir>`  | **必須**     | レンダリング済みの handbook ディレクトリ                                          |
+| `--out <dir>`       | **必須**     | SKILL パッケージの出力先                                                          |
+| `--name <slug>`     | **必須**     | 小文字とハイフンの slug。`<slug>-handbook` を生成します                           |
+| `--project <name>`  | _(`--name`)_ | 文章中で使われる、人間向けのプロジェクト名                                        |
+| `--work <dir>`      | —            | phase-2 の割り当てから `coverage.json` を追加します                               |
+| `--source <dir>`    | —            | `--work` と併用すると、**ファイルごとのコンテンツハッシュ** を追加します          |
+| `--agent-dir <dir>` | —            | エージェントインデックスとその事実テーブルを `references/agent/` の下に同梱します |
+| `--lang <l>`        | `en`         | SKILL.md の **本文** の言語。フロントマターは英語のままです                       |
 
 <Callout type="warn" title="知っておく価値のある 2 つの拒否">
   `--out` に handbook ディレクトリやその親ディレクトリを指定してはいけません: ビルドは `--out` を消去する

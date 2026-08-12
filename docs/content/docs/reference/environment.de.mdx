@@ -30,12 +30,13 @@ Einige wenige Einstellungen sind **nur befehlsbezogen**, weil sich ihre Bedeutun
 
 ## Hersteller-Aliase
 
-Sechs Einstellungen akzeptieren zusätzlich die Namen, die Leute ohnehin schon exportiert
+Sieben Einstellungen akzeptieren zusätzlich die Namen, die Leute ohnehin schon exportiert
 haben:
 
 | Einstellung    | Alias               |
 | -------------- | ------------------- |
 | `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmProvider`  | `OPENAI_PROVIDER`   |
 | `llmModel`     | `OPENAI_MODEL`      |
 | `llmBaseUrl`   | `OPENAI_BASE_URL`   |
 | `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
@@ -101,13 +102,25 @@ Titel.
 
 ## Geheimnisse
 
-`llmApiKey` / `OPENAI_API_KEY` ist in der Registry als `secret` markiert, was bedeutet:
+Zwei Einstellungen sind in der Registry als `secret` markiert — `llmApiKey` /
+`OPENAI_API_KEY` und `llmExtraBody` / `OPENAI_EXTRA_BODY`. Für beide gilt:
 
-- er ist **nie** ein Kommandozeilen-Flag (Flags landen in der Shell-History und in der
+- sie sind **nie** ein Kommandozeilen-Flag (Flags landen in der Shell-History und in der
   `ps`-Ausgabe);
-- er wird **abgelehnt**, wenn er in einer Konfigurationsdatei auftaucht, mit einer Meldung,
-  die den Grund nennt — Konfigurationsdateien werden committet;
-- er wird in der Ausgabe von `handbook config` **maskiert**.
+- sie werden **abgelehnt**, wenn sie in einer Konfigurationsdatei auftauchen, mit einer
+  Meldung, die den Grund nennt — Konfigurationsdateien werden committet;
+- sie werden in der Ausgabe von `handbook config` **maskiert**.
+
+`llmExtraBody` ist ein Geheimnis, weil er **frei formulierbar** ist. Er mischt alles, was
+du hineinschreibst, in jeden Anfrage-Body, und Gateways nehmen Auth-Daten dort durchaus
+entgegen — das Werkzeug kann also nicht aufzählen, was darin steht, und ein Tuning-Feld
+nicht von Zugangsdaten unterscheiden. Ein Flag gibt es dafür gar nicht; nimm die
+Umgebungsvariable.
+
+`llmBaseUrl` ist bewusst **kein** Geheimnis: Ein Team, das jeden Checkout auf dasselbe
+gemeinsame Gateway richtet, hat einen legitimen Grund, den Wert zu committen. Nur eine URL
+mit eingebetteten Zugangsdaten (`https://user:pass@gw.internal/v1`) wird in einer
+Konfigurationsdatei abgelehnt — dort und sonst nirgends.
 
 ```text
 handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)

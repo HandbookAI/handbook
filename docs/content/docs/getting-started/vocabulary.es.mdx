@@ -17,6 +17,18 @@ modelo.**
 Vive en `<work>/phase1/graph.json`. Todo lo que hay aguas abajo lo lee, y nada vuelve a
 parsear el código fuente.
 
+### Cobertura del escaneo
+
+La otra mitad de la honestidad de la Phase 1: la lista de archivos que el analizador
+**no** logró convertir en hechos, cada uno con su motivo — `unreadable` (falló la
+lectura), `unparsable` (la gramática lanzó una excepción) o `partial` (parseó, pero con
+errores de sintaxis, así que sus hechos son reales aunque incompletos).
+
+Los dos primeros se quitan además de los `scannedFiles` del grafo, de modo que nada aguas
+abajo describa un archivo que el parser nunca abrió. Una lista vacía afirma que todo
+parseó; que el archivo no esté, no afirma nada. Vive en
+`<work>/phase1/scan-coverage.json`.
+
 ### Ficha
 
 Una por archivo fuente. Responde _¿para qué sirve este archivo?_ en tres campos —
@@ -84,7 +96,7 @@ Donde vive cada artefacto del pipeline. Uno por repositorio que estés documenta
 
 ```text
 <work>/
-  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json
+  phase1/   graph.json · functions.csv · graph.dot · dropped-calls.json · scan-coverage.json
   phase2/   cards/ · skeleton.yaml · assignment.json · organization.yaml · strategy.json
   phase3/   narration.json · registers.json · cache/
   handbook/ the rendered output, once you run `render`
@@ -133,13 +145,13 @@ Lo que le entregas a `resync` para describir un cambio:
 
 ## Las fases
 
-| Phase | Produce                | ¿LLM? |
-| ----- | ---------------------- | :---: |
-| `1`   | el grafo de llamadas   |  ❌   |
-| `2a`  | una ficha por archivo  |  ✅   |
-| `2b`  | esqueleto + asignación |  ✅   |
-| `2c`  | organización           |  ✅   |
-| `3`   | narración + registros  |  ✅   |
+| Phase | Produce                         | ¿LLM? |
+| ----- | ------------------------------- | :---: |
+| `1`   | el grafo de llamadas            |  ❌   |
+| `2a`  | una ficha por archivo escaneado |  ✅   |
+| `2b`  | esqueleto + asignación          |  ✅   |
+| `2c`  | organización                    |  ✅   |
+| `3`   | narración + registros           |  ✅   |
 
 `--phase` acepta `all`, `1`, `2` (que significa 2a+2b+2c), cualquier fase individual o una
 lista separada por comas como `2c,3`.

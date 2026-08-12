@@ -62,6 +62,7 @@ paquete SKILL lo dice en su primera línea:
 | --------------------------------------------------------- | --------------------------------- | ------------------------------------------- |
 | Archivos, funciones, rangos de líneas, aristas de llamada | tree-sitter                       | No — es un parseo                           |
 | Qué llamadas **no** pudieron resolverse                   | tree-sitter                       | No — se ponen en cuarentena, no se adivinan |
+| Qué archivos **no** se pudieron parsear                   | tree-sitter                       | No — se divulgan, no se descartan           |
 | La estructura de etapas                                   | LLM, luego validada mecánicamente | Estructuralmente, no; en el juicio, sí      |
 | Propósitos, recorridos, visiones generales                | LLM                               | Sí — y va etiquetado como prosa             |
 
@@ -79,6 +80,9 @@ dilo.**
 - Una llamada que el analizador no pudo resolver va a `dropped-calls.json` con su
   categoría y su texto en bruto. Nunca se adivina hasta convertirla en una arista
   plausible.
+- Un archivo que el analizador no pudo leer, o solo pudo parsear en parte, va a
+  `scan-coverage.json` con el motivo. Nunca se cuenta como cubierto — un archivo que nadie
+  llegó a abrir no es «un archivo sin funciones».
 - Un lenguaje analizado por el motor guiado por configuración se **nombra en la visión
   general**, para que «relaciones de llamada best-effort» no pueda leerse como «exactas».
 - Una ejecución del planner que se rindió sale con código distinto de cero, para que

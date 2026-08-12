@@ -93,6 +93,10 @@ node --liftoff-only $(which handbook) analyze --source ~/code/ios-app --work wor
 merely unresolved — install.sh, nvm.sh, …
 ```
 
+それらのファイルは 1 つずつ `phase1/scan-coverage.json` にも `reason: "unparsable"` 付きで
+名指しされ、グラフの `scannedFiles` からは外されます — つまり、沈黙した欠落ではなく*目に
+見える*欠落になります。
+
 </Callout>
 
 ## どこでもスキップされるもの
@@ -128,6 +132,7 @@ handbook analyze --source ~/code/repo --work work/x -v
 ```bash
 jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
 jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+jq '.metadata.byReason, .files' work/x/phase1/scan-coverage.json  # what could not be parsed at all
 ```
 
 ## 言語の追加

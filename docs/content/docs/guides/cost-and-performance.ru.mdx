@@ -10,7 +10,7 @@ handbook analyze --source $REPO --work $WORK
 ```
 
 ```json
-{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611 }
+{ "files": 412, "functions": 3187, "edgesKept": 9042, "edgesDropped": 611, "filesUnparsed": 3 }
 ```
 
 **Бесплатно.** Именно число `files` определяет стоимость, потому что phase 2a — самая
@@ -146,8 +146,9 @@ jq '.usage, (.finishedAt, .startedAt)' work/api/run-manifest.json
 handbook analyze --source $REPO --work $WORK
 ```
 
-Проверьте число файлов и `dropped-calls.json`. Почините сканирование, прежде чем что-то
-тратить.
+Проверьте число файлов, `dropped-calls.json` и `scan-coverage.json`. Ненулевой
+`filesUnparsed` — это дыра в руководстве, за которое вы вот-вот заплатите. Почините
+сканирование, прежде чем что-то тратить.
 
 </Step>
 

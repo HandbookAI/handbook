@@ -72,8 +72,10 @@ Two things to know:
   from.
 
 <Callout type="warn" title="Secrets are rejected here">
-  `llmApiKey` / `OPENAI_API_KEY` must never appear in a config file — config files get committed. The loader
-  refuses the file outright and says why. Put it in `.env` or the shell environment.
+  `llmApiKey` / `OPENAI_API_KEY` and `llmExtraBody` / `OPENAI_EXTRA_BODY` must never appear in a config file —
+  config files get committed. The loader refuses the file outright and says why. Put them in `.env` or the
+  shell environment. `baseUrl` is fine to commit, unless the URL itself carries credentials
+  (`https://user:pass@host/v1`), which is refused for the same reason.
 </Callout>
 
 Copy `handbook.config.example.yaml` to start; it is generated from the registry, so it

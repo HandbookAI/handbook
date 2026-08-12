@@ -96,6 +96,29 @@ jq '.metadata.byCategory' work/api/phase1/dropped-calls.json
 generic ティアの言語は、設計上より多くをドロップします。
 [解析忠実度](/docs/concepts/analysis-fidelity)を参照してください。
 
+### 存在するはずのファイルに、ハンドブックのページがない
+
+まず Phase 1 に尋ねてください — 一度も事実にならなかったファイルは、ページにもなりません:
+
+```bash
+jq '.metadata.byReason' work/api/phase1/scan-coverage.json
+jq -r '.files[] | "\(.reason)\t\(.file)\t\(.detail)"' work/api/phase1/scan-coverage.json
+```
+
+| `reason`     | 意味                                                                      | 対処                                                                       |
+| ------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `unreadable` | 読み取りが失敗した — パーミッション、リンク切れのシンボリックリンク、競合 | ファイルかそのモードを直して `analyze` を再実行                            |
+| `unparsable` | 文法が例外を投げたか、木を返さなかった                                    | たいていはシェル + `case`。[言語サポート](/docs/reference/languages)を参照 |
+| `partial`    | パースはできたが、構文エラーを含む                                        | ページはあるが**不完全**です — ファイル自体を読んでください                |
+
+`unreadable` と `unparsable` のファイルは、意図的に `graph.json` の `scannedFiles` から
+取り除かれます。パーサーが読んでいないファイルについてカードが書かれることも、
+`_coverage.json` がそれを記述済みとして数えることもないようにするためです。`partial` の
+ファイルはページを保ちます: そこにある事実は本物です。ただ、すべてではないというだけです。
+
+`files` 配列が空なら、すべてパースできています。成果物そのものが存在しない場合、その作業
+ディレクトリはこの記録より前のものです — `analyze` を再実行してください。
+
 ### Swift がプロセスを殺す
 
 ```text
@@ -279,6 +302,7 @@ handbook config --command <cmd> --json     # full resolved configuration
 cat work/api/run-manifest.json             # what the last good run did
 ls work/api/phase2/cards/_rejected/        # what the model actually replied
 jq '.metadata' work/api/phase1/graph.json  # what was actually scanned
+cat work/api/phase1/scan-coverage.json     # what could NOT be scanned, and why
 ```
 
 再現可能であれば、上記の成果物こそがバグレポートに必要なものそのものです。

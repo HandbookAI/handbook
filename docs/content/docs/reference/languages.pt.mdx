@@ -96,6 +96,10 @@ O log de varredura diz isso explicitamente, e nomeia o motivo:
 merely unresolved — install.sh, nvm.sh, …
 ```
 
+Cada um desses arquivos também é nomeado individualmente em `phase1/scan-coverage.json`
+com `reason: "unparsable"`, e mantido fora do `scannedFiles` do grafo — de modo que eles
+são uma lacuna _visível_, não uma lacuna silenciosa.
+
 </Callout>
 
 ## O que é pulado em todo lugar
@@ -131,6 +135,7 @@ handbook analyze --source ~/code/repo --work work/x -v
 ```bash
 jq '.metadata.languages | keys' work/x/phase1/graph.json      # which tiers are in play
 jq '.metadata.byCategory' work/x/phase1/dropped-calls.json    # what could not be resolved
+jq '.metadata.byReason, .files' work/x/phase1/scan-coverage.json  # what could not be parsed at all
 ```
 
 ## Adicionando uma linguagem

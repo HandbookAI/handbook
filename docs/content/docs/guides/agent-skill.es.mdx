@@ -23,12 +23,12 @@ handbook skill \
   --agent-dir work/api/handbook/agent
 ```
 
-| Flag                  | Por qué te interesa                                                                              |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| `--work` + `--source` | Genera `coverage.json` con un **hash de contenido por archivo** — la señal de deriva             |
-| `--agent-dir`         | Incluye las páginas localizadoras y añade un paso de desambiguación al protocolo de enrutamiento |
-| `--project`           | El nombre humano usado en la prosa. Por defecto toma el valor de `--name`                        |
-| `--lang zh`           | **Cuerpo** en chino. El frontmatter permanece en inglés — ver más abajo                          |
+| Flag                  | Por qué te interesa                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `--work` + `--source` | Genera `coverage.json` con un **hash de contenido por archivo** — la señal de deriva                            |
+| `--agent-dir`         | Incluye el índice para agentes y sus tablas de hechos, y le da al protocolo de enrutamiento sus recetas de grep |
+| `--project`           | El nombre humano usado en la prosa. Por defecto toma el valor de `--name`                                       |
+| `--lang zh`           | **Cuerpo** en chino. El frontmatter permanece en inglés — ver más abajo                                         |
 
 ## Qué obtienes
 
@@ -41,13 +41,24 @@ skills/api/
     index.md                  every subsystem → its files
     registers.md              cross-stage state
     stages/<id>.md            one page per stage
-    agent/how_to_use.md
-    agent/disambiguation.md
+    agent/index.md            lookup recipes, stage table, registers, coverage
+    agent/symbols.tsv         name → path:startLine-endLine
+    agent/files.tsv           path → stage, role, purpose
+    agent/calls.tsv           call edges (callee located, or boundary:<specifier>)
+    agent/stages/<id>.md      second hop per stage
     coverage.json             file → stage + sha256
 ```
 
 El paquete es **autocontenido y compartible**, y nunca incrusta código fuente. Entrega el
 mapa, no el territorio.
+
+**Dos públicos, un paquete.** `references/` es el handbook humano — explica.
+`references/agent/` ubica: responde a "dónde está definido `sendPayment`" con un solo grep,
+cosa que ninguna cantidad de prosa consigue. No son dos renderizados del mismo texto, y el
+lado del agente ya no copia el lado de la prosa; donde un agente necesita la explicación, la
+página de etapa enlaza a ella. Antes de que `--agent-dir` existiera como vía de entrega, el
+índice entero se generaba y luego no se entregaba nunca — ahora sale por el canal principal
+del producto.
 
 ## El contrato de SKILL.md
 
@@ -74,7 +85,10 @@ El cuerpo es un protocolo numerado:
 2. Enruta a través de `references/index.md` — el índice de etapas asigna cada subsistema a sus archivos.
 3. Abre solo las páginas `references/stages/<id>.md` relevantes.
 4. Consulta `references/registers.md` para el estado transversal — inestimable para cambios en abanico.
-5. _(con `--agent-dir`)_ Desambigua cuando un término sea ambiguo.
+5. _(con `--agent-dir`)_ Haz grep de las tablas de hechos en vez de adivinar: `symbols.tsv` convierte un
+   nombre en `path:startLine-endLine`, y `calls.tsv` lo convierte en quienes lo llaman — incluidos
+   los de otros paquetes, que aparecen como filas `boundary:<specifier>`.
+   `references/agent/index.md` lista todas las recetas.
 6. **Aplica `read_file` al código fuente real en cada ruta citada antes de proponer o hacer cambios.**
 
 Y su primera línea dice lo que más importa:
@@ -163,8 +177,10 @@ handbook plan --source ~/code/api --handbook skills/api/references \
 - **`--out` no debe ser el directorio del handbook, ni un ancestro suyo.** La construcción
   comienza vaciando `--out`; eso borraría justo lo que se está empaquetando y luego
   produciría en silencio una skill vacía.
-- **Las páginas localizadoras se incluyen en pareja o no se incluyen.** `SKILL.md` nunca
-  debe enrutar hacia un archivo que no existe.
+- **El índice para agentes y sus tablas de hechos se incluyen como conjunto o no se
+  incluyen.** `SKILL.md` nunca debe enrutar hacia un archivo que no existe, así que un
+  `references/agent/` al que le falte alguno de `index.md`, `symbols.tsv`, `files.tsv` o
+  `calls.tsv` se rechaza en lugar de entregarse a medio construir.
 - **La página de registros siempre existe**, incluso para un handbook con cero registros,
   porque una estructura de referencia estable es parte del contrato.
 

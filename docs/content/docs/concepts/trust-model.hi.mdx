@@ -12,6 +12,7 @@ description: 'Handbook के कौन से हिस्से parsed facts �
 | यह signature `send(self, url, data)` है | parser                         | **नहीं**                                             |
 | यह function उस function को call करता है | parser                         | full tier में **नहीं**; generic tier में best-effort |
 | ये calls resolve नहीं हो सकीं           | parser                         | **नहीं** — वे listed हैं, guessed नहीं               |
+| ये files पढ़ी या parse नहीं हो सकीं     | parser                         | **नहीं** — वे listed हैं, covered नहीं गिनी जातीं    |
 | यह file इस stage की है                  | LLM, यांत्रिक रूप से validated | Judgment के नाते, हाँ। Structure के नाते, नहीं       |
 | इस file का purpose "…" है               | LLM                            | **हाँ** — यह prose है                                |
 | यह subsystem "…" की तरह काम करता है     | LLM                            | **हाँ** — यह prose है                                |
@@ -69,6 +70,11 @@ Refusals ही इस tool का भार उठाने वाला हि
 
 - जिस call को analyzer resolve नहीं कर पाता वह `dropped-calls.json` में जाती है। वह कभी
   guess नहीं की जाती।
+- जिस file को analyzer पढ़ या parse नहीं कर पाता, वह अपने reason के साथ
+  `scan-coverage.json` में जाती है और `scannedFiles` से **बाहर** रखी जाती है। उसे कभी
+  ख़ाली file की तरह describe नहीं किया जाता। जो file सिर्फ़ आंशिक parse हुई वह बनी रहती है,
+  पर listed फिर भी होती है — उसके facts असली हैं मगर अधूरे, और आपको पता होना चाहिए कि
+  कौन-से pages उन पर टिके हैं।
 - जिस file का card generation fail हुआ उसे **ख़ाली** description मिलता है, कभी गढ़ा हुआ
   नहीं, और वह `_coverage.json` में listed होती है।
 - Doctor loop का प्रस्तावित ऐसा structural बदलाव जो किसी non-existent stage का नाम लेता
@@ -77,8 +83,14 @@ Refusals ही इस tool का भार उठाने वाला हि
 
 ### Configuration
 
-- Secret (`llmApiKey` / `OPENAI_API_KEY`) **कभी** command-line flag नहीं होता, और config
-  file में दिखे तो **reject** होता है — क्योंकि config files commit हो जाती हैं।
+- Secret **कभी** command-line flag नहीं होता, और config file में दिखे तो **reject** होता
+  है — क्योंकि config files commit हो जाती हैं। दो settings secret हैं: `llmApiKey` /
+  `OPENAI_API_KEY`, और `llmExtraBody` / `OPENAI_EXTRA_BODY` — free-form, हर request body
+  में मिला दिया जाने वाला, और gateways वहाँ auth भी लेते हैं, इसलिए कोई भी tuning field को
+  credential से अलग नहीं बता सकता।
+- `llmBaseUrl` जान-बूझकर कोई blanket secret **नहीं** है: हर checkout को एक ही साझा gateway
+  पर भेजने वाली team के पास उसे commit करने की जायज़ वजह है। config file में सिर्फ़ वह URL
+  refuse होता है जिसमें credentials बैठे हों (`https://user:pass@host/v1`)।
 - दिया गया पर invalid value कभी किसी default पर नहीं गिरता। Typo एक error है।
 - ख़ाली value unset पढ़ी जाती है, इसलिए `HANDBOOK_TITLE=` कभी बिना title की handbook
   नहीं बना सकता।

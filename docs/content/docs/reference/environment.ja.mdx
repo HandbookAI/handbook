@@ -30,11 +30,12 @@ export HANDBOOK_GENERATE_NARRATE_LANG=zh     # …except generate
 
 ## ベンダーのエイリアス
 
-6 つの設定は、すでに export 済みであることが多い名前も受け付けます:
+7 つの設定は、すでに export 済みであることが多い名前も受け付けます:
 
 | 設定           | エイリアス          |
 | -------------- | ------------------- |
 | `llmApiKey`    | `OPENAI_API_KEY`    |
+| `llmProvider`  | `OPENAI_PROVIDER`   |
 | `llmModel`     | `OPENAI_MODEL`      |
 | `llmBaseUrl`   | `OPENAI_BASE_URL`   |
 | `llmMaxTokens` | `OPENAI_MAX_TOKENS` |
@@ -99,13 +100,24 @@ handbook generate --env prod --source ~/code/api --work work/api
 
 ## シークレット
 
-`llmApiKey` / `OPENAI_API_KEY` はレジストリで `secret` とマークされています。つまり:
+レジストリで `secret` とマークされている設定は 2 つ — `llmApiKey` / `OPENAI_API_KEY` と
+`llmExtraBody` / `OPENAI_EXTRA_BODY` です。どちらについても、意味するところは同じです:
 
 - **決して**コマンドラインフラグにはなりません（フラグはシェル履歴と `ps` の出力に
   残ります）;
 - 設定ファイルに現れた場合は、理由を述べるメッセージとともに**拒否**されます — 設定
   ファイルはコミットされるからです;
 - `handbook config` の出力では**マスク**されます。
+
+`llmExtraBody` がシークレットなのは、それが**自由形式**だからです。書いたものがそのまま
+すべてのリクエストボディにマージされますし、ゲートウェイは実際にボディでの認証も受け付け
+ます — つまりツールの側では、そこに何が入っているかを列挙できず、チューニング用のフィール
+ドと認証情報を見分けることもできません。フラグは一切ありません。環境変数を使ってください。
+
+`llmBaseUrl` は意図的にシークレットでは**ありません**。チームがすべてのチェックアウトを
+1 つの共有ゲートウェイに向けるのなら、それをコミットする正当な理由があります。設定ファイル
+で拒否されるのは、認証情報を埋め込んだ URL（`https://user:pass@gw.internal/v1`）だけ —
+そこだけであって、ほかのどこでもありません。
 
 ```text
 handbook.config.yaml: llmApiKey must not appear in a config file (it gets committed)
