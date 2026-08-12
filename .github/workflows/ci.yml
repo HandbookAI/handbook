@@ -284,6 +284,14 @@ jobs:
           # the four passes had their progress sinks declared and never wired;
           # only driving a real run through the stream caught it.
           node scripts/browser/studio-progress.mjs http://127.0.0.1:4860 packages/core/src
+          # render / skill / validate were covered at the API level only, which
+          # says nothing about whether the buttons are reachable, the dialogs
+          # open, their fields reach the request, or a refusal is shown rather
+          # than swallowed. Offline: these are the three commands that never
+          # reach a model, and the handbook `pnpm demo` just produced is the
+          # input they need.
+          node scripts/browser/studio-dialogs.mjs http://127.0.0.1:4860 \
+            examples/demo-project examples/work/demo
 
       - name: Upload the generated handbook
         if: ${{ failure() }}

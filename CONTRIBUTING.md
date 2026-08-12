@@ -133,10 +133,11 @@ one; a redundant patch bump is cheaper than a silent behaviour change.
 
 ### Browser tests
 
-Two surfaces are HTML that a person clicks, and no string assertion can tell you whether
-they work: the documentation site, and the handbook the renderer writes. Both are covered
-by [`scripts/browser/`](scripts/browser), which drives real Chrome over the DevTools
-Protocol — no Playwright, no Puppeteer, no install step.
+Three surfaces are HTML that a person clicks, and no string assertion can tell you whether
+they work: the documentation site, the handbook the renderer writes, and Studio's UI —
+which is one hand-written file with no framework and no build, so nothing type-checks it
+either. All three are covered by [`scripts/browser/`](scripts/browser), which drives real
+Chrome over the DevTools Protocol — no Playwright, no Puppeteer, no install step.
 
 ```bash
 # the docs site (start it first: cd docs && pnpm dev)
@@ -146,6 +147,15 @@ node scripts/browser/docs-site.mjs http://127.0.0.1:3000
 pnpm demo
 node scripts/browser/handbook-html.mjs \
   examples/work/demo/handbook/html examples/work/demo/handbook/handbook.html
+
+# Studio. REBUILD FIRST — a studio started from a stale dist has cost this
+# project two debugging sessions.
+pnpm exec tsc -b
+node packages/cli/dist/main.js studio --port 4860 --state-dir "$(mktemp -d)" &
+node scripts/browser/studio-ui.mjs http://127.0.0.1:4860        # locales, settings, auth
+node scripts/browser/studio-progress.mjs http://127.0.0.1:4860 packages/core/src
+node scripts/browser/studio-dialogs.mjs http://127.0.0.1:4860 \
+  examples/demo-project examples/work/demo                      # render / skill / validate
 ```
 
 Set `CHROME_PATH` if your Chrome is somewhere unusual. These run in CI on every push.
@@ -153,7 +163,7 @@ Set `CHROME_PATH` if your Chrome is somewhere unusual. These run in CI on every 
 They exist because of a bug they now catch: `next dev` refused to serve its own JavaScript
 to `127.0.0.1`, so every page server-rendered perfectly, passed every fetch-based check,
 and was completely inert in a browser — search, theme, language menu and sidebar collapse
-all dead. If you add behaviour to either surface, add the assertion that would notice it
+all dead. If you add behaviour to any of these surfaces, add the assertion that would notice it
 going missing.
 
 ## Adding a language
