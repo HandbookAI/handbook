@@ -69,20 +69,20 @@ export default defineConfig({
         // everything a unit test cannot see — exit codes, signals, real files.
         // Still the lowest floor in the workspace, because `main.ts` is mostly
         // commander wiring that only the smoke suite executes.
-        'packages/cli/src/**': { statements: 63, branches: 66, functions: 73, lines: 61 },
+        'packages/cli/src/**': { statements: 65, branches: 68, functions: 75, lines: 64 },
 
         'packages/resync/src/**': { statements: 78, branches: 70, functions: 85, lines: 80 },
         // Ratcheted 2026-08-12 with the SSE backpressure work: measured
         // 89.64/77.39/93.46/91.96, so these sit the usual ~2 points under.
-        'packages/studio/src/**': { statements: 87, branches: 75, functions: 91, lines: 89 },
-        'packages/pipeline/src/**': { statements: 85, branches: 70, functions: 86, lines: 87 },
-        'packages/analyzer/src/**': { statements: 84, branches: 70, functions: 94, lines: 89 },
+        'packages/studio/src/**': { statements: 87, branches: 75, functions: 92, lines: 90 },
+        'packages/pipeline/src/**': { statements: 86, branches: 71, functions: 86, lines: 88 },
+        'packages/analyzer/src/**': { statements: 85, branches: 72, functions: 94, lines: 89 },
         'packages/core/src/**': { statements: 90, branches: 83, functions: 92, lines: 91 },
-        'packages/skill/src/**': { statements: 88, branches: 80, functions: 98, lines: 91 },
+        'packages/skill/src/**': { statements: 88, branches: 80, functions: 98, lines: 92 },
         'packages/patcher/src/**': { statements: 87, branches: 83, functions: 94, lines: 88 },
         'packages/planner/src/**': { statements: 93, branches: 87, functions: 92, lines: 93 },
-        'packages/llm/src/**': { statements: 93, branches: 89, functions: 96, lines: 96 },
-        'packages/renderer/src/**': { statements: 94, branches: 78, functions: 94, lines: 96 },
+        'packages/llm/src/**': { statements: 94, branches: 89, functions: 96, lines: 96 },
+        'packages/renderer/src/**': { statements: 95, branches: 83, functions: 94, lines: 96 },
       },
     },
   },

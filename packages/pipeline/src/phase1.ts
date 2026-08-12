@@ -78,6 +78,8 @@ async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
   // hand-written and generic-tier analyses, and only this loop knows which
   // adapter produced which language's facts.
   const languages: Record<string, AdapterCapabilities> = {};
+  /** relative POSIX path → the adapter that scanned it; see `fileLanguages` in the IR. */
+  const fileLanguages: Record<string, string> = {};
 
   if (lang === 'auto') {
     const byLanguage = discoverAll(options.sourceRoot, logger);
@@ -94,6 +96,10 @@ async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
       const capabilities = declaredCapabilities(adapter);
       if (capabilities) languages[name] = capabilities;
       scannedFiles.push(...files);
+      // The inversion `discoverAll` already paid for: without it, a generic-tier
+      // caveat can only be stated globally, and a reader of a 180-row table
+      // cannot tell which rows it is about.
+      for (const file of files) fileLanguages[file] = name;
     }
     scannedFiles.sort();
     language = discovered.length === 1 ? (discovered[0] ?? 'multi') : 'multi';
@@ -108,6 +114,7 @@ async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
     analyses.push(await adapter.analyze(scannedFiles, options.sourceRoot, { logger }));
     const capabilities = declaredCapabilities(adapter);
     if (capabilities) languages[lang] = capabilities;
+    for (const file of scannedFiles) fileLanguages[file] = lang;
     language = lang;
   }
 
@@ -152,6 +159,7 @@ async function runPhase1Locked(options: Phase1Options): Promise<Phase1Stats> {
     language,
     defaultExt,
     fileHashes,
+    fileLanguages,
     unparsedFiles,
   });
   // Stamped here rather than inside buildGraph: the builder is handed ONE merged

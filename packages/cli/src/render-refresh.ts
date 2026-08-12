@@ -27,11 +27,25 @@ export function graphFidelity(workDir: string): Record<string, AdapterCapabiliti
   }
 }
 
+/**
+ * Which adapter scanned each file, so a fidelity caveat can sit on the row it
+ * governs rather than only in a global note. Same failure rule as above: an
+ * unreadable graph says nothing instead of guessing.
+ */
+export function graphFileLanguages(workDir: string): Record<string, string> | undefined {
+  try {
+    return new WorkDir(workDir).loadGraph().metadata.fileLanguages;
+  } catch {
+    return undefined;
+  }
+}
+
 export function refreshRenderedHandbook(workDir: string, title: string, logger: Logger): string[] {
   const outDir = join(workDir, 'handbook');
   if (!existsSync(outDir)) return [];
   const model = loadHandbookModel(workDir, title);
   const languages = graphFidelity(workDir);
+  const fileLanguages = graphFileLanguages(workDir);
   renderMarkdownHandbook(model, outDir, { languages });
   const refreshed = ['markdown'];
   if (existsSync(join(outDir, 'html'))) {
@@ -43,7 +57,7 @@ export function refreshRenderedHandbook(workDir: string, title: string, logger: 
     refreshed.push('html-single');
   }
   if (existsSync(join(outDir, 'agent'))) {
-    renderAgentSite(model, join(outDir, 'agent'), { languages });
+    renderAgentSite(model, join(outDir, 'agent'), { languages, fileLanguages });
     refreshed.push('agent');
   }
   logger.info(`[resync] refreshed rendered handbook: ${refreshed.join(', ')}`);

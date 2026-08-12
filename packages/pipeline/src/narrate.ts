@@ -161,6 +161,7 @@ export async function narrate(
   const summaries: Record<string, string> = {};
   for (const depth of depths) {
     const stages = byDepth.get(depth) ?? [];
+    logger.debug(`[3] narrating ${stages.length} stage(s) at ${workers} worker(s)`);
     await mapLimit(stages, workers, async (sid) => {
       signal?.throwIfAborted(); // cooperative checkpoint: no new stage after abort
       const stage = tree.byId.get(sid);

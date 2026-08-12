@@ -319,7 +319,7 @@ export function renderAgentSite(
     writeFileAtomic(join(stagesDir, `${sid}.md`), agentStagePageMd(view, sid, symbols));
   }
   writeFileAtomic(join(outDir, 'symbols.tsv'), symbolsTsv(view));
-  writeFileAtomic(join(outDir, 'files.tsv'), filesTsv(view));
+  writeFileAtomic(join(outDir, 'files.tsv'), filesTsv(view, options));
   writeFileAtomic(join(outDir, 'calls.tsv'), callsTsv(view));
   writeFileAtomic(join(outDir, AGENT_INDEX_FILE), agentIndexMd(view, symbols, options));
 

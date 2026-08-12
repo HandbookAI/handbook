@@ -196,6 +196,17 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
   // each phase pass re-checks per batch and aborts its in-flight LLM calls.
   signal?.throwIfAborted();
   const phases = expandPhases(options.phase ?? 'all');
+  /**
+   * Phase timing at debug. "Which step is it stuck in" is the first question a
+   * long run raises, and until now the answer was invisible: the info lines
+   * report what a phase FOUND, never that it started or how long it took. A
+   * phase that produces nothing produced no line at all.
+   */
+  const phaseTimer = (name: string): (() => void) => {
+    const startedAt = Date.now();
+    logger.debug(`[${name}] start`);
+    return () => logger.debug(`[${name}] done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+  };
   const work = new WorkDir(options.workDir);
 
   // The strategy chosen at 2b is recorded in the work dir, so partial re-runs
@@ -224,12 +235,14 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
   }
 
   if (phases.has('1')) {
+    const donePhase = phaseTimer('1');
     stats.phase1 = await runPhase1({
       sourceRoot: options.sourceRoot,
       workDir: options.workDir,
       lang: options.lang,
       logger,
     });
+    donePhase();
   }
 
   if ([...phases].every((p) => p === '1')) return stats;
@@ -252,6 +265,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
     options.onProgress ? run.sinkFor(scope) : undefined;
 
   if (phases.has('2a')) {
+    const donePhase = phaseTimer('2a');
     run.enterPhase('2a');
     signal?.throwIfAborted();
     const result = await generateCards({
@@ -270,9 +284,11 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       onProgress: progressFor('cards'),
     });
     stats.nCards = result.coverage.nFiles;
+    donePhase();
   }
 
   if (phases.has('2b')) {
+    const donePhase = phaseTimer('2b');
     run.enterPhase('2b');
     signal?.throwIfAborted();
     const cards = work.loadCards();
@@ -343,12 +359,14 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
     }
     work.saveStrategy(strategy);
     logger.info(`[2b] ${stats.nStages} stages; ${stats.nUnassignedFiles} files unassigned`);
+    donePhase();
   }
 
   if (phases.has('2c') && strategy === 'member') {
     logger.info('[2c] member strategy: organization was derived deterministically in 2b — nothing to do');
   }
   if (phases.has('2c') && strategy === 'file') {
+    const donePhase = phaseTimer('2c');
     run.enterPhase('2c');
     signal?.throwIfAborted();
     const skeleton = work.loadSkeleton();
@@ -362,9 +380,11 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
       onProgress: progressFor('organize'),
     });
     work.saveOrganization(organization);
+    donePhase();
   }
 
   if (phases.has('3')) {
+    const donePhase = phaseTimer('3');
     run.enterPhase('3');
     signal?.throwIfAborted();
     const skeleton = work.loadSkeleton();
@@ -395,6 +415,7 @@ async function generateLocked(options: GenerateOptions): Promise<GenerateStats> 
     });
     work.saveRegisters({ version: 1, registers });
     stats.nRegisters = registers.length;
+    donePhase();
   }
 
   return stats;

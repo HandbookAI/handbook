@@ -503,6 +503,11 @@ export async function generateCards(options: CardsOptions): Promise<CardsResult>
   }
 
   const progress = new Progress(logger, 'cards', todo.length, options.onProgress);
+  // Batch composition at debug. `-v` on a long run answers "what is it doing
+  // and how big is it" — the two questions behind both "why is this slow" and
+  // "why is this expensive" — and neither the batch contents nor its size is
+  // visible anywhere else. Info level would drown a 200-batch run.
+  logger.debug(`[cards] ${batches.length} batch(es), ${todo.length} file(s), batchSize=${batchSize}`);
   await mapLimit(batches, maxWorkers, async (batch) => {
     signal?.throwIfAborted(); // cooperative checkpoint: no new batch after abort
     let described = await describeBatch(batch);

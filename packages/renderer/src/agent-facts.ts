@@ -25,7 +25,7 @@
  */
 import { truncate } from '@handbook/core';
 import type { FileCard, FunctionNote, HandbookModel, TypeKind } from '@handbook/core';
-import type { HandbookView } from './shared.js';
+import type { FidelityOptions, HandbookView } from './shared.js';
 
 /** Stage id used for a file the assignment pass could not route. */
 export const UNASSIGNED = 'unassigned';
@@ -265,20 +265,41 @@ export function symbolsTsv(view: HandbookView): string {
   return `${lines.join('\n')}\n`;
 }
 
-export function filesTsv(view: HandbookView): string {
+export function filesTsv(view: HandbookView, fidelity: FidelityOptions = {}): string {
   const { model } = view;
+  const byFile = fidelity.fileLanguages;
+  // Invariant 3 says fidelity is declared per adapter AND disclosed in the
+  // output. It was disclosed globally — "call relations for Kotlin are
+  // best-effort" — which a reader of a 180-row table cannot connect to a row.
+  // The column appears only when the graph actually recorded who scanned what;
+  // a `?` in every cell would be worse than no column.
+  const tiered = byFile !== undefined;
+  const tierOf = (file: string): string => {
+    const language = byFile?.[file];
+    if (!language) return '?';
+    const tier = fidelity.languages?.[language]?.tier;
+    // The language is worth printing even when its capabilities were not
+    // recorded: it is still the answer to "which adapter read this file".
+    return tier ? `${language}/${tier}` : language;
+  };
   const lines = [
-    '# path\tstage\trole\tnSymbols\tpurpose[prose]',
+    tiered
+      ? '# path\tstage\trole\tnSymbols\tlanguage/tier\tpurpose[prose]'
+      : '# path\tstage\trole\tnSymbols\tpurpose[prose]',
     '# the last column is MODEL-WRITTEN and may be wrong; every other column is a parser fact.',
+    ...(tiered
+      ? [
+          '# language/tier names the adapter that read the file. tier=generic means the call',
+          '# relations on that row came from a pattern-matching engine, not a precise parse:',
+          '# names and paths are reliable, edges are leads. `?` means the graph did not record it.',
+        ]
+      : []),
     ...assignedFiles(model).map(({ file, stage }) => {
       const card = model.cards[file];
-      return [
-        file,
-        stage,
-        card?.role ?? 'other',
-        String(card?.functions?.length ?? 0),
-        purposeCell(card),
-      ].join('\t');
+      const cells = [file, stage, card?.role ?? 'other', String(card?.functions?.length ?? 0)];
+      if (tiered) cells.push(tierOf(file));
+      cells.push(purposeCell(card));
+      return cells.join('\t');
     }),
   ];
   return `${lines.join('\n')}\n`;
