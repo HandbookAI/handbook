@@ -394,12 +394,33 @@ eine **Liste** und kein Boolean, weil ein Adapter Klassen finden und jedes Inter
 könnte; `[]` ist eine positive Aussage, und ein **fehlendes** Feld bedeutet, dass das Artefakt
 älter ist als es — gemeldet als _unknown_, niemals als Null.
 
+Alle zwölf präzise geparsten Sprachen extrahieren sie — C++, C#, Dart, Go, Java, PHP, Python,
+Ruby, Rust, Solidity, Swift, TypeScript. Shell deklariert `[]`, weil es überhaupt keine
+Typdeklarationen hat. Die fünf Sprachen der generischen Stufe (Kotlin, Objective-C, OCaml,
+Scala, Zig) deklarieren `[]` **absichtlich**: ihr Adapter erkennt Muster statt präzise zu
+parsen, eine Typ-Zeile von dort wäre also **im IR nicht von einer präzise geparsten zu
+unterscheiden, bei geringerer Treue** — genau das, dessen Verhinderung Invariante 3 existiert.
+Für sie bleibt der `class-derived`-Rückfall.
+
+An echten Repositories gemessen, Zeilen gegen die Deklarationen, die ein `grep` sieht: PHP und
+Solidity 100 %, C# 98,9 %, Swift 97,0 %, Dart 96,1 %, Ruby 92,7 %, C++ 87,5 % (nur aus Dateien,
+die sauber geparst wurden; die makrolastigen Header von `spdlog` besiegen die Grammatik selbst,
+was `scan-coverage.json` festhält). Jeder Rückstand ist eine Deklaration, bei der der Adapter
+das Raten **verweigert** hat — ein Typ innerhalb eines Funktionskörpers, oder ein Name, der im
+aritätsfreien Id-Modell kollidiert — nie eine erratene Spanne.
+
 `class-derived` ist der Rückfall dort, wo ein Adapter keine Typen extrahiert: die Spanne ist
 `min…max` der **Methoden** der Klasse — wo die Mitglieder sind, nicht wo die Deklaration ist —
 deshalb wird sie gekennzeichnet und nicht als geparste Tatsache präsentiert. In diesem
 Repository fiel `class-derived` durch echte Typextraktion von 45 Zeilen auf 19, und jede
 verbleibende ist ein Objektliteral und keine Typdeklaration — genau das, was der Rückfall
 fangen soll.
+
+Ein Preis dafür, die eigene Spanne der Deklaration zu nehmen: trägt sie vorn ein Attribut oder
+eine Annotation, beginnt die Spanne dort, weil dort der Grammatikknoten beginnt. Die Signatur
+ist davor geschützt: würde die Obergrenze den Namen des Typs abschneiden, werden stattdessen
+die **Attribute ausgelassen**, mit einem führenden `…` — denn eine Signatur, die nicht nennt,
+was sie deklariert, ist keine kürzere Signatur, sondern eine nutzlose.
 
 Die Offenlegung zählt mehr als die Abdeckung: ein Agent, der einen Typnamen greppt, nichts
 findet und schließt, dass der Typ nicht existiert, ist der _falsche Zeiger_, dessen

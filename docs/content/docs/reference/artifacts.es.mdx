@@ -394,12 +394,34 @@ igual que la fidelidad del análisis (invariante 3). `AdapterCapabilities.typeKi
 interfaces; `[]` es una afirmación positiva, y que el campo esté **ausente** significa que el
 artefacto es anterior a él, lo que se reporta como _unknown_, nunca como cero.
 
+Los doce lenguajes analizados con precisión los extraen: C++, C#, Dart, Go, Java, PHP, Python,
+Ruby, Rust, Solidity, Swift y TypeScript. Shell declara `[]` porque no tiene declaraciones de
+tipo en absoluto. Los cinco de nivel genérico (Kotlin, Objective-C, OCaml, Scala, Zig) declaran
+`[]` **a propósito**: su adaptador reconoce patrones en vez de analizar con precisión, así que
+una fila de tipo suya sería **indistinguible en el IR de una analizada con precisión, con una
+fidelidad menor** — precisamente lo que el invariante 3 existe para evitar. Conservan el
+respaldo `class-derived`.
+
+Medido contra repositorios reales, comparando filas con las declaraciones que un `grep` ve:
+PHP y Solidity 100%, C# 98,9%, Swift 97,0%, Dart 96,1%, Ruby 92,7%, C++ 87,5% (solo de los
+archivos que se analizaron sin errores; las cabeceras cargadas de macros de `spdlog` derrotan a
+la propia gramática, algo que `scan-coverage.json` registra). Cada diferencia es una
+declaración que el adaptador **se negó** a adivinar — un tipo declarado dentro del cuerpo de
+una función, o un nombre que colisiona bajo el modelo de identificadores sin aridad — nunca un
+rango inventado.
+
 `class-derived` es el respaldo para cuando un adaptador no extrae tipos: el rango es el
 `min…max` de los **métodos** de la clase — donde están los miembros, no donde está la
 declaración — así que va etiquetado en vez de presentarse como un hecho parseado. En este
 repositorio, añadir extracción real de tipos bajó `class-derived` de 45 filas a 19, y cada una
 de las que quedan es un objeto literal y no una declaración de tipo, que es exactamente lo que
 el respaldo debería estar capturando.
+
+Un costo de tomar el rango propio de la declaración: cuando lleva un atributo o una anotación
+delante, el rango empieza ahí, porque ahí empieza el nodo de la gramática. La firma está
+protegida de eso: si el límite fuera a cortar el nombre del tipo, se **eliden los atributos**
+con un `…` inicial, porque una firma que no nombra lo que declara no es una firma más corta,
+sino una firma inútil.
 
 La divulgación importa más que la cobertura: un agente que hace grep de un nombre de tipo, no
 obtiene nada y concluye que el tipo no existe es el _puntero equivocado_ que este artefacto
