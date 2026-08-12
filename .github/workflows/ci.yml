@@ -361,6 +361,73 @@ jobs:
           printf '  %s\n' "${scripts[@]}"
           shellcheck "${scripts[@]}"
 
+  # The README documents the container as a supported way to run this project,
+  # and until now nothing verified it: the image was only ever built by a human
+  # typing `pnpm run docker:build`. A Dockerfile hardcodes paths, script names
+  # and a pnpm invocation, so it breaks from ordinary refactors — a renamed npm
+  # scope alone touches `pnpm-workspace.yaml`, every manifest and the bin path —
+  # and it would have broken silently, for as long as nobody happened to build.
+  #
+  # Building is not enough either. `--version` is asserted against the manifest
+  # because the CLI shipped `0.1.0` from a hardcoded string for two minor
+  # releases, and a container is exactly where nobody would notice. `analyze` is
+  # asserted against the bundled fixture because an image that starts and then
+  # cannot parse anything is still broken.
+  container:
+    name: container (build + run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+
+      # `load: true` and no registry: this job proves the image works, it does
+      # not publish it. The GitHub Actions cache keeps a rebuild off the critical
+      # path when only application code changed.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: handbook:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run
+        run: |
+          set -euo pipefail
+          expected=$(node -p "require('./packages/cli/package.json').version")
+          actual=$(docker run --rm handbook:ci --version)
+          if [ "$actual" != "$expected" ]; then
+            echo "   FAIL  the image reports --version $actual, the manifest says $expected"
+            exit 1
+          fi
+          echo "   OK    --version reports $actual"
+
+          # The fixture is five languages in eight files; the numbers are the
+          # same ones scripts/smoke-install.mjs asserts outside the container.
+          out=$(docker run --rm -v "$PWD/examples/demo-project:/src:ro" -v hb-ci:/work handbook:ci analyze)
+          echo "$out"
+          echo "$out" | node -e '
+            let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+              // `\s*$`, not `$`: the summary arrives through `echo`, which appends
+              // a newline, and JavaScript `$` without the `m` flag matches only
+              // the absolute end of the string — unlike Perl, it does not skip a
+              // trailing one. Written the strict way first, this assertion failed
+              // against an image that was working perfectly.
+              const m = s.match(/\{[\s\S]*\}\s*$/);
+              if (!m) { console.error("   FAIL  analyze printed no JSON summary"); process.exit(1); }
+              const j = JSON.parse(m[0]);
+              if (j.files !== 8 || j.functions !== 33) {
+                console.error(`   FAIL  analyze found ${j.files} files / ${j.functions} functions, expected 8 / 33`);
+                process.exit(1);
+              }
+              console.log(`   OK    analyze found ${j.files} files and ${j.functions} functions in the container`);
+            });
+          '
+
   commits:
     name: commitlint
     runs-on: ubuntu-latest
@@ -394,7 +461,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: ${{ always() }}
-    needs: [check, packaging, smoke, cli, docs, demo, shell, commits]
+    needs: [check, packaging, smoke, cli, docs, demo, shell, container, commits]
     steps:
       - name: Report
         run: |

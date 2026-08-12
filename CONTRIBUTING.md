@@ -208,10 +208,13 @@ behind it.
   comments in this repo hold themselves to.
 - **State how you verified it.** `pnpm check` passing is the floor. If the change affects
   generation, rendering or the planner, say which demo you ran and what you looked at.
-- **CI must be green.** Six independent jobs: `check` (Linux on Node 20 and 24, plus macOS
-  and Windows on 24), `packaging`, `smoke`, `demo`, `shellcheck`, `commitlint`. The Windows
-  legs are not box-ticking — the patcher's symlink-escape guard, core's directory lock and
-  every path the analyzer normalises behave differently there.
+- **CI must be green.** Nine independent jobs: `check` (Linux on Node 20 and 24, plus macOS
+  and Windows on 24), `packaging`, `smoke`, `cli surface`, `docs site`, `demo`, `shellcheck`,
+  `container`, `commitlint`. The Windows legs are not box-ticking — the patcher's
+  symlink-escape guard, core's directory lock and every path the analyzer normalises behave
+  differently there. `main` requires exactly one check, `ci`, which passes only when all
+  nine did; requiring the individual names would silently stop covering a platform the day
+  the matrix gains one.
 - **Expect review comments, including on prose.** Comments and docs are part of the
   product here.
 
